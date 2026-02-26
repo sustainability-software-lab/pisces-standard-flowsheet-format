@@ -2,6 +2,11 @@
 
 Welcome to the **Standardized Flowsheet Format (SFF)** documentation. SFF is a universally interoperable file format for process designs, representing chemical processes as a directed graph.
 
+<div style="text-align: center; margin: 2rem 0;">
+  <a href="schema_reference/" class="md-button md-button--primary" style="margin-right: 1rem;">View Schema Reference</a>
+  <a href="full_schema/" class="md-button">Copy Full JSON Schema</a>
+</div>
+
 ![Simplified visual representation of the SFF schema](images/SFF_visual_representation.png)
 
 ## What is SFF?
@@ -19,11 +24,11 @@ With SFF, you can serialize a full chemical or biological process design—inclu
 
 ## Getting Started
 
-To get started using SFF in your applications, check out the [Schema Reference](schema_reference.md) to understand the structure of an SFF JSON document. 
+To get started using SFF in your applications, check out the [Schema Reference](schema_reference.md) to understand the structure of an SFF JSON document. You can also view the full raw schema on the [Full JSON Schema](full_schema.md) page.
 
-You can also fetch the most recent schema directly via our GitHub pages deployment:
+If you prefer to programmatically pull the most recent schema, you can fetch it directly via our GitHub pages deployment URL:
 
-[Download Latest JSON Schema](schema.json){ .md-button .md-button--primary }
+[Download Latest JSON Schema](schema.json){ .md-button }
 
 All versions of the schema are available under the `schema/` directory, for example: [`schema/schema_v_0.0.2.json`](schema/schema_v_0.0.2.json).
 
