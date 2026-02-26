@@ -8,6 +8,7 @@ theme:
     - navigation.tabs
     - navigation.indexes
     - toc.integrate
+    - content.code.copy
   palette:
     primary: indigo
 
@@ -18,3 +19,10 @@ nav:
 
 extra_css:
   - stylesheets/extra.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences
