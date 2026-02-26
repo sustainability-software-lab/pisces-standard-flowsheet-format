@@ -28,9 +28,9 @@ To get started using SFF in your applications, check out the [Schema Reference](
 
 If you prefer to programmatically pull the most recent schema, you can fetch it directly via our GitHub pages deployment URL:
 
-[Download Latest JSON Schema](schema.json){ .md-button }
+<a href="schema.json" download="schema.json" class="md-button md-button--primary">Download Latest JSON Schema</a>
 
-All versions of the schema are available under the `schema/` directory, for example: [`schema/schema_v_0.0.2.json`](schema/schema_v_0.0.2.json).
+All versions of the schema are available under the `schema/` directory, for example: <a href="schema/schema_v_0.0.2.json" download="schema_v_0.0.2.json">schema/schema_v_0.0.2.json</a>.
 
 ---
 
