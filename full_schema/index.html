@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#full-json-schemannbelow-is-the-complete-verbatim-standardized-flowsheet-format-sff-json-schema-you-can-copy-this-for-your-own-tools-or-to-validate-your-exported-flowsheetsnnjson" class="md-skip">
+        <a href="#full-json-schema" class="md-skip">
           Skip to content
         </a>
       
@@ -406,591 +406,592 @@
   
 
 
-<h1 id="full-json-schemannbelow-is-the-complete-verbatim-standardized-flowsheet-format-sff-json-schema-you-can-copy-this-for-your-own-tools-or-to-validate-your-exported-flowsheetsnnjson">Full JSON Schema\n\nBelow is the complete, verbatim Standardized Flowsheet Format (SFF) JSON schema. You can copy this for your own tools or to validate your exported flowsheets.\n\n```json</h1>
-<p>{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Standardized Flowsheet Format (SFF)",
-  "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
-  "type": "object",
-  "properties": {
-    "metadata": {
-      "description": "Information about the source, context, and version of the flowsheet.",
-      "type": "object",
-      "properties": {
-        "sff_version": {
-          "type": "string",
-          "description": "Version of the SFF schema used, e.g., '1.0'."
+<h1 id="full-json-schema">Full JSON Schema</h1>
+<p>Below is the complete, verbatim Standardized Flowsheet Format (SFF) JSON schema. You can copy this for your own tools or to validate your exported flowsheets.</p>
+<pre><code class="language-json">{
+  &quot;$schema&quot;: &quot;http://json-schema.org/draft-07/schema#&quot;,
+  &quot;title&quot;: &quot;Standardized Flowsheet Format (SFF)&quot;,
+  &quot;description&quot;: &quot;A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).&quot;,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;properties&quot;: {
+    &quot;metadata&quot;: {
+      &quot;description&quot;: &quot;Information about the source, context, and version of the flowsheet.&quot;,
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;properties&quot;: {
+        &quot;sff_version&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;Version of the SFF schema used, e.g., '1.0'.&quot;
         },
-        "TEA_currency": {
-          "type": "string",
-          "description": "Currency used to report cost results.",
-          "default": "USD"
+        &quot;TEA_currency&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;Currency used to report cost results.&quot;,
+          &quot;default&quot;: &quot;USD&quot;
         },
-        "TEA_year": {
-          "type": "number",
-          "description": "TEA year used to report cost results."
+        &quot;TEA_year&quot;: {
+          &quot;type&quot;: &quot;number&quot;,
+          &quot;description&quot;: &quot;TEA year used to report cost results.&quot;
         },
-        "source_doi": {
-          "type": "string",
-          "description": "Digital Object Identifier (DOI) of the source publication, if any."
+        &quot;source_doi&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;Digital Object Identifier (DOI) of the source publication, if any.&quot;
         },
-        "product_name": {
-          "type": "string",
-          "description": "The primary product of the process."
+        &quot;product_name&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;The primary product of the process.&quot;
         },
-        "organism": {
-          "type": "string",
-          "description": "The organism used for production, if applicable."
+        &quot;organism&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;The organism used for production, if applicable.&quot;
         },
-        "process_title": {
-          "type": "string",
-          "description": "A descriptive title for the process."
+        &quot;process_title&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;A descriptive title for the process.&quot;
         },
-        "flowsheet_designers": {
-          "type": "string",
-          "description": "Name(s) of the authors who designed this flowsheet."
+        &quot;flowsheet_designers&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;description&quot;: &quot;Name(s) of the authors who designed this flowsheet.&quot;
         }
       },
-      "required": [
-        "sff_version",
-        "TEA_year"
+      &quot;required&quot;: [
+        &quot;sff_version&quot;,
+        &quot;TEA_year&quot;
       ]
     },
-    "units": {
-      "description": "An array of all unit operations, representing the nodes of the process graph.",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "A unique identifier for this unit operation."
+    &quot;units&quot;: {
+      &quot;description&quot;: &quot;An array of all unit operations, representing the nodes of the process graph.&quot;,
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+          &quot;id&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;A unique identifier for this unit operation.&quot;
           },
-          "unit_type": {
-            "type": "string",
-            "description": "A short description of the type of unit operation (e.g., 'Distillation', 'Solids centrifugation')."
+          &quot;unit_type&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;A short description of the type of unit operation (e.g., 'Distillation', 'Solids centrifugation').&quot;
           },
-          "design_input_specs": {
-            "type": "object",
-            "description": "Design input specifications for the unit operation. If provided, these specifications -- combined with the provided compositions of streams entering this unit operation and the method described in 'design_simulation_method' -- should be sufficient to generate all design results, cost results, utility results, and compositions of all streams effluent from this unit operation."
+          &quot;design_input_specs&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;description&quot;: &quot;Design input specifications for the unit operation. If provided, these specifications -- combined with the provided compositions of streams entering this unit operation and the method described in 'design_simulation_method' -- should be sufficient to generate all design results, cost results, utility results, and compositions of all streams effluent from this unit operation.&quot;
           },
-          "design_simulation_method": {
-            "type": "string",
-            "description": "Design and simulation method for the unit operation, (e.g., for distillation, this could be 'McCabe-Thiele', 'Fenske-Underwood-Gilliland', or 'MESH'). If provided, this method -- combined with the provided 'design_input_specs' and compositions of streams entering this unit operation -- should be sufficient to generate all design results, cost results, utility results, and compositions of all streams effluent from this unit operation."
+          &quot;design_simulation_method&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;Design and simulation method for the unit operation, (e.g., for distillation, this could be 'McCabe-Thiele', 'Fenske-Underwood-Gilliland', or 'MESH'). If provided, this method -- combined with the provided 'design_input_specs' and compositions of streams entering this unit operation -- should be sufficient to generate all design results, cost results, utility results, and compositions of all streams effluent from this unit operation.&quot;
           },
-          "thermo_property_package": {
-            "type": "object",
-            "description": "A thermodynamic property package, with qualitative descriptions of property estimation methods.",
-            "properties": {
-              "id": {
-                "type": "string"
+          &quot;thermo_property_package&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;description&quot;: &quot;A thermodynamic property package, with qualitative descriptions of property estimation methods.&quot;,
+            &quot;properties&quot;: {
+              &quot;id&quot;: {
+                &quot;type&quot;: &quot;string&quot;
               },
-              "mixture": {
-                "type": "string",
-                "description": "Method for computing mixture properties (e.g., 'ideal mixture').",
-                "default": "Ideal"
+              &quot;mixture&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;description&quot;: &quot;Method for computing mixture properties (e.g., 'ideal mixture').&quot;,
+                &quot;default&quot;: &quot;Ideal&quot;
               },
-              "gamma": {
-                "type": "string",
-                "description": "Method for computing activity coefficients (e.g., 'UNIFAC').",
-                "default": "Ideal"
+              &quot;gamma&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;description&quot;: &quot;Method for computing activity coefficients (e.g., 'UNIFAC').&quot;,
+                &quot;default&quot;: &quot;Ideal&quot;
               },
-              "phi": {
-                "type": "string",
-                "description": "Method for computing fugacity coefficients (e.g., 'Ideal').",
-                "default": "Ideal"
+              &quot;phi&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;description&quot;: &quot;Method for computing fugacity coefficients (e.g., 'Ideal').&quot;,
+                &quot;default&quot;: &quot;Ideal&quot;
               },
-              "PCF": {
-                "type": "string",
-                "description": "Method for computing Poynting correction factors (e.g., 'None').",
-                "default": "None"
+              &quot;PCF&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;description&quot;: &quot;Method for computing Poynting correction factors (e.g., 'None').&quot;,
+                &quot;default&quot;: &quot;None&quot;
               }
             },
-            "additionalProperties": {
-              "type": "string"
+            &quot;additionalProperties&quot;: {
+              &quot;type&quot;: &quot;string&quot;
             }
           },
-          "reactions": {
-            "type": "array",
-            "description": "Reactions occurring in this unit operation, each with the index (determining the order in which reactions occur, with identical index for parallel reactions), conversion, and the reactant for conversion.",
-            "items": {
-              "type": "object",
-              "properties": {
-                "index": {
-                  "type": "integer"
+          &quot;reactions&quot;: {
+            &quot;type&quot;: &quot;array&quot;,
+            &quot;description&quot;: &quot;Reactions occurring in this unit operation, each with the index (determining the order in which reactions occur, with identical index for parallel reactions), conversion, and the reactant for conversion.&quot;,
+            &quot;items&quot;: {
+              &quot;type&quot;: &quot;object&quot;,
+              &quot;properties&quot;: {
+                &quot;index&quot;: {
+                  &quot;type&quot;: &quot;integer&quot;
                 },
-                "equation": {
-                  "type": "string"
+                &quot;equation&quot;: {
+                  &quot;type&quot;: &quot;string&quot;
                 },
-                "reactant": {
-                  "type": "string"
+                &quot;reactant&quot;: {
+                  &quot;type&quot;: &quot;string&quot;
                 },
-                "conversion": {
-                  "type": "number"
+                &quot;conversion&quot;: {
+                  &quot;type&quot;: &quot;number&quot;
                 }
               }
             }
           },
-          "design_results": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
+          &quot;design_results&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;additionalProperties&quot;: {
+              &quot;type&quot;: &quot;number&quot;
             },
-            "description": "Design results for this unit operation. This object, combined with design_input_specs, should provide a full design description for this unit operation (to the highest level of detail modeled)."
+            &quot;description&quot;: &quot;Design results for this unit operation. This object, combined with design_input_specs, should provide a full design description for this unit operation (to the highest level of detail modeled).&quot;
           },
-          "purchase_costs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
+          &quot;purchase_costs&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;additionalProperties&quot;: {
+              &quot;type&quot;: &quot;number&quot;
             },
-            "description": "Equipment purchase cost results for this unit operation. These may be for the entire unit operation or for individual unit operations (depending on the level of detail modeled)."
+            &quot;description&quot;: &quot;Equipment purchase cost results for this unit operation. These may be for the entire unit operation or for individual unit operations (depending on the level of detail modeled).&quot;
           },
-          "installed_costs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
+          &quot;installed_costs&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;additionalProperties&quot;: {
+              &quot;type&quot;: &quot;number&quot;
             },
-            "description": "Equipment installed (purchase + installation) cost results for this unit operation. These may be for the entire unit operation or for individual unit operations (depending on the level of detail modeled)."
+            &quot;description&quot;: &quot;Equipment installed (purchase + installation) cost results for this unit operation. These may be for the entire unit operation or for individual unit operations (depending on the level of detail modeled).&quot;
           },
-          "utility_consumption_results": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
+          &quot;utility_consumption_results&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;additionalProperties&quot;: {
+              &quot;type&quot;: &quot;number&quot;
             },
-            "description": "Heating, cooling, and power utility demand results for this unit operation. These must refer to the same utility IDs as those detailed in the heat_utilities or power_utilities properties for this flowsheet."
+            &quot;description&quot;: &quot;Heating, cooling, and power utility demand results for this unit operation. These must refer to the same utility IDs as those detailed in the heat_utilities or power_utilities properties for this flowsheet.&quot;
           },
-          "utility_production_results": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "number"
+          &quot;utility_production_results&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;additionalProperties&quot;: {
+              &quot;type&quot;: &quot;number&quot;
             },
-            "description": "Heating, cooling, and power utility production results for this unit operation. These must refer to the same utility IDs as those detailed in the heat_utilities or power_utilities properties for this flowsheet."
+            &quot;description&quot;: &quot;Heating, cooling, and power utility production results for this unit operation. These must refer to the same utility IDs as those detailed in the heat_utilities or power_utilities properties for this flowsheet.&quot;
           }
         },
-        "required": [
-          "id",
-          "unit_type"
+        &quot;required&quot;: [
+          &quot;id&quot;,
+          &quot;unit_type&quot;
         ],
-        "additionalProperties": false
+        &quot;additionalProperties&quot;: false
       }
     },
-    "streams": {
-      "description": "An array of process streams that connect the units, representing the edges of the process graph.",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "A unique identifier for this stream."
+    &quot;streams&quot;: {
+      &quot;description&quot;: &quot;An array of process streams that connect the units, representing the edges of the process graph.&quot;,
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+          &quot;id&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;A unique identifier for this stream.&quot;
           },
-          "source_unit_id": {
-            "type": "string",
-            "description": "The ID of the unit operation from which this stream originates."
+          &quot;source_unit_id&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;The ID of the unit operation from which this stream originates.&quot;
           },
-          "sink_unit_id": {
-            "type": "string",
-            "description": "The ID of the unit operation that this stream enters."
+          &quot;sink_unit_id&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;The ID of the unit operation that this stream enters.&quot;
           },
-          "stream_description": {
-            "type": "string",
-            "description": "A qualitative description of the stream from the perspective of either the source (e.g., 'Centrifugate') or sink unit operation (e.g., 'Make-up solvent')."
+          &quot;stream_description&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;A qualitative description of the stream from the perspective of either the source (e.g., 'Centrifugate') or sink unit operation (e.g., 'Make-up solvent').&quot;
           },
-          "price": {
-            "type": "object",
-            "properties": {
-              "value": {
-                "type": "number"
+          &quot;price&quot;: {
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+              &quot;value&quot;: {
+                &quot;type&quot;: &quot;number&quot;
               },
-              "units": {
-                "type": "string",
-                "default": "$/kg"
+              &quot;units&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;default&quot;: &quot;$/kg&quot;
               }
             }
           },
-          "stream_properties": {
-            "description": "Structured object specifying the properties of the stream.",
-            "type": "object",
-            "properties": {
-              "total_mass_flow": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "number"
+          &quot;stream_properties&quot;: {
+            &quot;description&quot;: &quot;Structured object specifying the properties of the stream.&quot;,
+            &quot;type&quot;: &quot;object&quot;,
+            &quot;properties&quot;: {
+              &quot;total_mass_flow&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;value&quot;: {
+                    &quot;type&quot;: &quot;number&quot;
                   },
-                  "units": {
-                    "type": "string",
-                    "default": "kg/h"
+                  &quot;units&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;default&quot;: &quot;kg/h&quot;
                   }
                 }
               },
-              "total_volumetric_flow": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "number"
+              &quot;total_volumetric_flow&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;value&quot;: {
+                    &quot;type&quot;: &quot;number&quot;
                   },
-                  "units": {
-                    "type": "string",
-                    "default": "m3/h"
+                  &quot;units&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;default&quot;: &quot;m3/h&quot;
                   }
                 }
               },
-              "total_molar_flow": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "number"
+              &quot;total_molar_flow&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;value&quot;: {
+                    &quot;type&quot;: &quot;number&quot;
                   },
-                  "units": {
-                    "type": "string",
-                    "default": "kmol/h"
+                  &quot;units&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;default&quot;: &quot;kmol/h&quot;
                   }
                 }
               },
-              "temperature": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "number",
-                    "minimum": 0
+              &quot;temperature&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;value&quot;: {
+                    &quot;type&quot;: &quot;number&quot;,
+                    &quot;minimum&quot;: 0
                   },
-                  "units": {
-                    "type": "string",
-                    "default": "K"
+                  &quot;units&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;default&quot;: &quot;K&quot;
                   }
                 }
               },
-              "pressure": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "type": "number"
+              &quot;pressure&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;value&quot;: {
+                    &quot;type&quot;: &quot;number&quot;
                   },
-                  "units": {
-                    "type": "string",
-                    "default": "Pa"
+                  &quot;units&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;default&quot;: &quot;Pa&quot;
                   }
                 }
               },
-              "composition": {
-                "description": "An array detailing the chemical components of the stream.",
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "phase": {
-                      "type": "string",
-                      "default": "l"
+              &quot;composition&quot;: {
+                &quot;description&quot;: &quot;An array detailing the chemical components of the stream.&quot;,
+                &quot;type&quot;: &quot;array&quot;,
+                &quot;items&quot;: {
+                  &quot;type&quot;: &quot;object&quot;,
+                  &quot;properties&quot;: {
+                    &quot;phase&quot;: {
+                      &quot;type&quot;: &quot;string&quot;,
+                      &quot;default&quot;: &quot;l&quot;
                     },
-                    "component_name": {
-                      "type": "string"
+                    &quot;component_name&quot;: {
+                      &quot;type&quot;: &quot;string&quot;
                     },
-                    "mol_fraction": {
-                      "type": "number",
-                      "minimum": 0,
-                      "maximum": 1
+                    &quot;mol_fraction&quot;: {
+                      &quot;type&quot;: &quot;number&quot;,
+                      &quot;minimum&quot;: 0,
+                      &quot;maximum&quot;: 1
                     }
                   },
-                  "required": [
-                    "component_name",
-                    "mol_fraction"
+                  &quot;required&quot;: [
+                    &quot;component_name&quot;,
+                    &quot;mol_fraction&quot;
                   ]
                 }
               }
             },
-            "required": [
-              "total_mass_flow",
-              "total_volumetric_flow",
-              "temperature",
-              "pressure"
+            &quot;required&quot;: [
+              &quot;total_mass_flow&quot;,
+              &quot;total_volumetric_flow&quot;,
+              &quot;temperature&quot;,
+              &quot;pressure&quot;
             ]
           }
         },
-        "required": [
-          "id",
-          "source_unit_id",
-          "sink_unit_id"
+        &quot;required&quot;: [
+          &quot;id&quot;,
+          &quot;source_unit_id&quot;,
+          &quot;sink_unit_id&quot;
         ]
       }
     },
-    "chemicals": {
-      "description": "An array of all chemicals involved in this process flowsheet.",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "A unique identifier for this chemical, used in the 'composition' property of stream objects."
+    &quot;chemicals&quot;: {
+      &quot;description&quot;: &quot;An array of all chemicals involved in this process flowsheet.&quot;,
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+          &quot;id&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;A unique identifier for this chemical, used in the 'composition' property of stream objects.&quot;
           },
-          "registry_id": {
-            "type": "string",
-            "description": "CAS number or SMILES string."
+          &quot;registry_id&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;CAS number or SMILES string.&quot;
           }
         },
-        "required": [
-          "id",
-          "registry_id"
+        &quot;required&quot;: [
+          &quot;id&quot;,
+          &quot;registry_id&quot;
         ],
-        "additionalProperties": true
+        &quot;additionalProperties&quot;: true
       }
     },
-    "utilities": {
-        "description": "An array of all heating, cooling, power, and other utility types involved in this flowsheet.",
-        "type": "object",
-        "properties": {
-            "heat_utilities": {
-              "description": "An array of all heating and cooling utility types involved in this process flowsheet. Combustion-based utility types (e.g., natural gas) should not be specified here and should instead be specified in 'other_utilities'.",
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "A unique identifier for this utility type (e.g., high-pressure steam)."
+    &quot;utilities&quot;: {
+        &quot;description&quot;: &quot;An array of all heating, cooling, power, and other utility types involved in this flowsheet.&quot;,
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;properties&quot;: {
+            &quot;heat_utilities&quot;: {
+              &quot;description&quot;: &quot;An array of all heating and cooling utility types involved in this process flowsheet. Combustion-based utility types (e.g., natural gas) should not be specified here and should instead be specified in 'other_utilities'.&quot;,
+              &quot;type&quot;: &quot;array&quot;,
+              &quot;items&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;id&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;description&quot;: &quot;A unique identifier for this utility type (e.g., high-pressure steam).&quot;
                   },
-                  "temperature": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number"
+                  &quot;temperature&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "K"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;K&quot;
                       }
                     }
                   },
-                  "pressure": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number"
+                  &quot;pressure&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "Pa"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;Pa&quot;
                       }
                     }
                   },
-                  "regeneration_price": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number",
-                        "default": 0
+                  &quot;regeneration_price&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;,
+                        &quot;default&quot;: 0
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "$/kmol"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;$/kmol&quot;
                       }
                     }
                   },
-                  "heat_transfer_price": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number",
-                        "default": 0
+                  &quot;heat_transfer_price&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;,
+                        &quot;default&quot;: 0
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "$/kJ"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;$/kJ&quot;
                       }
                     }
                   },
-                  "heat_transfer_efficiency": {
-                    "type": "number",
-                    "default": 1
+                  &quot;heat_transfer_efficiency&quot;: {
+                    &quot;type&quot;: &quot;number&quot;,
+                    &quot;default&quot;: 1
                   },
-                  "temperature_limit": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number"
+                  &quot;temperature_limit&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "K"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;K&quot;
                       }
                     }
                   },
-                  "composition": {
-                    "description": "An array detailing the chemical components of the heating or cooling utility.",
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "phase": {
-                          "type": "string",
-                          "default": "l"
+                  &quot;composition&quot;: {
+                    &quot;description&quot;: &quot;An array detailing the chemical components of the heating or cooling utility.&quot;,
+                    &quot;type&quot;: &quot;array&quot;,
+                    &quot;items&quot;: {
+                      &quot;type&quot;: &quot;object&quot;,
+                      &quot;properties&quot;: {
+                        &quot;phase&quot;: {
+                          &quot;type&quot;: &quot;string&quot;,
+                          &quot;default&quot;: &quot;l&quot;
                         },
-                        "component_name": {
-                          "type": "string"
+                        &quot;component_name&quot;: {
+                          &quot;type&quot;: &quot;string&quot;
                         },
-                        "mol_fraction": {
-                          "type": "number",
-                          "minimum": 0,
-                          "maximum": 1
+                        &quot;mol_fraction&quot;: {
+                          &quot;type&quot;: &quot;number&quot;,
+                          &quot;minimum&quot;: 0,
+                          &quot;maximum&quot;: 1
                         }
                       },
-                      "required": [
-                        "component_name",
-                        "mol_fraction"
+                      &quot;required&quot;: [
+                        &quot;component_name&quot;,
+                        &quot;mol_fraction&quot;
                       ]
                     }
                   },
-                  "units_for_utility_results": {
-                    "type": "string",
-                    "description": "Units (e.g., 'kJ/h') for the values associated with this utility in the 'utility_results' of unit operations in this flowsheet."
+                  &quot;units_for_utility_results&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;description&quot;: &quot;Units (e.g., 'kJ/h') for the values associated with this utility in the 'utility_results' of unit operations in this flowsheet.&quot;
                   }
                 },
-                "required": [
-                  "id",
-                  "temperature",
-                  "pressure",
-                  "composition",
-                  "units_for_utility_results"
+                &quot;required&quot;: [
+                  &quot;id&quot;,
+                  &quot;temperature&quot;,
+                  &quot;pressure&quot;,
+                  &quot;composition&quot;,
+                  &quot;units_for_utility_results&quot;
                 ],
-                "additionalProperties": false
+                &quot;additionalProperties&quot;: false
               }
             },
-            "power_utilities": {
-              "description": "An array of all power utility types involved in this process flowsheet.",
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "A unique identifier for this power utility type (e.g., 'marginal electricity')."
+            &quot;power_utilities&quot;: {
+              &quot;description&quot;: &quot;An array of all power utility types involved in this process flowsheet.&quot;,
+              &quot;type&quot;: &quot;array&quot;,
+              &quot;items&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;id&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;description&quot;: &quot;A unique identifier for this power utility type (e.g., 'marginal electricity').&quot;
                   },
-                  "price": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number",
-                        "default": 0
+                  &quot;price&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;,
+                        &quot;default&quot;: 0
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "$/kWh"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;$/kWh&quot;
                       }
                     }
                   },
-                  "units_for_utility_results": {
-                    "type": "string",
-                    "description": "Units (e.g., 'kW') for the values associated with this utility in the 'utility_results' of unit operations in this flowsheet."
+                  &quot;units_for_utility_results&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;description&quot;: &quot;Units (e.g., 'kW') for the values associated with this utility in the 'utility_results' of unit operations in this flowsheet.&quot;
                   }
                 },
-                "required": [
-                  "id",
-                  "units_for_utility_results"
+                &quot;required&quot;: [
+                  &quot;id&quot;,
+                  &quot;units_for_utility_results&quot;
                 ],
-                "additionalProperties": {
-                  "type": "number"
+                &quot;additionalProperties&quot;: {
+                  &quot;type&quot;: &quot;number&quot;
                 }
               }
             },
-            "other_utilities": {
-              "description": "An array of all other utility types involved in this process flowsheet. Combustion-based utility types (e.g., natural gas) may be specified here.",
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "description": "A unique identifier for this utility type (e.g., natural gas)."
+            &quot;other_utilities&quot;: {
+              &quot;description&quot;: &quot;An array of all other utility types involved in this process flowsheet. Combustion-based utility types (e.g., natural gas) may be specified here.&quot;,
+              &quot;type&quot;: &quot;array&quot;,
+              &quot;items&quot;: {
+                &quot;type&quot;: &quot;object&quot;,
+                &quot;properties&quot;: {
+                  &quot;id&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;description&quot;: &quot;A unique identifier for this utility type (e.g., natural gas).&quot;
                   },
-                  "temperature": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number"
+                  &quot;temperature&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "K"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;K&quot;
                       }
                     }
                   },
-                  "pressure": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number"
+                  &quot;pressure&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "Pa"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;Pa&quot;
                       }
                     }
                   },
-                  "price": {
-                    "type": "object",
-                    "properties": {
-                      "value": {
-                        "type": "number",
-                        "default": 0
+                  &quot;price&quot;: {
+                    &quot;type&quot;: &quot;object&quot;,
+                    &quot;properties&quot;: {
+                      &quot;value&quot;: {
+                        &quot;type&quot;: &quot;number&quot;,
+                        &quot;default&quot;: 0
                       },
-                      "units": {
-                        "type": "string",
-                        "default": "$/kg"
+                      &quot;units&quot;: {
+                        &quot;type&quot;: &quot;string&quot;,
+                        &quot;default&quot;: &quot;$/kg&quot;
                       }
                     }
                   },
-                  "composition": {
-                    "description": "An array detailing the chemical components of the utility.",
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "phase": {
-                          "type": "string",
-                          "default": "l"
+                  &quot;composition&quot;: {
+                    &quot;description&quot;: &quot;An array detailing the chemical components of the utility.&quot;,
+                    &quot;type&quot;: &quot;array&quot;,
+                    &quot;items&quot;: {
+                      &quot;type&quot;: &quot;object&quot;,
+                      &quot;properties&quot;: {
+                        &quot;phase&quot;: {
+                          &quot;type&quot;: &quot;string&quot;,
+                          &quot;default&quot;: &quot;l&quot;
                         },
-                        "component_name": {
-                          "type": "string"
+                        &quot;component_name&quot;: {
+                          &quot;type&quot;: &quot;string&quot;
                         },
-                        "mol_fraction": {
-                          "type": "number",
-                          "minimum": 0,
-                          "maximum": 1
+                        &quot;mol_fraction&quot;: {
+                          &quot;type&quot;: &quot;number&quot;,
+                          &quot;minimum&quot;: 0,
+                          &quot;maximum&quot;: 1
                         }
                       },
-                      "required": [
-                        "component_name",
-                        "mol_fraction"
+                      &quot;required&quot;: [
+                        &quot;component_name&quot;,
+                        &quot;mol_fraction&quot;
                       ]
                     }
                   },
-                  "units_for_utility_results": {
-                    "type": "string",
-                    "description": "Units (e.g., 'kg/h') for the values associated with this utility in the 'utility_results' of unit operations in this flowsheet."
+                  &quot;units_for_utility_results&quot;: {
+                    &quot;type&quot;: &quot;string&quot;,
+                    &quot;description&quot;: &quot;Units (e.g., 'kg/h') for the values associated with this utility in the 'utility_results' of unit operations in this flowsheet.&quot;
                   }
                 },
-                "required": [
-                  "id",
-                  "temperature",
-                  "pressure",
-                  "composition",
-                  "units_for_utility_results"
+                &quot;required&quot;: [
+                  &quot;id&quot;,
+                  &quot;temperature&quot;,
+                  &quot;pressure&quot;,
+                  &quot;composition&quot;,
+                  &quot;units_for_utility_results&quot;
                 ],
-                "additionalProperties": false
+                &quot;additionalProperties&quot;: false
               }
             }
     }
   }
 },
-  "required": [
-    "metadata",
-    "units",
-    "streams",
-    "utilities"
+  &quot;required&quot;: [
+    &quot;metadata&quot;,
+    &quot;units&quot;,
+    &quot;streams&quot;,
+    &quot;utilities&quot;
   ]
 }
-```\n</p>
+</code></pre>
 
 
 
