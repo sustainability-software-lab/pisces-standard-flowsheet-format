@@ -1,6 +1,6 @@
 # Schema Reference
 
-The Standardized Flowsheet Format (SFF) is a JSON document strictly adhering to our JSON schema structure. This page breaks down the core sections of the SFF schema in human-readable terms to help developers quickly understand its structure.
+The Standard Flowsheet Format (SFF) is a JSON document strictly adhering to our JSON schema structure. This page breaks down the core sections of the SFF schema in human-readable terms to help developers quickly understand its structure.
 
 ## Core Properties
 
@@ -33,7 +33,7 @@ The `metadata` object provides high-level information about the process flowshee
 
 The `chemicals` array defines the chemical species available in the simulation. Each chemical must have:
 - **id**: A unique string identifier.
-- **registry_id**: A standardized chemical identifier, like a CAS number or SMILES string.
+- **registry_id**: A standard chemical identifier, like a CAS number or SMILES string.
 
 ---
 

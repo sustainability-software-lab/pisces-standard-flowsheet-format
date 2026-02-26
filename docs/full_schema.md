@@ -1,12 +1,12 @@
 # Full JSON Schema
 
-Below is the complete, verbatim Standardized Flowsheet Format (SFF) JSON schema. You can copy this for your own tools or to validate your exported flowsheets.
+Below is the complete, verbatim Standard Flowsheet Format (SFF) JSON schema. You can copy this for your own tools or to validate your exported flowsheets.
 
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Standardized Flowsheet Format (SFF)",
-  "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
+  "title": "Standard Flowsheet Format (SFF)",
+  "description": "A standard, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "properties": {
     "metadata": {
