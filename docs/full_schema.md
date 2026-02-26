@@ -1,4 +1,8 @@
-# Full JSON Schema\n\nBelow is the complete, verbatim Standardized Flowsheet Format (SFF) JSON schema. You can copy this for your own tools or to validate your exported flowsheets.\n\n```json
+# Full JSON Schema
+
+Below is the complete, verbatim Standardized Flowsheet Format (SFF) JSON schema. You can copy this for your own tools or to validate your exported flowsheets.
+
+```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standardized Flowsheet Format (SFF)",
@@ -582,4 +586,4 @@
     "utilities"
   ]
 }
-```\n
+```
