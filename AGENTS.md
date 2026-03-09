@@ -71,8 +71,8 @@ SFF JSON files
 ### Feature mapping (SFF -> graph features)
 
 **Node features** (from `units[]`):
-- `equipment_type_id` — encoded unit type (e.g., Distillation, HeatExchanger)
-- Numerical: `installed_cost`, `purchase_cost`, `power_consumption`, `heat_duty`, `flow_rate`
+- `unit_type_id` — encoded unit type (e.g., Distillation, HeatExchanger) via a `LabelEncoder` on `unit_type`
+- Numerical: `installed_cost`, `purchase_cost`, `power_consumption`, `|heat_duty|`, `flow_rate` (from `design_results['Flow rate']`)
 - Extracted in `FeatureExtractor._get_unit_features()`
 
 **Edge features** (from `streams[]`):
