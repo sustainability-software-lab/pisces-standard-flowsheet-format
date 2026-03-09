@@ -199,10 +199,16 @@ def load_flowsheet(self, file_path: Path) -> Dict[str, Any]:
 - Private methods: `_` prefix (`_extract_raw_node_features`, `_build_edge_index`)
 
 ### Imports
-Absolute imports from `src`, never relative:
+**Entrypoint scripts** (`quick_demo.py`, `main_pipeline.py`, etc.) use absolute imports from `src`:
 ```python
 from src.data.data_loader import FlowsheetDataLoader
 from src.models.process_gnn import ProcessGNN
+```
+
+**Within the `src` package** (modules inside `graph_learning/src/`), use relative imports:
+```python
+from .process_gnn import ProcessGNN, EnsembleProcessGNN
+from .data_loader import FlowsheetDataLoader
 ```
 
 Import ordering: standard library, third-party, local.
@@ -215,12 +221,14 @@ __all__ = ['ProcessGNN', 'EnsembleProcessGNN']
 ```
 
 ### Logging
-Use `logging`, not `print`, for operational messages:
+**Library and module code** (`src/` package modules) must use `logging`, not `print`, for operational messages:
 ```python
 import logging
 logger = logging.getLogger(__name__)
 logger.info(f"Loaded {len(flowsheets)} flowsheets")
 ```
+
+**Demo and CLI scripts** (`quick_demo.py`, `demo_graph_generation.py`, etc.) may use `print()` for user-facing output (progress indicators, formatted results). Do not convert intentional CLI output to `logging` calls.
 
 ### Error handling
 Use try-except around file I/O with logging. Raise informative `ValueError` for invalid inputs.
