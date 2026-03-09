@@ -211,12 +211,14 @@ __all__ = ['ProcessGNN', 'EnsembleProcessGNN']
 ```
 
 ### Logging
-Use `logging`, not `print`, for operational messages:
+Use `logging`, not `print`, for operational messages in **library and module code** (everything under `src/`):
 ```python
 import logging
 logger = logging.getLogger(__name__)
 logger.info(f"Loaded {len(flowsheets)} flowsheets")
 ```
+
+In **demo and CLI scripts** (`quick_demo.py`, `demo_graph_generation.py`, `main_pipeline.py`, notebooks), `print()` is acceptable and expected for user-facing output. Do not replace intentional `print()` calls in those files with `logging` calls.
 
 ### Error handling
 Use try-except around file I/O with logging. Raise informative `ValueError` for invalid inputs.
