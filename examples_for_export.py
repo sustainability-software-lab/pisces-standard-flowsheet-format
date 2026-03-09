@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Example exports of biosteam flowsheets into a standardized JSON format.
+# Example exports of biosteam flowsheets into a standard JSON format.
 # Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>
 # 
 # This module is under the MIT open-source license. See 

@@ -150,7 +150,7 @@ gemini_explainer → explanations
 ## Key Features by Module
 
 ### 📊 Data Processing
-- Load standardized JSON flowsheets
+- Load standard JSON flowsheets
 - Extract node features (6 features per unit)
 - Extract edge features (6 features per stream)
 - Normalize with StandardScaler

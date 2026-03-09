@@ -132,7 +132,7 @@ scoring:
 ## 📈 Features
 
 ### Data Processing
-- ✅ Load flowsheets from standardized JSON format
+- ✅ Load flowsheets from standard JSON format
 - ✅ Automatic feature extraction and normalization
 - ✅ Handle variable-sized graphs
 - ✅ Support for node and edge features

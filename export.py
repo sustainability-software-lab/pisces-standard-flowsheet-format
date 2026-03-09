@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Code to export flowsheets from multiple tools into a standardized JSON format.
+# Code to export flowsheets from multiple tools into a standard JSON format.
 # Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>
 # 
 # This module is under the MIT open-source license. See 

@@ -30,7 +30,7 @@ All 5 phases of the project plan have been successfully implemented!
 - `src/data/graph_builder.py` - Build PyTorch Geometric graphs
 
 **Key Features:**
-- ✅ Automatic JSON parsing from standardized format
+- ✅ Automatic JSON parsing from standard format
 - ✅ Node features: equipment type, costs, power, heat duty, flow rate
 - ✅ Edge features: mass flow, temperature, pressure, composition
 - ✅ Robust handling of variable-sized graphs
