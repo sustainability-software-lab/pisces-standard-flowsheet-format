@@ -195,7 +195,15 @@ def load_flowsheet(self, file_path: Path) -> Dict[str, Any]:
 - Private methods: `_` prefix (`_extract_raw_node_features`, `_build_edge_index`)
 
 ### Imports
-Absolute imports from `src`, never relative:
+Use **relative imports** within `graph_learning/src/*` packages, and **absolute imports** (from `src`) in entrypoint scripts (`main_pipeline.py`, `quick_demo.py`, etc.):
+
+Within a package (e.g., `src/training/trainer.py`):
+```python
+from .utils import EarlyStopping
+from ..evaluation.graph_metrics import calculate_metrics
+```
+
+In entrypoint scripts (e.g., `main_pipeline.py`):
 ```python
 from src.data.data_loader import FlowsheetDataLoader
 from src.models.process_gnn import ProcessGNN
