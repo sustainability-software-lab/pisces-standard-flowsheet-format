@@ -173,7 +173,7 @@ When extending the schema, copy the latest version file, increment the version, 
 ## Code Conventions
 
 ### Type hints
-Required on all function signatures:
+Strongly preferred on all new or modified function signatures:
 ```python
 def build_graph(self, flowsheet: Dict[str, Any], target_type: str = 'total_installed_cost') -> Data:
 ```
