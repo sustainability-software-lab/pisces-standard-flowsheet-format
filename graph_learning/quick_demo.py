@@ -34,7 +34,7 @@ def main():
     
     # ========== Phase 1: Load Data ==========
     print("\n[1/5] Loading flowsheet data...")
-    loader = FlowsheetDataLoader('exported_flowsheets/bioindustrial_park')
+    loader = FlowsheetDataLoader('../exported_flowsheets/bioindustrial_park')
     flowsheets = loader.load_all_flowsheets()
     print(f"    ✓ Loaded {len(flowsheets)} flowsheets")
     

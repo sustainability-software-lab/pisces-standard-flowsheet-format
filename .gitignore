@@ -40,3 +40,7 @@ Thumbs.db
 *.tmp
 temp/
 
+# MkDocs build outputs
+public/
+site/
+

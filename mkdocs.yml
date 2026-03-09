@@ -1,0 +1,28 @@
+site_name: Standard Flowsheet Format (SFF)
+site_description: A universally interoperable file format for process designs.
+site_url: https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format/
+repo_url: https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.indexes
+    - toc.integrate
+    - content.code.copy
+  palette:
+    primary: indigo
+
+nav:
+  - Home: index.md
+  - Schema Reference: schema_reference.md
+  - Full JSON Schema: full_schema.md
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences

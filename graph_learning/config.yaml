@@ -2,7 +2,7 @@
 
 # Data paths
 data:
-  flowsheet_dir: "exported_flowsheets/bioindustrial_park"
+  flowsheet_dir: "../exported_flowsheets/bioindustrial_park"
   output_dir: "outputs"
   processed_data_dir: "data/processed"
 
