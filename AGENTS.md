@@ -160,9 +160,10 @@ Current version: **v0.0.2** (`schema/schema_v_0.0.2.json`), JSON Schema Draft 7.
 
 Top-level structure:
 - `metadata` — source simulator, SFF version, process context (product name, organism, feedstock)
+- `chemicals` — definition of chemical components and their properties
 - `units[]` — array of unit operations. Each has: `id`, `unit_type`, `design_input_specs`, `thermo_property_package`, `reactions`, `design_results`, `installed_costs`, `purchase_costs`, `utility_consumption_results`, `utility_production_results`
 - `streams[]` — array of connections. Each has: `id`, `source_unit_id`, `sink_unit_id`, `price`, `stream_properties` (flows, T, P), `composition` (component names, mol fractions)
-- `heat_utilities`, `power_utilities`, `other_utilities` — utility definitions
+- `utilities` — container for utility definitions, e.g., `utilities.heat_utilities`, `utilities.power_utilities`, `utilities.other_utilities`
 
 When extending the schema, copy the latest version file, increment the version, and follow JSON Schema Draft 7 conventions.
 
