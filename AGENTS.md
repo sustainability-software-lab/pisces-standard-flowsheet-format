@@ -134,7 +134,10 @@ training:
   early_stopping_patience: 20
 
 features:
-  node_features: [equipment_type_id, temperature, pressure, installed_cost, ...]
+  # NOTE: node_features/edge_features are currently illustrative only; the
+  #       FeatureExtractor uses a fixed set of features and does not yet read
+  #       these lists from config.
+  node_features: [equipment_type_id, temperature, pressure, installed_cost]
   edge_features: [mass_flow, molar_flow, volumetric_flow, temperature, pressure, stream_price]
   target: "total_installed_cost"
 
