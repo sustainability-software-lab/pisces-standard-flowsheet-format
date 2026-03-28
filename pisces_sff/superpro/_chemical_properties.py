@@ -295,7 +295,7 @@ _LOCAL_MW: dict[str, float] = {
     "distillers grain":    180.0,
     "enzyme":              50000.0,  # cellulase enzyme complex proxy
     "cellulase enzyme":    50000.0,
-    "lime":                 74.093,  # calcium hydroxide (Ca(OH)2)
+    "slaked lime":          74.093,  # calcium hydroxide (Ca(OH)2)
     "calcium hydroxide":    74.093,
     "syrup":               180.16,   # glucose/fructose mixture proxy
     "condensate":           18.015,  # mostly water
