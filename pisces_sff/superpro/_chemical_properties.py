@@ -6,7 +6,7 @@ Molecular weight lookup for chemical components extracted from SuperPro.
 Two-tier approach:
   1. Fast local dictionary: 200+ common bioprocess chemicals, no network needed.
   2. PubChem REST batch query: fallback for anything not in the local dict,
-     results cached to mw_cache.json in the same directory.
+     results cached to mw_cache.json in the platform user-cache directory.
 
 Public entry point
 ──────────────────
@@ -29,8 +29,33 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Cache file lives alongside this module
-_CACHE_PATH = os.path.join(os.path.dirname(__file__), "mw_cache.json")
+
+def _default_cache_path() -> str:
+    """Return a user-writable path for the PubChem MW cache.
+
+    Uses the platform-appropriate user cache directory:
+    - Windows: ``%LOCALAPPDATA%\\pisces_sff``
+    - macOS/Linux: ``~/.cache/pisces_sff``
+
+    Falls back to a ``mw_cache.json`` file next to this module if the
+    user-cache directory cannot be determined or created.
+    """
+    try:
+        if os.name == "nt":
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        else:
+            base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+                os.path.expanduser("~"), ".cache"
+            )
+        cache_dir = os.path.join(base, "pisces_sff")
+        os.makedirs(cache_dir, exist_ok=True)
+        return os.path.join(cache_dir, "mw_cache.json")
+    except Exception:
+        return os.path.join(os.path.dirname(__file__), "mw_cache.json")
+
+
+# Cache file in a user-writable location (not next to the installed module)
+_CACHE_PATH = _default_cache_path()
 
 # PubChem PUG-REST batch endpoint (POST, returns JSON)
 _PUBCHEM_URL = "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/property/MolecularWeight/JSON"

@@ -266,7 +266,9 @@ the local dictionary in `pisces_sff/superpro/_chemical_properties.py`.
 
 ## Output Format
 
-The output is a valid SFF v0.0.2 JSON document. See the
+The output is a valid SFF JSON document. The schema version defaults to
+`"0.0.2"`, but can be set to any supported version (e.g. `"0.0.3"`) via the
+`schema_version` parameter. See the
 [SFF schema](https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format/)
 for the full specification. The file can be loaded directly in
 [Project Pisces](https://www.projectpisces.org) or processed programmatically:
