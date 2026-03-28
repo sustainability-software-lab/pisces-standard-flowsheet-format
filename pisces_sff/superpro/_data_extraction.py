@@ -341,14 +341,35 @@ def extract_streams(doc) -> list[dict]:
         for comp_name in comp_names:
             mol_frac  = _get_stream_var(doc, stream_name, _VID_COMP_MOLE_FRAC, comp_name)
             mass_frac = _get_stream_var(doc, stream_name, _VID_COMP_MASS_FRAC, comp_name)
-            frac = mol_frac if isinstance(mol_frac, (int, float)) else (
-                   mass_frac if isinstance(mass_frac, (int, float)) else 0.0)
-            composition.append({
-                "component_name": comp_name,
-                "mol_fraction":   float(frac),
-                "phase":          "l",
-            })
 
+            # Only treat COM mole fraction as a true mol fraction; do not silently
+            # substitute mass fraction into the "mol_fraction" field.
+            if isinstance(mol_frac, (int, float)):
+                mol_fraction = float(mol_frac)
+            else:
+                mol_fraction = 0.0
+                if isinstance(mass_frac, (int, float)):
+                    # Preserve available mass-fraction information without
+                    # mislabeling it as a mol fraction.
+                    log.warning(
+                        "Stream %s component %s has mass fraction %r but no mole "
+                        "fraction; exposing mass fraction separately and setting "
+                        "mol_fraction=0.0.",
+                        stream_name,
+                        comp_name,
+                        mass_frac,
+                    )
+
+            comp_entry = {
+                "component_name": comp_name,
+                "mol_fraction":   mol_fraction,
+                "phase":          "l",
+            }
+
+            if isinstance(mass_frac, (int, float)):
+                comp_entry["mass_fraction"] = float(mass_frac)
+
+            composition.append(comp_entry)
         is_input  = _get_stream_var(doc, stream_name, _VID_STREAM_IS_INPUT)  \
                     if _VID_STREAM_IS_INPUT  is not None else None
         is_output = _get_stream_var(doc, stream_name, _VID_STREAM_IS_OUTPUT) \
