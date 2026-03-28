@@ -132,7 +132,12 @@
         },
         "batch_time_s": {
           "type": "number",
-          "description": "Batch cycle time or continuous operating time per period (seconds)."
+          "description": "Deprecated: use cycle_time_s instead. For backward compatibility, represents batch cycle time or continuous operating time per period (seconds), depending on is_batch_mode.",
+          "deprecated": true
+        },
+        "cycle_time_s": {
+          "type": "number",
+          "description": "Cycle time (seconds). For batch processes, this is the batch cycle time; for continuous processes, this is the operating time per accounting period."
         },
         "number_of_batches_per_year": {
           "type": "number",
