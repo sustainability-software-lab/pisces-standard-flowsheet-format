@@ -33,14 +33,7 @@ jobs:
           pip install mkdocs-material
 
       - name: Build site
-        run: mkdocs build --site-dir public
-
-      - name: Copy schema to public
-        run: |
-          # Copy the schema folder entirely
-          cp -r schema public/
-          # Copy the latest schema as schema.json in the root
-          cp schema/schema_v_0.0.2.json public/schema.json
+        run: mkdocs build --strict --site-dir public
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4

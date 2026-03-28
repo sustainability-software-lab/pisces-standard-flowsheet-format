@@ -27,7 +27,7 @@ With SFF, you can serialize a full chemical or biological process design—inclu
 
 To get started using SFF in your applications, check out the [Schema Reference](schema_reference.md) to understand the structure of an SFF JSON document. You can also view the full raw schema on the [Full JSON Schema](full_schema.md) page.
 
-If you prefer to programmatically pull the most recent schema, you can fetch it directly via our GitHub pages deployment URL: `https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format/schema.json`
+If you prefer to programmatically pull the most recent schema, you can fetch it directly via our GitHub pages deployment URL: `https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format-new/schema.json`
 
 All versions of the schema are available under the `schema/` directory, for example: <a href="schema/schema_v_0.0.2.json" download="schema_v_0.0.2.json">schema/schema_v_0.0.2.json</a>.
 
@@ -47,7 +47,7 @@ An SFF document is a simple JSON file that adheres to our strict schema. An expo
 }
 ```
 
-Check out our [GitHub repository](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format) for full examples from different bioindustrial models.
+Check out our [GitHub repository](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new) for full examples from different bioindustrial models.
 
 ---
 

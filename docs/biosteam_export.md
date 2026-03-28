@@ -14,8 +14,8 @@ pisces_sff/
 ## Installation
 
 ```bash
-git clone https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format.git
-cd pisces-standard-flowsheet-format
+git clone https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new.git
+cd pisces-standard-flowsheet-format-new
 pip install -e ".[biosteam]"
 ```
 
@@ -77,4 +77,4 @@ Pre-exported SFF files are available in `exported_flowsheets/bioindustrial_park/
 
 ## Adding Support for Other Simulators
 
-The SFF schema is simulator-agnostic. To add export support for another simulator (e.g., Aspen Plus), create a new module in the repository root or as a new subpackage under `pisces_sff/`, implementing a function that produces JSON conforming to [`schema/schema_v_0.0.2.json`](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/schema/schema_v_0.0.2.json).
+The SFF schema is simulator-agnostic. To add export support for another simulator (e.g., Aspen Plus), create a new module in the repository root or as a new subpackage under `pisces_sff/`, implementing a function that produces JSON conforming to [`schema/schema_v_0.0.2.json`](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new/blob/main/schema/schema_v_0.0.2.json).
