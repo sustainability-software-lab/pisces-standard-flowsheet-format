@@ -225,10 +225,10 @@ UNIT_TYPE_MAP: dict[str, str] = {
 # A rule fires when ANY of its keywords is a substring of the normalised type.
 #
 KEYWORD_RULES: list[tuple[list[str], str]] = [
+    (["ion exchange chrom"], "ChromatographyIonExchange"),
     (["chromatograph", "hplc", "size exclusion", "affinity chrom",
       "reversed phase", "normal phase"],
      "Chromatography"),
-    (["ion exchange chrom"], "ChromatographyIonExchange"),
     (["filtrat", "diafilt", "microfilt", "ultrafilt", "nanofilt",
       "reverse osmosis", "dead-end", "cross-flow", "membrane filtrat", "clarif"],
      "Filtration"),
