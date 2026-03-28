@@ -520,7 +520,6 @@ _LOCAL_MW: dict[str, float] = {
     "dap":                      132.06,
     "monoammonium phosphate":   115.03,
     "map":                      115.03,
-    "triple superphosphate":    736.94,
     # Rare earth oxides
     "lanthanum oxide":          325.82,
     "la2o3":                    325.82,
