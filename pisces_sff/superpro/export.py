@@ -36,6 +36,7 @@ def export_superpro_flowsheet_sff(
     metadata: dict | None = None,
     run_balances: bool = True,
     enrich_molar_flows: bool = True,
+    schema_version: str = "0.0.2",
     validate: bool = True,
     verbose: bool = True,
 ) -> dict:
@@ -62,6 +63,11 @@ def export_superpro_flowsheet_sff(
             the composition and a built-in molecular weight database (local
             dict + optional PubChem fallback for unknowns). This adds
             ``total_molar_flow`` to each stream's ``stream_properties``.
+        schema_version:
+            Target SFF schema version to embed in the output document and
+            validate against (e.g. ``"0.0.2"`` or ``"0.0.3"``). Defaults to
+            ``"0.0.2"``. Set to ``"0.0.3"`` when the v0.0.3 schema is
+            available and the batch-process fields are populated.
         validate:
             If True (default), validate the generated SFF document against
             the JSON schema before writing. Set to False only if you are
@@ -139,7 +145,7 @@ def export_superpro_flowsheet_sff(
 
     if verbose:
         print("Translating to SFF format ...")
-    sff_doc, warnings = translate(raw)
+    sff_doc, warnings = translate(raw, schema_version=schema_version)
 
     if warnings and verbose:
         print(f"\n{len(warnings)} conversion warning(s):")
@@ -157,7 +163,7 @@ def export_superpro_flowsheet_sff(
             f"  Product: {meta.get('product_name', '(not set)')}"
         )
 
-    write_sff(sff_doc, output_path, validate=validate)
+    write_sff(sff_doc, output_path, validate=validate, schema_version=schema_version)
 
     if verbose:
         print(f"\nDone. SFF written to: {output_path.resolve()}")

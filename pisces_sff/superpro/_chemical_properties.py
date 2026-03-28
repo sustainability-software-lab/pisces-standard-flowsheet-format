@@ -863,7 +863,7 @@ def enrich_molar_flows(raw: dict) -> dict:
             (c.get("mol_fraction", 0) / frac_sum) * mw_map[c["component_name"]]
             for c in composition
         )
-        molar_flow_kmol_h = mass_flow_kg_h / avg_mw_mole / 1000.0
+        molar_flow_kmol_h = mass_flow_kg_h / avg_mw_mole
 
         props["total_molar_flow"] = {
             "value": round(molar_flow_kmol_h, 4),

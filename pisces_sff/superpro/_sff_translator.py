@@ -2,11 +2,10 @@
 _sff_translator.py
 ──────────────────
 Translates the raw extraction dict (output of _data_extraction.extract_all)
-into a valid SFF v0.0.2 JSON document.
+into a valid SFF JSON document.
 
 SFF schema reference:
   https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format/
-  Schema file: schema/schema_v_0.0.2.json
 
 The translator is purposefully lenient — missing or None values are either
 omitted from the output (for optional fields) or given sensible defaults, so
@@ -20,17 +19,24 @@ from ._unit_type_map import map_unit_type
 
 log = logging.getLogger(__name__)
 
-SFF_VERSION = "0.0.2"
+DEFAULT_SFF_VERSION = "0.0.2"
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def translate(raw: dict) -> tuple[dict, list[dict]]:
+def translate(
+    raw: dict,
+    schema_version: str = DEFAULT_SFF_VERSION,
+) -> tuple[dict, list[dict]]:
     """
-    Translate the raw extraction dict into an SFF v0.0.2 document.
+    Translate the raw extraction dict into an SFF document.
 
     Args:
         raw: Output of _data_extraction.extract_all()
+        schema_version: Target SFF schema version string (e.g. ``"0.0.2"`` or
+            ``"0.0.3"``). This value is embedded in ``metadata.sff_version``
+            of the output document and should match the schema used to
+            validate it. Defaults to ``"0.0.2"``.
 
     Returns:
         (sff_document, warnings) where warnings is a list of
@@ -38,7 +44,7 @@ def translate(raw: dict) -> tuple[dict, list[dict]]:
     """
     warnings: list[dict] = []
 
-    metadata  = _build_metadata(raw.get("metadata", {}), warnings)
+    metadata  = _build_metadata(raw.get("metadata", {}), warnings, schema_version)
     units     = [_translate_unit(u, warnings) for u in raw.get("units", [])]
     streams   = [_translate_stream(s, warnings) for s in raw.get("streams", [])]
     utilities = _translate_utilities(raw.get("utilities", {}), warnings)
@@ -75,7 +81,7 @@ _CURRENCY_NAME_TO_CODE: dict[str, str] = {
 }
 
 
-def _build_metadata(meta: dict, warnings: list) -> dict:
+def _build_metadata(meta: dict, warnings: list, schema_version: str) -> dict:
     tea_year_raw = meta.get("TEA_year_raw")
     try:
         tea_year = int(tea_year_raw) if tea_year_raw is not None else None
@@ -83,7 +89,7 @@ def _build_metadata(meta: dict, warnings: list) -> dict:
         tea_year = None
 
     out: dict[str, Any] = {
-        "sff_version": SFF_VERSION,
+        "sff_version": schema_version,
         "TEA_year":    tea_year or meta.get("TEA_year") or _current_year(),
     }
 
