@@ -4,7 +4,7 @@ The Standard Flowsheet Format (SFF) is a JSON document strictly adhering to our 
 
 ## Core Properties
 
-Every valid SFF JSON object contains four essential properties at its root:
+Every valid SFF JSON object contains five essential properties at its root:
 
 1. `metadata`: Contextual data about the process simulation.
 2. `units`: The unit operations (nodes).
