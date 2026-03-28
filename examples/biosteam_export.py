@@ -16,5 +16,5 @@ sys = sc.create_sugarcane_to_ethanol_system()
 sys.simulate()
 sys.diagram('cluster')
 
-export_biosteam_flowsheet_sff(sys, "sugarcane_succinic.json")
+export_biosteam_flowsheet_sff(sys, "sugarcane_to_ethanol.json")
 

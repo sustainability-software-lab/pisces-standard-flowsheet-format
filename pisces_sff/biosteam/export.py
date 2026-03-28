@@ -8,15 +8,12 @@
 
 import inspect
 import sys
-import re
 
 from pisces_sff.core.io import write_sff
 
-from types import FunctionType
-
 from thermosteam import Reaction, ReactionSet, SeriesReaction, ParallelReaction
 from thermosteam.reaction._reaction import get_stoichiometric_string
-from biosteam import PowerUtility, System
+from biosteam import PowerUtility
 
 #%% Export function
 
@@ -111,10 +108,10 @@ def export_biosteam_flowsheet_sff(sys, file_path):
                    "id": ou_agent.ID,
                    "temperature": {"value": ou_agent.T, "units": "K"},
                    "pressure": {"value": ou_agent.P, "units": "Pa"},
-                   "price": {"value": ou_agent.price or ng_price, "units": "$/kg",
-                   "units_for_utility_results": "kg/h",},  # !!! update
+                   "price": {"value": ou_agent.price or ng_price, "units": "$/kg"},
                    },
-              "composition": get_composition(ou_agent)
+              "composition": get_composition(ou_agent),
+              "units_for_utility_results": "kg/h",
               }
         other_utilities.append(ou)
     
@@ -347,7 +344,8 @@ def get_design_input_specs(unit): # !!! update
     for p in param_names:
         if hasattr(unit, p):
             try:
-                exec(f'dis[p] = unit.{p}')
-            except:
-                breakpoint()
+                dis[p] = getattr(unit, p)
+            except Exception:
+                # Skip parameters that cannot be accessed safely
+                continue
     return dis
