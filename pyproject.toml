@@ -24,5 +24,11 @@ biosteam = [
 where = ["."]
 include = ["pisces_sff*"]
 
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.data-files]
+"schema" = ["schema/*.json"]
+
 [tool.setuptools.package-data]
 "pisces_sff.schemas" = ["*.json"]
