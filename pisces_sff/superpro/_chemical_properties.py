@@ -424,7 +424,7 @@ _LOCAL_MW: dict[str, float] = {
     "xanthan gum":           1000000.0,
     "carrageenan":            400000.0,
     "agar":                   120000.0,
-    "starch":                 500000.0,  # repeat-unit ladder; practical proxy
+    "starch (polymer)":       500000.0,  # repeat-unit ladder; practical proxy
     "amylose":                500000.0,
     "amylopectin":           1000000.0,
     "dextrin":                 50000.0,
