@@ -524,7 +524,11 @@
                 "type": "object",
                 "properties": {
                   "value": { "type": "number", "default": 0 },
-                  "units": { "type": "string", "default": "$/kg" }
+                  "units": { "type": "string", "default": "$/kg" },
+                  "units_for_utility_results": {
+                    "type": "string",
+                    "description": "Units (e.g., 'kg/h') for the values associated with this utility in unit operation utility results."
+                  }
                 }
               },
               "units_for_utility_results": {
