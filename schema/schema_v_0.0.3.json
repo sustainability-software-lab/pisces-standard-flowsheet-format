@@ -144,7 +144,11 @@
         },
         "batch_throughput_kg": {
           "type": "number",
-          "description": "Throughput per batch (kg/batch) or per hour for continuous processes (kg/h)."
+          "description": "Throughput per batch for batch processes (kg/batch)."
+        },
+        "continuous_throughput_kgh": {
+          "type": "number",
+          "description": "Throughput per hour for continuous processes (kg/h)."
         }
       },
       "required": [
