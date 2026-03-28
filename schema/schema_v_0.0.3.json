@@ -14,7 +14,8 @@
         },
         "TEA_currency": {
           "type": "string",
-          "description": "Currency used to report cost results.",
+          "description": "Currency used to report cost results. Currently only 'USD' is supported; all TEA summary fields use USD-denominated values (indicated by the '_usd' suffix).",
+          "enum": ["USD"],
           "default": "USD"
         },
         "TEA_year": {
@@ -539,10 +540,6 @@
                     "description": "Units (e.g., 'kg/h') for the values associated with this utility in unit operation utility results."
                   }
                 }
-              },
-              "units_for_utility_results": {
-                "type": "string",
-                "description": "Units (e.g., 'kg/h') for the values associated with this utility in unit operation utility results."
               }
             },
             "required": ["id"]
