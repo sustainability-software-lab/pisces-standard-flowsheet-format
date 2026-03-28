@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "pisces-sff"
+version = "0.0.2"
+description = "Standard Flowsheet Format (SFF) — a JSON-based standard for serializing chemical process flowsheets"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = ["jsonschema>=4.0"]
+
+[project.urls]
+Homepage = "https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new"
+Repository = "https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new"
+
+[project.optional-dependencies]
+biosteam = [
+    "biosteam",
+    "thermosteam",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pisces_sff*"]
