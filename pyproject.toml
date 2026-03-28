@@ -19,6 +19,9 @@ biosteam = [
     "biosteam",
     "thermosteam",
 ]
+superpro = [
+    "pywin32",  # Windows only — SuperPro Designer must also be installed separately
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
