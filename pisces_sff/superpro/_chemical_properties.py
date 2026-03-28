@@ -716,26 +716,8 @@ def _pubchem_batch(names: list[str]) -> dict[str, float]:
     if not names:
         return {}
     results: dict[str, float] = {}
-    for i in range(0, len(names), _PUBCHEM_MAX_BATCH):
-        batch = names[i : i + _PUBCHEM_MAX_BATCH]
-        payload = urllib.parse.urlencode({"name": ",".join(batch)}).encode("utf-8")
-        try:
-            req = urllib.request.Request(
-                _PUBCHEM_URL,
-                data=payload,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            with urllib.request.urlopen(req, timeout=_PUBCHEM_TIMEOUT_S) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            props = data.get("PropertyTable", {}).get("Properties", [])
-            # PubChem doesn't echo back the query name — only CID + MW.
-            # We can't directly match back to our name list here.
-            # Instead we rely on per-name single queries below.
-            log.debug("PubChem batch returned %d entries for %d names", len(props), len(batch))
-        except Exception as exc:
-            log.warning("PubChem batch failed: %s", exc)
 
-    # Fallback: per-name single queries (slower but reliable mapping)
+    # Per-name single queries (slower but reliable mapping)
     for name in names:
         encoded = urllib.parse.quote(name, safe="")
         url = (
