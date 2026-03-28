@@ -36,6 +36,7 @@ def export_superpro_flowsheet_sff(
     metadata: dict | None = None,
     run_balances: bool = True,
     enrich_molar_flows: bool = True,
+    validate: bool = True,
     verbose: bool = True,
 ) -> dict:
     """
@@ -61,6 +62,11 @@ def export_superpro_flowsheet_sff(
             the composition and a built-in molecular weight database (local
             dict + optional PubChem fallback for unknowns). This adds
             ``total_molar_flow`` to each stream's ``stream_properties``.
+        validate:
+            If True (default), validate the generated SFF document against
+            the JSON schema before writing. Set to False only if you are
+            intentionally producing a non-conformant file (e.g. for debugging
+            incomplete models).
         verbose:
             If True (default), print progress messages and any conversion
             warnings to stdout.
@@ -71,6 +77,9 @@ def export_superpro_flowsheet_sff(
     Raises:
         RuntimeError:
             If not running on Windows or if pywin32 is not installed.
+        jsonschema.ValidationError:
+            If ``validate=True`` and the generated SFF document does not
+            conform to the target schema.
         _com_interface.SuperProCOMError:
             If SuperPro Designer cannot open the .spf file.
     """
@@ -148,7 +157,7 @@ def export_superpro_flowsheet_sff(
             f"  Product: {meta.get('product_name', '(not set)')}"
         )
 
-    write_sff(sff_doc, output_path, validate=False)
+    write_sff(sff_doc, output_path, validate=validate)
 
     if verbose:
         print(f"\nDone. SFF written to: {output_path.resolve()}")
