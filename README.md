@@ -4,5 +4,11 @@ This format captures unit operations (including design and cost results, utility
 
 ![Simplified visual representation of the SFF schema](https://github.com/sarangbhagwat/SFF/blob/main/images/SFF_visual_representation.png)
 
+## Schema Versions
 
+| Version | File | Status |
+|---------|------|--------|
+| 0.0.3 | [schema_v_0.0.3.json](schema/schema_v_0.0.3.json) | **Latest** |
+| 0.0.2 | [schema_v_0.0.2.json](schema/schema_v_0.0.2.json) | Deprecated (4 structural bugs — see PR description) |
+| 0.0.1 | [schema_v_0.0.1.json](schema/schema_v_0.0.1.json) | Initial release |
 

@@ -1,0 +1,561 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Standard Flowsheet Format (SFF) v0.0.3",
+  "description": "A standard, machine-readable representation of a process flowsheet designed for interoperability and data exchange across process simulators (BioSTEAM, SuperPro Designer, Aspen Plus, and others). It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "description": "Information about the source, context, version, and techno-economic summary of the flowsheet.",
+      "type": "object",
+      "properties": {
+        "sff_version": {
+          "type": "string",
+          "description": "Version of the SFF schema used, e.g., '0.0.3'."
+        },
+        "TEA_currency": {
+          "type": "string",
+          "description": "Currency used to report cost results.",
+          "default": "USD"
+        },
+        "TEA_year": {
+          "type": "number",
+          "description": "TEA year used to report cost results."
+        },
+        "source_doi": {
+          "type": "string",
+          "description": "Digital Object Identifier (DOI) of the source publication, if any."
+        },
+        "product_name": {
+          "description": "The primary product(s) of the process. Accepts a single string or an array of strings for co-product processes.",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "feedstock": {
+          "type": "string",
+          "description": "The primary feedstock or raw material input to the process."
+        },
+        "organism": {
+          "type": "string",
+          "description": "The organism used for production, if applicable."
+        },
+        "process_title": {
+          "type": "string",
+          "description": "A descriptive title for the process."
+        },
+        "flowsheet_designers": {
+          "type": "string",
+          "description": "Name(s) of the authors who designed this flowsheet."
+        },
+        "relevant_patents": {
+          "type": "array",
+          "description": "Patents associated with this process, if any.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string", "description": "Patent number or short label." },
+              "url": { "type": "string", "description": "URL to the patent record." }
+            },
+            "required": ["label"]
+          }
+        },
+
+        "annual_throughput_kg_yr": {
+          "type": "number",
+          "description": "Annual throughput of the main product stream (kg/yr)."
+        },
+        "total_purchase_cost_usd": {
+          "type": "number",
+          "description": "Total equipment purchase cost (USD)."
+        },
+        "DFC_usd": {
+          "type": "number",
+          "description": "Direct Fixed Capital — total installed plant cost (USD)."
+        },
+        "annual_revenue_usd": {
+          "type": "number",
+          "description": "Annual product revenue (USD/yr)."
+        },
+        "annual_operating_cost_usd": {
+          "type": "number",
+          "description": "Annual total operating cost (USD/yr)."
+        },
+        "annual_electricity_cost_usd": {
+          "type": "number",
+          "description": "Annual electricity cost (USD/yr)."
+        },
+        "annual_labor_cost_usd": {
+          "type": "number",
+          "description": "Annual labor cost (USD/yr)."
+        },
+        "annual_waste_treatment_usd": {
+          "type": "number",
+          "description": "Annual waste treatment and disposal cost (USD/yr)."
+        },
+        "gross_profit_usd": {
+          "type": "number",
+          "description": "Annual gross profit = revenue − OPEX (USD/yr)."
+        },
+        "net_profit_usd": {
+          "type": "number",
+          "description": "Annual net profit after taxes (USD/yr)."
+        },
+        "gross_margin_pct": {
+          "type": "number",
+          "description": "Gross margin as a percentage (%)."
+        },
+        "payback_period_years": {
+          "type": "number",
+          "description": "Simple payback period (years)."
+        },
+        "IRR_before_taxes_pct": {
+          "type": "number",
+          "description": "Internal Rate of Return before taxes (%)."
+        },
+        "IRR_after_taxes_pct": {
+          "type": "number",
+          "description": "Internal Rate of Return after taxes (%)."
+        },
+        "NPV_usd": {
+          "type": "number",
+          "description": "Net Present Value (USD)."
+        },
+        "ROI_pct": {
+          "type": "number",
+          "description": "Return on Investment (%)."
+        },
+
+        "is_batch_mode": {
+          "type": "boolean",
+          "description": "Whether the process is operated in batch mode (true) or continuous mode (false)."
+        },
+        "batch_time_s": {
+          "type": "number",
+          "description": "Batch cycle time or continuous operating time per period (seconds)."
+        },
+        "number_of_batches_per_year": {
+          "type": "number",
+          "description": "Number of batches produced per year."
+        },
+        "annual_operating_time_s": {
+          "type": "number",
+          "description": "Annual available operating time (seconds/yr)."
+        },
+        "batch_throughput_kg": {
+          "type": "number",
+          "description": "Throughput per batch (kg/batch) or per hour for continuous processes (kg/h)."
+        }
+      },
+      "required": [
+        "sff_version"
+      ]
+    },
+
+    "units": {
+      "description": "An array of all unit operations, representing the nodes of the process graph.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for this unit operation."
+          },
+          "unit_type": {
+            "type": "string",
+            "description": "A short description of the type of unit operation (e.g., 'Distillation', 'Solids centrifugation')."
+          },
+          "viz_label": {
+            "type": "string",
+            "description": "Human-readable display label for canvas visualization. Auto-populated from unit_type or id if absent. Separate from 'id' (machine-readable unique key)."
+          },
+          "design_input_specs": {
+            "type": "object",
+            "description": "Design input specifications for the unit operation. If provided, these specifications -- combined with the provided compositions of streams entering this unit operation and the method described in 'design_simulation_method' -- should be sufficient to generate all design results, cost results, utility results, and compositions of all streams effluent from this unit operation."
+          },
+          "design_simulation_method": {
+            "type": "string",
+            "description": "Design and simulation method for the unit operation (e.g., for distillation, this could be 'McCabe-Thiele', 'Fenske-Underwood-Gilliland', or 'MESH'). May be a URL pointing to the implementing class in source control."
+          },
+          "thermo_property_package": {
+            "type": "object",
+            "description": "A thermodynamic property package, with qualitative descriptions of property estimation methods.",
+            "properties": {
+              "id": { "type": "string" },
+              "mixture": {
+                "type": "string",
+                "description": "Method for computing mixture properties (e.g., 'ideal mixture').",
+                "default": "Ideal"
+              },
+              "gamma": {
+                "type": "string",
+                "description": "Method for computing activity coefficients (e.g., 'UNIFAC').",
+                "default": "Ideal"
+              },
+              "phi": {
+                "type": "string",
+                "description": "Method for computing fugacity coefficients (e.g., 'Ideal').",
+                "default": "Ideal"
+              },
+              "PCF": {
+                "type": "string",
+                "description": "Method for computing Poynting correction factors (e.g., 'None').",
+                "default": "None"
+              }
+            },
+            "additionalProperties": { "type": "string" }
+          },
+          "reactions": {
+            "type": "array",
+            "description": "Reactions occurring in this unit operation, each with the index (determining the order in which reactions occur, with identical index for parallel reactions), conversion, and the reactant for conversion.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "equation": { "type": "string" },
+                "reactant": { "type": "string" },
+                "conversion": { "type": "number" }
+              }
+            }
+          },
+          "design_results": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Design results for this unit operation. This object, combined with design_input_specs, should provide a full design description for this unit operation (to the highest level of detail modeled)."
+          },
+          "purchase_costs": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Equipment purchase cost results for this unit operation."
+          },
+          "installed_costs": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Equipment installed (purchase + installation) cost results for this unit operation."
+          },
+          "utility_consumption_results": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Heating, cooling, and power utility demand results for this unit operation. Keys must refer to utility IDs declared in heat_utilities or power_utilities."
+          },
+          "utility_production_results": {
+            "type": "object",
+            "additionalProperties": { "type": "number" },
+            "description": "Heating, cooling, and power utility production results for this unit operation. Keys must refer to utility IDs declared in heat_utilities or power_utilities."
+          }
+        },
+        "required": [
+          "id",
+          "unit_type"
+        ]
+      }
+    },
+
+    "streams": {
+      "description": "An array of process streams that connect the units, representing the edges of the process graph.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for this stream."
+          },
+          "source_unit_id": {
+            "type": "string",
+            "description": "The ID of the unit operation from which this stream originates. Use 'None' if this stream enters the process boundary (i.e., it is a feed with no upstream unit)."
+          },
+          "sink_unit_id": {
+            "type": "string",
+            "description": "The ID of the unit operation that this stream enters. Use 'None' if this stream exits the process boundary (i.e., it is a product or waste with no downstream unit)."
+          },
+          "stream_type": {
+            "type": "string",
+            "enum": ["feed", "product", "waste", "internal"],
+            "description": "Semantic classification of the stream's role in the process. 'feed' = enters from outside the process boundary (raw material or utility input); 'product' = leaves as a saleable product; 'waste' = leaves as effluent, emissions, or non-saleable byproduct; 'internal' = flows between two units within the process."
+          },
+          "viz_label": {
+            "type": "string",
+            "description": "Human-readable display label for canvas visualization. Auto-populated from stream id if absent. Separate from 'id' (machine-readable unique key)."
+          },
+          "stream_description": {
+            "type": "string",
+            "description": "A qualitative description of the stream from the perspective of either the source (e.g., 'Centrifugate') or sink unit operation (e.g., 'Make-up solvent')."
+          },
+          "price": {
+            "type": "object",
+            "description": "Purchase or sale price of the stream material.",
+            "properties": {
+              "value": { "type": "number" },
+              "units": { "type": "string", "default": "$/kg" }
+            }
+          },
+          "stream_properties": {
+            "description": "Structured object specifying the bulk physical properties of the stream.",
+            "type": "object",
+            "properties": {
+              "total_mass_flow": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "kg/h" }
+                }
+              },
+              "total_volumetric_flow": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "m3/h" }
+                }
+              },
+              "total_molar_flow": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "kmol/h" }
+                }
+              },
+              "temperature": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "K" }
+                }
+              },
+              "pressure": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "Pa" }
+                }
+              }
+            },
+            "required": [
+              "total_mass_flow",
+              "total_volumetric_flow",
+              "temperature",
+              "pressure"
+            ]
+          },
+          "composition": {
+            "description": "An array detailing the chemical composition of the stream. Each entry specifies the phase, component name (matching an id in the 'chemicals' array if present), and mole fraction within that phase.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": {
+                  "type": "string",
+                  "description": "Phase of the component (e.g., 'l' for liquid, 'g' for gas, 's' for solid).",
+                  "default": "l"
+                },
+                "component_name": { "type": "string" },
+                "mol_fraction": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": ["component_name", "mol_fraction"]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "source_unit_id",
+          "sink_unit_id"
+        ]
+      }
+    },
+
+    "chemicals": {
+      "description": "An array of all pure chemical species involved in this process flowsheet. Optional — omit if component identities are fully encoded in the composition arrays.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for this chemical, used as 'component_name' in stream composition arrays."
+          },
+          "registry_id": {
+            "type": "string",
+            "description": "CAS number or SMILES string."
+          }
+        },
+        "required": ["id", "registry_id"],
+        "additionalProperties": true
+      }
+    },
+
+    "heat_utilities": {
+      "description": "An array of all heating and cooling utility types involved in this process flowsheet. Combustion-based utility types (e.g., natural gas) should be specified in 'other_utilities' instead.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "properties": {
+            "type": "object",
+            "description": "Physical and economic properties of this heating/cooling utility agent.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "A unique identifier for this utility type (e.g., 'high-pressure steam')."
+              },
+              "temperature": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "K" }
+                }
+              },
+              "pressure": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "Pa" }
+                }
+              },
+              "regeneration_price": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number", "default": 0 },
+                  "units": { "type": "string", "default": "$/kmol" }
+                }
+              },
+              "heat_transfer_price": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number", "default": 0 },
+                  "units": { "type": "string", "default": "$/kJ" }
+                }
+              },
+              "heat_transfer_efficiency": {
+                "type": "number",
+                "default": 1
+              },
+              "temperature_limit": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "K" }
+                }
+              }
+            },
+            "required": ["id", "temperature", "pressure"]
+          },
+          "composition": {
+            "description": "An array detailing the chemical components of the heating or cooling utility agent.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": { "type": "string", "default": "l" },
+                "component_name": { "type": "string" },
+                "mol_fraction": { "type": "number", "minimum": 0, "maximum": 1 }
+              },
+              "required": ["component_name", "mol_fraction"]
+            }
+          },
+          "units_for_utility_results": {
+            "type": "string",
+            "description": "Units (e.g., 'kJ/h') for the values associated with this utility in the 'utility_consumption_results' and 'utility_production_results' of unit operations."
+          }
+        },
+        "required": ["properties", "units_for_utility_results"]
+      }
+    },
+
+    "power_utilities": {
+      "description": "An array of all power utility types involved in this process flowsheet.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "A unique identifier for this power utility type (e.g., 'Marginal grid electricity')."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "number", "default": 0 },
+              "units": { "type": "string", "default": "$/kWh" }
+            }
+          },
+          "units_for_utility_results": {
+            "type": "string",
+            "description": "Units (e.g., 'kW') for the values associated with this utility in the 'utility_consumption_results' and 'utility_production_results' of unit operations."
+          }
+        },
+        "required": ["id", "units_for_utility_results"]
+      }
+    },
+
+    "other_utilities": {
+      "description": "An array of all other utility types involved in this process flowsheet. Combustion-based utility types (e.g., natural gas) may be specified here.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "properties": {
+            "type": "object",
+            "description": "Physical and economic properties of this utility.",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "A unique identifier for this utility type (e.g., 'natural gas')."
+              },
+              "temperature": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "K" }
+                }
+              },
+              "pressure": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number" },
+                  "units": { "type": "string", "default": "Pa" }
+                }
+              },
+              "price": {
+                "type": "object",
+                "properties": {
+                  "value": { "type": "number", "default": 0 },
+                  "units": { "type": "string", "default": "$/kg" }
+                }
+              },
+              "units_for_utility_results": {
+                "type": "string",
+                "description": "Units (e.g., 'kg/h') for the values associated with this utility in unit operation utility results."
+              }
+            },
+            "required": ["id"]
+          },
+          "composition": {
+            "description": "An array detailing the chemical components of the utility.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "phase": { "type": "string", "default": "l" },
+                "component_name": { "type": "string" },
+                "mol_fraction": { "type": "number", "minimum": 0, "maximum": 1 }
+              },
+              "required": ["component_name", "mol_fraction"]
+            }
+          }
+        },
+        "required": ["properties"]
+      }
+    }
+  },
+
+  "required": [
+    "metadata",
+    "units",
+    "streams"
+  ]
+}
