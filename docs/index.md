@@ -5,7 +5,6 @@ Welcome to the **Standard Flowsheet Format (SFF)** documentation. SFF is a unive
 <div style="text-align: center; margin: 2rem 0;">
   <a href="schema_reference/" class="md-button md-button--primary" style="margin-right: 1rem;">View Schema Reference</a>
   <a href="full_schema/" class="md-button" style="margin-right: 1rem;">View Full JSON Schema</a>
-  <a href="schema.json" download="schema.json" class="md-button">Download Latest JSON Schema</a>
 </div>
 
 ![Simplified visual representation of the SFF schema](images/SFF_visual_representation.png)
