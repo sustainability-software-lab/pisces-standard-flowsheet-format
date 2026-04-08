@@ -15,6 +15,7 @@ theme:
 nav:
   - Home: index.md
   - BioSTEAM Export: biosteam_export.md
+  - Contributions: contributions.md
   - Extending: extending.md
   - Schema Reference: schema_reference.md
   - Full JSON Schema: full_schema.md
