@@ -1,6 +1,6 @@
 # Standard Flowsheet Format (SFF)
 
-Welcome to the **Standard Flowsheet Format (SFF)** documentation. SFF is a universally interoperable file format for process designs, representing chemical processes as a directed graph.
+Welcome to the **Standard Flowsheet Format (SFF)** documentation. SFF is intended to be a universally interoperable file format for process flowsheets, representing them as a relational graph with rich, multi-level data for units, streams, utilities, chemicals, TEA assumptions, and other metadata.
 
 <div style="text-align: center; margin: 2rem 0;">
   <a href="schema_reference/" class="md-button md-button--primary" style="margin-right: 1rem;">View Schema Reference</a>
