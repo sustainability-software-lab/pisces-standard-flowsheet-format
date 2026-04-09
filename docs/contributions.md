@@ -1,8 +1,8 @@
-# Contributing to the development of the SFF
+# \# Contributing to the development of the SFF
 
 
 
-## Authors \& Acknowledgements
+## \## Authors \& Acknowledgements
 
 Authors of the PISCES Standard Flowsheet Format (SFF) include:
 
@@ -14,7 +14,7 @@ Authors of the PISCES Standard Flowsheet Format (SFF) include:
 
 
 
-### Contributing
+### \## Contributing
 
 (Formal ways to contribute coming soon!)
 
