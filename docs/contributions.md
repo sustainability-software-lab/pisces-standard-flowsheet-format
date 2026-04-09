@@ -1,8 +1,6 @@
-# \# Contributing to the development of the SFF
+# Contributing to the development of the SFF
 
-
-
-## \## Authors \& Acknowledgements
+## Authors \& Acknowledgements
 
 Authors of the PISCES Standard Flowsheet Format (SFF) include:
 
@@ -12,9 +10,6 @@ Authors of the PISCES Standard Flowsheet Format (SFF) include:
 * [Yuting Chen](https://eta.lbl.gov/people/yuting-chen) (built the LLM-based [literature-to-SFF extraction pipeline](https://projectpisces.org/?page=extraction) and contributed general expertise through discussions)
 * [Meili Gong](https://github.com/mglbleta) (contributed general expertise through discussions)
 
-
-
-### \## Contributing
+## Contributing
 
 (Formal ways to contribute coming soon!)
-
