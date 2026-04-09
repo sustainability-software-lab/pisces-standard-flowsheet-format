@@ -1,6 +1,6 @@
 # Contributing to the development of the SFF
 
-## Authors \& Acknowledgements
+## Authors & Acknowledgements
 
 Authors of the PISCES Standard Flowsheet Format (SFF) include:
 
