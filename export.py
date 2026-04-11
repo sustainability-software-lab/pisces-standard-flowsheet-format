@@ -17,6 +17,16 @@ from thermosteam import Reaction, ReactionSet, SeriesReaction, ParallelReaction
 from thermosteam.reaction._reaction import get_stoichiometric_string
 from biosteam import PowerUtility, System
 
+#%% Helpers
+
+def _safe_F_vol(stream):
+    """Return volumetric flow in m3/h, or None if thermosteam raises for a component."""
+    try:
+        return stream.F_vol
+    except Exception:
+        return None
+
+
 #%% Export function
 
 def export_biosteam_flowsheet_sff(sys, file_path):
@@ -64,7 +74,7 @@ def export_biosteam_flowsheet_sff(sys, file_path):
                   "stream_properties": {
                       "total_mass_flow": {"value": rs.F_mass, "units": "kg/h"},
                       "total_molar_flow": {"value": rs.F_mol, "units": "kmol/h"},
-                      "total_volumetric_flow": {"value": rs.F_vol, "units": "m3/h"},
+                      "total_volumetric_flow": {"value": _safe_F_vol(rs), "units": "m3/h"},
                       "temperature": {"value": rs.T, "units": "K"},
                       "pressure": {"value": rs.P, "units": "Pa"},
                       },
@@ -218,8 +228,8 @@ def get_reactions(unit): # !!! update -- fix order of reactions (potentially usi
     all_reactions = {rxn for rxn in u.__dict__.values() if isinstance(rxn, rxntypes)}
     reactions = []
     for rxn in tuple(all_reactions):
-        if hasattr(rxn, '_parent') or hasattr(rxn, '_parent_index'):
-            if rxn._parent in all_reactions: all_reactions.discard(rxn)
+        if hasattr(rxn, '_parent') and rxn._parent in all_reactions:
+            all_reactions.discard(rxn)
         elif hasattr(rxn, '_parent_index'):
             parent, index = rxn._parent_index
             if parent in all_reactions: all_reactions.discard(rxn)
