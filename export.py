@@ -14,6 +14,7 @@ import re
 from types import FunctionType
 
 from thermosteam import Reaction, ReactionSet, SeriesReaction, ParallelReaction
+from thermosteam import Chemical
 from thermosteam.reaction._reaction import get_stoichiometric_string
 from biosteam import PowerUtility, System
 
@@ -76,7 +77,29 @@ def export_biosteam_flowsheet_sff(sys, file_path):
                       # ]
                   }
         streams.append(stream)
+    
+    
+    ## ------ Chemicals ------ ##
+    chemicals = []
+    chems = list(s)[0].chemicals # !!! future: add support for multiple CompiledChemicals object (i.e., multiple sets of chemicals) within a single system
+    for i, c in zip(range(len(chems)), chems):
+        has_CAS_ID = False
+        try:
+            CAS_ID = c.CAS
+            Chemical(ID='temp_chem', search_ID=CAS_ID, CAS=CAS_ID)
+            has_CAS_ID = True
+        except:
+            pass
         
+        chemical = {"id": c.ID,
+                    "index": i,
+                    }
+        if has_CAS_ID:
+            chemical["registry_id"] = c.CAS
+        else:
+            chemical["formula"] = c.formula
+            chemical["molar_mass"] = c.MW
+        chemicals.append(chemical)
     ## ----- Utilities ----- ##
     
     heat_utilities = []
@@ -116,6 +139,7 @@ def export_biosteam_flowsheet_sff(sys, file_path):
     # Export
     flowsheet_to_export = {"units": units,
                            "streams": streams,
+                           "chemicals": chemicals,
                            "utilities": {"heat_utilities": heat_utilities,
                                           "power_utilities": power_utilities,
                                           "other_utilities": other_utilities}

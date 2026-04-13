@@ -317,11 +317,19 @@
           },
           "registry_id": {
             "type": "string",
-            "description": "CAS number or SMILES string."
+            "description": "CAS number or SMILES string. If not provided, 'formula' and 'MW' must be provided."
           },
           "index": {
             "type": "number",
             "description": "A unique index for this chemical; must be provided if 'reactions' include 'stoichiometry' and do not include 'equation'. Must match the ordering of 'stoichiometry'."
+          },
+          "formula": {
+            "type": "string",
+            "description": "Chemical formula (molecular or empirical; in either case, one mole of the substance must have been modeled to contain the number moles of each atom as stated in this formula)."
+          },
+          "molar_mass": {
+            "type": "number",
+            "description": "Molar mass (in grams)."
           }
         },
         "required": [
