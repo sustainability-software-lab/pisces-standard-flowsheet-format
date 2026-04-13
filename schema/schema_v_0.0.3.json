@@ -126,9 +126,6 @@
           },
           "design_results": {
             "type": "object",
-            "additionalProperties": {
-              "type": "number"
-            },
             "description": "Design results for this unit operation. This object, combined with design_input_specs, should provide a full design description for this unit operation (to the highest level of detail modeled)."
           },
           "purchase_costs": {
