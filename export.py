@@ -120,9 +120,9 @@ def export_biosteam_flowsheet_sff(sys, file_path):
     # Export
     flowsheet_to_export = {"units": units,
                            "streams": streams,
-                           "heat_utilities": heat_utilities,
-                           "power_utilities": power_utilities,
-                           "other_utilities": other_utilities,
+                           "utilities": {"heat_utilities": heat_utilities,
+                                          "power_utilities": power_utilities,
+                                          "other_utilities": other_utilities}
                            }
     try:
         with open(file_path, "w") as json_file:
