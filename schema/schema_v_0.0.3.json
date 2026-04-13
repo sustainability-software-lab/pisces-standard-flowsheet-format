@@ -119,7 +119,7 @@
                 "conversion": {
                   "type": "number"
                 },
-                "stoichiometry_vector": {
+                "stoichiometry": {
                 "type": "array"
                 }
               }
@@ -321,7 +321,7 @@
           },
           "index": {
             "type": "number",
-            "description": "A unique index for this chemical; must be provided if 'reactions' include 'stoichiometry_vector' and do not include 'equation'. Must match the ordering of 'stoichiometry_vector'."
+            "description": "A unique index for this chemical; must be provided if 'reactions' include 'stoichiometry' and do not include 'equation'. Must match the ordering of 'stoichiometry'."
           }
         },
         "required": [

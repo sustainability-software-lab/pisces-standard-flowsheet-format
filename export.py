@@ -229,7 +229,8 @@ def get_reactions(unit): # !!! update -- fix order of reactions (potentially usi
                 reaction = {"index": i,
                             "equation": get_equation(r),
                             "reactant": r.reactant,
-                            "conversion": r.X,}
+                            "conversion": r.X,
+                            "stoichiometry": r.stoichiometry}
                 reactions.append(reaction)
                 if is_series: i+=1
             if is_parallel: i+=1
@@ -237,7 +238,8 @@ def get_reactions(unit): # !!! update -- fix order of reactions (potentially usi
             reaction = {"index": i,
                         "equation": get_equation(rxn),
                         "reactant": rxn.reactant,
-                        "conversion": rxn.X,}
+                        "conversion": rxn.X,
+                        "stoichiometry": r.stoichiometry}
             reactions.append(reaction)
             i+=1
     
