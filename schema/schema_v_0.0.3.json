@@ -120,7 +120,8 @@
                   "type": "number"
                 },
                 "stoichiometry_vector": {
-                "type": "array",}
+                "type": "array"
+                }
               }
             }
           },
