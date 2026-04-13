@@ -318,7 +318,7 @@
           "registry_id": {
             "type": "string",
             "description": "CAS number or SMILES string."
-          }
+          },
           "index": {
             "type": "number",
             "description": "A unique index for this chemical; must be provided if 'reactions' include 'stoichiometry_vector' and do not include 'equation'. Must match the ordering of 'stoichiometry_vector'."
