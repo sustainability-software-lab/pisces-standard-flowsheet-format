@@ -82,14 +82,12 @@ def export_biosteam_flowsheet_sff(sys, file_path):
     heat_utilities = []
     for hu_agent in all_hu_agents:
         hu = {
-              "properties": {
-                   "id": hu_agent.ID,
-                   "temperature": {"value": hu_agent.T, "units": "K"},
-                   "pressure": {"value": hu_agent.P, "units": "Pa"},
-                   "regeneration_price": {"value": hu_agent.regeneration_price, "units": "$/kmol"},
-                   "heat_transfer_price": {"value": hu_agent.heat_transfer_price, "units": "$/kJ"},
-                   "heat_transfer_efficiency": hu_agent.heat_transfer_efficiency if hu_agent.heat_transfer_efficiency is not None else 1.0,
-                   },
+              "id": hu_agent.ID,
+              "temperature": {"value": hu_agent.T, "units": "K"},
+              "pressure": {"value": hu_agent.P, "units": "Pa"},
+              "regeneration_price": {"value": hu_agent.regeneration_price, "units": "$/kmol"},
+              "heat_transfer_price": {"value": hu_agent.heat_transfer_price, "units": "$/kJ"},
+              "heat_transfer_efficiency": hu_agent.heat_transfer_efficiency if hu_agent.heat_transfer_efficiency is not None else 1.0,
               "composition": get_composition(hu_agent),
               "units_for_utility_results": "kJ/h",
               }
@@ -106,13 +104,11 @@ def export_biosteam_flowsheet_sff(sys, file_path):
     other_utilities = []
     for ou_agent in all_ou_agents:
         ou = {
-              "properties": {
-                   "id": ou_agent.ID,
-                   "temperature": {"value": ou_agent.T, "units": "K"},
-                   "pressure": {"value": ou_agent.P, "units": "Pa"},
-                   "price": {"value": ou_agent.price or ng_price, "units": "$/kg",
-                   "units_for_utility_results": "kg/h",},  # !!! update
-                   },
+              "id": ou_agent.ID,
+              "temperature": {"value": ou_agent.T, "units": "K"},
+              "pressure": {"value": ou_agent.P, "units": "Pa"},
+              "price": {"value": ou_agent.price or ng_price, "units": "$/kg"},
+              "units_for_utility_results": "kg/h",
               "composition": get_composition(ou_agent)
               }
         other_utilities.append(ou)
