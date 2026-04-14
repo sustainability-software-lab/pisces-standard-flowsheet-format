@@ -70,13 +70,16 @@
             },
             "required": ["label"]
           }
-        },
+        }
       },
       "required": [
         "sff_version",
         "TEA_year",
         "process_simulator"
-      ]
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "units": {
       "description": "An array of all unit operations, representing the nodes of the process graph.",
