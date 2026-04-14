@@ -3,7 +3,7 @@
 # Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>
 # 
 # This module is under the MIT open-source license. See 
-# https://github.com/sarangbhagwat/sff/blob/main/LICENSE
+# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 
 import json
