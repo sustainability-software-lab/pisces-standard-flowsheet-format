@@ -13,7 +13,9 @@ from typing import Any, Tuple
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError
 
+__all__ = ('validate_json_against_schema',)
 
+#%%
 def validate_json_against_schema(
     json_file,
     schema_file,

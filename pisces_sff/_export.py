@@ -21,11 +21,13 @@ from biosteam import PowerUtility, System
 
 import biosteam as bst
 
+__all__ = ('export_biosteam_flowsheet',)
+
 #%% Entry-point export function
 
-def export_biosteam_flowsheet_sff(sff_version, **kwargs):
+def export_biosteam_flowsheet(sys, filepath, sff_version, **kwargs):
     sff_version_formatted = sff_version.replace('.', '_')
-    exec(f'export_biosteam_flowsheet_sff_{sff_version_formatted}(**kwargs)')
+    exec(f'export_biosteam_flowsheet_sff_{sff_version_formatted}(sys, filepath, **kwargs)')
 
 #%% Export function for SFF schema v0.0.3
 def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, 
