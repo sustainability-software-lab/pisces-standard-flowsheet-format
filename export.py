@@ -10,6 +10,7 @@ import json
 import inspect
 import sys
 import re
+import numpy as np
 
 from types import FunctionType
 
@@ -20,7 +21,8 @@ from biosteam import PowerUtility, System
 
 #%% Export function
 
-def export_biosteam_flowsheet_sff(sys, file_path):
+# for SFF schema v0.0.3
+def export_biosteam_flowsheet_sff(sys, file_path, include_stoichiometry=False):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
     
@@ -44,7 +46,7 @@ def export_biosteam_flowsheet_sff(sys, file_path):
                 "design_input_specs": get_design_input_specs(ru),
                 "design_simulation_method": get_design_simulation_method(ru),
                 "thermo_property_package": get_thermo(ru),
-                "reactions": get_reactions(ru),
+                "reactions": get_reactions(ru, include_stoichiometry=include_stoichiometry),
                 "design_results": ru.design_results if hasattr(ru, 'design_results') else {},
                 "installed_costs": ru.installed_costs if hasattr(ru, 'installed_costs') else {},
                 "purchase_costs": ru.purchase_costs if hasattr(ru, 'purchase_costs') else {},
@@ -78,28 +80,26 @@ def export_biosteam_flowsheet_sff(sys, file_path):
                   }
         streams.append(stream)
     
-    
     ## ------ Chemicals ------ ##
     chemicals = []
-    chems = list(s)[0].chemicals # !!! future: add support for multiple CompiledChemicals object (i.e., multiple sets of chemicals) within a single system
+    repr_stream = list(s)[0] # !!! future: add support for multiple CompiledChemicals object (i.e., multiple sets of chemicals) within a single system
+    chems = repr_stream.chemicals
+    vle_chems = repr_stream.vle_chemicals
     for i, c in zip(range(len(chems)), chems):
         has_CAS_ID = False
-        try:
-            CAS_ID = c.CAS
-            Chemical(ID='temp_chem', search_ID=CAS_ID, CAS=CAS_ID)
-            has_CAS_ID = True
-        except:
-            pass
-        
+        is_vle = c in vle_chems
         chemical = {"id": c.ID,
-                    "index": i,
                     }
-        if has_CAS_ID:
-            chemical["registry_id"] = c.CAS
-        else:
+        if include_stoichiometry: 
+            chemical["index"] = i
+        if c.formula is not None:
             chemical["formula"] = c.formula
-            chemical["molar_mass"] = c.MW
+        if is_vle:
+            chemical["registry_id"] = c.CAS
+        chemical["molar_mass"] = c.MW
+            
         chemicals.append(chemical)
+        
     ## ----- Utilities ----- ##
     
     heat_utilities = []
@@ -232,13 +232,13 @@ def get_composition(stream):
     return comp
 
 
-def get_reactions(unit): # !!! update -- fix order of reactions (potentially using settrace)
+def get_reactions(unit, include_stoichiometry): # !!! update -- fix order of reactions (potentially using settrace)
     u = unit
     rxntypes = (Reaction, ReactionSet)
     all_reactions = {rxn for rxn in u.__dict__.values() if isinstance(rxn, rxntypes)}
     reactions = []
     for rxn in tuple(all_reactions):
-        if hasattr(rxn, '_parent') or hasattr(rxn, '_parent_index'):
+        if hasattr(rxn, '_parent'):
             if rxn._parent in all_reactions: all_reactions.discard(rxn)
         elif hasattr(rxn, '_parent_index'):
             parent, index = rxn._parent_index
@@ -254,7 +254,9 @@ def get_reactions(unit): # !!! update -- fix order of reactions (potentially usi
                             "equation": get_equation(r),
                             "reactant": r.reactant,
                             "conversion": r.X,
-                            "stoichiometry": r.stoichiometry}
+                            }
+                if include_stoichiometry:
+                    reaction["stoichiometry"] = np.array(r.stoichiometry).tolist()
                 reactions.append(reaction)
                 if is_series: i+=1
             if is_parallel: i+=1
@@ -263,7 +265,9 @@ def get_reactions(unit): # !!! update -- fix order of reactions (potentially usi
                         "equation": get_equation(rxn),
                         "reactant": rxn.reactant,
                         "conversion": rxn.X,
-                        "stoichiometry": r.stoichiometry}
+                        }
+            if include_stoichiometry:
+                reaction["stoichiometry"] = np.array(rxn.stoichiometry).tolist()
             reactions.append(reaction)
             i+=1
     

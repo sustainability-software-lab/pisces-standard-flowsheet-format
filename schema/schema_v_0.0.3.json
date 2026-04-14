@@ -313,11 +313,15 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "A unique identifier for this chemical, used in the 'composition' property of stream objects."
+            "description": "A unique identifier for this chemical, used to reference this chemical in the 'composition' property of stream objects."
+          },
+          "included_in_thermo": {
+            "type": "boolean",
+            "description": "Whether or not this chemical is included when simulating thermodynamic equilibria. If 'true', 'registry_ID' must be provided. If 'false', 'molar_mass' must be provided."
           },
           "registry_id": {
             "type": "string",
-            "description": "CAS number or SMILES string. If not provided, 'formula' and 'MW' must be provided."
+            "description": "CAS number or SMILES string."
           },
           "index": {
             "type": "number",
@@ -334,7 +338,7 @@
         },
         "required": [
           "id",
-          "registry_id"
+          "included_in_thermo"
         ],
         "additionalProperties": true
       }
