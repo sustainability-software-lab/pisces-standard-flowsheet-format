@@ -81,8 +81,8 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, file_path, tea=None, include_stoich
                       "total_volumetric_flow": {"value": rs.F_vol, "units": "m3/h"},
                       "temperature": {"value": rs.T, "units": "K"},
                       "pressure": {"value": rs.P, "units": "Pa"},
-                      },
-                  "composition": get_composition(rs)
+                      "composition": get_composition(rs)
+                      }
                       # [
                       # {"component_name": c.ID,
                       #  "mol_fraction": rs.imol[c.ID]}
@@ -148,7 +148,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, file_path, tea=None, include_stoich
         other_utilities.append(ou)
     
     # Export
-    flowsheet_to_export = {
+    flowsheet_to_export = {"metadata": metadata,
                            "units": units,
                            "streams": streams,
                            "chemicals": chemicals,
