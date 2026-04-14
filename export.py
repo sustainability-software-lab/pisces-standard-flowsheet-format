@@ -112,7 +112,6 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, file_path, tea=None, include_stoich
         chemicals.append(chemical)
         
     ## ----- Utilities ----- ##
-    
     heat_utilities = []
     for hu_agent in all_hu_agents:
         hu = {
