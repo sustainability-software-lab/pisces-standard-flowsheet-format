@@ -208,9 +208,10 @@ def format_name(name):
     ## specific formatting
     name = name.replace("_feedstock", "")
     name = name.replace("nstover", "n stover")
-    name = name.replace("glucose", "dextrose").replace("Glucose", "Dextrose")
     if "dextrose" in name or "Dextrose" in name:
         name = name.replace(" monohydrate", "").replace(" Monohydrate", "").replace("monohydrate", "").replace("Monohydrate", "")
+    name = name.replace("glucose", "dextrose").replace("Glucose", "Dextrose")
+    
     ## general formatting
     words = []
     current = name[0]

@@ -936,6 +936,28 @@
             "reactions": [
                 {
                     "index": 0,
+                    "equation": "Glucose -> 6 H2O + 6 CO2",
+                    "reactant": "Glucose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 6.0,
+                        "CO2": 6.0,
+                        "Glucose": -1.0
+                    }
+                },
+                {
+                    "index": 0,
+                    "equation": "Xylose -> 5 H2O + 5 CO2",
+                    "reactant": "Xylose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 5.0,
+                        "CO2": 5.0,
+                        "Xylose": -1.0
+                    }
+                },
+                {
+                    "index": 1,
                     "equation": "Glucose -> 2 HP",
                     "reactant": "Glucose",
                     "conversion": 0.6935,
@@ -945,7 +967,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "2 CO2 + Glucose -> O2 + 2 SuccinicAcid",
                     "reactant": "Glucose",
                     "conversion": 0.0,
@@ -957,7 +979,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "Xylose -> 1.67 HP",
                     "reactant": "Xylose",
                     "conversion": 0.6935,
@@ -967,7 +989,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.67 CO2 + Xylose -> 0.416 O2 + 1.67 SuccinicAcid",
                     "reactant": "Xylose",
                     "conversion": 0.0,
@@ -979,7 +1001,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.545 H2O + Glucose -> 0.545 CO2 + 1.09 Xylitol",
                     "reactant": "Glucose",
                     "conversion": 0.0,
@@ -991,7 +1013,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "H2O + Xylose -> 0.5 O2 + Xylitol",
                     "reactant": "Xylose",
                     "conversion": 0.0,
@@ -1003,7 +1025,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "Glucose -> 2.4 H2O + 6 FermMicrobe",
                     "reactant": "Glucose",
                     "conversion": 0.23274999999999998,
@@ -1014,7 +1036,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "Xylose -> 2 H2O + 5 FermMicrobe",
                     "reactant": "Xylose",
                     "conversion": 0.23274999999999998,
@@ -1025,40 +1047,7 @@
                     }
                 },
                 {
-                    "index": 1,
-                    "equation": "H2O + Sucrose -> 2 Glucose",
-                    "reactant": "Sucrose",
-                    "conversion": 0.9999,
-                    "stoichiometry": {
-                        "H2O": -1.0,
-                        "Glucose": 2.0,
-                        "Sucrose": -1.0
-                    }
-                },
-                {
                     "index": 2,
-                    "equation": "Glucose -> 6 H2O + 6 CO2",
-                    "reactant": "Glucose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 6.0,
-                        "CO2": 6.0,
-                        "Glucose": -1.0
-                    }
-                },
-                {
-                    "index": 2,
-                    "equation": "Xylose -> 5 H2O + 5 CO2",
-                    "reactant": "Xylose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 5.0,
-                        "CO2": 5.0,
-                        "Xylose": -1.0
-                    }
-                },
-                {
-                    "index": 3,
                     "equation": "0.5 CalciumDihydroxide + HP -> H2O + 0.5 CalciumLactate",
                     "reactant": "HP",
                     "conversion": 0.999999999,
@@ -1070,7 +1059,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "0.5 CalciumDihydroxide + AceticAcid -> H2O + 0.5 CalciumAcetate",
                     "reactant": "AceticAcid",
                     "conversion": 0.999999999,
@@ -1079,6 +1068,17 @@
                         "CalciumDihydroxide": -0.5,
                         "CalciumAcetate": 0.5,
                         "AceticAcid": -1.0
+                    }
+                },
+                {
+                    "index": 3,
+                    "equation": "H2O + Sucrose -> 2 Glucose",
+                    "reactant": "Sucrose",
+                    "conversion": 0.9999,
+                    "stoichiometry": {
+                        "H2O": -1.0,
+                        "Glucose": 2.0,
+                        "Sucrose": -1.0
                     }
                 }
             ],
@@ -1352,6 +1352,28 @@
             "reactions": [
                 {
                     "index": 0,
+                    "equation": "Glucose -> 6 H2O + 6 CO2",
+                    "reactant": "Glucose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 6.0,
+                        "CO2": 6.0,
+                        "Glucose": -1.0
+                    }
+                },
+                {
+                    "index": 0,
+                    "equation": "Xylose -> 5 H2O + 5 CO2",
+                    "reactant": "Xylose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 5.0,
+                        "CO2": 5.0,
+                        "Xylose": -1.0
+                    }
+                },
+                {
+                    "index": 1,
                     "equation": "0.5 CalciumDihydroxide + HP -> H2O + 0.5 CalciumLactate",
                     "reactant": "HP",
                     "conversion": 0.999999999,
@@ -1363,7 +1385,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.5 CalciumDihydroxide + AceticAcid -> H2O + 0.5 CalciumAcetate",
                     "reactant": "AceticAcid",
                     "conversion": 0.999999999,
@@ -1375,7 +1397,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 2,
                     "equation": "H2O + Sucrose -> 2 Glucose",
                     "reactant": "Sucrose",
                     "conversion": 0.9999,
@@ -1383,28 +1405,6 @@
                         "H2O": -1.0,
                         "Glucose": 2.0,
                         "Sucrose": -1.0
-                    }
-                },
-                {
-                    "index": 2,
-                    "equation": "Glucose -> 6 H2O + 6 CO2",
-                    "reactant": "Glucose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 6.0,
-                        "CO2": 6.0,
-                        "Glucose": -1.0
-                    }
-                },
-                {
-                    "index": 2,
-                    "equation": "Xylose -> 5 H2O + 5 CO2",
-                    "reactant": "Xylose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 5.0,
-                        "CO2": 5.0,
-                        "Xylose": -1.0
                     }
                 },
                 {
@@ -2752,586 +2752,491 @@
             "reactions": [
                 {
                     "index": 0,
-                    "equation": "Ethanol -> 1.5 CH4 + 0.5 CO2",
+                    "equation": "Ethanol -> 1.98 WWTsludge",
                     "reactant": "Ethanol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 1.5,
-                        "CO2": 0.5,
-                        "Ethanol": -1.0
+                        "Ethanol": -1.0,
+                        "WWTsludge": 1.9825249505254625
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "AceticAcid -> CH4 + CO2",
+                    "equation": "AceticAcid -> 2.58 WWTsludge",
                     "reactant": "AceticAcid",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 1.0,
-                        "CO2": 1.0,
-                        "AceticAcid": -1.0
+                        "AceticAcid": -1.0,
+                        "WWTsludge": 2.5842965168335863
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + AcrylicAcid -> 1.5 CH4 + 1.5 CO2",
+                    "equation": "AcrylicAcid -> 3.1 WWTsludge",
                     "reactant": "AcrylicAcid",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 1.5,
-                        "CO2": 1.5,
-                        "AcrylicAcid": -1.0
+                        "AcrylicAcid": -1.0,
+                        "WWTsludge": 3.1011690747772924
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Glucose -> 3 CH4 + 3 CO2",
+                    "equation": "Glucose -> 7.75 WWTsludge",
                     "reactant": "Glucose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "Glucose": -1.0
+                        "Glucose": -1.0,
+                        "WWTsludge": 7.752894714621664
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "4 H2O + Decanol -> 7.5 CH4 + 2.5 CO2",
+                    "equation": "Decanol -> 6.81 WWTsludge",
                     "reactant": "Decanol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -4.0,
-                        "CH4": 7.5,
-                        "CO2": 2.5,
-                        "Decanol": -1.0
+                        "Decanol": -1.0,
+                        "WWTsludge": 6.811521950734967
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "5 H2O + Dodecanol -> 9 CH4 + 3 CO2",
+                    "equation": "Dodecanol -> 8.02 WWTsludge",
                     "reactant": "Dodecanol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -5.0,
-                        "CH4": 9.0,
-                        "CO2": 3.0,
-                        "Dodecanol": -1.0
+                        "Dodecanol": -1.0,
+                        "WWTsludge": 8.018771200787342
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "12 H2O + TOA -> 18 CH4 + 6 CO2 + NH3",
+                    "equation": "TOA -> 15.2 WWTsludge",
                     "reactant": "TOA",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -12.0,
-                        "CH4": 18.0,
-                        "CO2": 6.0,
-                        "NH3": 1.0,
-                        "TOA": -1.0
+                        "TOA": -1.0,
+                        "WWTsludge": 15.219888203581833
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "3 H2O + Octanol -> 6 CH4 + 2 CO2",
+                    "equation": "Octanol -> 5.6 WWTsludge",
                     "reactant": "Octanol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -3.0,
-                        "CH4": 6.0,
-                        "CO2": 2.0,
-                        "Octanol": -1.0
+                        "Octanol": -1.0,
+                        "WWTsludge": 5.604272700682591
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "2 H2O + Hexanol -> 4.5 CH4 + 1.5 CO2",
+                    "equation": "Hexanol -> 4.4 WWTsludge",
                     "reactant": "Hexanol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -2.0,
-                        "CH4": 4.5,
-                        "CO2": 1.5,
-                        "Hexanol": -1.0
+                        "Hexanol": -1.0,
+                        "WWTsludge": 4.397023450630215
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "2.5 H2O + Octanediol -> 5.75 CH4 + 2.25 CO2",
+                    "equation": "Octanediol -> 6.29 WWTsludge",
                     "reactant": "Octanediol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -2.5,
-                        "CH4": 5.75,
-                        "CO2": 2.25,
-                        "Octanediol": -1.0
+                        "Octanediol": -1.0,
+                        "WWTsludge": 6.292796334073195
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "5 H2O + Toluene -> 4.5 CH4 + 2.5 CO2",
+                    "equation": "Toluene -> 3.97 WWTsludge",
                     "reactant": "Toluene",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -5.0,
-                        "CH4": 4.5,
-                        "CO2": 2.5,
-                        "Toluene": -1.0
+                        "Toluene": -1.0,
+                        "WWTsludge": 3.9651161739358716
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "1.5 H2O + Isobutyraldehyde -> 2.75 CH4 + 1.25 CO2",
+                    "equation": "Isobutyraldehyde -> 3.1 WWTsludge",
                     "reactant": "Isobutyraldehyde",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.5,
-                        "CH4": 2.75,
-                        "CO2": 1.25,
-                        "Isobutyraldehyde": -1.0
+                        "Isobutyraldehyde": -1.0,
+                        "WWTsludge": 3.103022133495357
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + GlucoseOligomer -> 3 CH4 + 3 CO2",
+                    "equation": "GlucoseOligomer -> 6.98 WWTsludge",
                     "reactant": "GlucoseOligomer",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "GlucoseOligomer": -1.0
+                        "GlucoseOligomer": -1.0,
+                        "WWTsludge": 6.977613850027672
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Extract -> 3 CH4 + 3 CO2",
+                    "equation": "Extract -> 7.75 WWTsludge",
                     "reactant": "Extract",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "Extract": -1.0
+                        "Extract": -1.0,
+                        "WWTsludge": 7.752894714621664
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Xylose -> 2.5 CH4 + 2.5 CO2",
+                    "equation": "Xylose -> 6.46 WWTsludge",
                     "reactant": "Xylose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 2.5,
-                        "CO2": 2.5,
-                        "Xylose": -1.0
+                        "Xylose": -1.0,
+                        "WWTsludge": 6.460745595518053
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + XyloseOligomer -> 2.5 CH4 + 2.5 CO2",
+                    "equation": "XyloseOligomer -> 5.69 WWTsludge",
                     "reactant": "XyloseOligomer",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 2.5,
-                        "CO2": 2.5,
-                        "XyloseOligomer": -1.0
+                        "XyloseOligomer": -1.0,
+                        "WWTsludge": 5.685465591610879
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + Sucrose -> 6 CH4 + 6 CO2",
+                    "equation": "Sucrose -> 14.7 WWTsludge",
                     "reactant": "Sucrose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 6.0,
-                        "CO2": 6.0,
-                        "Sucrose": -1.0
+                        "Sucrose": -1.0,
+                        "WWTsludge": 14.730503400528429
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + Cellobiose -> 6 CH4 + 6 CO2",
+                    "equation": "Cellobiose -> 14.7 WWTsludge",
                     "reactant": "Cellobiose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 6.0,
-                        "CO2": 6.0,
-                        "Cellobiose": -1.0
+                        "Cellobiose": -1.0,
+                        "WWTsludge": 14.730525778385687
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Mannose -> 3 CH4 + 3 CO2",
+                    "equation": "Mannose -> 7.75 WWTsludge",
                     "reactant": "Mannose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "Mannose": -1.0
+                        "Mannose": -1.0,
+                        "WWTsludge": 7.752894714621664
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + MannoseOligomer -> 3 CH4 + 3 CO2",
+                    "equation": "MannoseOligomer -> 6.98 WWTsludge",
                     "reactant": "MannoseOligomer",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "MannoseOligomer": -1.0
+                        "MannoseOligomer": -1.0,
+                        "WWTsludge": 6.977613850027672
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Galactose -> 3 CH4 + 3 CO2",
+                    "equation": "Galactose -> 7.75 WWTsludge",
                     "reactant": "Galactose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "Galactose": -1.0
+                        "Galactose": -1.0,
+                        "WWTsludge": 7.752894714621664
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + GalactoseOligomer -> 3 CH4 + 3 CO2",
+                    "equation": "GalactoseOligomer -> 6.98 WWTsludge",
                     "reactant": "GalactoseOligomer",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 3.0,
-                        "CO2": 3.0,
-                        "GalactoseOligomer": -1.0
+                        "GalactoseOligomer": -1.0,
+                        "WWTsludge": 6.977613850027672
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Arabinose -> 2.5 CH4 + 2.5 CO2",
+                    "equation": "Arabinose -> 6.46 WWTsludge",
                     "reactant": "Arabinose",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 2.5,
-                        "CO2": 2.5,
-                        "Arabinose": -1.0
+                        "Arabinose": -1.0,
+                        "WWTsludge": 6.460745595518053
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + ArabinoseOligomer -> 2.5 CH4 + 2.5 CO2",
+                    "equation": "ArabinoseOligomer -> 5.69 WWTsludge",
                     "reactant": "ArabinoseOligomer",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 2.5,
-                        "CO2": 2.5,
-                        "ArabinoseOligomer": -1.0
+                        "ArabinoseOligomer": -1.0,
+                        "WWTsludge": 5.685465591610879
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "4.5 H2O + SolubleLignin -> 4.25 CH4 + 3.75 CO2",
+                    "equation": "SolubleLignin -> 6.55 WWTsludge",
                     "reactant": "SolubleLignin",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -4.5,
-                        "CH4": 4.25,
-                        "CO2": 3.75,
-                        "SolubleLignin": -1.0
+                        "SolubleLignin": -1.0,
+                        "WWTsludge": 6.547559632051394
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "3 H2O + Furfural -> 2.5 CH4 + 2.5 CO2",
+                    "equation": "Furfural -> 4.13 WWTsludge",
                     "reactant": "Furfural",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -3.0,
-                        "CH4": 2.5,
-                        "CO2": 2.5,
+                        "WWTsludge": 4.134914190664706,
                         "Furfural": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + Acetoin -> 2.5 CH4 + 1.5 CO2",
+                    "equation": "Acetoin -> 3.79 WWTsludge",
                     "reactant": "Acetoin",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 2.5,
-                        "CO2": 1.5,
+                        "WWTsludge": 3.791545766885962,
                         "Acetoin": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "3 H2O + HMF -> 3 CH4 + 3 CO2",
+                    "equation": "HMF -> 5.43 WWTsludge",
                     "reactant": "HMF",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -3.0,
-                        "CH4": 3.0,
-                        "CO2": 3.0,
+                        "WWTsludge": 5.4270624490814985,
                         "HMF": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Xylitol -> 0.5 H2O + 2.75 CH4 + 2.25 CO2",
+                    "equation": "Xylitol -> 6.55 WWTsludge",
                     "reactant": "Xylitol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": 0.5,
-                        "CH4": 2.75,
-                        "CO2": 2.25,
+                        "WWTsludge": 6.547502826721439,
                         "Xylitol": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Glycerol -> 0.5 H2O + 1.75 CH4 + 1.25 CO2",
+                    "equation": "Glycerol -> 3.96 WWTsludge",
                     "reactant": "Glycerol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": 0.5,
-                        "CH4": 1.75,
-                        "CO2": 1.25,
+                        "WWTsludge": 3.9631968423328603,
                         "Glycerol": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "LacticAcid -> 1.5 CH4 + 1.5 CO2",
+                    "equation": "LacticAcid -> 3.88 WWTsludge",
                     "reactant": "LacticAcid",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 1.5,
-                        "CO2": 1.5,
+                        "WWTsludge": 3.8764447752503792,
                         "LacticAcid": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "HP -> 1.5 CH4 + 1.5 CO2",
+                    "equation": "HP -> 3.88 WWTsludge",
                     "reactant": "HP",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 1.5,
-                        "CO2": 1.5,
+                        "WWTsludge": 3.8764447752503792,
                         "HP": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.5 H2O + MethylHP -> 2.25 CH4 + 1.75 CO2",
+                    "equation": "MethylHP -> 4.48 WWTsludge",
                     "reactant": "MethylHP",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5,
-                        "CH4": 2.25,
-                        "CO2": 1.75,
+                        "WWTsludge": 4.480069400276567,
                         "MethylHP": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.5 H2O + SuccinicAcid -> 1.75 CH4 + 2.25 CO2",
+                    "equation": "SuccinicAcid -> 5.08 WWTsludge",
                     "reactant": "SuccinicAcid",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5,
-                        "CH4": 1.75,
-                        "CO2": 2.25,
+                        "WWTsludge": 5.081840966584691,
                         "SuccinicAcid": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.5 H2O + MethylAcetate -> 1.75 CH4 + 1.25 CO2",
+                    "equation": "MethylAcetate -> 3.19 WWTsludge",
                     "reactant": "MethylAcetate",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5,
-                        "CH4": 1.75,
-                        "CO2": 1.25,
+                        "WWTsludge": 3.1879211418597744,
                         "MethylAcetate": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + EthylLactate -> 3 CH4 + 2 CO2",
+                    "equation": "EthylLactate -> 5.08 WWTsludge",
                     "reactant": "EthylLactate",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 3.0,
-                        "CO2": 2.0,
+                        "WWTsludge": 5.083694025302755,
                         "EthylLactate": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "1.5 H2O + MethylSuccinate -> 3.25 CH4 + 2.75 CO2",
+                    "equation": "MethylSuccinate -> 6.29 WWTsludge",
                     "reactant": "MethylSuccinate",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.5,
-                        "CH4": 3.25,
-                        "CO2": 2.75,
+                        "WWTsludge": 6.289090216637066,
                         "MethylSuccinate": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.5 H2O + MEA -> 1.25 CH4 + 0.75 CO2 + NH3",
+                    "equation": "MEA -> 2.63 WWTsludge",
                     "reactant": "MEA",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5,
-                        "CH4": 1.25,
-                        "CO2": 0.75,
-                        "NH3": 1.0,
+                        "WWTsludge": 2.628670086396302,
                         "MEA": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "CSL -> 0.332 H2O + 0.502 CH4 + 0.498 CO2 + 0.0725 NH3 + 0.00175 H2S",
+                    "equation": "CSL -> 1.6 WWTsludge",
                     "reactant": "CSL",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": 0.33162499999999995,
-                        "CH4": 0.5020625000000001,
-                        "CO2": 0.4979374999999999,
-                        "NH3": 0.0725,
-                        "H2S": 0.00175,
+                        "WWTsludge": 1.6024684364519268,
                         "CSL": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "Methanol -> 0.5 H2O + 0.75 CH4 + 0.25 CO2",
+                    "equation": "Methanol -> 1.38 WWTsludge",
                     "reactant": "Methanol",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": 0.5,
-                        "CH4": 0.75,
-                        "CO2": 0.25,
+                        "WWTsludge": 1.3789003254992744,
                         "Methanol": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "3 H2O + Denaturant -> 5.5 CH4 + 1.5 CO2",
+                    "equation": "Denaturant -> 4.31 WWTsludge",
                     "reactant": "Denaturant",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -3.0,
-                        "CH4": 5.5,
-                        "CO2": 1.5,
+                        "WWTsludge": 4.312124442265797,
                         "Denaturant": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.515 H2O + FermMicrobeXyl -> 0.523 CH4 + 0.477 CO2 + 0.24 NH3",
+                    "equation": "FermMicrobeXyl -> 1.04 WWTsludge",
                     "reactant": "FermMicrobeXyl",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5149999999999999,
-                        "CH4": 0.5225000000000001,
-                        "CO2": 0.4774999999999999,
-                        "NH3": 0.24,
+                        "WWTsludge": 1.041696880898085,
                         "FermMicrobeXyl": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "AmmoniumAcetate -> CH4 + CO2 + NH3",
+                    "equation": "AmmoniumAcetate -> 3.32 WWTsludge",
                     "reactant": "AmmoniumAcetate",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "CH4": 1.0,
-                        "CO2": 1.0,
-                        "NH3": 1.0,
+                        "WWTsludge": 3.3171937197869075,
                         "AmmoniumAcetate": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.578 H2O + Cellulase -> 0.501 CH4 + 0.499 CO2 + 0.24 NH3 + 0.01 H2S",
+                    "equation": "Cellulase -> 1.03 WWTsludge",
                     "reactant": "Cellulase",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5775,
-                        "CH4": 0.5012500000000001,
-                        "CO2": 0.49874999999999997,
-                        "NH3": 0.24,
-                        "H2S": 0.01,
+                        "WWTsludge": 1.0334839232589084,
                         "Cellulase": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + Starch -> 3 CH4 + 3 CO2",
+                    "equation": "Starch -> 6.98 WWTsludge",
                     "reactant": "Starch",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 3.0,
-                        "CO2": 3.0,
+                        "WWTsludge": 6.977613850027672,
                         "Starch": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "H2O + SolubleProtein -> 3 CH4 + 3 CO2",
+                    "equation": "SolubleProtein -> 6.98 WWTsludge",
                     "reactant": "SolubleProtein",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -1.0,
-                        "CH4": 3.0,
-                        "CO2": 3.0,
+                        "WWTsludge": 6.977613850027672,
                         "SolubleProtein": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "28 H2O + TriOlein -> 40 CH4 + 17 CO2",
+                    "equation": "TriOlein -> 38.1 WWTsludge",
                     "reactant": "TriOlein",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -28.0,
-                        "CH4": 40.0,
-                        "CO2": 17.0,
+                        "WWTsludge": 38.103985091423944,
                         "TriOlein": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "3.5 H2O + Octane -> 6.25 CH4 + 1.75 CO2",
+                    "equation": "Octane -> 4.92 WWTsludge",
                     "reactant": "Octane",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -3.5,
-                        "CH4": 6.25,
-                        "CO2": 1.75,
+                        "WWTsludge": 4.915749067291985,
                         "Octane": -1.0
                     }
                 },
                 {
                     "index": 0,
-                    "equation": "0.5 H2O + CitricAcid -> 2.25 CH4 + 3.75 CO2",
+                    "equation": "CitricAcid -> 8.27 WWTsludge",
                     "reactant": "CitricAcid",
-                    "conversion": 0.86,
+                    "conversion": 0.05,
                     "stoichiometry": {
-                        "H2O": -0.5,
-                        "CH4": 2.25,
-                        "CO2": 3.75,
+                        "WWTsludge": 8.2679090497264,
                         "CitricAcid": -1.0
                     }
                 },
@@ -3351,491 +3256,586 @@
                 },
                 {
                     "index": 2,
-                    "equation": "Ethanol -> 1.98 WWTsludge",
+                    "equation": "Ethanol -> 1.5 CH4 + 0.5 CO2",
                     "reactant": "Ethanol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Ethanol": -1.0,
-                        "WWTsludge": 1.9825249505254625
+                        "CH4": 1.5,
+                        "CO2": 0.5,
+                        "Ethanol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "AceticAcid -> 2.58 WWTsludge",
+                    "equation": "AceticAcid -> CH4 + CO2",
                     "reactant": "AceticAcid",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "AceticAcid": -1.0,
-                        "WWTsludge": 2.5842965168335863
+                        "CH4": 1.0,
+                        "CO2": 1.0,
+                        "AceticAcid": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "AcrylicAcid -> 3.1 WWTsludge",
+                    "equation": "H2O + AcrylicAcid -> 1.5 CH4 + 1.5 CO2",
                     "reactant": "AcrylicAcid",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "AcrylicAcid": -1.0,
-                        "WWTsludge": 3.1011690747772924
+                        "H2O": -1.0,
+                        "CH4": 1.5,
+                        "CO2": 1.5,
+                        "AcrylicAcid": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Glucose -> 7.75 WWTsludge",
+                    "equation": "Glucose -> 3 CH4 + 3 CO2",
                     "reactant": "Glucose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Glucose": -1.0,
-                        "WWTsludge": 7.752894714621664
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "Glucose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Decanol -> 6.81 WWTsludge",
+                    "equation": "4 H2O + Decanol -> 7.5 CH4 + 2.5 CO2",
                     "reactant": "Decanol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Decanol": -1.0,
-                        "WWTsludge": 6.811521950734967
+                        "H2O": -4.0,
+                        "CH4": 7.5,
+                        "CO2": 2.5,
+                        "Decanol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Dodecanol -> 8.02 WWTsludge",
+                    "equation": "5 H2O + Dodecanol -> 9 CH4 + 3 CO2",
                     "reactant": "Dodecanol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Dodecanol": -1.0,
-                        "WWTsludge": 8.018771200787342
+                        "H2O": -5.0,
+                        "CH4": 9.0,
+                        "CO2": 3.0,
+                        "Dodecanol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "TOA -> 15.2 WWTsludge",
+                    "equation": "12 H2O + TOA -> 18 CH4 + 6 CO2 + NH3",
                     "reactant": "TOA",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "TOA": -1.0,
-                        "WWTsludge": 15.219888203581833
+                        "H2O": -12.0,
+                        "CH4": 18.0,
+                        "CO2": 6.0,
+                        "NH3": 1.0,
+                        "TOA": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Octanol -> 5.6 WWTsludge",
+                    "equation": "3 H2O + Octanol -> 6 CH4 + 2 CO2",
                     "reactant": "Octanol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Octanol": -1.0,
-                        "WWTsludge": 5.604272700682591
+                        "H2O": -3.0,
+                        "CH4": 6.0,
+                        "CO2": 2.0,
+                        "Octanol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Hexanol -> 4.4 WWTsludge",
+                    "equation": "2 H2O + Hexanol -> 4.5 CH4 + 1.5 CO2",
                     "reactant": "Hexanol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Hexanol": -1.0,
-                        "WWTsludge": 4.397023450630215
+                        "H2O": -2.0,
+                        "CH4": 4.5,
+                        "CO2": 1.5,
+                        "Hexanol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Octanediol -> 6.29 WWTsludge",
+                    "equation": "2.5 H2O + Octanediol -> 5.75 CH4 + 2.25 CO2",
                     "reactant": "Octanediol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Octanediol": -1.0,
-                        "WWTsludge": 6.292796334073195
+                        "H2O": -2.5,
+                        "CH4": 5.75,
+                        "CO2": 2.25,
+                        "Octanediol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Toluene -> 3.97 WWTsludge",
+                    "equation": "5 H2O + Toluene -> 4.5 CH4 + 2.5 CO2",
                     "reactant": "Toluene",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Toluene": -1.0,
-                        "WWTsludge": 3.9651161739358716
+                        "H2O": -5.0,
+                        "CH4": 4.5,
+                        "CO2": 2.5,
+                        "Toluene": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Isobutyraldehyde -> 3.1 WWTsludge",
+                    "equation": "1.5 H2O + Isobutyraldehyde -> 2.75 CH4 + 1.25 CO2",
                     "reactant": "Isobutyraldehyde",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Isobutyraldehyde": -1.0,
-                        "WWTsludge": 3.103022133495357
+                        "H2O": -1.5,
+                        "CH4": 2.75,
+                        "CO2": 1.25,
+                        "Isobutyraldehyde": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "GlucoseOligomer -> 6.98 WWTsludge",
+                    "equation": "H2O + GlucoseOligomer -> 3 CH4 + 3 CO2",
                     "reactant": "GlucoseOligomer",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "GlucoseOligomer": -1.0,
-                        "WWTsludge": 6.977613850027672
+                        "H2O": -1.0,
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "GlucoseOligomer": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Extract -> 7.75 WWTsludge",
+                    "equation": "Extract -> 3 CH4 + 3 CO2",
                     "reactant": "Extract",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Extract": -1.0,
-                        "WWTsludge": 7.752894714621664
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "Extract": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Xylose -> 6.46 WWTsludge",
+                    "equation": "Xylose -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "Xylose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Xylose": -1.0,
-                        "WWTsludge": 6.460745595518053
+                        "CH4": 2.5,
+                        "CO2": 2.5,
+                        "Xylose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "XyloseOligomer -> 5.69 WWTsludge",
+                    "equation": "H2O + XyloseOligomer -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "XyloseOligomer",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "XyloseOligomer": -1.0,
-                        "WWTsludge": 5.685465591610879
+                        "H2O": -1.0,
+                        "CH4": 2.5,
+                        "CO2": 2.5,
+                        "XyloseOligomer": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Sucrose -> 14.7 WWTsludge",
+                    "equation": "H2O + Sucrose -> 6 CH4 + 6 CO2",
                     "reactant": "Sucrose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Sucrose": -1.0,
-                        "WWTsludge": 14.730503400528429
+                        "H2O": -1.0,
+                        "CH4": 6.0,
+                        "CO2": 6.0,
+                        "Sucrose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Cellobiose -> 14.7 WWTsludge",
+                    "equation": "H2O + Cellobiose -> 6 CH4 + 6 CO2",
                     "reactant": "Cellobiose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Cellobiose": -1.0,
-                        "WWTsludge": 14.730525778385687
+                        "H2O": -1.0,
+                        "CH4": 6.0,
+                        "CO2": 6.0,
+                        "Cellobiose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Mannose -> 7.75 WWTsludge",
+                    "equation": "Mannose -> 3 CH4 + 3 CO2",
                     "reactant": "Mannose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Mannose": -1.0,
-                        "WWTsludge": 7.752894714621664
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "Mannose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "MannoseOligomer -> 6.98 WWTsludge",
+                    "equation": "H2O + MannoseOligomer -> 3 CH4 + 3 CO2",
                     "reactant": "MannoseOligomer",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "MannoseOligomer": -1.0,
-                        "WWTsludge": 6.977613850027672
+                        "H2O": -1.0,
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "MannoseOligomer": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Galactose -> 7.75 WWTsludge",
+                    "equation": "Galactose -> 3 CH4 + 3 CO2",
                     "reactant": "Galactose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Galactose": -1.0,
-                        "WWTsludge": 7.752894714621664
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "Galactose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "GalactoseOligomer -> 6.98 WWTsludge",
+                    "equation": "H2O + GalactoseOligomer -> 3 CH4 + 3 CO2",
                     "reactant": "GalactoseOligomer",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "GalactoseOligomer": -1.0,
-                        "WWTsludge": 6.977613850027672
+                        "H2O": -1.0,
+                        "CH4": 3.0,
+                        "CO2": 3.0,
+                        "GalactoseOligomer": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Arabinose -> 6.46 WWTsludge",
+                    "equation": "Arabinose -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "Arabinose",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "Arabinose": -1.0,
-                        "WWTsludge": 6.460745595518053
+                        "CH4": 2.5,
+                        "CO2": 2.5,
+                        "Arabinose": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "ArabinoseOligomer -> 5.69 WWTsludge",
+                    "equation": "H2O + ArabinoseOligomer -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "ArabinoseOligomer",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "ArabinoseOligomer": -1.0,
-                        "WWTsludge": 5.685465591610879
+                        "H2O": -1.0,
+                        "CH4": 2.5,
+                        "CO2": 2.5,
+                        "ArabinoseOligomer": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "SolubleLignin -> 6.55 WWTsludge",
+                    "equation": "4.5 H2O + SolubleLignin -> 4.25 CH4 + 3.75 CO2",
                     "reactant": "SolubleLignin",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "SolubleLignin": -1.0,
-                        "WWTsludge": 6.547559632051394
+                        "H2O": -4.5,
+                        "CH4": 4.25,
+                        "CO2": 3.75,
+                        "SolubleLignin": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Furfural -> 4.13 WWTsludge",
+                    "equation": "3 H2O + Furfural -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "Furfural",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 4.134914190664706,
+                        "H2O": -3.0,
+                        "CH4": 2.5,
+                        "CO2": 2.5,
                         "Furfural": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Acetoin -> 3.79 WWTsludge",
+                    "equation": "H2O + Acetoin -> 2.5 CH4 + 1.5 CO2",
                     "reactant": "Acetoin",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 3.791545766885962,
+                        "H2O": -1.0,
+                        "CH4": 2.5,
+                        "CO2": 1.5,
                         "Acetoin": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "HMF -> 5.43 WWTsludge",
+                    "equation": "3 H2O + HMF -> 3 CH4 + 3 CO2",
                     "reactant": "HMF",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 5.4270624490814985,
+                        "H2O": -3.0,
+                        "CH4": 3.0,
+                        "CO2": 3.0,
                         "HMF": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Xylitol -> 6.55 WWTsludge",
+                    "equation": "Xylitol -> 0.5 H2O + 2.75 CH4 + 2.25 CO2",
                     "reactant": "Xylitol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 6.547502826721439,
+                        "H2O": 0.5,
+                        "CH4": 2.75,
+                        "CO2": 2.25,
                         "Xylitol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Glycerol -> 3.96 WWTsludge",
+                    "equation": "Glycerol -> 0.5 H2O + 1.75 CH4 + 1.25 CO2",
                     "reactant": "Glycerol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 3.9631968423328603,
+                        "H2O": 0.5,
+                        "CH4": 1.75,
+                        "CO2": 1.25,
                         "Glycerol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "LacticAcid -> 3.88 WWTsludge",
+                    "equation": "LacticAcid -> 1.5 CH4 + 1.5 CO2",
                     "reactant": "LacticAcid",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 3.8764447752503792,
+                        "CH4": 1.5,
+                        "CO2": 1.5,
                         "LacticAcid": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "HP -> 3.88 WWTsludge",
+                    "equation": "HP -> 1.5 CH4 + 1.5 CO2",
                     "reactant": "HP",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 3.8764447752503792,
+                        "CH4": 1.5,
+                        "CO2": 1.5,
                         "HP": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "MethylHP -> 4.48 WWTsludge",
+                    "equation": "0.5 H2O + MethylHP -> 2.25 CH4 + 1.75 CO2",
                     "reactant": "MethylHP",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 4.480069400276567,
+                        "H2O": -0.5,
+                        "CH4": 2.25,
+                        "CO2": 1.75,
                         "MethylHP": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "SuccinicAcid -> 5.08 WWTsludge",
+                    "equation": "0.5 H2O + SuccinicAcid -> 1.75 CH4 + 2.25 CO2",
                     "reactant": "SuccinicAcid",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 5.081840966584691,
+                        "H2O": -0.5,
+                        "CH4": 1.75,
+                        "CO2": 2.25,
                         "SuccinicAcid": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "MethylAcetate -> 3.19 WWTsludge",
+                    "equation": "0.5 H2O + MethylAcetate -> 1.75 CH4 + 1.25 CO2",
                     "reactant": "MethylAcetate",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 3.1879211418597744,
+                        "H2O": -0.5,
+                        "CH4": 1.75,
+                        "CO2": 1.25,
                         "MethylAcetate": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "EthylLactate -> 5.08 WWTsludge",
+                    "equation": "H2O + EthylLactate -> 3 CH4 + 2 CO2",
                     "reactant": "EthylLactate",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 5.083694025302755,
+                        "H2O": -1.0,
+                        "CH4": 3.0,
+                        "CO2": 2.0,
                         "EthylLactate": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "MethylSuccinate -> 6.29 WWTsludge",
+                    "equation": "1.5 H2O + MethylSuccinate -> 3.25 CH4 + 2.75 CO2",
                     "reactant": "MethylSuccinate",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 6.289090216637066,
+                        "H2O": -1.5,
+                        "CH4": 3.25,
+                        "CO2": 2.75,
                         "MethylSuccinate": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "MEA -> 2.63 WWTsludge",
+                    "equation": "0.5 H2O + MEA -> 1.25 CH4 + 0.75 CO2 + NH3",
                     "reactant": "MEA",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 2.628670086396302,
+                        "H2O": -0.5,
+                        "CH4": 1.25,
+                        "CO2": 0.75,
+                        "NH3": 1.0,
                         "MEA": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "CSL -> 1.6 WWTsludge",
+                    "equation": "CSL -> 0.332 H2O + 0.502 CH4 + 0.498 CO2 + 0.0725 NH3 + 0.00175 H2S",
                     "reactant": "CSL",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 1.6024684364519268,
+                        "H2O": 0.33162499999999995,
+                        "CH4": 0.5020625000000001,
+                        "CO2": 0.4979374999999999,
+                        "NH3": 0.0725,
+                        "H2S": 0.00175,
                         "CSL": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Methanol -> 1.38 WWTsludge",
+                    "equation": "Methanol -> 0.5 H2O + 0.75 CH4 + 0.25 CO2",
                     "reactant": "Methanol",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 1.3789003254992744,
+                        "H2O": 0.5,
+                        "CH4": 0.75,
+                        "CO2": 0.25,
                         "Methanol": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Denaturant -> 4.31 WWTsludge",
+                    "equation": "3 H2O + Denaturant -> 5.5 CH4 + 1.5 CO2",
                     "reactant": "Denaturant",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 4.312124442265797,
+                        "H2O": -3.0,
+                        "CH4": 5.5,
+                        "CO2": 1.5,
                         "Denaturant": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "FermMicrobeXyl -> 1.04 WWTsludge",
+                    "equation": "0.515 H2O + FermMicrobeXyl -> 0.523 CH4 + 0.477 CO2 + 0.24 NH3",
                     "reactant": "FermMicrobeXyl",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 1.041696880898085,
+                        "H2O": -0.5149999999999999,
+                        "CH4": 0.5225000000000001,
+                        "CO2": 0.4774999999999999,
+                        "NH3": 0.24,
                         "FermMicrobeXyl": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "AmmoniumAcetate -> 3.32 WWTsludge",
+                    "equation": "AmmoniumAcetate -> CH4 + CO2 + NH3",
                     "reactant": "AmmoniumAcetate",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 3.3171937197869075,
+                        "CH4": 1.0,
+                        "CO2": 1.0,
+                        "NH3": 1.0,
                         "AmmoniumAcetate": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Cellulase -> 1.03 WWTsludge",
+                    "equation": "0.578 H2O + Cellulase -> 0.501 CH4 + 0.499 CO2 + 0.24 NH3 + 0.01 H2S",
                     "reactant": "Cellulase",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 1.0334839232589084,
+                        "H2O": -0.5775,
+                        "CH4": 0.5012500000000001,
+                        "CO2": 0.49874999999999997,
+                        "NH3": 0.24,
+                        "H2S": 0.01,
                         "Cellulase": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Starch -> 6.98 WWTsludge",
+                    "equation": "H2O + Starch -> 3 CH4 + 3 CO2",
                     "reactant": "Starch",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 6.977613850027672,
+                        "H2O": -1.0,
+                        "CH4": 3.0,
+                        "CO2": 3.0,
                         "Starch": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "SolubleProtein -> 6.98 WWTsludge",
+                    "equation": "H2O + SolubleProtein -> 3 CH4 + 3 CO2",
                     "reactant": "SolubleProtein",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 6.977613850027672,
+                        "H2O": -1.0,
+                        "CH4": 3.0,
+                        "CO2": 3.0,
                         "SolubleProtein": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "TriOlein -> 38.1 WWTsludge",
+                    "equation": "28 H2O + TriOlein -> 40 CH4 + 17 CO2",
                     "reactant": "TriOlein",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 38.103985091423944,
+                        "H2O": -28.0,
+                        "CH4": 40.0,
+                        "CO2": 17.0,
                         "TriOlein": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "Octane -> 4.92 WWTsludge",
+                    "equation": "3.5 H2O + Octane -> 6.25 CH4 + 1.75 CO2",
                     "reactant": "Octane",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 4.915749067291985,
+                        "H2O": -3.5,
+                        "CH4": 6.25,
+                        "CO2": 1.75,
                         "Octane": -1.0
                     }
                 },
                 {
                     "index": 2,
-                    "equation": "CitricAcid -> 8.27 WWTsludge",
+                    "equation": "0.5 H2O + CitricAcid -> 2.25 CH4 + 3.75 CO2",
                     "reactant": "CitricAcid",
-                    "conversion": 0.05,
+                    "conversion": 0.86,
                     "stoichiometry": {
-                        "WWTsludge": 8.2679090497264,
+                        "H2O": -0.5,
+                        "CH4": 2.25,
+                        "CO2": 3.75,
                         "CitricAcid": -1.0
                     }
                 }
@@ -3886,496 +3886,6 @@
             "reactions": [
                 {
                     "index": 0,
-                    "equation": "Ethanol -> 1.98 WWTsludge",
-                    "reactant": "Ethanol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Ethanol": -1.0,
-                        "WWTsludge": 1.9825249505254625
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "AceticAcid -> 2.58 WWTsludge",
-                    "reactant": "AceticAcid",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "AceticAcid": -1.0,
-                        "WWTsludge": 2.5842965168335863
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "AcrylicAcid -> 3.1 WWTsludge",
-                    "reactant": "AcrylicAcid",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "AcrylicAcid": -1.0,
-                        "WWTsludge": 3.1011690747772924
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Glucose -> 7.75 WWTsludge",
-                    "reactant": "Glucose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Glucose": -1.0,
-                        "WWTsludge": 7.752894714621664
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Decanol -> 6.81 WWTsludge",
-                    "reactant": "Decanol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Decanol": -1.0,
-                        "WWTsludge": 6.811521950734967
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Dodecanol -> 8.02 WWTsludge",
-                    "reactant": "Dodecanol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Dodecanol": -1.0,
-                        "WWTsludge": 8.018771200787342
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "TOA -> 15.2 WWTsludge",
-                    "reactant": "TOA",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "TOA": -1.0,
-                        "WWTsludge": 15.219888203581833
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Octanol -> 5.6 WWTsludge",
-                    "reactant": "Octanol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Octanol": -1.0,
-                        "WWTsludge": 5.604272700682591
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Hexanol -> 4.4 WWTsludge",
-                    "reactant": "Hexanol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Hexanol": -1.0,
-                        "WWTsludge": 4.397023450630215
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Octanediol -> 6.29 WWTsludge",
-                    "reactant": "Octanediol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Octanediol": -1.0,
-                        "WWTsludge": 6.292796334073195
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Toluene -> 3.97 WWTsludge",
-                    "reactant": "Toluene",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Toluene": -1.0,
-                        "WWTsludge": 3.9651161739358716
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Isobutyraldehyde -> 3.1 WWTsludge",
-                    "reactant": "Isobutyraldehyde",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Isobutyraldehyde": -1.0,
-                        "WWTsludge": 3.103022133495357
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "GlucoseOligomer -> 6.98 WWTsludge",
-                    "reactant": "GlucoseOligomer",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "GlucoseOligomer": -1.0,
-                        "WWTsludge": 6.977613850027672
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Extract -> 7.75 WWTsludge",
-                    "reactant": "Extract",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Extract": -1.0,
-                        "WWTsludge": 7.752894714621664
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Xylose -> 6.46 WWTsludge",
-                    "reactant": "Xylose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Xylose": -1.0,
-                        "WWTsludge": 6.460745595518053
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "XyloseOligomer -> 5.69 WWTsludge",
-                    "reactant": "XyloseOligomer",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "XyloseOligomer": -1.0,
-                        "WWTsludge": 5.685465591610879
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Sucrose -> 14.7 WWTsludge",
-                    "reactant": "Sucrose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Sucrose": -1.0,
-                        "WWTsludge": 14.730503400528429
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Cellobiose -> 14.7 WWTsludge",
-                    "reactant": "Cellobiose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Cellobiose": -1.0,
-                        "WWTsludge": 14.730525778385687
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Mannose -> 7.75 WWTsludge",
-                    "reactant": "Mannose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Mannose": -1.0,
-                        "WWTsludge": 7.752894714621664
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "MannoseOligomer -> 6.98 WWTsludge",
-                    "reactant": "MannoseOligomer",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "MannoseOligomer": -1.0,
-                        "WWTsludge": 6.977613850027672
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Galactose -> 7.75 WWTsludge",
-                    "reactant": "Galactose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Galactose": -1.0,
-                        "WWTsludge": 7.752894714621664
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "GalactoseOligomer -> 6.98 WWTsludge",
-                    "reactant": "GalactoseOligomer",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "GalactoseOligomer": -1.0,
-                        "WWTsludge": 6.977613850027672
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Arabinose -> 6.46 WWTsludge",
-                    "reactant": "Arabinose",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "Arabinose": -1.0,
-                        "WWTsludge": 6.460745595518053
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "ArabinoseOligomer -> 5.69 WWTsludge",
-                    "reactant": "ArabinoseOligomer",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "ArabinoseOligomer": -1.0,
-                        "WWTsludge": 5.685465591610879
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "SolubleLignin -> 6.55 WWTsludge",
-                    "reactant": "SolubleLignin",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "SolubleLignin": -1.0,
-                        "WWTsludge": 6.547559632051394
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Furfural -> 4.13 WWTsludge",
-                    "reactant": "Furfural",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 4.134914190664706,
-                        "Furfural": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Acetoin -> 3.79 WWTsludge",
-                    "reactant": "Acetoin",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 3.791545766885962,
-                        "Acetoin": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "HMF -> 5.43 WWTsludge",
-                    "reactant": "HMF",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 5.4270624490814985,
-                        "HMF": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Xylitol -> 6.55 WWTsludge",
-                    "reactant": "Xylitol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 6.547502826721439,
-                        "Xylitol": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Glycerol -> 3.96 WWTsludge",
-                    "reactant": "Glycerol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 3.9631968423328603,
-                        "Glycerol": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "LacticAcid -> 3.88 WWTsludge",
-                    "reactant": "LacticAcid",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 3.8764447752503792,
-                        "LacticAcid": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "HP -> 3.88 WWTsludge",
-                    "reactant": "HP",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 3.8764447752503792,
-                        "HP": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "MethylHP -> 4.48 WWTsludge",
-                    "reactant": "MethylHP",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 4.480069400276567,
-                        "MethylHP": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "SuccinicAcid -> 5.08 WWTsludge",
-                    "reactant": "SuccinicAcid",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 5.081840966584691,
-                        "SuccinicAcid": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "MethylAcetate -> 3.19 WWTsludge",
-                    "reactant": "MethylAcetate",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 3.1879211418597744,
-                        "MethylAcetate": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "EthylLactate -> 5.08 WWTsludge",
-                    "reactant": "EthylLactate",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 5.083694025302755,
-                        "EthylLactate": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "MethylSuccinate -> 6.29 WWTsludge",
-                    "reactant": "MethylSuccinate",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 6.289090216637066,
-                        "MethylSuccinate": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "MEA -> 2.63 WWTsludge",
-                    "reactant": "MEA",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 2.628670086396302,
-                        "MEA": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "CSL -> 1.6 WWTsludge",
-                    "reactant": "CSL",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 1.6024684364519268,
-                        "CSL": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Methanol -> 1.38 WWTsludge",
-                    "reactant": "Methanol",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 1.3789003254992744,
-                        "Methanol": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Denaturant -> 4.31 WWTsludge",
-                    "reactant": "Denaturant",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 4.312124442265797,
-                        "Denaturant": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "FermMicrobeXyl -> 1.04 WWTsludge",
-                    "reactant": "FermMicrobeXyl",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 1.041696880898085,
-                        "FermMicrobeXyl": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "AmmoniumAcetate -> 3.32 WWTsludge",
-                    "reactant": "AmmoniumAcetate",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 3.3171937197869075,
-                        "AmmoniumAcetate": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Cellulase -> 1.03 WWTsludge",
-                    "reactant": "Cellulase",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 1.0334839232589084,
-                        "Cellulase": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Starch -> 6.98 WWTsludge",
-                    "reactant": "Starch",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 6.977613850027672,
-                        "Starch": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "SolubleProtein -> 6.98 WWTsludge",
-                    "reactant": "SolubleProtein",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 6.977613850027672,
-                        "SolubleProtein": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "TriOlein -> 38.1 WWTsludge",
-                    "reactant": "TriOlein",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 38.103985091423944,
-                        "TriOlein": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "Octane -> 4.92 WWTsludge",
-                    "reactant": "Octane",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 4.915749067291985,
-                        "Octane": -1.0
-                    }
-                },
-                {
-                    "index": 0,
-                    "equation": "CitricAcid -> 8.27 WWTsludge",
-                    "reactant": "CitricAcid",
-                    "conversion": 0.05,
-                    "stoichiometry": {
-                        "WWTsludge": 8.2679090497264,
-                        "CitricAcid": -1.0
-                    }
-                },
-                {
-                    "index": 1,
                     "equation": "Ethanol -> 1.5 CH4 + 0.5 CO2",
                     "reactant": "Ethanol",
                     "conversion": 0.86,
@@ -4386,7 +3896,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "AceticAcid -> CH4 + CO2",
                     "reactant": "AceticAcid",
                     "conversion": 0.86,
@@ -4397,7 +3907,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + AcrylicAcid -> 1.5 CH4 + 1.5 CO2",
                     "reactant": "AcrylicAcid",
                     "conversion": 0.86,
@@ -4409,7 +3919,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Glucose -> 3 CH4 + 3 CO2",
                     "reactant": "Glucose",
                     "conversion": 0.86,
@@ -4420,7 +3930,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "4 H2O + Decanol -> 7.5 CH4 + 2.5 CO2",
                     "reactant": "Decanol",
                     "conversion": 0.86,
@@ -4432,7 +3942,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "5 H2O + Dodecanol -> 9 CH4 + 3 CO2",
                     "reactant": "Dodecanol",
                     "conversion": 0.86,
@@ -4444,7 +3954,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "12 H2O + TOA -> 18 CH4 + 6 CO2 + NH3",
                     "reactant": "TOA",
                     "conversion": 0.86,
@@ -4457,7 +3967,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "3 H2O + Octanol -> 6 CH4 + 2 CO2",
                     "reactant": "Octanol",
                     "conversion": 0.86,
@@ -4469,7 +3979,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "2 H2O + Hexanol -> 4.5 CH4 + 1.5 CO2",
                     "reactant": "Hexanol",
                     "conversion": 0.86,
@@ -4481,7 +3991,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "2.5 H2O + Octanediol -> 5.75 CH4 + 2.25 CO2",
                     "reactant": "Octanediol",
                     "conversion": 0.86,
@@ -4493,7 +4003,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "5 H2O + Toluene -> 4.5 CH4 + 2.5 CO2",
                     "reactant": "Toluene",
                     "conversion": 0.86,
@@ -4505,7 +4015,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "1.5 H2O + Isobutyraldehyde -> 2.75 CH4 + 1.25 CO2",
                     "reactant": "Isobutyraldehyde",
                     "conversion": 0.86,
@@ -4517,7 +4027,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + GlucoseOligomer -> 3 CH4 + 3 CO2",
                     "reactant": "GlucoseOligomer",
                     "conversion": 0.86,
@@ -4529,7 +4039,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Extract -> 3 CH4 + 3 CO2",
                     "reactant": "Extract",
                     "conversion": 0.86,
@@ -4540,7 +4050,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Xylose -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "Xylose",
                     "conversion": 0.86,
@@ -4551,7 +4061,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + XyloseOligomer -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "XyloseOligomer",
                     "conversion": 0.86,
@@ -4563,7 +4073,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + Sucrose -> 6 CH4 + 6 CO2",
                     "reactant": "Sucrose",
                     "conversion": 0.86,
@@ -4575,7 +4085,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + Cellobiose -> 6 CH4 + 6 CO2",
                     "reactant": "Cellobiose",
                     "conversion": 0.86,
@@ -4587,7 +4097,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Mannose -> 3 CH4 + 3 CO2",
                     "reactant": "Mannose",
                     "conversion": 0.86,
@@ -4598,7 +4108,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + MannoseOligomer -> 3 CH4 + 3 CO2",
                     "reactant": "MannoseOligomer",
                     "conversion": 0.86,
@@ -4610,7 +4120,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Galactose -> 3 CH4 + 3 CO2",
                     "reactant": "Galactose",
                     "conversion": 0.86,
@@ -4621,7 +4131,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + GalactoseOligomer -> 3 CH4 + 3 CO2",
                     "reactant": "GalactoseOligomer",
                     "conversion": 0.86,
@@ -4633,7 +4143,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Arabinose -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "Arabinose",
                     "conversion": 0.86,
@@ -4644,7 +4154,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + ArabinoseOligomer -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "ArabinoseOligomer",
                     "conversion": 0.86,
@@ -4656,7 +4166,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "4.5 H2O + SolubleLignin -> 4.25 CH4 + 3.75 CO2",
                     "reactant": "SolubleLignin",
                     "conversion": 0.86,
@@ -4668,7 +4178,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "3 H2O + Furfural -> 2.5 CH4 + 2.5 CO2",
                     "reactant": "Furfural",
                     "conversion": 0.86,
@@ -4680,7 +4190,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + Acetoin -> 2.5 CH4 + 1.5 CO2",
                     "reactant": "Acetoin",
                     "conversion": 0.86,
@@ -4692,7 +4202,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "3 H2O + HMF -> 3 CH4 + 3 CO2",
                     "reactant": "HMF",
                     "conversion": 0.86,
@@ -4704,7 +4214,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Xylitol -> 0.5 H2O + 2.75 CH4 + 2.25 CO2",
                     "reactant": "Xylitol",
                     "conversion": 0.86,
@@ -4716,7 +4226,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Glycerol -> 0.5 H2O + 1.75 CH4 + 1.25 CO2",
                     "reactant": "Glycerol",
                     "conversion": 0.86,
@@ -4728,7 +4238,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "LacticAcid -> 1.5 CH4 + 1.5 CO2",
                     "reactant": "LacticAcid",
                     "conversion": 0.86,
@@ -4739,7 +4249,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "HP -> 1.5 CH4 + 1.5 CO2",
                     "reactant": "HP",
                     "conversion": 0.86,
@@ -4750,7 +4260,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.5 H2O + MethylHP -> 2.25 CH4 + 1.75 CO2",
                     "reactant": "MethylHP",
                     "conversion": 0.86,
@@ -4762,7 +4272,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.5 H2O + SuccinicAcid -> 1.75 CH4 + 2.25 CO2",
                     "reactant": "SuccinicAcid",
                     "conversion": 0.86,
@@ -4774,7 +4284,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.5 H2O + MethylAcetate -> 1.75 CH4 + 1.25 CO2",
                     "reactant": "MethylAcetate",
                     "conversion": 0.86,
@@ -4786,7 +4296,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + EthylLactate -> 3 CH4 + 2 CO2",
                     "reactant": "EthylLactate",
                     "conversion": 0.86,
@@ -4798,7 +4308,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "1.5 H2O + MethylSuccinate -> 3.25 CH4 + 2.75 CO2",
                     "reactant": "MethylSuccinate",
                     "conversion": 0.86,
@@ -4810,7 +4320,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.5 H2O + MEA -> 1.25 CH4 + 0.75 CO2 + NH3",
                     "reactant": "MEA",
                     "conversion": 0.86,
@@ -4823,7 +4333,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "CSL -> 0.332 H2O + 0.502 CH4 + 0.498 CO2 + 0.0725 NH3 + 0.00175 H2S",
                     "reactant": "CSL",
                     "conversion": 0.86,
@@ -4837,7 +4347,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "Methanol -> 0.5 H2O + 0.75 CH4 + 0.25 CO2",
                     "reactant": "Methanol",
                     "conversion": 0.86,
@@ -4849,7 +4359,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "3 H2O + Denaturant -> 5.5 CH4 + 1.5 CO2",
                     "reactant": "Denaturant",
                     "conversion": 0.86,
@@ -4861,7 +4371,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.515 H2O + FermMicrobeXyl -> 0.523 CH4 + 0.477 CO2 + 0.24 NH3",
                     "reactant": "FermMicrobeXyl",
                     "conversion": 0.86,
@@ -4874,7 +4384,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "AmmoniumAcetate -> CH4 + CO2 + NH3",
                     "reactant": "AmmoniumAcetate",
                     "conversion": 0.86,
@@ -4886,7 +4396,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.578 H2O + Cellulase -> 0.501 CH4 + 0.499 CO2 + 0.24 NH3 + 0.01 H2S",
                     "reactant": "Cellulase",
                     "conversion": 0.86,
@@ -4900,7 +4410,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + Starch -> 3 CH4 + 3 CO2",
                     "reactant": "Starch",
                     "conversion": 0.86,
@@ -4912,7 +4422,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "H2O + SolubleProtein -> 3 CH4 + 3 CO2",
                     "reactant": "SolubleProtein",
                     "conversion": 0.86,
@@ -4924,7 +4434,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "28 H2O + TriOlein -> 40 CH4 + 17 CO2",
                     "reactant": "TriOlein",
                     "conversion": 0.86,
@@ -4936,7 +4446,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "3.5 H2O + Octane -> 6.25 CH4 + 1.75 CO2",
                     "reactant": "Octane",
                     "conversion": 0.86,
@@ -4948,7 +4458,7 @@
                     }
                 },
                 {
-                    "index": 1,
+                    "index": 0,
                     "equation": "0.5 H2O + CitricAcid -> 2.25 CH4 + 3.75 CO2",
                     "reactant": "CitricAcid",
                     "conversion": 0.86,
@@ -4956,6 +4466,496 @@
                         "H2O": -0.5,
                         "CH4": 2.25,
                         "CO2": 3.75,
+                        "CitricAcid": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Ethanol -> 1.98 WWTsludge",
+                    "reactant": "Ethanol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Ethanol": -1.0,
+                        "WWTsludge": 1.9825249505254625
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "AceticAcid -> 2.58 WWTsludge",
+                    "reactant": "AceticAcid",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "AceticAcid": -1.0,
+                        "WWTsludge": 2.5842965168335863
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "AcrylicAcid -> 3.1 WWTsludge",
+                    "reactant": "AcrylicAcid",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "AcrylicAcid": -1.0,
+                        "WWTsludge": 3.1011690747772924
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Glucose -> 7.75 WWTsludge",
+                    "reactant": "Glucose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Glucose": -1.0,
+                        "WWTsludge": 7.752894714621664
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Decanol -> 6.81 WWTsludge",
+                    "reactant": "Decanol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Decanol": -1.0,
+                        "WWTsludge": 6.811521950734967
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Dodecanol -> 8.02 WWTsludge",
+                    "reactant": "Dodecanol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Dodecanol": -1.0,
+                        "WWTsludge": 8.018771200787342
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "TOA -> 15.2 WWTsludge",
+                    "reactant": "TOA",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "TOA": -1.0,
+                        "WWTsludge": 15.219888203581833
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Octanol -> 5.6 WWTsludge",
+                    "reactant": "Octanol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Octanol": -1.0,
+                        "WWTsludge": 5.604272700682591
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Hexanol -> 4.4 WWTsludge",
+                    "reactant": "Hexanol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Hexanol": -1.0,
+                        "WWTsludge": 4.397023450630215
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Octanediol -> 6.29 WWTsludge",
+                    "reactant": "Octanediol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Octanediol": -1.0,
+                        "WWTsludge": 6.292796334073195
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Toluene -> 3.97 WWTsludge",
+                    "reactant": "Toluene",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Toluene": -1.0,
+                        "WWTsludge": 3.9651161739358716
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Isobutyraldehyde -> 3.1 WWTsludge",
+                    "reactant": "Isobutyraldehyde",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Isobutyraldehyde": -1.0,
+                        "WWTsludge": 3.103022133495357
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "GlucoseOligomer -> 6.98 WWTsludge",
+                    "reactant": "GlucoseOligomer",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "GlucoseOligomer": -1.0,
+                        "WWTsludge": 6.977613850027672
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Extract -> 7.75 WWTsludge",
+                    "reactant": "Extract",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Extract": -1.0,
+                        "WWTsludge": 7.752894714621664
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Xylose -> 6.46 WWTsludge",
+                    "reactant": "Xylose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Xylose": -1.0,
+                        "WWTsludge": 6.460745595518053
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "XyloseOligomer -> 5.69 WWTsludge",
+                    "reactant": "XyloseOligomer",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "XyloseOligomer": -1.0,
+                        "WWTsludge": 5.685465591610879
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Sucrose -> 14.7 WWTsludge",
+                    "reactant": "Sucrose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Sucrose": -1.0,
+                        "WWTsludge": 14.730503400528429
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Cellobiose -> 14.7 WWTsludge",
+                    "reactant": "Cellobiose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Cellobiose": -1.0,
+                        "WWTsludge": 14.730525778385687
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Mannose -> 7.75 WWTsludge",
+                    "reactant": "Mannose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Mannose": -1.0,
+                        "WWTsludge": 7.752894714621664
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "MannoseOligomer -> 6.98 WWTsludge",
+                    "reactant": "MannoseOligomer",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "MannoseOligomer": -1.0,
+                        "WWTsludge": 6.977613850027672
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Galactose -> 7.75 WWTsludge",
+                    "reactant": "Galactose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Galactose": -1.0,
+                        "WWTsludge": 7.752894714621664
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "GalactoseOligomer -> 6.98 WWTsludge",
+                    "reactant": "GalactoseOligomer",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "GalactoseOligomer": -1.0,
+                        "WWTsludge": 6.977613850027672
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Arabinose -> 6.46 WWTsludge",
+                    "reactant": "Arabinose",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "Arabinose": -1.0,
+                        "WWTsludge": 6.460745595518053
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "ArabinoseOligomer -> 5.69 WWTsludge",
+                    "reactant": "ArabinoseOligomer",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "ArabinoseOligomer": -1.0,
+                        "WWTsludge": 5.685465591610879
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "SolubleLignin -> 6.55 WWTsludge",
+                    "reactant": "SolubleLignin",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "SolubleLignin": -1.0,
+                        "WWTsludge": 6.547559632051394
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Furfural -> 4.13 WWTsludge",
+                    "reactant": "Furfural",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 4.134914190664706,
+                        "Furfural": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Acetoin -> 3.79 WWTsludge",
+                    "reactant": "Acetoin",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 3.791545766885962,
+                        "Acetoin": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "HMF -> 5.43 WWTsludge",
+                    "reactant": "HMF",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 5.4270624490814985,
+                        "HMF": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Xylitol -> 6.55 WWTsludge",
+                    "reactant": "Xylitol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 6.547502826721439,
+                        "Xylitol": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Glycerol -> 3.96 WWTsludge",
+                    "reactant": "Glycerol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 3.9631968423328603,
+                        "Glycerol": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "LacticAcid -> 3.88 WWTsludge",
+                    "reactant": "LacticAcid",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 3.8764447752503792,
+                        "LacticAcid": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "HP -> 3.88 WWTsludge",
+                    "reactant": "HP",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 3.8764447752503792,
+                        "HP": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "MethylHP -> 4.48 WWTsludge",
+                    "reactant": "MethylHP",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 4.480069400276567,
+                        "MethylHP": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "SuccinicAcid -> 5.08 WWTsludge",
+                    "reactant": "SuccinicAcid",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 5.081840966584691,
+                        "SuccinicAcid": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "MethylAcetate -> 3.19 WWTsludge",
+                    "reactant": "MethylAcetate",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 3.1879211418597744,
+                        "MethylAcetate": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "EthylLactate -> 5.08 WWTsludge",
+                    "reactant": "EthylLactate",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 5.083694025302755,
+                        "EthylLactate": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "MethylSuccinate -> 6.29 WWTsludge",
+                    "reactant": "MethylSuccinate",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 6.289090216637066,
+                        "MethylSuccinate": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "MEA -> 2.63 WWTsludge",
+                    "reactant": "MEA",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 2.628670086396302,
+                        "MEA": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "CSL -> 1.6 WWTsludge",
+                    "reactant": "CSL",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 1.6024684364519268,
+                        "CSL": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Methanol -> 1.38 WWTsludge",
+                    "reactant": "Methanol",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 1.3789003254992744,
+                        "Methanol": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Denaturant -> 4.31 WWTsludge",
+                    "reactant": "Denaturant",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 4.312124442265797,
+                        "Denaturant": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "FermMicrobeXyl -> 1.04 WWTsludge",
+                    "reactant": "FermMicrobeXyl",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 1.041696880898085,
+                        "FermMicrobeXyl": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "AmmoniumAcetate -> 3.32 WWTsludge",
+                    "reactant": "AmmoniumAcetate",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 3.3171937197869075,
+                        "AmmoniumAcetate": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Cellulase -> 1.03 WWTsludge",
+                    "reactant": "Cellulase",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 1.0334839232589084,
+                        "Cellulase": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Starch -> 6.98 WWTsludge",
+                    "reactant": "Starch",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 6.977613850027672,
+                        "Starch": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "SolubleProtein -> 6.98 WWTsludge",
+                    "reactant": "SolubleProtein",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 6.977613850027672,
+                        "SolubleProtein": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "TriOlein -> 38.1 WWTsludge",
+                    "reactant": "TriOlein",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 38.103985091423944,
+                        "TriOlein": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Octane -> 4.92 WWTsludge",
+                    "reactant": "Octane",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 4.915749067291985,
+                        "Octane": -1.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "CitricAcid -> 8.27 WWTsludge",
+                    "reactant": "CitricAcid",
+                    "conversion": 0.05,
+                    "stoichiometry": {
+                        "WWTsludge": 8.2679090497264,
                         "CitricAcid": -1.0
                     }
                 }
@@ -6605,30 +6605,6 @@
             }
         },
         {
-            "id": "CWP803",
-            "unit_type": "Chilled water package",
-            "design_input_specs": {},
-            "design_simulation_method": "ChilledWaterPackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_chilled_water_package.py",
-            "thermo_property_package": {
-                "mixture": "IdealMixture(include_excess_energies=False)",
-                "gamma": "DortmundActivityCoefficients",
-                "phi": "IdealFugacityCoefficients",
-                "PCF": "MockPoyntingCorrectionFactors"
-            },
-            "reactions": [],
-            "design_results": {
-                "Duty": 0
-            },
-            "installed_costs": {
-                "Chilled water package": 0.0
-            },
-            "purchase_costs": {
-                "Chilled water package": 0.0
-            },
-            "utility_consumption_results": {},
-            "utility_production_results": {}
-        },
-        {
             "id": "CWP802",
             "unit_type": "Chilled water package",
             "design_input_specs": {},
@@ -6656,6 +6632,60 @@
             "utility_production_results": {
                 "cooling_water": -22199603.89425479
             }
+        },
+        {
+            "id": "CWP803",
+            "unit_type": "Chilled water package",
+            "design_input_specs": {},
+            "design_simulation_method": "ChilledWaterPackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_chilled_water_package.py",
+            "thermo_property_package": {
+                "mixture": "IdealMixture(include_excess_energies=False)",
+                "gamma": "DortmundActivityCoefficients",
+                "phi": "IdealFugacityCoefficients",
+                "PCF": "MockPoyntingCorrectionFactors"
+            },
+            "reactions": [],
+            "design_results": {
+                "Duty": 0
+            },
+            "installed_costs": {
+                "Chilled water package": 0.0
+            },
+            "purchase_costs": {
+                "Chilled water package": 0.0
+            },
+            "utility_consumption_results": {},
+            "utility_production_results": {}
+        },
+        {
+            "id": "ADP902",
+            "unit_type": "Air distribution package",
+            "design_input_specs": {},
+            "design_simulation_method": "AirDistributionPackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_air_distribution_package.py",
+            "thermo_property_package": {
+                "mixture": "IdealMixture(include_excess_energies=False)",
+                "gamma": "DortmundActivityCoefficients",
+                "phi": "IdealFugacityCoefficients",
+                "PCF": "MockPoyntingCorrectionFactors"
+            },
+            "reactions": [],
+            "design_results": {
+                "Flow rate": 68752.29025716537
+            },
+            "installed_costs": {
+                "Plant air compressor": 44046.56915110477,
+                "Instrument air dryer": 28020.696893001917,
+                "Plant air reciever": 51475.057996033145
+            },
+            "purchase_costs": {
+                "Plant air compressor": 27529.10571944048,
+                "Instrument air dryer": 15567.053829445511,
+                "Plant air reciever": 16604.85741807521
+            },
+            "utility_consumption_results": {
+                "Marginal grid electricity": 92.28381825585582
+            },
+            "utility_production_results": {}
         },
         {
             "id": "FWT903",
@@ -6709,7 +6739,7 @@
                 "Cooling water pump": 4.742552179324341e-34
             },
             "utility_consumption_results": {
-                "cooling_water": 599083019.3561435,
+                "cooling_water": 599083019.3561436,
                 "Marginal grid electricity": 8.278321640824696e-46
             },
             "utility_production_results": {}
@@ -6739,36 +6769,6 @@
             "utility_production_results": {}
         },
         {
-            "id": "ADP902",
-            "unit_type": "Air distribution package",
-            "design_input_specs": {},
-            "design_simulation_method": "AirDistributionPackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_air_distribution_package.py",
-            "thermo_property_package": {
-                "mixture": "IdealMixture(include_excess_energies=False)",
-                "gamma": "DortmundActivityCoefficients",
-                "phi": "IdealFugacityCoefficients",
-                "PCF": "MockPoyntingCorrectionFactors"
-            },
-            "reactions": [],
-            "design_results": {
-                "Flow rate": 68752.29025716537
-            },
-            "installed_costs": {
-                "Plant air compressor": 44046.56915110477,
-                "Instrument air dryer": 28020.696893001917,
-                "Plant air reciever": 51475.057996033145
-            },
-            "purchase_costs": {
-                "Plant air compressor": 27529.10571944048,
-                "Instrument air dryer": 15567.053829445511,
-                "Plant air reciever": 16604.85741807521
-            },
-            "utility_consumption_results": {
-                "Marginal grid electricity": 92.28381825585582
-            },
-            "utility_production_results": {}
-        },
-        {
             "id": "BT701",
             "unit_type": "Boiler turbogenerator",
             "design_input_specs": {},
@@ -6782,6 +6782,19 @@
             "reactions": [
                 {
                     "index": 0,
+                    "equation": "0.5 O2 + SO2 + CalciumDihydroxide -> H2O + CaSO4",
+                    "reactant": "SO2",
+                    "conversion": 0.92,
+                    "stoichiometry": {
+                        "H2O": 1.0,
+                        "O2": -0.5,
+                        "SO2": -1.0,
+                        "CalciumDihydroxide": -1.0,
+                        "CaSO4": 1.0
+                    }
+                },
+                {
+                    "index": 1,
                     "equation": "2 O2 + CH4 -> 2 H2O + CO2",
                     "reactant": "CH4",
                     "conversion": 1.0,
@@ -6793,7 +6806,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.5 O2 + CarbonMonoxide -> CO2",
                     "reactant": "CarbonMonoxide",
                     "conversion": 1.0,
@@ -6804,7 +6817,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.75 O2 + NH3 -> 1.5 H2O + 0.5 N2",
                     "reactant": "NH3",
                     "conversion": 1.0,
@@ -6816,7 +6829,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "NitricOxide -> 0.5 O2 + 0.5 N2",
                     "reactant": "NitricOxide",
                     "conversion": 1.0,
@@ -6827,7 +6840,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "NO2 -> O2 + 0.5 N2",
                     "reactant": "NO2",
                     "conversion": 1.0,
@@ -6838,7 +6851,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.5 O2 + H2S -> H2O + SO2",
                     "reactant": "H2S",
                     "conversion": 1.0,
@@ -6850,7 +6863,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "H2SO4 -> H2O + 0.5 O2 + SO2",
                     "reactant": "H2SO4",
                     "conversion": 1.0,
@@ -6862,7 +6875,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "HNO3 -> 0.5 H2O + 1.25 O2 + 0.5 N2",
                     "reactant": "HNO3",
                     "conversion": 1.0,
@@ -6874,7 +6887,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "NaOH -> 0.5 H2O + 0.25 O2 + 23 Ash",
                     "reactant": "NaOH",
                     "conversion": 1.0,
@@ -6886,7 +6899,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.75 O2 + AmmoniumHydroxide -> 2.5 H2O + 0.5 N2",
                     "reactant": "AmmoniumHydroxide",
                     "conversion": 1.0,
@@ -6898,7 +6911,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "CalciumDihydroxide -> H2O + 0.5 O2 + 40.1 Ash",
                     "reactant": "CalciumDihydroxide",
                     "conversion": 1.0,
@@ -6910,7 +6923,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "NaNO3 -> 1.5 O2 + 0.5 N2 + 23 Ash",
                     "reactant": "NaNO3",
                     "conversion": 1.0,
@@ -6922,7 +6935,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "Na2SO4 -> O2 + SO2 + 46 Ash",
                     "reactant": "Na2SO4",
                     "conversion": 1.0,
@@ -6934,7 +6947,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "CaSO4 -> O2 + SO2 + 40.1 Ash",
                     "reactant": "CaSO4",
                     "conversion": 1.0,
@@ -6946,7 +6959,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "H2O + MagnesiumChloride -> 0.5 O2 + 2 HCl + 24.3 Ash",
                     "reactant": "MagnesiumChloride",
                     "conversion": 1.0,
@@ -6959,7 +6972,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "ZincSulfate -> O2 + SO2 + 65.4 Ash",
                     "reactant": "ZincSulfate",
                     "conversion": 1.0,
@@ -6971,7 +6984,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3 O2 + Ethanol -> 3 H2O + 2 CO2",
                     "reactant": "Ethanol",
                     "conversion": 1.0,
@@ -6983,7 +6996,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5.5 O2 + CalciumLactate -> 5 H2O + 6 CO2 + 40.1 Ash",
                     "reactant": "CalciumLactate",
                     "conversion": 1.0,
@@ -6996,7 +7009,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3.5 O2 + CalciumAcetate -> 3 H2O + 4 CO2 + 40.1 Ash",
                     "reactant": "CalciumAcetate",
                     "conversion": 1.0,
@@ -7009,7 +7022,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "2.75 O2 + SodiumLactate -> 2.5 H2O + 3 CO2 + 23 Ash",
                     "reactant": "SodiumLactate",
                     "conversion": 1.0,
@@ -7022,7 +7035,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3 O2 + CalciumSuccinate -> 2 H2O + 4 CO2 + 40.1 Ash",
                     "reactant": "CalciumSuccinate",
                     "conversion": 1.0,
@@ -7035,7 +7048,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "2 O2 + AceticAcid -> 2 H2O + 2 CO2",
                     "reactant": "AceticAcid",
                     "conversion": 1.0,
@@ -7047,7 +7060,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3 O2 + AcrylicAcid -> 2 H2O + 3 CO2",
                     "reactant": "AcrylicAcid",
                     "conversion": 1.0,
@@ -7059,7 +7072,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Glucose -> 6 H2O + 6 CO2",
                     "reactant": "Glucose",
                     "conversion": 1.0,
@@ -7071,7 +7084,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "15 O2 + Decanol -> 11 H2O + 10 CO2",
                     "reactant": "Decanol",
                     "conversion": 1.0,
@@ -7083,7 +7096,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "18 O2 + Dodecanol -> 13 H2O + 12 CO2",
                     "reactant": "Dodecanol",
                     "conversion": 1.0,
@@ -7095,7 +7108,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "36.8 O2 + TOA -> 25.5 H2O + 0.5 N2 + 24 CO2",
                     "reactant": "TOA",
                     "conversion": 1.0,
@@ -7108,7 +7121,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "38.2 O2 + AQ336 -> 26.5 H2O + 0.5 N2 + 25 CO2 + HCl",
                     "reactant": "AQ336",
                     "conversion": 1.0,
@@ -7122,7 +7135,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "12 O2 + Octanol -> 9 H2O + 8 CO2",
                     "reactant": "Octanol",
                     "conversion": 1.0,
@@ -7134,7 +7147,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "9 O2 + Hexanol -> 7 H2O + 6 CO2",
                     "reactant": "Hexanol",
                     "conversion": 1.0,
@@ -7146,7 +7159,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "11.5 O2 + Octanediol -> 9 H2O + 8 CO2",
                     "reactant": "Octanediol",
                     "conversion": 1.0,
@@ -7158,7 +7171,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "9 O2 + Toluene -> 4 H2O + 7 CO2",
                     "reactant": "Toluene",
                     "conversion": 1.0,
@@ -7170,7 +7183,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5.5 O2 + Isobutyraldehyde -> 4 H2O + 4 CO2",
                     "reactant": "Isobutyraldehyde",
                     "conversion": 1.0,
@@ -7182,7 +7195,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "DPHP -> 0.5 H2O + 0.5 O2 + 0.25 P4O10 + 78.2 Ash",
                     "reactant": "DPHP",
                     "conversion": 1.0,
@@ -7195,7 +7208,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + GlucoseOligomer -> 5 H2O + 6 CO2",
                     "reactant": "GlucoseOligomer",
                     "conversion": 1.0,
@@ -7207,7 +7220,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Extract -> 6 H2O + 6 CO2",
                     "reactant": "Extract",
                     "conversion": 1.0,
@@ -7219,7 +7232,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Xylose -> 5 H2O + 5 CO2",
                     "reactant": "Xylose",
                     "conversion": 1.0,
@@ -7231,7 +7244,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + XyloseOligomer -> 4 H2O + 5 CO2",
                     "reactant": "XyloseOligomer",
                     "conversion": 1.0,
@@ -7243,7 +7256,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "12 O2 + Sucrose -> 11 H2O + 12 CO2",
                     "reactant": "Sucrose",
                     "conversion": 1.0,
@@ -7255,7 +7268,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "12 O2 + Cellobiose -> 11 H2O + 12 CO2",
                     "reactant": "Cellobiose",
                     "conversion": 1.0,
@@ -7267,7 +7280,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Mannose -> 6 H2O + 6 CO2",
                     "reactant": "Mannose",
                     "conversion": 1.0,
@@ -7279,7 +7292,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + MannoseOligomer -> 5 H2O + 6 CO2",
                     "reactant": "MannoseOligomer",
                     "conversion": 1.0,
@@ -7291,7 +7304,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Galactose -> 6 H2O + 6 CO2",
                     "reactant": "Galactose",
                     "conversion": 1.0,
@@ -7303,7 +7316,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + GalactoseOligomer -> 5 H2O + 6 CO2",
                     "reactant": "GalactoseOligomer",
                     "conversion": 1.0,
@@ -7315,7 +7328,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Arabinose -> 5 H2O + 5 CO2",
                     "reactant": "Arabinose",
                     "conversion": 1.0,
@@ -7327,7 +7340,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + ArabinoseOligomer -> 4 H2O + 5 CO2",
                     "reactant": "ArabinoseOligomer",
                     "conversion": 1.0,
@@ -7339,7 +7352,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "8.5 O2 + SolubleLignin -> 4 H2O + 8 CO2",
                     "reactant": "SolubleLignin",
                     "conversion": 1.0,
@@ -7351,7 +7364,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.24 O2 + Protein -> 0.785 H2O + 0.145 N2 + CO2 + 0.007 SO2",
                     "reactant": "Protein",
                     "conversion": 1.0,
@@ -7365,7 +7378,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.2 O2 + Enzyme -> 0.795 H2O + 0.12 N2 + CO2 + 0.01 SO2",
                     "reactant": "Enzyme",
                     "conversion": 1.0,
@@ -7379,7 +7392,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.23 O2 + FermMicrobe -> 0.89 H2O + 0.12 N2 + CO2",
                     "reactant": "FermMicrobe",
                     "conversion": 1.0,
@@ -7392,7 +7405,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.22 O2 + WWTsludge -> 0.82 H2O + 0.115 N2 + CO2 + 0.0035 SO2",
                     "reactant": "WWTsludge",
                     "conversion": 1.0,
@@ -7406,7 +7419,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Furfural -> 2 H2O + 5 CO2",
                     "reactant": "Furfural",
                     "conversion": 1.0,
@@ -7418,7 +7431,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Acetoin -> 4 H2O + 4 CO2",
                     "reactant": "Acetoin",
                     "conversion": 1.0,
@@ -7430,7 +7443,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + HMF -> 3 H2O + 6 CO2",
                     "reactant": "HMF",
                     "conversion": 1.0,
@@ -7442,7 +7455,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5.5 O2 + Xylitol -> 6 H2O + 5 CO2",
                     "reactant": "Xylitol",
                     "conversion": 1.0,
@@ -7454,7 +7467,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3.5 O2 + Glycerol -> 4 H2O + 3 CO2",
                     "reactant": "Glycerol",
                     "conversion": 1.0,
@@ -7466,7 +7479,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3 O2 + LacticAcid -> 3 H2O + 3 CO2",
                     "reactant": "LacticAcid",
                     "conversion": 1.0,
@@ -7478,7 +7491,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3 O2 + HP -> 3 H2O + 3 CO2",
                     "reactant": "HP",
                     "conversion": 1.0,
@@ -7490,7 +7503,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "4.5 O2 + MethylHP -> 4 H2O + 4 CO2",
                     "reactant": "MethylHP",
                     "conversion": 1.0,
@@ -7502,7 +7515,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3.5 O2 + SuccinicAcid -> 3 H2O + 4 CO2",
                     "reactant": "SuccinicAcid",
                     "conversion": 1.0,
@@ -7514,7 +7527,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3.5 O2 + MethylAcetate -> 3 H2O + 3 CO2",
                     "reactant": "MethylAcetate",
                     "conversion": 1.0,
@@ -7526,7 +7539,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + EthylLactate -> 5 H2O + 5 CO2",
                     "reactant": "EthylLactate",
                     "conversion": 1.0,
@@ -7538,7 +7551,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6.5 O2 + MethylSuccinate -> 5 H2O + 6 CO2",
                     "reactant": "MethylSuccinate",
                     "conversion": 1.0,
@@ -7550,7 +7563,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Glucan -> 5 H2O + 6 CO2",
                     "reactant": "Glucan",
                     "conversion": 1.0,
@@ -7562,7 +7575,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Mannan -> 5 H2O + 6 CO2",
                     "reactant": "Mannan",
                     "conversion": 1.0,
@@ -7574,7 +7587,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Galactan -> 5 H2O + 6 CO2",
                     "reactant": "Galactan",
                     "conversion": 1.0,
@@ -7586,7 +7599,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "3.25 O2 + MEA -> 3.5 H2O + 0.5 N2 + 2 CO2",
                     "reactant": "MEA",
                     "conversion": 1.0,
@@ -7599,7 +7612,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Xylan -> 4 H2O + 5 CO2",
                     "reactant": "Xylan",
                     "conversion": 1.0,
@@ -7611,7 +7624,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Arabinan -> 4 H2O + 5 CO2",
                     "reactant": "Arabinan",
                     "conversion": 1.0,
@@ -7623,7 +7636,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Tar -> 5 H2O + 5 CO2",
                     "reactant": "Tar",
                     "conversion": 1.0,
@@ -7635,7 +7648,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "TiO2 -> O2 + 47.9 Ash",
                     "reactant": "TiO2",
                     "conversion": 1.0,
@@ -7646,7 +7659,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.06 O2 + CSL -> 1.45 H2O + 0.0362 N2 + CO2 + 0.00175 SO2",
                     "reactant": "CSL",
                     "conversion": 1.0,
@@ -7660,7 +7673,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.5 O2 + BoilerChems -> 4.5 H2O + N2 + 0.25 P4O10",
                     "reactant": "BoilerChems",
                     "conversion": 1.0,
@@ -7673,7 +7686,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.5 O2 + Methanol -> 2 H2O + CO2",
                     "reactant": "Methanol",
                     "conversion": 1.0,
@@ -7685,7 +7698,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "11 O2 + Denaturant -> 8 H2O + 7 CO2",
                     "reactant": "Denaturant",
                     "conversion": 1.0,
@@ -7697,7 +7710,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.2 O2 + DenaturedEnzyme -> 0.795 H2O + 0.12 N2 + CO2 + 0.01 SO2",
                     "reactant": "DenaturedEnzyme",
                     "conversion": 1.0,
@@ -7711,7 +7724,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.23 O2 + FermMicrobeXyl -> 0.89 H2O + 0.12 N2 + CO2",
                     "reactant": "FermMicrobeXyl",
                     "conversion": 1.0,
@@ -7724,7 +7737,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "H3PO4 -> 1.5 H2O + 0.25 P4O10",
                     "reactant": "H3PO4",
                     "conversion": 1.0,
@@ -7735,7 +7748,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Cellulose -> 5 H2O + 6 CO2",
                     "reactant": "Cellulose",
                     "conversion": 1.0,
@@ -7747,7 +7760,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "5 O2 + Hemicellulose -> 4 H2O + 5 CO2",
                     "reactant": "Hemicellulose",
                     "conversion": 1.0,
@@ -7759,7 +7772,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "CaO -> 0.5 O2 + 40.1 Ash",
                     "reactant": "CaO",
                     "conversion": 1.0,
@@ -7770,7 +7783,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "8.5 O2 + Lignin -> 4 H2O + 8 CO2",
                     "reactant": "Lignin",
                     "conversion": 1.0,
@@ -7782,7 +7795,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "2 O2 + Acetate -> 2 H2O + 2 CO2",
                     "reactant": "Acetate",
                     "conversion": 1.0,
@@ -7794,7 +7807,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "O2 + AmmoniumSulfate -> 4 H2O + N2 + SO2",
                     "reactant": "AmmoniumSulfate",
                     "conversion": 1.0,
@@ -7807,7 +7820,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "2.75 O2 + AmmoniumAcetate -> 3.5 H2O + 0.5 N2 + 2 CO2",
                     "reactant": "AmmoniumAcetate",
                     "conversion": 1.0,
@@ -7820,7 +7833,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.2 O2 + Cellulase -> 0.795 H2O + 0.12 N2 + CO2 + 0.01 SO2",
                     "reactant": "Cellulase",
                     "conversion": 1.0,
@@ -7834,7 +7847,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Starch -> 5 H2O + 6 CO2",
                     "reactant": "Starch",
                     "conversion": 1.0,
@@ -7846,7 +7859,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + Fiber -> 5 H2O + 6 CO2",
                     "reactant": "Fiber",
                     "conversion": 1.0,
@@ -7858,7 +7871,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + SolubleProtein -> 5 H2O + 6 CO2",
                     "reactant": "SolubleProtein",
                     "conversion": 1.0,
@@ -7870,7 +7883,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "6 O2 + InsolubleProtein -> 5 H2O + 6 CO2",
                     "reactant": "InsolubleProtein",
                     "conversion": 1.0,
@@ -7882,7 +7895,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "80 O2 + TriOlein -> 52 H2O + 57 CO2",
                     "reactant": "TriOlein",
                     "conversion": 1.0,
@@ -7894,7 +7907,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "1.12 O2 + Yeast -> 0.805 H2O + CO2",
                     "reactant": "Yeast",
                     "conversion": 1.0,
@@ -7906,7 +7919,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "12.5 O2 + Octane -> 9 H2O + 8 CO2",
                     "reactant": "Octane",
                     "conversion": 1.0,
@@ -7918,7 +7931,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.5 H2O + NaOCl -> 0.75 O2 + HCl + 23 Ash",
                     "reactant": "NaOCl",
                     "conversion": 1.0,
@@ -7931,7 +7944,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "4.5 O2 + CitricAcid -> 4 H2O + 6 CO2",
                     "reactant": "CitricAcid",
                     "conversion": 1.0,
@@ -7943,7 +7956,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "Bisulfite -> 0.5 H2O + 0.25 O2 + SO2",
                     "reactant": "Bisulfite",
                     "conversion": 1.0,
@@ -7952,19 +7965,6 @@
                         "O2": 0.25,
                         "SO2": 1.0,
                         "Bisulfite": -1.0
-                    }
-                },
-                {
-                    "index": 1,
-                    "equation": "0.5 O2 + SO2 + CalciumDihydroxide -> H2O + CaSO4",
-                    "reactant": "SO2",
-                    "conversion": 0.92,
-                    "stoichiometry": {
-                        "H2O": 1.0,
-                        "O2": -0.5,
-                        "SO2": -1.0,
-                        "CalciumDihydroxide": -1.0,
-                        "CaSO4": 1.0
                     }
                 }
             ],
@@ -20317,7 +20317,7 @@
             "source_unit_id": "T620_P",
             "sink_unit_id": "None",
             "price": {
-                "value": 1.5991030878139862,
+                "value": 1.5991030878139847,
                 "units": "$/kg"
             },
             "stream_properties": {
@@ -20755,6 +20755,82 @@
         {
             "id": "recirculated_chilled_water",
             "source_unit_id": "None",
+            "sink_unit_id": "CWP802",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 271174.2692652554,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 15052.459315939326,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 271.89186412447503,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 296.9687881794634,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "Water",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "",
+            "source_unit_id": "CWP802",
+            "sink_unit_id": "None",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 271174.2692652554,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 15052.459315939326,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 271.89186412447503,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 296.9687881794634,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "Water",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "recirculated_chilled_water",
+            "source_unit_id": "None",
             "sink_unit_id": "CWP803",
             "price": {
                 "value": 0.0,
@@ -20817,28 +20893,28 @@
             }
         },
         {
-            "id": "recirculated_chilled_water",
+            "id": "plant_air",
             "source_unit_id": "None",
-            "sink_unit_id": "CWP802",
+            "sink_unit_id": "ADP902",
             "price": {
                 "value": 0.0,
                 "units": "$/kg"
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 271174.2692652554,
+                    "value": 68752.29025716537,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 15052.459315939326,
+                    "value": 2454.2643969373717,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 271.8918641244751,
+                    "value": 60031.284074012205,
                     "units": "m3/h"
                 },
                 "temperature": {
-                    "value": 296.96878817946344,
+                    "value": 298.15,
                     "units": "K"
                 },
                 "pressure": {
@@ -20848,15 +20924,15 @@
                 "composition": [
                     {
                         "phase": "l",
-                        "component_name": "Water",
+                        "component_name": "N2",
                         "mol_fraction": 1.0
                     }
                 ]
             }
         },
         {
-            "id": "",
-            "source_unit_id": "CWP802",
+            "id": "s81",
+            "source_unit_id": "ADP902",
             "sink_unit_id": "None",
             "price": {
                 "value": 0.0,
@@ -20864,19 +20940,19 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 271174.2692652554,
+                    "value": 68752.29025716537,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 15052.459315939326,
+                    "value": 2454.2643969373717,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 271.8918641244751,
+                    "value": 60031.284074012205,
                     "units": "m3/h"
                 },
                 "temperature": {
-                    "value": 296.96878817946344,
+                    "value": 298.15,
                     "units": "K"
                 },
                 "pressure": {
@@ -20886,7 +20962,7 @@
                 "composition": [
                     {
                         "phase": "l",
-                        "component_name": "Water",
+                        "component_name": "N2",
                         "mol_fraction": 1.0
                     }
                 ]
@@ -21267,82 +21343,6 @@
                     {
                         "phase": "l",
                         "component_name": "H2O",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "plant_air",
-            "source_unit_id": "None",
-            "sink_unit_id": "ADP902",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 68752.29025716537,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 2454.2643969373717,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 60031.284074012205,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "N2",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "s81",
-            "source_unit_id": "ADP902",
-            "sink_unit_id": "None",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 68752.29025716537,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 2454.2643969373717,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 60031.284074012205,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "N2",
                         "mol_fraction": 1.0
                     }
                 ]

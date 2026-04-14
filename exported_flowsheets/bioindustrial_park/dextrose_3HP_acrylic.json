@@ -8,7 +8,7 @@
         },
         "feedstocks": [
             {
-                "display_name": "Glucose",
+                "display_name": "Dextrose",
                 "stream_id": "glucose_feedstock"
             }
         ],
@@ -5875,6 +5875,58 @@
             }
         },
         {
+            "id": "CIP901",
+            "unit_type": "CIP Package",
+            "design_input_specs": {},
+            "design_simulation_method": "CIPpackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_cleaning_in_place.py",
+            "thermo_property_package": {
+                "mixture": "IdealMixture(include_excess_energies=False)",
+                "gamma": "DortmundActivityCoefficients",
+                "phi": "IdealFugacityCoefficients",
+                "PCF": "MockPoyntingCorrectionFactors"
+            },
+            "reactions": [],
+            "design_results": {
+                "Flow rate": 61.70603403738119
+            },
+            "installed_costs": {
+                "CIP Package": 871725.8570352241
+            },
+            "purchase_costs": {
+                "CIP Package": 484292.14279734675
+            },
+            "utility_consumption_results": {},
+            "utility_production_results": {}
+        },
+        {
+            "id": "FWT903",
+            "unit_type": "Fire water tank",
+            "design_input_specs": {},
+            "design_simulation_method": "FireWaterTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_fire_water_tank.py",
+            "thermo_property_package": {
+                "mixture": "IdealMixture(include_excess_energies=False)",
+                "gamma": "DortmundActivityCoefficients",
+                "phi": "IdealFugacityCoefficients",
+                "PCF": "MockPoyntingCorrectionFactors"
+            },
+            "reactions": [],
+            "design_results": {
+                "Flow rate": 4079.7377875954508
+            },
+            "installed_costs": {
+                "Pump": 16757.964369254394,
+                "Tank": 1020324.069702086
+            },
+            "purchase_costs": {
+                "Pump": 9857.626099561407,
+                "Tank": 566846.7053900479
+            },
+            "utility_consumption_results": {
+                "Marginal grid electricity": 46.13115947947811
+            },
+            "utility_production_results": {}
+        },
+        {
             "id": "ADP902",
             "unit_type": "Air distribution package",
             "design_input_specs": {},
@@ -5928,60 +5980,8 @@
                 "Cooling water pump": 1.0774155763440768e-59
             },
             "utility_consumption_results": {
-                "cooling_water": 471709437.38799125,
+                "cooling_water": 471709437.3879912,
                 "Marginal grid electricity": 7.301401173196176e-78
-            },
-            "utility_production_results": {}
-        },
-        {
-            "id": "CIP901",
-            "unit_type": "CIP Package",
-            "design_input_specs": {},
-            "design_simulation_method": "CIPpackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_cleaning_in_place.py",
-            "thermo_property_package": {
-                "mixture": "IdealMixture(include_excess_energies=False)",
-                "gamma": "DortmundActivityCoefficients",
-                "phi": "IdealFugacityCoefficients",
-                "PCF": "MockPoyntingCorrectionFactors"
-            },
-            "reactions": [],
-            "design_results": {
-                "Flow rate": 61.70603403738119
-            },
-            "installed_costs": {
-                "CIP Package": 871725.8570352241
-            },
-            "purchase_costs": {
-                "CIP Package": 484292.14279734675
-            },
-            "utility_consumption_results": {},
-            "utility_production_results": {}
-        },
-        {
-            "id": "FWT903",
-            "unit_type": "Fire water tank",
-            "design_input_specs": {},
-            "design_simulation_method": "FireWaterTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_fire_water_tank.py",
-            "thermo_property_package": {
-                "mixture": "IdealMixture(include_excess_energies=False)",
-                "gamma": "DortmundActivityCoefficients",
-                "phi": "IdealFugacityCoefficients",
-                "PCF": "MockPoyntingCorrectionFactors"
-            },
-            "reactions": [],
-            "design_results": {
-                "Flow rate": 4079.7377875954508
-            },
-            "installed_costs": {
-                "Pump": 16757.964369254394,
-                "Tank": 1020324.069702086
-            },
-            "purchase_costs": {
-                "Pump": 9857.626099561407,
-                "Tank": 566846.7053900479
-            },
-            "utility_consumption_results": {
-                "Marginal grid electricity": 46.13115947947811
             },
             "utility_production_results": {}
         },
@@ -7187,31 +7187,31 @@
             ],
             "design_results": {
                 "Work": 8630.455890983294,
-                "Flow rate": 271834.562868345,
-                "Ash disposal": 0.8345186520950183
+                "Flow rate": 271834.5628683451,
+                "Ash disposal": 0.8345186520950185
             },
             "installed_costs": {
-                "Baghouse bags": 98.39187747490719,
-                "Boiler": 61308012.21401714,
-                "Deaerator": 1099578.612216776,
-                "Amine addition pkg": 86524.2186662381,
-                "Hot process water softener system": 168722.2263991643,
+                "Baghouse bags": 98.3918774749072,
+                "Boiler": 61308012.21401716,
+                "Deaerator": 1099578.6122167762,
+                "Amine addition pkg": 86524.21866623813,
+                "Hot process water softener system": 168722.22639916433,
                 "Turbogenerator": 7280829.526737912
             },
             "purchase_costs": {
-                "Baghouse bags": 98.39187747490719,
-                "Boiler": 34060006.78556508,
-                "Deaerator": 366526.20407225867,
-                "Amine addition pkg": 48069.01037013228,
-                "Hot process water softener system": 93734.57022175795,
+                "Baghouse bags": 98.3918774749072,
+                "Boiler": 34060006.78556509,
+                "Deaerator": 366526.2040722587,
+                "Amine addition pkg": 48069.010370132295,
+                "Hot process water softener system": 93734.57022175797,
                 "Turbogenerator": 4044905.2926321733
             },
             "utility_consumption_results": {
-                "Marginal grid electricity": 1561.4036252335748,
-                "natural_gas": 7761.12389300098
+                "Marginal grid electricity": 1561.4036252335752,
+                "natural_gas": 7761.123893000984
             },
             "utility_production_results": {
-                "low_pressure_steam": -551922816.9729036,
+                "low_pressure_steam": -551922816.9729037,
                 "cooling_water": -5482877.860154092,
                 "Marginal grid electricity": 8630.455890983294
             }
@@ -13819,15 +13819,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 219394.96983306677,
+                    "value": 219394.96983306675,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 12178.2714358626,
+                    "value": 12178.271435862598,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 219.88058232895278,
+                    "value": 219.88058232895276,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -13857,15 +13857,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 219394.96983306677,
+                    "value": 219394.96983306675,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 12178.2714358626,
+                    "value": 12178.271435862598,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 219.88058232895278,
+                    "value": 219.88058232895276,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -13880,6 +13880,158 @@
                     {
                         "phase": "l",
                         "component_name": "Water",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "CIP",
+            "source_unit_id": "None",
+            "sink_unit_id": "CIP901",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 61.70603403738119,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 3.4252053832846996,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 0.061887706686006454,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 298.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "H2O",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "s64",
+            "source_unit_id": "CIP901",
+            "sink_unit_id": "None",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 61.70603403738119,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 3.4252053832846996,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 0.061887706686006454,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 298.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "H2O",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "fire_water",
+            "source_unit_id": "None",
+            "sink_unit_id": "FWT903",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 4079.7377875954508,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 226.45986005188098,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 4.091749202380592,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 298.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "H2O",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "s66",
+            "source_unit_id": "FWT903",
+            "sink_unit_id": "None",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 4079.7377875954508,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 226.45986005188098,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 4.091749202380592,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 298.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "H2O",
                         "mol_fraction": 1.0
                     }
                 ]
@@ -14190,158 +14342,6 @@
             }
         },
         {
-            "id": "CIP",
-            "source_unit_id": "None",
-            "sink_unit_id": "CIP901",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 61.70603403738119,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 3.4252053832846996,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 0.061887706686006454,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "H2O",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "s64",
-            "source_unit_id": "CIP901",
-            "sink_unit_id": "None",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 61.70603403738119,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 3.4252053832846996,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 0.061887706686006454,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "H2O",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "fire_water",
-            "source_unit_id": "None",
-            "sink_unit_id": "FWT903",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 4079.7377875954508,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 226.45986005188098,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 4.091749202380592,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "H2O",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "s66",
-            "source_unit_id": "FWT903",
-            "sink_unit_id": "None",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 4079.7377875954508,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 226.45986005188098,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 4.091749202380592,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "H2O",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
             "id": "boiler_makeup_water",
             "source_unit_id": "None",
             "sink_unit_id": "BT701",
@@ -14351,15 +14351,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 8155.03688605035,
+                    "value": 8155.036886050352,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 452.67333541584424,
+                    "value": 452.67333541584435,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 8.179046647394403,
+                    "value": 8.179046647394406,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14389,15 +14389,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 7761.12389300098,
+                    "value": 7761.123893000984,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 483.7863951663885,
+                    "value": 483.78639516638873,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 11411.910101324642,
+                    "value": 11411.910101324647,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14470,15 +14470,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 0.5258639618688133,
+                    "value": 0.5258639618688136,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 0.5258639618688133,
+                    "value": 0.5258639618688136,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 0.00034147010510961906,
+                    "value": 0.0003414701051096192,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14508,15 +14508,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 1010796.5093280083,
+                    "value": 1010796.509328008,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 35138.86056281874,
+                    "value": 35138.860562818736,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 859424.863504198,
+                    "value": 859424.8635041978,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14551,15 +14551,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 1051536.1022710842,
+                    "value": 1051536.102271084,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 36939.684538387846,
+                    "value": 36939.68453838784,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 1306342.4979681354,
+                    "value": 1306342.497968135,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14574,27 +14574,27 @@
                     {
                         "phase": "g",
                         "component_name": "H2O",
-                        "mol_fraction": 0.06290050715828521
+                        "mol_fraction": 0.06290050715828523
                     },
                     {
                         "phase": "g",
                         "component_name": "O2",
-                        "mol_fraction": 0.12864987189742494
+                        "mol_fraction": 0.12864987189742488
                     },
                     {
                         "phase": "g",
                         "component_name": "N2",
-                        "mol_fraction": 0.7728744179832021
+                        "mol_fraction": 0.772874417983202
                     },
                     {
                         "phase": "g",
                         "component_name": "CO2",
-                        "mol_fraction": 0.03557520095405616
+                        "mol_fraction": 0.03557520095405617
                     },
                     {
                         "phase": "g",
                         "component_name": "SO2",
-                        "mol_fraction": 2.007031820213671e-09
+                        "mol_fraction": 2.0070318202136716e-09
                     }
                 ]
             }
@@ -14609,15 +14609,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 8155.03688605035,
+                    "value": 8155.036886050352,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 452.67333541584424,
+                    "value": 452.67333541584435,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 8.179046647394403,
+                    "value": 8.179046647394406,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14647,15 +14647,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 0.8345186520950183,
+                    "value": 0.8345186520950185,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 0.5374064443308475,
+                    "value": 0.5374064443308477,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 0.000609990701576905,
+                    "value": 0.0006099907015769051,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -14670,12 +14670,12 @@
                     {
                         "phase": "l",
                         "component_name": "H2O",
-                        "mol_fraction": 0.019891615867998744
+                        "mol_fraction": 0.01989161586799874
                     },
                     {
                         "phase": "l",
                         "component_name": "CaSO4",
-                        "mol_fraction": 0.001586508527041222
+                        "mol_fraction": 0.0015865085270412214
                     },
                     {
                         "phase": "l",
@@ -15601,34 +15601,6 @@
     "utilities": {
         "heat_utilities": [
             {
-                "id": "chilled_water",
-                "temperature": {
-                    "value": 280.372,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "regeneration_price": {
-                    "value": 0,
-                    "units": "$/kmol"
-                },
-                "heat_transfer_price": {
-                    "value": 0,
-                    "units": "$/kJ"
-                },
-                "heat_transfer_efficiency": 1.0,
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "Water",
-                        "mol_fraction": 1.0
-                    }
-                ],
-                "units_for_utility_results": "kJ/h"
-            },
-            {
                 "id": "low_pressure_steam",
                 "temperature": {
                     "value": 529.2,
@@ -15660,6 +15632,34 @@
                 "id": "cooling_water",
                 "temperature": {
                     "value": 301.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "regeneration_price": {
+                    "value": 0,
+                    "units": "$/kmol"
+                },
+                "heat_transfer_price": {
+                    "value": 0,
+                    "units": "$/kJ"
+                },
+                "heat_transfer_efficiency": 1.0,
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "Water",
+                        "mol_fraction": 1.0
+                    }
+                ],
+                "units_for_utility_results": "kJ/h"
+            },
+            {
+                "id": "chilled_water",
+                "temperature": {
+                    "value": 280.372,
                     "units": "K"
                 },
                 "pressure": {

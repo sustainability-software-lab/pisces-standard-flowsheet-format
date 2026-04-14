@@ -10,7 +10,7 @@
       "properties": {
         "sff_version": {
           "type": "string",
-          "description": "Version of the SFF schema used, e.g., '1.0'."
+          "description": "Version of the SFF schema used, in semantic versioning notation; e.g., '1.0.0'."
         },
         "TEA_currency": {
           "type": "string",
