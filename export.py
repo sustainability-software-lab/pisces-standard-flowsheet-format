@@ -33,6 +33,9 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None,
                                         ):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
+    all_streams = list(s)
+    all_sys_feeds = list(sys.feeds)
+    all_sys_products = list(sys.products)
     if tea is None:
         tea = sys.TEA
     
@@ -42,6 +45,11 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None,
     metadata['TEA_year'] = tea.duration[0]
     metadata['process_simulator'] = {'name': 'BioSTEAM',
                                      'version': bst.__version__}
+    metadata['feedstocks'] = [{"display_name": format_name(stream.ID), "stream_id": stream.ID} 
+                              for stream in all_streams if is_feedstock(stream, all_sys_feeds)]
+    metadata['products'] = [{"display_name": format_name(stream.ID), "stream_id": stream.ID} 
+                            for stream in all_streams if is_product(stream, all_sys_products)]
+                
     ## ------- Units ------- ##
     units = []
     all_hu_agents = set()
@@ -73,7 +81,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None,
         
     ## ------ Streams ------ ##
     streams = []
-    for raw_stream in list(s):
+    for raw_stream in all_streams:
         rs = raw_stream
         if not (rs.source or rs.sink): continue # skip isolated streams
         stream = {"id": rs.ID,
@@ -98,7 +106,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None,
     
     ## ------ Chemicals ------ ##
     chemicals = []
-    repr_stream = list(s)[0] # !!! future: add support for multiple CompiledChemicals object (i.e., multiple sets of chemicals) within a single system
+    repr_stream = all_streams[0] # !!! future: add support for multiple CompiledChemicals object (i.e., multiple sets of chemicals) within a single system
     chems = repr_stream.chemicals
     vle_chems = repr_stream.vle_chemicals
     for i, c in zip(range(len(chems)), chems):
@@ -167,6 +175,57 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None,
         breakpoint()
         
 #%% Helper functions
+
+def is_feedstock(stream, all_sys_feeds):
+    if stream.ID == "":
+        return False
+    if not stream in all_sys_feeds:
+        return False
+    # if not stream.price
+    #     return False
+    max_C_atomic_flow = 0.0
+    max_C_atomic_flow_stream = None
+    for si in list(all_sys_feeds):
+        if (not si.source) and max_C_atomic_flow < si.get_atomic_flow('C'):
+            max_C_atomic_flow = si.get_atomic_flow('C')
+            max_C_atomic_flow_stream = si
+    if stream == max_C_atomic_flow_stream:
+        return True
+    return False
+
+
+def is_product(stream, all_sys_products=None):
+    if stream.sink:
+        return False
+    if (not stream.cost>0.0):
+        return False
+    return True
+
+
+def format_name(name):
+    if not name:
+        return ""
+    ## specific formatting
+    name = name.replace("_feedstock", "")
+    name = name.replace("nstover", "n stover")
+    name = name.replace("glucose", "dextrose").replace("Glucose", "Dextrose")
+    if "dextrose" in name or "Dextrose" in name:
+        name = name.replace(" monohydrate", "").replace(" Monohydrate", "").replace("monohydrate", "").replace("Monohydrate", "")
+    ## general formatting
+    words = []
+    current = name[0]
+    for char in name[1:]:
+        if char.isupper() and not current[-1].isupper():
+            words.append(current)
+            current = char
+        else:
+            current += char
+
+    words.append(current)
+    result = " ".join(words).lower()
+    
+    return result.capitalize()
+
 
 def get_required_args(func):
     signature = inspect.signature(func)

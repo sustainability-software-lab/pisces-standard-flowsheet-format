@@ -5,7 +5,19 @@
         "process_simulator": {
             "name": "BioSTEAM",
             "version": "2.46.1"
-        }
+        },
+        "feedstocks": [
+            {
+                "display_name": "Corn",
+                "stream_id": "corn"
+            }
+        ],
+        "products": [
+            {
+                "display_name": "Acrylic acid",
+                "stream_id": "AcrylicAcid"
+            }
+        ]
     },
     "units": [
         {
@@ -930,39 +942,6 @@
             "reactions": [
                 {
                     "index": 0,
-                    "equation": "H2O + Sucrose -> 2 Glucose",
-                    "reactant": "Sucrose",
-                    "conversion": 0.9999,
-                    "stoichiometry": {
-                        "H2O": -1.0,
-                        "Glucose": 2.0,
-                        "Sucrose": -1.0
-                    }
-                },
-                {
-                    "index": 1,
-                    "equation": "Glucose -> 6 H2O + 6 CO2",
-                    "reactant": "Glucose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 6.0,
-                        "CO2": 6.0,
-                        "Glucose": -1.0
-                    }
-                },
-                {
-                    "index": 1,
-                    "equation": "Xylose -> 5 H2O + 5 CO2",
-                    "reactant": "Xylose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 5.0,
-                        "CO2": 5.0,
-                        "Xylose": -1.0
-                    }
-                },
-                {
-                    "index": 2,
                     "equation": "0.5 CalciumDihydroxide + HP -> H2O + 0.5 CalciumLactate",
                     "reactant": "HP",
                     "conversion": 0.999999999,
@@ -974,7 +953,7 @@
                     }
                 },
                 {
-                    "index": 2,
+                    "index": 0,
                     "equation": "0.5 CalciumDihydroxide + AceticAcid -> H2O + 0.5 CalciumAcetate",
                     "reactant": "AceticAcid",
                     "conversion": 0.999999999,
@@ -986,7 +965,18 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 1,
+                    "equation": "H2O + Sucrose -> 2 Glucose",
+                    "reactant": "Sucrose",
+                    "conversion": 0.9999,
+                    "stoichiometry": {
+                        "H2O": -1.0,
+                        "Glucose": 2.0,
+                        "Sucrose": -1.0
+                    }
+                },
+                {
+                    "index": 2,
                     "equation": "Glucose -> 2 HP",
                     "reactant": "Glucose",
                     "conversion": 0.6935,
@@ -996,7 +986,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "2 CO2 + Glucose -> O2 + 2 SuccinicAcid",
                     "reactant": "Glucose",
                     "conversion": 0.0,
@@ -1008,7 +998,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "Xylose -> 1.67 HP",
                     "reactant": "Xylose",
                     "conversion": 0.6935,
@@ -1018,7 +1008,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "1.67 CO2 + Xylose -> 0.416 O2 + 1.67 SuccinicAcid",
                     "reactant": "Xylose",
                     "conversion": 0.0,
@@ -1030,7 +1020,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "0.545 H2O + Glucose -> 0.545 CO2 + 1.09 Xylitol",
                     "reactant": "Glucose",
                     "conversion": 0.0,
@@ -1042,7 +1032,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "H2O + Xylose -> 0.5 O2 + Xylitol",
                     "reactant": "Xylose",
                     "conversion": 0.0,
@@ -1054,7 +1044,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "Glucose -> 2.4 H2O + 6 FermMicrobe",
                     "reactant": "Glucose",
                     "conversion": 0.23274999999999998,
@@ -1065,7 +1055,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "Xylose -> 2 H2O + 5 FermMicrobe",
                     "reactant": "Xylose",
                     "conversion": 0.23274999999999998,
@@ -1073,6 +1063,28 @@
                         "H2O": 2.0,
                         "Xylose": -1.0,
                         "FermMicrobe": 5.0
+                    }
+                },
+                {
+                    "index": 3,
+                    "equation": "Glucose -> 6 H2O + 6 CO2",
+                    "reactant": "Glucose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 6.0,
+                        "CO2": 6.0,
+                        "Glucose": -1.0
+                    }
+                },
+                {
+                    "index": 3,
+                    "equation": "Xylose -> 5 H2O + 5 CO2",
+                    "reactant": "Xylose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 5.0,
+                        "CO2": 5.0,
+                        "Xylose": -1.0
                     }
                 }
             ],
@@ -1346,6 +1358,17 @@
             "reactions": [
                 {
                     "index": 0,
+                    "equation": "H2O + Sucrose -> 2 Glucose",
+                    "reactant": "Sucrose",
+                    "conversion": 0.9999,
+                    "stoichiometry": {
+                        "H2O": -1.0,
+                        "Glucose": 2.0,
+                        "Sucrose": -1.0
+                    }
+                },
+                {
+                    "index": 1,
                     "equation": "0.5 CalciumDihydroxide + HP -> H2O + 0.5 CalciumLactate",
                     "reactant": "HP",
                     "conversion": 0.999999999,
@@ -1357,7 +1380,7 @@
                     }
                 },
                 {
-                    "index": 0,
+                    "index": 1,
                     "equation": "0.5 CalciumDihydroxide + AceticAcid -> H2O + 0.5 CalciumAcetate",
                     "reactant": "AceticAcid",
                     "conversion": 0.999999999,
@@ -1369,40 +1392,7 @@
                     }
                 },
                 {
-                    "index": 1,
-                    "equation": "H2O + Sucrose -> 2 Glucose",
-                    "reactant": "Sucrose",
-                    "conversion": 0.9999,
-                    "stoichiometry": {
-                        "H2O": -1.0,
-                        "Glucose": 2.0,
-                        "Sucrose": -1.0
-                    }
-                },
-                {
                     "index": 2,
-                    "equation": "Glucose -> 6 H2O + 6 CO2",
-                    "reactant": "Glucose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 6.0,
-                        "CO2": 6.0,
-                        "Glucose": -1.0
-                    }
-                },
-                {
-                    "index": 2,
-                    "equation": "Xylose -> 5 H2O + 5 CO2",
-                    "reactant": "Xylose",
-                    "conversion": 0.999999999,
-                    "stoichiometry": {
-                        "H2O": 5.0,
-                        "CO2": 5.0,
-                        "Xylose": -1.0
-                    }
-                },
-                {
-                    "index": 3,
                     "equation": "Glucose -> 2 HP",
                     "reactant": "Glucose",
                     "conversion": 0.73,
@@ -1412,7 +1402,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "2 CO2 + Glucose -> O2 + 2 SuccinicAcid",
                     "reactant": "Glucose",
                     "conversion": 0.0,
@@ -1424,7 +1414,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "Xylose -> 1.67 HP",
                     "reactant": "Xylose",
                     "conversion": 0.73,
@@ -1434,7 +1424,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "1.67 CO2 + Xylose -> 0.416 O2 + 1.67 SuccinicAcid",
                     "reactant": "Xylose",
                     "conversion": 0.0,
@@ -1446,7 +1436,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "0.545 H2O + Glucose -> 0.545 CO2 + 1.09 Xylitol",
                     "reactant": "Glucose",
                     "conversion": 0.0,
@@ -1458,7 +1448,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "H2O + Xylose -> 0.5 O2 + Xylitol",
                     "reactant": "Xylose",
                     "conversion": 0.0,
@@ -1470,7 +1460,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "Glucose -> 2.4 H2O + 6 FermMicrobe",
                     "reactant": "Glucose",
                     "conversion": 0.245,
@@ -1481,7 +1471,7 @@
                     }
                 },
                 {
-                    "index": 3,
+                    "index": 2,
                     "equation": "Xylose -> 2 H2O + 5 FermMicrobe",
                     "reactant": "Xylose",
                     "conversion": 0.245,
@@ -1489,6 +1479,28 @@
                         "H2O": 2.0,
                         "Xylose": -1.0,
                         "FermMicrobe": 5.0
+                    }
+                },
+                {
+                    "index": 3,
+                    "equation": "Glucose -> 6 H2O + 6 CO2",
+                    "reactant": "Glucose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 6.0,
+                        "CO2": 6.0,
+                        "Glucose": -1.0
+                    }
+                },
+                {
+                    "index": 3,
+                    "equation": "Xylose -> 5 H2O + 5 CO2",
+                    "reactant": "Xylose",
+                    "conversion": 0.999999999,
+                    "stoichiometry": {
+                        "H2O": 5.0,
+                        "CO2": 5.0,
+                        "Xylose": -1.0
                     }
                 }
             ],
@@ -6604,6 +6616,30 @@
             "utility_production_results": {}
         },
         {
+            "id": "CIP901",
+            "unit_type": "CIP Package",
+            "design_input_specs": {},
+            "design_simulation_method": "CIPpackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_cleaning_in_place.py",
+            "thermo_property_package": {
+                "mixture": "IdealMixture(include_excess_energies=False)",
+                "gamma": "DortmundActivityCoefficients",
+                "phi": "IdealFugacityCoefficients",
+                "PCF": "MockPoyntingCorrectionFactors"
+            },
+            "reactions": [],
+            "design_results": {
+                "Flow rate": 68.92453641949965
+            },
+            "installed_costs": {
+                "CIP Package": 931553.195201364
+            },
+            "purchase_costs": {
+                "CIP Package": 517529.55288964673
+            },
+            "utility_consumption_results": {},
+            "utility_production_results": {}
+        },
+        {
             "id": "CT801",
             "unit_type": "Cooling tower",
             "design_input_specs": {},
@@ -6630,30 +6666,6 @@
                 "cooling_water": 443850255.2036406,
                 "Marginal grid electricity": 7.301401173196176e-78
             },
-            "utility_production_results": {}
-        },
-        {
-            "id": "CIP901",
-            "unit_type": "CIP Package",
-            "design_input_specs": {},
-            "design_simulation_method": "CIPpackage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/facilities/_cleaning_in_place.py",
-            "thermo_property_package": {
-                "mixture": "IdealMixture(include_excess_energies=False)",
-                "gamma": "DortmundActivityCoefficients",
-                "phi": "IdealFugacityCoefficients",
-                "PCF": "MockPoyntingCorrectionFactors"
-            },
-            "reactions": [],
-            "design_results": {
-                "Flow rate": 68.92453641949965
-            },
-            "installed_costs": {
-                "CIP Package": 931553.195201364
-            },
-            "purchase_costs": {
-                "CIP Package": 517529.55288964673
-            },
-            "utility_consumption_results": {},
             "utility_production_results": {}
         },
         {
@@ -17045,7 +17057,7 @@
             "source_unit_id": "T620_P",
             "sink_unit_id": "None",
             "price": {
-                "value": 1.3893275849682551,
+                "value": 1.3893275849682543,
                 "units": "$/kg"
             },
             "stream_properties": {
@@ -17491,7 +17503,7 @@
                     "units": "m3/h"
                 },
                 "temperature": {
-                    "value": 296.6809538315681,
+                    "value": 296.68095383156816,
                     "units": "K"
                 },
                 "pressure": {
@@ -17529,7 +17541,7 @@
                     "units": "m3/h"
                 },
                 "temperature": {
-                    "value": 296.6809538315681,
+                    "value": 296.68095383156816,
                     "units": "K"
                 },
                 "pressure": {
@@ -17622,6 +17634,82 @@
             }
         },
         {
+            "id": "CIP",
+            "source_unit_id": "None",
+            "sink_unit_id": "CIP901",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 68.92453641949965,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 3.825893154005913,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 0.06912746151883456,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 298.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "H2O",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "s143",
+            "source_unit_id": "CIP901",
+            "sink_unit_id": "None",
+            "price": {
+                "value": 0.0,
+                "units": "$/kg"
+            },
+            "stream_properties": {
+                "total_mass_flow": {
+                    "value": 68.92453641949965,
+                    "units": "kg/h"
+                },
+                "total_molar_flow": {
+                    "value": 3.825893154005913,
+                    "units": "kmol/h"
+                },
+                "total_volumetric_flow": {
+                    "value": 0.06912746151883456,
+                    "units": "m3/h"
+                },
+                "temperature": {
+                    "value": 298.15,
+                    "units": "K"
+                },
+                "pressure": {
+                    "value": 101325.0,
+                    "units": "Pa"
+                },
+                "composition": [
+                    {
+                        "phase": "l",
+                        "component_name": "H2O",
+                        "mol_fraction": 1.0
+                    }
+                ]
+            }
+        },
+        {
             "id": "",
             "source_unit_id": "None",
             "sink_unit_id": "CT801",
@@ -17669,11 +17757,11 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 129801.11898816304,
+                    "value": 129801.11898816306,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 7205.056984302383,
+                    "value": 7205.056984302384,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
@@ -17783,15 +17871,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 11800.101726196639,
+                    "value": 11800.10172619664,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 655.0051803911257,
+                    "value": 655.0051803911258,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 11.868730095642285,
+                    "value": 11.868730095642288,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -17821,15 +17909,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 118001.01726196641,
+                    "value": 118001.01726196642,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 6550.051803911258,
+                    "value": 6550.0518039112585,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 159945.90419300093,
+                    "value": 159945.90419300096,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -17844,82 +17932,6 @@
                     {
                         "phase": "g",
                         "component_name": "Water",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "CIP",
-            "source_unit_id": "None",
-            "sink_unit_id": "CIP901",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 68.92453641949965,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 3.825893154005913,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 0.06912746151883456,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "H2O",
-                        "mol_fraction": 1.0
-                    }
-                ]
-            }
-        },
-        {
-            "id": "s143",
-            "source_unit_id": "CIP901",
-            "sink_unit_id": "None",
-            "price": {
-                "value": 0.0,
-                "units": "$/kg"
-            },
-            "stream_properties": {
-                "total_mass_flow": {
-                    "value": 68.92453641949965,
-                    "units": "kg/h"
-                },
-                "total_molar_flow": {
-                    "value": 3.825893154005913,
-                    "units": "kmol/h"
-                },
-                "total_volumetric_flow": {
-                    "value": 0.06912746151883456,
-                    "units": "m3/h"
-                },
-                "temperature": {
-                    "value": 298.15,
-                    "units": "K"
-                },
-                "pressure": {
-                    "value": 101325.0,
-                    "units": "Pa"
-                },
-                "composition": [
-                    {
-                        "phase": "l",
-                        "component_name": "H2O",
                         "mol_fraction": 1.0
                     }
                 ]
@@ -18355,15 +18367,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 16219.870586738434,
+                    "value": 16219.87058673844,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 900.3396331746403,
+                    "value": 900.3396331746405,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 16.267624536507217,
+                    "value": 16.26762453650722,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -18425,15 +18437,15 @@
             },
             "stream_properties": {
                 "total_mass_flow": {
-                    "value": 19775.996419685285,
+                    "value": 19775.99641968529,
                     "units": "kg/h"
                 },
                 "total_molar_flow": {
-                    "value": 1097.7346130443316,
+                    "value": 1097.7346130443318,
                     "units": "kmol/h"
                 },
                 "total_volumetric_flow": {
-                    "value": 19.834220185072503,
+                    "value": 19.834220185072507,
                     "units": "m3/h"
                 },
                 "temperature": {
@@ -19261,9 +19273,9 @@
     "utilities": {
         "heat_utilities": [
             {
-                "id": "chilled_water",
+                "id": "cooling_water",
                 "temperature": {
-                    "value": 280.372,
+                    "value": 301.15,
                     "units": "K"
                 },
                 "pressure": {
@@ -19289,9 +19301,9 @@
                 "units_for_utility_results": "kJ/h"
             },
             {
-                "id": "cooling_water",
+                "id": "chilled_water",
                 "temperature": {
-                    "value": 301.15,
+                    "value": 280.372,
                     "units": "K"
                 },
                 "pressure": {

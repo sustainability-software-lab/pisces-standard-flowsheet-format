@@ -25,13 +25,33 @@
           "type": "string",
           "description": "Digital Object Identifier (DOI) of the source publication, if any."
         },
-        "product_name": {
-          "type": "string",
-          "description": "The primary product of the process."
+        "feedstocks": {
+          "type": "array",
+          "description": "Feedstock material streams for this flowsheet (distinct from raw material streams).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "display_name": { "type": "string", "description": "Human-interpretable display name for this stream." },
+              "stream_id": { "type": "string", "description": "Stream ID as used in the rest of this flowsheet." }
+            },
+            "required": ["stream_id"]
+          }
         },
-        "organism": {
+        "products": {
+          "type": "array",
+          "description": "Product and co-product material streams for this flowsheet (distinct from waste streams).",
+          "items": {
+            "type": "object",
+            "properties": {
+              "display_name": { "type": "string", "description": "Human-interpretable display name for this stream." },
+              "stream_id": { "type": "string", "description": "Stream ID as used in the rest of this flowsheet." }
+            },
+            "required": ["stream_id"]
+          }
+        },
+        "microorganisms": {
           "type": "string",
-          "description": "The organism used for production, if applicable."
+          "description": "Microorganisms used in this flowsheet for conversions, if applicable."
         },
         "process_title": {
           "type": "string",
@@ -75,7 +95,9 @@
       "required": [
         "sff_version",
         "TEA_year",
-        "process_simulator"
+        "process_simulator",
+        "feedstocks",
+        "products"
       ],
       "additionalProperties": {
         "type": "string"
