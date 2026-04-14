@@ -58,7 +58,19 @@
         "flowsheet_designers": {
           "type": "string",
           "description": "Name(s) of the authors who designed this flowsheet."
-        }
+        },
+        "relevant_patents": {
+          "type": "array",
+          "description": "Any patents associated with this flowsheet.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string", "description": "Patent number or title." },
+              "url": { "type": "string", "description": "Web link to the patent or application." }
+            },
+            "required": ["label"]
+          }
+        },
       },
       "required": [
         "sff_version",
