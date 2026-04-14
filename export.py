@@ -26,7 +26,7 @@ def export_biosteam_flowsheet_sff(sff_version, **kwargs):
     exec(f'export_biosteam_flowsheet_sff_{sff_version_formatted}(**kwargs)')
 
 #%% Export function for SFF schema v0.0.3
-def export_biosteam_flowsheet_sff_0_0_3(sys, file_path, tea=None, include_stoichiometry=False):
+def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichiometry=False):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
     if tea is None:
@@ -156,7 +156,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, file_path, tea=None, include_stoich
                                           "other_utilities": other_utilities}
                            }
     try:
-        with open(file_path, "w") as json_file:
+        with open(filepath, "w") as json_file:
             json.dump(flowsheet_to_export, json_file, indent=4)
     except:
         breakpoint()
