@@ -37,6 +37,24 @@
           "type": "string",
           "description": "A descriptive title for the process."
         },
+        "process_simulator": {
+          "type": "object",
+          "description": "The process simulator in which this flowsheet was originally modeled.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the process simulator."
+            },
+            "version": {
+              "type": "string",
+              "description": "Version number of the process simulator."
+            }
+          },
+          "required": [
+          "name",
+          "version"
+          ]
+        },
         "flowsheet_designers": {
           "type": "string",
           "description": "Name(s) of the authors who designed this flowsheet."
@@ -44,7 +62,8 @@
       },
       "required": [
         "sff_version",
-        "TEA_year"
+        "TEA_year",
+        "process_simulator"
       ]
     },
     "units": {

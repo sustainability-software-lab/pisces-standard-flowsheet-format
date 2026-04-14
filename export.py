@@ -19,6 +19,8 @@ from thermosteam import Chemical
 from thermosteam.reaction._reaction import get_stoichiometric_string
 from biosteam import PowerUtility, System
 
+import biosteam as bst
+
 #%% Entry-point export function
 
 def export_biosteam_flowsheet_sff(sff_version, **kwargs):
@@ -36,7 +38,8 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
     metadata = {}
     metadata['sff_version'] = '0.0.3'
     metadata['TEA_year'] = tea.duration[0]
-    
+    metadata['process_simulator'] = {'name': 'BioSTEAM',
+                                     'version': bst.__version__}
     ## ------- Units ------- ##
     units = []
     all_hu_agents = set()
@@ -62,7 +65,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
                 "installed_costs": ru.installed_costs if hasattr(ru, 'installed_costs') else {},
                 "purchase_costs": ru.purchase_costs if hasattr(ru, 'purchase_costs') else {},
                 "utility_consumption_results": u_cons,
-                "utility_production_results": u_prod
+                "utility_production_results": u_prod,
                 }
         units.append(unit)
         
@@ -81,7 +84,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
                       "total_volumetric_flow": {"value": rs.F_vol, "units": "m3/h"},
                       "temperature": {"value": rs.T, "units": "K"},
                       "pressure": {"value": rs.P, "units": "Pa"},
-                      "composition": get_composition(rs)
+                      "composition": get_composition(rs),
                       }
                       # [
                       # {"component_name": c.ID,
@@ -142,7 +145,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
               "pressure": {"value": ou_agent.P, "units": "Pa"},
               "price": {"value": ou_agent.price or ng_price, "units": "$/kg"},
               "units_for_utility_results": "kg/h",
-              "composition": get_composition(ou_agent)
+              "composition": get_composition(ou_agent),
               }
         other_utilities.append(ou)
     
@@ -153,7 +156,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
                            "chemicals": chemicals,
                            "utilities": {"heat_utilities": heat_utilities,
                                           "power_utilities": power_utilities,
-                                          "other_utilities": other_utilities}
+                                          "other_utilities": other_utilities},
                            }
     try:
         with open(filepath, "w") as json_file:
