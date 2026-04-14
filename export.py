@@ -19,12 +19,23 @@ from thermosteam import Chemical
 from thermosteam.reaction._reaction import get_stoichiometric_string
 from biosteam import PowerUtility, System
 
-#%% Export function
+#%% Entry-point export function
 
-# for SFF schema v0.0.3
-def export_biosteam_flowsheet_sff(sys, file_path, include_stoichiometry=False):
+def export_biosteam_flowsheet_sff(sff_version, **kwargs):
+    sff_version_formatted = sff_version.replace('.', '_')
+    exec(f'export_biosteam_flowsheet_sff_{sff_version_formatted}(**kwargs)')
+
+#%% Export function for SFF schema v0.0.3
+def export_biosteam_flowsheet_sff_0_0_3(sys, file_path, tea=None, include_stoichiometry=False):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
+    if tea is None:
+        tea = sys.TEA
+    
+    ## ------- Metadata ------- ## 
+    metadata = {}
+    metadata['sff_version'] = '0.0.3'
+    metadata['TEA_year'] = tea.duration[0]
     
     ## ------- Units ------- ##
     units = []
@@ -86,10 +97,10 @@ def export_biosteam_flowsheet_sff(sys, file_path, include_stoichiometry=False):
     chems = repr_stream.chemicals
     vle_chems = repr_stream.vle_chemicals
     for i, c in zip(range(len(chems)), chems):
-        has_CAS_ID = False
         is_vle = c in vle_chems
         chemical = {"id": c.ID,
                     }
+        chemical["included_in_thermo"] = is_vle
         if include_stoichiometry: 
             chemical["index"] = i
         if c.formula is not None:
@@ -137,7 +148,8 @@ def export_biosteam_flowsheet_sff(sys, file_path, include_stoichiometry=False):
         other_utilities.append(ou)
     
     # Export
-    flowsheet_to_export = {"units": units,
+    flowsheet_to_export = {
+                           "units": units,
                            "streams": streams,
                            "chemicals": chemicals,
                            "utilities": {"heat_utilities": heat_utilities,
