@@ -340,7 +340,23 @@
           "id",
           "included_in_thermo"
         ],
-        "additionalProperties": true
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": { "included_in_thermo": { "const": true } },
+              "required": ["included_in_thermo"]
+            },
+            "then": { "required": ["registry_id"] }
+          },
+          {
+            "if": {
+              "properties": { "included_in_thermo": { "const": false } },
+              "required": ["included_in_thermo"]
+            },
+            "then": { "required": ["molar_mass"] }
+          }
+        ]
       }
     },
     "utilities": {
