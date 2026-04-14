@@ -28,7 +28,9 @@ def export_biosteam_flowsheet_sff(sff_version, **kwargs):
     exec(f'export_biosteam_flowsheet_sff_{sff_version_formatted}(**kwargs)')
 
 #%% Export function for SFF schema v0.0.3
-def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichiometry=False):
+def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, 
+                                        stoichiometry=None, # must be one of (None, "vector", "dict")
+                                        ):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
     if tea is None:
@@ -60,7 +62,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
                 "design_input_specs": get_design_input_specs(ru),
                 "design_simulation_method": get_design_simulation_method(ru),
                 "thermo_property_package": get_thermo(ru),
-                "reactions": get_reactions(ru, include_stoichiometry=include_stoichiometry),
+                "reactions": get_reactions(ru, stoichiometry=stoichiometry),
                 "design_results": ru.design_results if hasattr(ru, 'design_results') else {},
                 "installed_costs": ru.installed_costs if hasattr(ru, 'installed_costs') else {},
                 "purchase_costs": ru.purchase_costs if hasattr(ru, 'purchase_costs') else {},
@@ -104,7 +106,7 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, include_stoichi
         chemical = {"id": c.ID,
                     }
         chemical["included_in_thermo"] = is_vle
-        if include_stoichiometry: 
+        if stoichiometry: 
             chemical["index"] = i
         if c.formula is not None:
             chemical["formula"] = c.formula
@@ -246,7 +248,7 @@ def get_composition(stream):
     return comp
 
 
-def get_reactions(unit, include_stoichiometry): # !!! update -- fix order of reactions (potentially using settrace)
+def get_reactions(unit, stoichiometry): # !!! update -- fix order of reactions (potentially using settrace)
     u = unit
     rxntypes = (Reaction, ReactionSet)
     all_reactions = {rxn for rxn in u.__dict__.values() if isinstance(rxn, rxntypes)}
@@ -269,8 +271,15 @@ def get_reactions(unit, include_stoichiometry): # !!! update -- fix order of rea
                             "reactant": r.reactant,
                             "conversion": r.X,
                             }
-                if include_stoichiometry:
-                    reaction["stoichiometry"] = np.array(r.stoichiometry).tolist()
+                if stoichiometry is not None:
+                    stoich_list = np.array(r.stoichiometry).tolist()
+                    if stoichiometry=="vector":
+                        reaction["stoichiometry"] = stoich_list
+                    elif stoichiometry=="dict":
+                        reaction["stoichiometry"] = {}
+                        for stoich_index, stoich in zip(range(len(stoich_list)), stoich_list):
+                            if not stoich==0:
+                                reaction["stoichiometry"][stoich_index] = stoich
                 reactions.append(reaction)
                 if is_series: i+=1
             if is_parallel: i+=1
@@ -280,8 +289,15 @@ def get_reactions(unit, include_stoichiometry): # !!! update -- fix order of rea
                         "reactant": rxn.reactant,
                         "conversion": rxn.X,
                         }
-            if include_stoichiometry:
-                reaction["stoichiometry"] = np.array(rxn.stoichiometry).tolist()
+            if stoichiometry is not None:
+                stoich_list = np.array(rxn.stoichiometry).tolist()
+                if stoichiometry=="vector":
+                    reaction["stoichiometry"] = stoich_list
+                elif stoichiometry=="dict":
+                    reaction["stoichiometry"] = {}
+                    for stoich_index, stoich in zip(range(len(stoich_list)), stoich_list):
+                        if not stoich==0:
+                            reaction["stoichiometry"][stoich_index] = stoich
             reactions.append(reaction)
             i+=1
     

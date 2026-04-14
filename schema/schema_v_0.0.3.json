@@ -122,7 +122,7 @@
           },
           "reactions": {
             "type": "array",
-            "description": "Reactions occurring in this unit operation, each with the index (determining the order in which reactions occur, with identical index for parallel reactions), conversion, the reactant for conversion, and either an equation string or stoichiometry vector based on the IDs or indices in the 'chemicals' object.",
+            "description": "Reactions occurring in this unit operation, each with the index (determining the order in which reactions occur, with identical index for parallel reactions), conversion, the reactant for conversion, and either an equation string based on the IDs or a stoichiometry vector/object based on the indices in the 'chemicals' object.",
             "items": {
               "type": "object",
               "properties": {
@@ -139,7 +139,8 @@
                   "type": "number"
                 },
                 "stoichiometry": {
-                "type": "array"
+                "type": ["array", "object"],
+                "description": "An array of reaction stoichiometries ordered based on the indices in the 'chemicals' object, OR an object with keys corresponding to the indices and values corresponding to stoichiometries."
                 }
               }
             }
