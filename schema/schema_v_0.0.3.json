@@ -140,7 +140,7 @@
                 },
                 "stoichiometry": {
                 "type": ["array", "object"],
-                "description": "An array of reaction stoichiometries ordered based on the indices in the 'chemicals' object, OR an object with keys corresponding to the indices and values corresponding to stoichiometries."
+                "description": "An array of reaction stoichiometries ordered based on the indices in the 'chemicals' object, OR an object with keys corresponding to chemical indices or IDs and values corresponding to stoichiometries."
                 }
               }
             }

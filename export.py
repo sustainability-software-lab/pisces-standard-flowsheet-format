@@ -29,7 +29,7 @@ def export_biosteam_flowsheet_sff(sff_version, **kwargs):
 
 #%% Export function for SFF schema v0.0.3
 def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, 
-                                        stoichiometry=None, # must be one of (None, "vector", "dict")
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
                                         ):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
@@ -277,9 +277,10 @@ def get_reactions(unit, stoichiometry): # !!! update -- fix order of reactions (
                         reaction["stoichiometry"] = stoich_list
                     elif stoichiometry=="dict":
                         reaction["stoichiometry"] = {}
-                        for stoich_index, stoich in zip(range(len(stoich_list)), stoich_list):
+                        chems_list = list(r.chemicals)
+                        for chem, stoich in zip(chems_list, stoich_list):
                             if not stoich==0:
-                                reaction["stoichiometry"][stoich_index] = stoich
+                                reaction["stoichiometry"][chem.ID] = stoich
                 reactions.append(reaction)
                 if is_series: i+=1
             if is_parallel: i+=1
@@ -295,9 +296,10 @@ def get_reactions(unit, stoichiometry): # !!! update -- fix order of reactions (
                     reaction["stoichiometry"] = stoich_list
                 elif stoichiometry=="dict":
                     reaction["stoichiometry"] = {}
-                    for stoich_index, stoich in zip(range(len(stoich_list)), stoich_list):
+                    chems_list = list(rxn.chemicals)
+                    for chem, stoich in zip(chems_list, stoich_list):
                         if not stoich==0:
-                            reaction["stoichiometry"][stoich_index] = stoich
+                            reaction["stoichiometry"][chem.ID] = stoich
             reactions.append(reaction)
             i+=1
     
