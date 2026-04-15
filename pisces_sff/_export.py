@@ -209,11 +209,15 @@ def format_name(name):
     if not name:
         return ""
     ## specific formatting
-    name = name.replace("_feedstock", "")
+    if name=='TAL_product':
+        return 'Triacetic acid lactone'
+    if name=='KSA_product':
+        return 'Potassium sorbate'
+    name = name.replace("_feedstock", "").replace("_product", "")
     name = name.replace("nstover", "n stover")
+    name = name.replace("glucose", "dextrose").replace("Glucose", "Dextrose")
     if "dextrose" in name or "Dextrose" in name:
         name = name.replace(" monohydrate", "").replace(" Monohydrate", "").replace("monohydrate", "").replace("Monohydrate", "")
-    name = name.replace("glucose", "dextrose").replace("Glucose", "Dextrose")
     
     ## general formatting
     words = []
