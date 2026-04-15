@@ -6,7 +6,9 @@ This format captures unit operations (including design and cost results, utility
 
 The [documentation](https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format/) includes installation instructions, tutorials for export and extending, and the full schema reference.
 
-The SFF and associated export capabilities are used by [Project PISCES](https://projectpisces.org/) to generate a database of flowsheets and train an LLM-based pipeline to extract flowsheets (as SFFs) from literature (as PDFs).
+# Project PISCES
+
+The SFF and associated export capabilities are used by [Project PISCES](https://projectpisces.org/) to generate a growing database of flowsheets and to train an LLM-based pipeline to extract flowsheets (as SFFs) from literature (as PDFs).
 
 ![Simplified visual representation of the SFF schema](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/images/SFF_visual_representation.png)
 
