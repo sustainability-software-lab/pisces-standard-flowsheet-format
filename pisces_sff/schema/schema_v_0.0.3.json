@@ -349,8 +349,7 @@
               }
             },
             "required": [
-              "total_mass_flow",
-              "total_volumetric_flow",
+              "total_molar_flow",
               "temperature",
               "pressure"
             ]

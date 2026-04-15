@@ -93,17 +93,18 @@ def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None,
                   "stream_properties": {
                       "total_mass_flow": {"value": rs.F_mass, "units": "kg/h"},
                       "total_molar_flow": {"value": rs.F_mol, "units": "kmol/h"},
-                      "total_volumetric_flow": {"value": rs.F_vol, "units": "m3/h"},
                       "temperature": {"value": rs.T, "units": "K"},
                       "pressure": {"value": rs.P, "units": "Pa"},
                       "composition": get_composition(rs),
                       }
-                      # [
-                      # {"component_name": c.ID,
-                      #  "mol_fraction": rs.imol[c.ID]}
-                      #  for c in list(rs.chemicals) if rs.imol[c.ID]>0
-                      # ]
                   }
+        try:
+            stream["stream_properties"]["total_volumetric_flow"] = {"value": rs.F_vol, "units": "m3/h"}
+        except Exception as e:
+            if 'liquid molar volume method' in str(e).lower():
+                pass
+            else:
+                breakpoint()
         streams.append(stream)
     
     ## ------ Chemicals ------ ##
