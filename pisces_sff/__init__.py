@@ -6,11 +6,15 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 
+from __future__ import annotations
+__version__ = '0.0.3'
+
 from . import _export
 from ._export import *
 
 from . import _validate
 from ._validate import *
+
 
 __all__ = (
      *_export.__all__,
