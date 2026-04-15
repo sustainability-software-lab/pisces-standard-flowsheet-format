@@ -1,7 +1,7 @@
 {
     "metadata": {
         "sff_version": "0.0.3",
-        "TEA_year": 2016,
+        "TEA_year": 2019,
         "process_simulator": {
             "name": "BioSTEAM",
             "version": "2.46.1"
