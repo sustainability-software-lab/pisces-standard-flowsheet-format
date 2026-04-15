@@ -197,8 +197,8 @@ def is_feedstock(stream, all_sys_feeds):
     return False
 
 
-def is_product(stream, all_sys_products=None):
-    if stream.sink:
+def is_product(stream, all_sys_products):
+    if not stream in all_sys_products:
         return False
     if (not stream.cost>0.0):
         return False
