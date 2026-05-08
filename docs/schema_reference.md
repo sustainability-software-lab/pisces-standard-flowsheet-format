@@ -24,7 +24,7 @@ The `metadata` object provides high-level information about the process flowshee
 - **source_doi**: A digital object identifier pointing to the publication where the process was introduced.
 - **process_title**: Title of the process flowsheet.
 - **product_name**: Primary product being manufactured.
-- **organism**: Organism used for bioproduction, if applicable.
+- **microorganisms**: List of microbial hosts used for bioproduction, if applicable. Each entry includes a required `name` and may include an optional `label`.
 - **flowsheet_designers**: Authors who designed the simulation.
 
 ---

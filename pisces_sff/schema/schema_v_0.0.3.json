@@ -51,8 +51,24 @@
           }
         },
         "microorganisms": {
-          "type": "string",
-          "description": "Microorganisms used in this flowsheet for conversions, if applicable."
+          "type": "array",
+          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Multiple hosts are represented as distinct entries for co-cultures, sequential bioconversion systems, or other multi-organism processes.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the microbial host.",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "description": "Optional display label or qualifier for the microbial host."
+              }
+            },
+            "required": ["name"]
+          },
+          "minItems": 1
         },
         "process_title": {
           "type": "string",
