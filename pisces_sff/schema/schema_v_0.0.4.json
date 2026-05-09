@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "properties": {
@@ -51,8 +51,24 @@
           }
         },
         "microorganisms": {
-          "type": "string",
-          "description": "Microorganisms used in this flowsheet for conversions, if applicable."
+          "type": "array",
+          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Multiple hosts are represented as distinct entries for co-cultures, sequential bioconversion systems, or other multi-organism processes.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the microbial host.",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "description": "Optional display label or qualifier for the microbial host."
+              }
+            },
+            "required": ["name"]
+          },
+          "minItems": 1
         },
         "process_title": {
           "type": "string",
