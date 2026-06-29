@@ -32,6 +32,7 @@ def export_biosteam_flowsheet(sys, filepath, sff_version, **kwargs):
 #%% Export function for SFF schema v0.0.3
 def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, 
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        composition_units="both", # "mol%", "mass%", or "both"
                                         ):
     f = sys.flowsheet
     u, s = sys.units, sys.streams
@@ -296,11 +297,13 @@ def get_utility_results(unit):
                 u_prod[ou.ID] = ou.F_mass
             else:
                 u_prod[ou.ID] += ou.F_mass
-    
+    breakpoint()
     return u_cons, u_prod, hu_agents, pu_agents, ou_agents
 
 
-def get_composition(stream):
+def get_composition(stream, 
+                    units='both', # 'mol%', 'mass%', or 'both'
+                    ):
     s = stream
     phases = s.phases
     chem_IDs = [chem.ID for chem in list(s.chemicals)]
@@ -311,7 +314,14 @@ def get_composition(stream):
         sp = s[p]
         for c in chem_IDs:
             if sp.imol[c]>0:
-                comp.append({'phase':p, 'component_name':c, 'mol_fraction': sp.imol[c]/sp.F_mol})
+                comp.append({'phase':p, 'component_name':c})
+                if units in ('mol%',):
+                    comp[-1]['mol_fraction'] = sp.imol[c]/sp.F_mol
+                elif units in ('mass%',):
+                    comp[-1]['mass_fraction'] = sp.imass[c]/sp.F_mass
+                elif units in ('both',):
+                    comp[-1]['mol_fraction'] = sp.imol[c]/sp.F_mol
+                    comp[-1]['mass_fraction'] = sp.imass[c]/sp.F_mass
     return comp
 
 
