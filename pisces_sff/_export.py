@@ -209,6 +209,8 @@ def is_product(stream, all_sys_products):
 def format_name(name):
     if not name:
         return ""
+    if name.isupper(): # all caps name
+        return name
     ## specific formatting
     if name=='TAL_product':
         return 'Triacetic acid lactone'
