@@ -29,8 +29,8 @@ def export_biosteam_flowsheet(sys, filepath, sff_version, **kwargs):
     sff_version_formatted = sff_version.replace('.', '_')
     exec(f'export_biosteam_flowsheet_sff_{sff_version_formatted}(sys, filepath, **kwargs)')
 
-#%% Export function for SFF schema v0.0.3
-def export_biosteam_flowsheet_sff_0_0_3(sys, filepath, tea=None, 
+#%% Export function for SFF schema v0.0.4
+def export_biosteam_flowsheet_sff_0_0_4(sys, filepath, tea=None, 
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
                                         composition_units="both", # "mol%", "mass%", or "both"
                                         ):
