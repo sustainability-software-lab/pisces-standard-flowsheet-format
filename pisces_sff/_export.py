@@ -297,7 +297,6 @@ def get_utility_results(unit):
                 u_prod[ou.ID] = ou.F_mass
             else:
                 u_prod[ou.ID] += ou.F_mass
-    breakpoint()
     return u_cons, u_prod, hu_agents, pu_agents, ou_agents
 
 
