@@ -109,7 +109,21 @@ class ExportVersionTest(unittest.TestCase):
 
         self.assertEqual(document["metadata"]["sff_version"], "9.9.9")
 
-    def test_composition_normalizes_only_positive_exported_components(self):
+    def test_composition_reports_converged_fractions_without_rescaling(self):
+        """Fractions are the converged values, divided by the phase total.
+
+        The exporter reports what the solver converged on. It does not rescale a
+        component set to make the listed fractions sum to 1, because that would
+        restate a converged number and could propagate an inconsistency through
+        the material and energy balance downstream. A negative flow is still
+        omitted from the emitted list, since a negative fraction is not
+        expressible, but it stays in the denominator where the solver put it.
+
+        This test exists to keep that convention from being quietly reversed. It
+        uses an exaggerated residual so the two possible conventions give
+        different numbers: normalizing over the positive components alone would
+        report 0.4 and 0.6 here.
+        """
         export_module = load_export_module()
         chemicals = [
             SimpleNamespace(ID="Water"),
@@ -119,6 +133,8 @@ class ExportVersionTest(unittest.TestCase):
         phase = SimpleNamespace(
             imol={"Water": 2.0, "Ethanol": 3.0, "NumericalResidual": -1.0},
             imass={"Water": 36.0, "Ethanol": 138.0, "NumericalResidual": -10.0},
+            F_mol=4.0,
+            F_mass=164.0,
         )
         stream = SimpleNamespace(
             phases=("l",),
@@ -130,10 +146,10 @@ class ExportVersionTest(unittest.TestCase):
         composition = export_module.get_composition(stream)
 
         self.assertEqual([item["component_name"] for item in composition], ["Water", "Ethanol"])
-        self.assertAlmostEqual(sum(item["mol_fraction"] for item in composition), 1.0)
-        self.assertAlmostEqual(sum(item["mass_fraction"] for item in composition), 1.0)
-        self.assertAlmostEqual(composition[0]["mol_fraction"], 2.0 / 5.0)
-        self.assertAlmostEqual(composition[0]["mass_fraction"], 36.0 / 174.0)
+        self.assertAlmostEqual(composition[0]["mol_fraction"], 2.0 / 4.0)
+        self.assertAlmostEqual(composition[1]["mol_fraction"], 3.0 / 4.0)
+        self.assertAlmostEqual(composition[0]["mass_fraction"], 36.0 / 164.0)
+        self.assertAlmostEqual(composition[1]["mass_fraction"], 138.0 / 164.0)
 
     def test_json_default_converts_numpy_values_without_debugger_fallbacks(self):
         export_module = load_export_module()

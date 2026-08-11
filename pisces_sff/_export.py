@@ -375,30 +375,16 @@ def get_composition(stream,
     comp = []
     for p in phases:
         sp = s[p]
-        # Normalize against only the components we actually emit (positive flow),
-        # NOT stream totals sp.F_mol / sp.F_mass. Solver convergence can leave tiny
-        # negative residue flows, which shrink the stream total below the sum of the
-        # positive components; dividing by that smaller total yields fractions > 1.0
-        # that fail schema validation. Summing the emitted components instead
-        # guarantees each fraction is in [0, 1] and the listed ones sum to 1.
-        positive_moles = {c: sp.imol[c] for c in chem_IDs if sp.imol[c] > 0}
-        positive_masses = {c: sp.imass[c] for c in chem_IDs if sp.imass[c] > 0}
-        total_positive_moles = sum(positive_moles.values())
-        total_positive_mass = sum(positive_masses.values())
         for c in chem_IDs:
-            # Emit a component only when it carries positive moles, matching the
-            # denominator set above so the reported fractions stay self-consistent.
-            if c in positive_moles:
+            if sp.imol[c]>0:
                 comp.append({'phase':p, 'component_name':c})
                 if units in ('mol%',):
-                    comp[-1]['mol_fraction'] = positive_moles[c]/total_positive_moles
+                    comp[-1]['mol_fraction'] = sp.imol[c]/sp.F_mol
                 elif units in ('mass%',):
-                    # .get(c, 0.): a component can have positive moles but no recorded
-                    # mass; treat missing mass as 0 rather than raising a KeyError.
-                    comp[-1]['mass_fraction'] = positive_masses.get(c, 0.)/total_positive_mass
+                    comp[-1]['mass_fraction'] = sp.imass[c]/sp.F_mass
                 elif units in ('both',):
-                    comp[-1]['mol_fraction'] = positive_moles[c]/total_positive_moles
-                    comp[-1]['mass_fraction'] = positive_masses.get(c, 0.)/total_positive_mass
+                    comp[-1]['mol_fraction'] = sp.imol[c]/sp.F_mol
+                    comp[-1]['mass_fraction'] = sp.imass[c]/sp.F_mass
     return comp
 
 
