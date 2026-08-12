@@ -563,6 +563,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#quantity-units-global" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quantity Units Global
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#utilities" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -658,13 +669,14 @@
 <h1 id="schema-reference">Schema Reference</h1>
 <p>The Standard Flowsheet Format (SFF) is a JSON document strictly adhering to our JSON schema structure. This page breaks down the core sections of the SFF schema in human-readable terms to help developers quickly understand its structure.</p>
 <h2 id="core-properties">Core Properties</h2>
-<p>Every valid SFF JSON object contains five essential properties at its root:</p>
+<p>Every valid SFF JSON object contains six essential properties at its root:</p>
 <ol>
 <li><code>metadata</code>: Contextual data about the process simulation.</li>
 <li><code>units</code>: The unit operations (nodes).</li>
 <li><code>streams</code>: Process streams connecting the units (edges).</li>
 <li><code>utilities</code>: Global heating, cooling, and power utilities used by the process.</li>
 <li><code>chemicals</code>: A list of pure chemical components involved.</li>
+<li><code>quantity_units_global</code>: A registry of default quantity units for widely-used quantities and prices, keyed by canonical name; each entry carries the <code>aliases</code> a quantity appears under and its <code>quantity_units</code> string. Bare numeric quantities elsewhere in the file resolve their units here.</li>
 </ol>
 <hr />
 <h3 id="metadata">Metadata</h3>
@@ -687,12 +699,18 @@
 - <strong>id</strong>: A unique string identifier.
 - <strong>registry_id</strong>: A standard chemical identifier, like a CAS number or SMILES string.</p>
 <hr />
+<h3 id="quantity-units-global">Quantity Units Global</h3>
+<p>The <code>quantity_units_global</code> object is a registry of default quantity units for widely-used quantities and prices, keyed by canonical name (e.g., <code>temperature</code>, <code>mass_flow</code>, <code>price</code>). Each entry carries:
+- <strong>aliases</strong>: The field names a quantity appears under across the flowsheet (e.g., <code>temperature</code> also covers <code>T</code> and <code>temperature_limit</code>).
+- <strong>quantity_units</strong>: The unit string for that quantity (e.g., <code>"K"</code>, <code>"kg/hr"</code>, <code>"USD/kg"</code>).</p>
+<p>Bare numeric scalars elsewhere in the file (stream and utility properties, prices) resolve their units by looking up the relevant field name against this registry's aliases.</p>
+<hr />
 <h3 id="utilities">Utilities</h3>
 <p>The <code>utilities</code> object is broken down into three main categories of global utilities:</p>
 <ul>
-<li><strong>heat_utilities</strong>: Heating and cooling utility types (e.g., "high-pressure steam"). Each details its temperature, pressure, regeneration and heat transfer prices, composition, and results unit.</li>
-<li><strong>power_utilities</strong>: Electrical utility types (e.g., "marginal electricity"), listing their electricity price.</li>
-<li><strong>other_utilities</strong>: Alternative utilities (e.g., combustion-based like "natural gas") with parameters similar to heat utilities.</li>
+<li><strong>heat_utilities</strong>: Heating and cooling utility types (e.g., "high-pressure steam"). Each details its temperature, pressure, regeneration and heat transfer prices, composition, and <code>quantity_units_for_utility_results</code> (the units of its per-unit-operation values in <code>utility_consumption_results</code>/<code>utility_production_results</code>).</li>
+<li><strong>power_utilities</strong>: Electrical utility types (e.g., "marginal electricity"), listing their <code>electrical_energy_price</code> and <code>quantity_units_for_utility_results</code>.</li>
+<li><strong>other_utilities</strong>: Alternative utilities (e.g., combustion-based like "natural gas") with parameters similar to heat utilities, including <code>quantity_units_for_utility_results</code>.</li>
 </ul>
 <hr />
 <h3 id="units-nodes">Units (Nodes)</h3>
@@ -705,6 +723,7 @@
 <li><strong>thermo_property_package</strong>: Defines how thermodynamic parameters (mixture, gamma, phi, PCF) were estimated.</li>
 <li><strong>reactions</strong>: Detailed definitions for chemical or biological reactions taking place inside the unit, indicating parallel indices, conversions, and target reactants.</li>
 <li><strong>design_results</strong>: Generated metrics for the operation of this unit.</li>
+<li><strong>quantity_units_for_design_results</strong>: Quantity units for each key in <code>design_results</code>, by the same key (from the simulator's <code>_units</code>).</li>
 <li><strong>purchase_costs</strong> &amp; <strong>installed_costs</strong>: Itemized economic data detailing the cost of this particular unit operation.</li>
 <li><strong>utility_consumption_results</strong> &amp; <strong>utility_production_results</strong>: Realized consumption and generation of power/heat per utility type (linking back to the IDs declared in <code>utilities</code>).</li>
 </ul>
@@ -716,13 +735,13 @@
 <li><strong>source_unit_id</strong>: The ID of the originating unit operation. <em>(Required)</em></li>
 <li><strong>sink_unit_id</strong>: The ID of the receiving unit operation. <em>(Required)</em></li>
 <li><strong>stream_description</strong>: A qualitative description (e.g., "Make-up solvent").</li>
-<li><strong>price</strong>: Cost per quantity of the stream material (e.g., $/kg).</li>
-<li><strong>stream_properties</strong>: A detailed block containing strictly required state information:<ul>
-<li><strong>total_mass_flow</strong></li>
-<li><strong>total_volumetric_flow</strong></li>
-<li><strong>temperature</strong></li>
-<li><strong>pressure</strong></li>
-<li><strong>total_molar_flow</strong> (optional)</li>
+<li><strong>price</strong>: A bare number giving the cost per quantity of the stream material. Its units come from <code>quantity_units_global</code> under <code>price</code> (BioSTEAM-native default <code>USD/kg</code>), not an inline unit string.</li>
+<li><strong>stream_properties</strong>: A detailed block of stream state. <code>total_molar_flow</code>, <code>temperature</code>, and <code>pressure</code> are required; the remaining scalars are optional. Each scalar below is a bare number whose units come from <code>quantity_units_global</code> (BioSTEAM-native defaults noted):<ul>
+<li><strong>total_molar_flow</strong> (<code>kmol/hr</code>)</li>
+<li><strong>temperature</strong> (<code>K</code>)</li>
+<li><strong>pressure</strong> (<code>Pa</code>)</li>
+<li><strong>total_mass_flow</strong> (<code>kg/hr</code>, optional)</li>
+<li><strong>total_volumetric_flow</strong> (<code>m3/hr</code>, optional)</li>
 <li><strong>composition</strong>: An array defining the phase, component name (linking to the <code>chemicals</code> array IDs), and exact mol fraction.</li>
 </ul>
 </li>
