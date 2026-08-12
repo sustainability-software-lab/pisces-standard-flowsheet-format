@@ -679,6 +679,7 @@
 <li><strong>products</strong>: Product and co-product material streams for this flowsheet, each with a required <code>stream_id</code> and an optional <code>display_name</code>. <em>(Required)</em></li>
 <li><strong>microorganisms</strong>: Microbial hosts used for bioproduction, if applicable. Represented as a list (not a single string) so that co-cultures and multi-host processes can each be a distinct entry; every entry has a required <code>name</code> and an optional <code>label</code>.</li>
 <li><strong>flowsheet_designers</strong>: Authors who designed the simulation.</li>
+<li><strong>reproducibility</strong>: Everything needed to rebuild the environment and re-run the model that produced this flowsheet: the full text and SHA-256 of the environment specification (<code>environment</code>) and load script (<code>load_script</code>), the pinned <code>simulator_package</code> and <code>flowsheet_model_package</code> (each identified by a VCS <code>commit</code> + <code>url</code>, or by a released <code>version</code>), and a <code>resolved</code> block recording the Python version, platform, environment key, timestamp, and installed package versions observed at export time. Optional — flowsheets exported without a recipe omit it.</li>
 </ul>
 <hr />
 <h3 id="chemicals">Chemicals</h3>

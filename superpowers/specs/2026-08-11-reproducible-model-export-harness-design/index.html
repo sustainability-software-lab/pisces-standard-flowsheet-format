@@ -1,0 +1,1038 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A universally interoperable file format for process designs.">
+      
+      
+      
+        <link rel="canonical" href="https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format-new/superpowers/specs/2026-08-11-reproducible-model-export-harness-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Reproducible model export harness + SFF v0.0.6 reproducibility block - Standard Flowsheet Format (SFF)</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#reproducible-model-export-harness-sff-v006-reproducibility-block" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Standard Flowsheet Format (SFF)" class="md-header__button md-logo" aria-label="Standard Flowsheet Format (SFF)" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Standard Flowsheet Format (SFF)
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Reproducible model export harness + SFF v0.0.6 reproducibility block
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../biosteam_export/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  BioSTEAM Export
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../contributions/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributions
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../extending/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Extending
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../schema_reference/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Schema Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../full_schema/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Full JSON Schema
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Standard Flowsheet Format (SFF)" class="md-nav__button md-logo" aria-label="Standard Flowsheet Format (SFF)" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Standard Flowsheet Format (SFF)
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../biosteam_export/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BioSTEAM Export
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../extending/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extending
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../schema_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Schema Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../full_schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full JSON Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="reproducible-model-export-harness-sff-v006-reproducibility-block">Reproducible model export harness + SFF v0.0.6 reproducibility block</h1>
+<p><strong>Date:</strong> 2026-08-11
+<strong>Status:</strong> Design approved; implementation not started
+<strong>Scope:</strong> <code>pisces_sff/models/</code>, <code>pisces_sff/_harness.py</code>, <code>pisces_sff/_runner.py</code>,
+<code>pisces_sff/_export.py</code>, <code>pisces_sff/schema/sff_schema.json</code>, <code>tests/</code>, <code>docs/</code></p>
+<hr />
+<h2 id="1-problem">1. Problem</h2>
+<p>Exported SFF flowsheets today are not reproducible by anyone but the machine that
+produced them, and the SFF file itself records nothing about how it was made
+beyond <code>metadata.process_simulator</code>.</p>
+<p>Four concrete gaps were confirmed while exploring the current setup:</p>
+<ol>
+<li><strong>The environment is not captured by the environment.</strong> <code>biosteam</code> and
+   <code>biorefineries</code> resolve to local clones only because of a user-level
+   <code>PYTHONPATH</code>:</li>
+</ol>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>PYTHONPATH=...\fermentation_insights;...\biosteam;...\nskinetics;...\Bioindustrial-Park;
+</span></code></pre></div>
+<p><code>conda env export</code> captures none of this. Neither package appears in
+   <code>pip list</code>. A trailing <code>;</code> yields an empty entry, which resolves to the
+   current working directory — this is also how <code>pisces_sff</code> itself is imported.</p>
+<ol>
+<li>
+<p><strong>There is no recorded load procedure.</strong> The only precedent is
+   <code>_superseded/.../examples_for_export.py</code>, a scratch file of per-system cells,
+   which is not part of this repository and is not referenced by any export.</p>
+</li>
+<li>
+<p><strong><code>PYTHONPATH</code> bypasses pip's dependency resolution</strong>, so declared package
+   requirements have never been enforced on this machine. <code>Bioindustrial-Park</code>
+   declares <code>install_requires=['biosteam&gt;=2.53.0', 'scikit-learn', 'SALib',
+   'seaborn']</code>, yet the working HP_2024 environment has <strong>biosteam 2.46.1</strong> and
+   has <strong>neither SALib nor seaborn installed at all</strong>. The declaration overstates
+   real requirements and cannot be trusted as input to an installer.</p>
+</li>
+<li>
+<p><strong>The exported corpus cannot be regenerated on demand.</strong> The 18 committed
+   flowsheets have no recorded provenance tying them to simulator versions or to
+   a load script.</p>
+</li>
+</ol>
+<h2 id="2-goals">2. Goals</h2>
+<ul>
+<li>A committed, per-model recipe (pinned environment spec + load script) that
+  reconstructs the environment and re-runs the simulation from scratch.</li>
+<li>Export execution physically constrained to the pinned environment, so a
+  recipe cannot claim pins it did not use.</li>
+<li>The SFF file carries the recipe inline, so a consumer holding only the JSON can
+  rebuild and re-run.</li>
+<li>Architecture open to non-BioSTEAM simulators without rework.</li>
+<li>First model delivered end to end: <strong><code>corn_dry_grind_ethanol</code></strong>.</li>
+</ul>
+<h2 id="3-non-goals">3. Non-goals</h2>
+<ul>
+<li>Regenerating the 18 committed flowsheets. Out of scope; requires separate
+  explicit sign-off per CLAUDE.md.</li>
+<li>Fixing the three <code>breakpoint()</code> calls in <code>_export.py</code> (known issue #2). The
+  harness neutralizes them at runtime instead; see §8.</li>
+<li>Reconciling the other documented known issues (dead <code>composition_units</code>
+  parameter, stale docs, <code>mkdocs.yml</code> URLs).</li>
+<li>Containerization. Conda environments are the chosen boundary.</li>
+</ul>
+<h2 id="4-decisions">4. Decisions</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Decision</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>Curated minimal <code>environment.yml</code>, every dependency pinned</td>
+<td>A <code>conda env export</code> of HP_2024 carries Windows-specific build strings and ~300 lines of unrelated tooling (spyder, qt, jupyterlab); it will not install on Linux CI</td>
+</tr>
+<tr>
+<td>D2</td>
+<td>Recipe embedded inline in the SFF, with <code>sha256</code> and repo-relative path</td>
+<td>A JSON pulled into the PISCES database in isolation stays reproducible; the hash detects drift against the committed file</td>
+</tr>
+<tr>
+<td>D3</td>
+<td><code>load.py</code> exposes <code>load() -&gt; (system, tea)</code>; a shared runner performs the export</td>
+<td>Export policy lives in one place instead of being copy-pasted across 18+ models</td>
+</tr>
+<tr>
+<td>D4</td>
+<td>Pin <code>biosteam@e2d3942…</code>, <code>Bioindustrial-Park@5842328…</code></td>
+<td>Both reachable on public remotes; <code>5842328</code> is on <code>master</code> history, so it cannot rot the way a feature branch can</td>
+</tr>
+<tr>
+<td>D5</td>
+<td>Fresh conda env per unique dependency set, keyed by content hash</td>
+<td>Models with identical pins share one env; the YAML is proven by being used</td>
+</tr>
+<tr>
+<td>D6</td>
+<td>Bump schema to <strong>v0.0.6</strong></td>
+<td>Additive optional property; without a bump, consumers cannot tell whether reproducibility data was even expressible</td>
+</tr>
+<tr>
+<td>D7</td>
+<td><code>--no-deps</code> in the pip block, all transitive deps pinned explicitly</td>
+<td>Prevents BIP's <code>biosteam&gt;=2.53.0</code> from silently replacing the biosteam pin (see §1.3)</td>
+</tr>
+<tr>
+<td>D8</td>
+<td>Tests import biosteam, including a full end-to-end run</td>
+<td>Explicitly requested; tiered and gated so the default suite stays fast</td>
+</tr>
+</tbody>
+</table>
+<h3 id="41-rejected-alternatives">4.1 Rejected alternatives</h3>
+<ul>
+<li><strong>Exact freeze of HP_2024</strong> — maximum fidelity, but Windows-only build strings
+  make it uninstallable elsewhere.</li>
+<li><strong>Reference recipe files by path only, no inline content</strong> — leaner SFF files,
+  but a JSON on its own stops being reproducible.</li>
+<li><strong>Run exports in HP_2024 and treat the YAML as declared</strong> — would be provably
+  false here: HP_2024 has BIP <code>6c22326</code>, not the pin.</li>
+<li><strong>Pin BIP to <code>temp_isobutanol</code></strong> — a feature branch; upstream deletion would
+  make the SHA unfetchable.</li>
+<li><strong><code>definitions</code>/<code>$ref</code> for the repeated package shape</strong> — the schema uses no
+  <code>$ref</code> anywhere today; naive downstream parsers should not have to resolve
+  references.</li>
+</ul>
+<h2 id="5-architecture">5. Architecture</h2>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pisces_sff/
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>├── _harness.py                          # parent: resolve/create env, launch child
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>├── _runner.py                           # child: load → export → embed → validate
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>└── models/
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    ├── __init__.py
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    └── biosteam_models/
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        ├── __init__.py
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        └── corn_dry_grind_ethanol/
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>            ├── environment.yml
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>            └── load.py
+</span></code></pre></div>
+<p><code>models/biosteam_models/</code> is organizational. Dispatch is driven by the <code>SIMULATOR</code>
+declaration inside <code>load.py</code>, not by directory name, so <code>models/superpro_models/…</code>
+requires no runner change (relevant to the unmerged <code>feat/superpro-local-export</code>
+branch).</p>
+<h3 id="51-loadpy-contract">5.1 <code>load.py</code> contract</h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">SIMULATOR</span> <span class="o">=</span> <span class="s1">&#39;biosteam&#39;</span>                    <span class="c1"># selects the export entry point</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">SIMULATOR_PACKAGE</span> <span class="o">=</span> <span class="s1">&#39;biosteam&#39;</span>            <span class="c1"># → metadata.reproducibility.simulator_package</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">FLOWSHEET_MODEL_PACKAGE</span> <span class="o">=</span> <span class="s1">&#39;biorefineries&#39;</span> <span class="c1"># → metadata.reproducibility.flowsheet_model_package</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">MODEL_NAME</span> <span class="o">=</span> <span class="s1">&#39;corn_dry_grind_ethanol&#39;</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="n">EXPORT_KWARGS</span> <span class="o">=</span> <span class="p">{</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="s1">&#39;microorganisms&#39;</span><span class="p">:</span> <span class="p">[{</span><span class="s1">&#39;name&#39;</span><span class="p">:</span> <span class="s1">&#39;Saccharomyces cerevisiae&#39;</span><span class="p">,</span> <span class="s1">&#39;label&#39;</span><span class="p">:</span> <span class="s1">&#39;ethanologen&#39;</span><span class="p">}],</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="s1">&#39;stoichiometry&#39;</span><span class="p">:</span> <span class="s1">&#39;dict&#39;</span><span class="p">,</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">}</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">load</span><span class="p">():</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Return (system, tea), simulated and ready to export.&quot;&quot;&quot;</span>
+</span></code></pre></div>
+<p>The dry-grind process ferments via simultaneous saccharification and fermentation
+(<code>units.SSF</code>), whose reaction is <code>Glucose -&gt; 2 Ethanol + 2 CO2</code> with a <code>Yeast</code>
+growth reaction — hence the single yeast host above.</p>
+<p>For corn the body is <code>br = corn.Biorefinery()</code> returning <code>(br.corn_sys,
+br.corn_tea)</code>; <code>Biorefinery.__new__</code> already simulates and solves IRR. An
+<code>if __name__ == '__main__':</code> block makes the file runnable standalone, so the
+embedded copy is self-sufficient and debugging needs no harness.</p>
+<h3 id="52-_harnesspy-parent-runs-in-any-environment">5.2 <code>_harness.py</code> (parent; runs in any environment)</h3>
+<p>Public entry point <code>export_model(model_dir, output_path, *, recreate_env=False)</code>:</p>
+<ol>
+<li>Read <code>environment.yml</code> bytes. Canonicalize (parse YAML, drop <code>name</code>/<code>prefix</code>,
+   dump with sorted keys), sha256 → <code>env_key</code>. Env name is <code>sff-&lt;env_key[:12]&gt;</code>.</li>
+<li>If that env does not exist, <code>conda env create -n sff-&lt;key12&gt; -f &lt;yml&gt;</code>.
+   <strong>On failure, remove the partial env</strong> — otherwise a broken env matches the
+   hash and is reused indefinitely.</li>
+<li>Launch the child:
+   <code>&lt;env_prefix&gt;/python.exe -m pisces_sff._runner --model-dir … --output …</code>
+   with a scrubbed environment: <code>PYTHONPATH</code> set to <strong>exactly the repo root</strong>,
+   <code>CONDA_PREFIX</code>/<code>CONDA_DEFAULT_ENV</code> cleared, <code>PYTHONBREAKPOINT=0</code> set.</li>
+<li>Stream child stdout/stderr; raise on non-zero exit.</li>
+</ol>
+<p>Setting <code>PYTHONPATH</code> to the repo root alone is what stops the clones from
+shadowing the pinned installs, while keeping <code>pisces_sff</code> live-editable rather
+than pinning the exporter against itself.</p>
+<p>Environment provisioning is the one deliberately conda-shaped component, kept
+behind a narrow interface so another simulator can supply a different
+provisioner without touching the runner or the schema.</p>
+<h3 id="53-_runnerpy-child-runs-inside-the-pinned-environment">5.3 <code>_runner.py</code> (child; runs inside the pinned environment)</h3>
+<ol>
+<li>Import <code>load.py</code> by file path via <code>importlib</code>.</li>
+<li>Resolve the export entry point by name from <code>SIMULATOR</code>
+   (<code>export_{SIMULATOR}_flowsheet</code>), mirroring the existing name-based version
+   dispatch in <code>_export.py</code>.</li>
+<li><code>system, tea = load()</code> — this performs the simulation.</li>
+<li>Assemble the reproducibility payload (§6).</li>
+<li>Call the exporter <strong>once</strong>, passing <code>sff_version='0.0.6'</code>, <code>tea=tea</code>,
+   <code>reproducibility=&lt;payload&gt;</code>, <code>**EXPORT_KWARGS</code>. The exporter remains the sole
+   writer of the JSON.</li>
+<li>Validate the written file against the schema. On failure, leave the file in
+   place for inspection and exit non-zero.</li>
+</ol>
+<h2 id="6-schema-change-v006">6. Schema change (v0.0.6)</h2>
+<p>One new <strong>optional</strong> property, <code>metadata.reproducibility</code>. Optional and additive,
+so all 18 committed flowsheets continue to validate unchanged.</p>
+<p>Placement under <code>metadata</code> is deliberate: it is provenance, alongside <code>source_doi</code>
+and <code>process_simulator</code>. Note that <code>metadata</code> declares
+<code>"additionalProperties": {"type": "string"}</code>, so an object-valued property
+<strong>must</strong> be explicitly declared — it cannot be added implicitly.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>&quot;reproducibility&quot;: {
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>  &quot;type&quot;: &quot;object&quot;,
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  &quot;description&quot;: &quot;Everything needed to rebuild the environment and re-run the model that produced this flowsheet.&quot;,
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>  &quot;properties&quot;: {
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    &quot;environment&quot;: {
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>      &quot;type&quot;: &quot;object&quot;,
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>      &quot;properties&quot;: {
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>        &quot;format&quot;:   { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Spec format, e.g. &#39;conda-environment-yaml&#39;.&quot; },
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>        &quot;filename&quot;: { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        &quot;path&quot;:     { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Repo-relative path of the source file.&quot; },
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        &quot;sha256&quot;:   { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;SHA-256 of the verbatim file bytes.&quot; },
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>        &quot;content&quot;:  { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Full text of the environment specification.&quot; }
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>      },
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>      &quot;required&quot;: [&quot;format&quot;, &quot;filename&quot;, &quot;sha256&quot;, &quot;content&quot;]
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>    },
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>    &quot;load_script&quot;: {
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>      &quot;type&quot;: &quot;object&quot;,
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>      &quot;properties&quot;: {
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>        &quot;format&quot;:      { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;e.g. &#39;python&#39;.&quot; },
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>        &quot;filename&quot;:    { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>        &quot;path&quot;:        { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>        &quot;sha256&quot;:      { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>        &quot;content&quot;:     { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>        &quot;entry_point&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Callable returning the simulated model, e.g. &#39;load&#39;.&quot; }
+</span><span id="__span-3-25"><a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>      },
+</span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>      &quot;required&quot;: [&quot;format&quot;, &quot;filename&quot;, &quot;sha256&quot;, &quot;content&quot;]
+</span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>    },
+</span><span id="__span-3-28"><a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a>    &quot;simulator_package&quot;:      { /* package shape, see below */ },
+</span><span id="__span-3-29"><a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>    &quot;flowsheet_model_package&quot;: { /* package shape, see below */ },
+</span><span id="__span-3-30"><a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>    &quot;resolved&quot;: {
+</span><span id="__span-3-31"><a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>      &quot;type&quot;: &quot;object&quot;,
+</span><span id="__span-3-32"><a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a>      &quot;description&quot;: &quot;Observed at export time inside the pinned environment; distinguishes what ran from what was declared.&quot;,
+</span><span id="__span-3-33"><a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a>      &quot;properties&quot;: {
+</span><span id="__span-3-34"><a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a>        &quot;python_version&quot;:   { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-35"><a id="__codelineno-3-35" name="__codelineno-3-35" href="#__codelineno-3-35"></a>        &quot;platform&quot;:         { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-36"><a id="__codelineno-3-36" name="__codelineno-3-36" href="#__codelineno-3-36"></a>        &quot;env_key&quot;:          { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-3-37"><a id="__codelineno-3-37" name="__codelineno-3-37" href="#__codelineno-3-37"></a>        &quot;exported_at&quot;:      { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;UTC ISO-8601 timestamp.&quot; },
+</span><span id="__span-3-38"><a id="__codelineno-3-38" name="__codelineno-3-38" href="#__codelineno-3-38"></a>        &quot;package_versions&quot;: { &quot;type&quot;: &quot;object&quot;, &quot;additionalProperties&quot;: { &quot;type&quot;: &quot;string&quot; } }
+</span><span id="__span-3-39"><a id="__codelineno-3-39" name="__codelineno-3-39" href="#__codelineno-3-39"></a>      }
+</span><span id="__span-3-40"><a id="__codelineno-3-40" name="__codelineno-3-40" href="#__codelineno-3-40"></a>    }
+</span><span id="__span-3-41"><a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a>  },
+</span><span id="__span-3-42"><a id="__codelineno-3-42" name="__codelineno-3-42" href="#__codelineno-3-42"></a>  &quot;required&quot;: [&quot;environment&quot;, &quot;load_script&quot;]
+</span><span id="__span-3-43"><a id="__codelineno-3-43" name="__codelineno-3-43" href="#__codelineno-3-43"></a>}
+</span></code></pre></div>
+<p><strong>Package shape</strong> — written out inline twice (no <code>$ref</code>, per §4.1). Accepts a VCS
+commit <strong>or</strong> a PyPI version; a URL is required only when pinning a commit:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>{
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>  &quot;type&quot;: &quot;object&quot;,
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  &quot;properties&quot;: {
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    &quot;name&quot;:    { &quot;type&quot;: &quot;string&quot; },
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>    &quot;url&quot;:     { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Repository URL; required when &#39;commit&#39; is given.&quot; },
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    &quot;commit&quot;:  { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Full VCS commit SHA.&quot; },
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    &quot;branch&quot;:  { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Branch the commit is reachable from, when known.&quot; },
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    &quot;version&quot;: { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;PyPI release version, when installed from PyPI.&quot; }
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  },
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>  &quot;required&quot;: [&quot;name&quot;],
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>  &quot;anyOf&quot;: [ { &quot;required&quot;: [&quot;commit&quot;] }, { &quot;required&quot;: [&quot;version&quot;] } ],
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>  &quot;allOf&quot;: [ { &quot;if&quot;: { &quot;required&quot;: [&quot;commit&quot;] }, &quot;then&quot;: { &quot;required&quot;: [&quot;url&quot;] } } ]
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>}
+</span></code></pre></div>
+<p><code>simulator_package</code> and <code>flowsheet_model_package</code> restate pins that also appear in
+the embedded YAML text. This duplication is intentional: it lets PISCES index and
+query provenance without parsing embedded YAML. The runner <strong>derives</strong> both from
+the YAML's pip entries (<code>git+URL@sha</code> → <code>commit</code>+<code>url</code>; <code>pkg==x</code> → <code>version</code>), so
+the two representations cannot disagree.</p>
+<h3 id="61-version-bump-three-parts-one-commit">6.1 Version bump (three parts, one commit)</h3>
+<ol>
+<li><code>"version": "0.0.6"</code> in <code>sff_schema.json</code>.</li>
+<li>New <code>export_biosteam_flowsheet_sff_0_0_6</code> in <code>_export.py</code>, <code>sff_version</code>
+   defaulting to <code>'0.0.6'</code>, plus a <code>reproducibility=None</code> kwarg that omits the
+   block entirely when absent (so hand exports still validate).
+   <code>tests/test_version_sync.py</code> enforces the naming/default match with no
+   changes needed.</li>
+<li>A v0.0.5 permalink added to <code>docs/full_schema.md</code>. <strong>The missing v0.0.4
+   permalink is added at the same time</strong> — the 0.0.4 → 0.0.5 bump skipped it.</li>
+</ol>
+<p><code>docs/schema_reference.md</code> is updated in the same commit.</p>
+<h2 id="7-environmentyml-for-corn_dry_grind_ethanol">7. <code>environment.yml</code> for <code>corn_dry_grind_ethanol</code></h2>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sff-corn-dry-grind-ethanol</span><span class="w">   </span><span class="c1"># overridden by the harness via `conda env create -n`</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">channels</span><span class="p">:</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">defaults</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nt">dependencies</span><span class="p">:</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python=3.9.25</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">pip</span><span class="p">:</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">--no-deps</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="c1"># … every runtime dependency pinned with == …</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">thermosteam==0.45.0</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">numpy==1.26.4</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">numba==0.60.0</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">llvmlite==0.43.0</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git+https://github.com/BioSTEAMDevelopmentGroup/biosteam@e2d3942dd1076a4516efc91ae194f9e558428551</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">git+https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park@584232846c999986f108cbd14d53437cd06c8f3d</span>
+</span></code></pre></div>
+<p><strong><code>--no-deps</code> is mandatory, not stylistic.</strong> Without it, pip honours BIP's
+<code>install_requires=['biosteam&gt;=2.53.0', …]</code> and replaces the pinned biosteam
+2.46.1 with a PyPI 2.53+ build, defeating the entire design.</p>
+<p>Because <code>--no-deps</code> suppresses all resolution, every transitive dependency must be
+listed explicitly. Known-needed pins observed in HP_2024:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>thermosteam==0.45.0   chemicals==1.2.0     thermo==0.2.27      fluids==1.0.26
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>flexsolve==0.5.7      free-properties==0.3.6                   colorpalette==0.3.3
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>numpy==1.26.4         scipy==1.13.1        pandas==2.2.2       numba==0.60.0
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>llvmlite==0.43.0      matplotlib==3.5.2    Pint==0.23          graphviz==0.20.3
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>xlrd==2.0.1           openpyxl==3.1.2      xlsxwriter==3.2.9   jsonschema==4.25.0
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>PyYAML==6.0.1         ipython==8.15.0      chaospy==4.3.15     scikit-learn==1.6.1
+</span></code></pre></div>
+<p><code>SALib</code> and <code>seaborn</code> are <strong>excluded</strong>: BIP declares them, but neither is
+installed in the working HP_2024 environment, so neither is required to load and
+simulate this model.</p>
+<p><strong>Completion procedure for the pin list</strong> (this is a defined loop, not an open
+question): build the env, run the Tier 3 export, and add any pin named by a
+resulting <code>ModuleNotFoundError</code>, pinned to the version present in HP_2024.
+Repeat until the export succeeds. The list is complete when a Tier 3 run passes
+from a freshly created environment. The final list is committed in
+<code>environment.yml</code>.</p>
+<h3 id="71-primary-implementation-risk">7.1 Primary implementation risk</h3>
+<p><code>biosteam@e2d3942</code> is v2.46.1, while <code>BIP@5842328</code> declares <code>biosteam&gt;=2.53.0</code>.
+That declaration is demonstrably unreliable (§1.3), and the corn code at
+<code>5842328</code> uses the older <code>V=</code> / no-<code>RH</code> API matching biosteam 2.46.1 — so the
+pair is expected to work. It has nonetheless <strong>never been executed</strong>: the working
+local environment pairs biosteam 2.46.1 with BIP <code>6c22326</code>, not <code>5842328</code>.</p>
+<p>The first Tier 3 run is the test of this pairing. <strong>If it fails, the fallback
+(bumping the biosteam pin to the oldest release satisfying BIP's declaration)
+changes what gets exported, and therefore returns to the user for a decision
+rather than being applied unilaterally.</strong></p>
+<h3 id="72-expected-difference-from-the-committed-corpus">7.2 Expected difference from the committed corpus</h3>
+<p><code>5842328</code> and the local BIP HEAD differ materially in the corn DDGS section:
+<code>DDGSCentrifuge</code> changes base class (<code>bst.Splitter</code> → <code>bst.SolidsCentrifuge</code>),
+with an inverted split, swapped outlet ports, an added <code>moisture_content=0.40</code>,
+and a removed <code>Water</code> split entry.</p>
+<p>The new export will therefore <strong>not</strong> match the committed <code>corn_ethanol.json</code> in
+that area. It is written as a <strong>new artifact</strong>
+(<code>corn_dry_grind_ethanol.json</code>); the committed <code>corn_ethanol.json</code> is left
+untouched. Replacing it is a separate decision requiring explicit sign-off.</p>
+<h3 id="73-effect-on-the-corpus-and-its-pass-criterion">7.3 Effect on the corpus and its pass criterion</h3>
+<p>The new file is committed to
+<code>pisces_sff/exported_flowsheets/bioindustrial_park/corn_dry_grind_ethanol.json</code>,
+making it the <strong>19th</strong> corpus file. This is purely additive — no existing file is
+regenerated — but it changes the canonical validation pass criterion from
+"<code>failures: 0</code> across all <strong>18</strong> flowsheets" to <strong>19</strong>, so CLAUDE.md's
+"Canonical validation" section is updated accordingly in the same commit.</p>
+<p>It also makes <code>corn_dry_grind_ethanol.json</code> the first corpus file to report
+<code>sff_version: "0.0.6"</code>; the other 18 continue to report <code>"0.0.3"</code> (known issue</p>
+<h1 id="1-which-remains-unaddressed-here">1), which remains unaddressed here.</h1>
+<h2 id="8-failure-modes">8. Failure modes</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Handling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>breakpoint()</code> at <code>_export.py:225</code>, <code>:296</code>, <code>:606</code></td>
+<td>Child runs with <code>PYTHONBREAKPOINT=0</code>, making them no-ops. Avoids an unkillable hang in a TTY-less subprocess without editing known-issue lines</td>
+</tr>
+<tr>
+<td>Concurrent simulations corrupting the numba cache</td>
+<td>Harness takes a lock file and refuses a second concurrent export rather than trusting the caller. Batch runs keep the documented 5 s settle pause</td>
+</tr>
+<tr>
+<td><code>conda env create</code> fails midway</td>
+<td>Partial env removed, so a broken env is never reused under a matching hash</td>
+</tr>
+<tr>
+<td><code>conda</code> not on PATH</td>
+<td>Explicit error naming the executable searched for; <code>conda_exe</code> is overridable</td>
+</tr>
+<tr>
+<td><code>load()</code> raises</td>
+<td>Propagated with the model name attached</td>
+</tr>
+<tr>
+<td>Output fails schema validation</td>
+<td>JSON left on disk for inspection; non-zero exit</td>
+</tr>
+<tr>
+<td>Embedded <code>sha256</code> disagrees with the file on disk</td>
+<td>Surfaced by the Tier 2 test, which recomputes it</td>
+</tr>
+</tbody>
+</table>
+<h2 id="9-testing">9. Testing</h2>
+<p>Three tiers. Gating uses <code>unittest.skipUnless</code> on environment variables rather
+than pytest markers, so <code>python -m unittest discover -s tests</code> keeps working as
+CLAUDE.md documents and no <code>pytest.ini</code> is needed to suppress unknown-marker
+warnings.</p>
+<p><strong>Tier 1 — always runs. No biosteam import.</strong></p>
+<ul>
+<li><code>tests/test_schema_reproducibility.py</code> — pins the block shape; asserts
+  commit-form and version-form packages both validate, that a package with
+  neither is rejected, that <code>commit</code> without <code>url</code> is rejected, and that
+  <code>reproducibility</code> stays absent from <code>metadata.required</code>.</li>
+<li><code>tests/test_harness.py</code> — pure functions only: <code>env_key</code> determinism (stable
+  across <code>name</code>/<code>prefix</code> edits, changes with any dependency edit), pip-entry →
+  package-record parsing for both forms, sha256 of verbatim file bytes.</li>
+<li>Corpus revalidation: all 18 flowsheets, <code>failures: 0</code>.</li>
+</ul>
+<p><strong>Tier 2 — <code>SFF_TEST_BIOSTEAM=1</code>. Imports biosteam.</strong></p>
+<p>Calls <code>load()</code> from <code>corn_dry_grind_ethanol/load.py</code> in the <em>current</em>
+environment, exports to a temp directory, and validates against the schema.
+Asserts <strong>structural</strong> properties only: output validates; <code>metadata.reproducibility</code>
+present; embedded <code>sha256</code> matches the on-disk file bytes; feedstock resolves to
+corn; units and streams non-empty. Numeric assertions are deliberately excluded —
+run from HP_2024 this exercises BIP <code>6c22326</code>, not the pin.</p>
+<p><strong>Tier 3 — <code>SFF_TEST_E2E=1</code>. Full <code>export_model()</code> including env creation.</strong></p>
+<p>The only tier in which the pins are what actually ran, and therefore the only
+tier permitted to assert <strong>numeric baselines</strong> with an explicit tolerance.
+Baseline values are recorded from the first successful run rather than invented
+in advance.</p>
+<p><strong>Tests must not run in parallel.</strong> Tiers 2 and 3 both simulate, and concurrent
+simulations corrupt the numba cache; <code>pytest-xdist</code> must not be used. The harness
+lock enforces this at runtime.</p>
+<h3 id="91-documentation-updates">9.1 Documentation updates</h3>
+<p>CLAUDE.md's "Canonical validation" section currently states that smoke tests are
+planned and that their baselines should be recorded there once they land. Tier 3
+is that check. The same commit therefore updates that section with the gated
+commands and the recorded baseline numbers and tolerance, and corrects the stale
+"currently 10 passed" count.</p>
+<h2 id="10-verification">10. Verification</h2>
+<p>Before committing:</p>
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">&amp;</span> <span class="s2">&quot;C:\Users\saran\anaconda3\envs\HP_2024\python.exe&quot;</span> <span class="n">-c</span> <span class="s2">&quot;import glob,os; from pisces_sff import validate_json_against_schema as v; s=&#39;pisces_sff/schema/sff_schema.json&#39;; r=[(os.path.basename(f),)+v(f,s) for f in sorted(glob.glob(&#39;pisces_sff/exported_flowsheets/bioindustrial_park/*.json&#39;))]; [print(n,&#39;OK&#39; if ok else (&#39;FAIL &#39;+str(e[:2]))) for n,ok,e in r]; print(&#39;failures:&#39;, sum(1 for _,ok,_ in r if not ok))&quot;</span>
+</span></code></pre></div>
+<div class="language-powershell highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="p">&amp;</span> <span class="s2">&quot;C:\Users\saran\anaconda3\envs\HP_2024\python.exe&quot;</span> <span class="n">-m</span> <span class="n">pytest</span> <span class="n">tests</span> <span class="n">-q</span>
+</span></code></pre></div>
+<p>Pass criteria: <code>failures: 0</code> across all 18 flowsheets; all tests pass. Tiers 2
+and 3 are run explicitly via their environment variables and must pass before the
+harness is considered complete.</p>
+<h2 id="11-deliverables">11. Deliverables</h2>
+<ol>
+<li><code>pisces_sff/models/{__init__.py,biosteam_models/__init__.py}</code></li>
+<li><code>pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yml</code></li>
+<li><code>pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/load.py</code></li>
+<li><code>pisces_sff/_harness.py</code>, <code>pisces_sff/_runner.py</code> (both <code>__all__</code>-driven,
+   MIT header, <code>#%%</code> cell delimiters, NumPy-style docstrings)</li>
+<li>Schema v0.0.6 with <code>metadata.reproducibility</code></li>
+<li><code>export_biosteam_flowsheet_sff_0_0_6</code> in <code>_export.py</code></li>
+<li><code>tests/test_schema_reproducibility.py</code>, <code>tests/test_harness.py</code>, and the
+   Tier 2 / Tier 3 tests</li>
+<li><code>docs/full_schema.md</code> (v0.0.5 <strong>and</strong> missing v0.0.4 permalinks),
+   <code>docs/schema_reference.md</code>, CLAUDE.md canonical-validation section</li>
+<li><code>corn_dry_grind_ethanol.json</code> produced by a Tier 3 run</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.indexes", "toc.integrate", "content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
