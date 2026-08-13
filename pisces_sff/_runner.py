@@ -207,7 +207,7 @@ def build_reproducibility(model_dir, module, env_key=None):
     branches = getattr(module, 'PACKAGE_BRANCHES', None) or {}
     simulator_package = module.SIMULATOR_PACKAGE
     flowsheet_model_package = module.FLOWSHEET_MODEL_PACKAGE
-    return {
+    reproducibility = {
         'environment': _file_record(env_path, 'conda-environment-yaml'),
         'load_script': _file_record(model_dir / 'load.py', 'python',
                                     {'entry_point': 'load'}),
@@ -226,6 +226,13 @@ def build_reproducibility(model_dir, module, env_key=None):
             'package_versions': _installed_versions(),
         },
     }
+    # Authored metadata now affects export output (microorganisms lives here),
+    # so record the file alongside environment.yml and load.py to keep an export
+    # reproducible from its recorded inputs. Present only when the file exists.
+    extended_path = model_dir / EXTENDED_METADATA_FILENAME
+    if extended_path.exists():
+        reproducibility['extended_metadata'] = _file_record(extended_path, 'yaml')
+    return reproducibility
 
 #%% Export
 
@@ -267,6 +274,11 @@ def run_model_export(model_dir, output_path, sff_version=None, env_key=None):
     model_dir = Path(model_dir).resolve()
     output_path = Path(output_path)
     module = load_model_module(model_dir)
+    # Human-authored descriptive metadata (source_doi, process_title,
+    # flowsheet_designers, microorganisms) lives beside the recipe, not in the
+    # System. Missing file -> warn + {} (see load_extended_metadata). Its keys
+    # map onto exporter kwargs; a typo'd key surfaces as a TypeError below.
+    authored_metadata = load_extended_metadata(model_dir)
     simulator = getattr(module, 'SIMULATOR', 'biosteam')
     # Name-based dispatch, mirroring the versioned-exporter lookup in _export:
     # adding a simulator means adding an export entry point with the matching
@@ -294,6 +306,7 @@ def run_model_export(model_dir, output_path, sff_version=None, env_key=None):
 
     exporter(system, str(output_path), sff_version=sff_version, tea=tea,
              reproducibility=reproducibility,
+             **authored_metadata,
              **(getattr(module, 'EXPORT_KWARGS', None) or {}))
 
     is_valid, errors = validate_json_against_schema(str(output_path),

@@ -68,5 +68,55 @@ class TestLoadExtendedMetadata(unittest.TestCase):
                 load_extended_metadata(d)
 
 
+import types
+
+
+def _fixture_module():
+    return types.SimpleNamespace(
+        SIMULATOR_PACKAGE="biosteam",
+        FLOWSHEET_MODEL_PACKAGE="biorefineries",
+        PACKAGE_BRANCHES={},
+    )
+
+
+ENV_YML = (
+    "name: fixture\n"
+    "dependencies:\n"
+    "  - pip:\n"
+    "    - biosteam==2.46.1\n"
+    "    - biorefineries==0.0.0\n"
+)
+
+
+class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
+    def _model_dir(self, tmp, with_extended):
+        d = Path(tmp)
+        (d / "environment.yml").write_text(ENV_YML, encoding="utf-8")
+        (d / "load.py").write_text("# fixture load.py\n", encoding="utf-8")
+        if with_extended:
+            _write(d, 'process_title: "Fixture"\n')
+        return d
+
+    def test_record_present_when_file_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = self._model_dir(tmp, with_extended=True)
+            repro = _runner.build_reproducibility(d, _fixture_module())
+        self.assertIn("extended_metadata", repro)
+        rec = repro["extended_metadata"]
+        self.assertEqual(rec["filename"], "extended_metadata.yaml")
+        self.assertEqual(rec["format"], "yaml")
+        self.assertIn("Fixture", rec["content"])
+        self.assertEqual(len(rec["sha256"]), 64)
+
+    def test_record_absent_when_file_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = self._model_dir(tmp, with_extended=False)
+            repro = _runner.build_reproducibility(d, _fixture_module())
+        self.assertNotIn("extended_metadata", repro)
+        # The existing records are unaffected.
+        self.assertIn("environment", repro)
+        self.assertIn("load_script", repro)
+
+
 if __name__ == "__main__":
     unittest.main()
