@@ -27,6 +27,9 @@
                 "stream_id": "ethanol"
             }
         ],
+        "source_doi": "https://doi.org/10.1016/j.indcrop.2005.08.004",
+        "process_title": "Corn \u2192 Ethanol + Crude oil + DDGS",
+        "flowsheet_designers": "Yoel Cortes-Pena",
         "microorganisms": [
             {
                 "name": "Saccharomyces cerevisiae",
@@ -44,8 +47,8 @@
             "load_script": {
                 "format": "python",
                 "filename": "load.py",
-                "sha256": "dcaad5aab2c92bec5def228909dfb8b5bffd7ef6904047f87c5a16314407df5b",
-                "content": "# -*- coding: utf-8 -*-\r\n# Code to export flowsheets from multiple tools into a standardized JSON format.\r\n# Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>\r\n#\r\n# This module is under the MIT open-source license. See\r\n# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE\r\n# for license details.\r\n\r\n\"\"\"\r\nConventional corn dry-grind ethanol biorefinery, from the Bioindustrial-Park\r\n``biorefineries.corn`` module.\r\n\r\nRun this file directly to load and simulate the model without the harness:\r\n``python load.py``.\r\n\"\"\"\r\n\r\n#%% Model declarations\r\n\r\n# Selects the export entry point: the runner resolves `export_<SIMULATOR>_flowsheet`\r\n# in pisces_sff._export. Dispatch is by this value rather than by directory\r\n# name, so a model from another simulator only changes this line.\r\nSIMULATOR = 'biosteam'\r\n\r\n# Distribution names, resolved against environment.yml's pip requirements to\r\n# fill metadata.reproducibility.simulator_package / .flowsheet_model_package.\r\n# Deriving the pins from the environment specification (instead of restating\r\n# them here) is what keeps the two representations from disagreeing.\r\nSIMULATOR_PACKAGE = 'biosteam'\r\nFLOWSHEET_MODEL_PACKAGE = 'biorefineries'\r\n\r\n# Branches the pinned commits are reachable from, where known. Advisory only --\r\n# a branch is not a pin, and is recorded so a reader can locate the commit.\r\nPACKAGE_BRANCHES = {'biorefineries': 'master'}\r\n\r\nMODEL_NAME = 'corn_dry_grind_ethanol'\r\n\r\n# Forwarded to the exporter. The dry-grind process ferments via simultaneous\r\n# saccharification and fermentation (`biorefineries.corn.units.SSF`), whose\r\n# reaction is Glucose -> 2 Ethanol + 2 CO2 alongside a Yeast growth reaction --\r\n# hence the single yeast host. A BioSTEAM System carries no host identity, so\r\n# this cannot be inferred and must be declared.\r\nEXPORT_KWARGS = {\r\n    'microorganisms': [{'name': 'Saccharomyces cerevisiae', 'label': 'ethanologen'}],\r\n    'stoichiometry': 'dict',\r\n}\r\n\r\n#%% Loader\r\n\r\n\r\ndef load():\r\n    \"\"\"\r\n    Load and simulate the corn dry-grind ethanol biorefinery.\r\n\r\n    Returns\r\n    -------\r\n    (biosteam.System, biosteam.TEA)\r\n        The simulated system and its TEA object. ``Biorefinery.__new__``\r\n        simulates the system and solves for IRR, so the returned objects are\r\n        ready to export with no further calls.\r\n    \"\"\"\r\n    # Imported inside the function so that reading this module's declarations\r\n    # (as the test suite does) does not pull in the biosteam stack.\r\n    from biorefineries import corn\r\n    biorefinery = corn.Biorefinery()\r\n    return biorefinery.corn_sys, biorefinery.corn_tea\r\n\r\n\r\nif __name__ == '__main__':\r\n    system, tea = load()\r\n    print(system)\r\n    print(f'IRR: {tea.IRR}')\r\n",
+                "sha256": "523f9f4406d3897f429e81173797b3cd10430df7e96f8694d9d05f8b0d200674",
+                "content": "# -*- coding: utf-8 -*-\r\n# Code to export flowsheets from multiple tools into a standardized JSON format.\r\n# Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>\r\n#\r\n# This module is under the MIT open-source license. See\r\n# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE\r\n# for license details.\r\n\r\n\"\"\"\r\nConventional corn dry-grind ethanol biorefinery, from the Bioindustrial-Park\r\n``biorefineries.corn`` module.\r\n\r\nRun this file directly to load and simulate the model without the harness:\r\n``python load.py``.\r\n\"\"\"\r\n\r\n#%% Model declarations\r\n\r\n# Selects the export entry point: the runner resolves `export_<SIMULATOR>_flowsheet`\r\n# in pisces_sff._export. Dispatch is by this value rather than by directory\r\n# name, so a model from another simulator only changes this line.\r\nSIMULATOR = 'biosteam'\r\n\r\n# Distribution names, resolved against environment.yml's pip requirements to\r\n# fill metadata.reproducibility.simulator_package / .flowsheet_model_package.\r\n# Deriving the pins from the environment specification (instead of restating\r\n# them here) is what keeps the two representations from disagreeing.\r\nSIMULATOR_PACKAGE = 'biosteam'\r\nFLOWSHEET_MODEL_PACKAGE = 'biorefineries'\r\n\r\n# Branches the pinned commits are reachable from, where known. Advisory only --\r\n# a branch is not a pin, and is recorded so a reader can locate the commit.\r\nPACKAGE_BRANCHES = {'biorefineries': 'master'}\r\n\r\nMODEL_NAME = 'corn_dry_grind_ethanol'\r\n\r\n# Export-behavior flags forwarded to the exporter. Authored descriptive\r\n# metadata (source_doi, process_title, flowsheet_designers, microorganisms)\r\n# lives in extended_metadata.yaml, not here -- this dict is for how the export\r\n# is produced, not what a human knows about the flowsheet. `stoichiometry`\r\n# controls how reactions serialize (dict vs vector).\r\nEXPORT_KWARGS = {\r\n    'stoichiometry': 'dict',\r\n}\r\n\r\n#%% Loader\r\n\r\n\r\ndef load():\r\n    \"\"\"\r\n    Load and simulate the corn dry-grind ethanol biorefinery.\r\n\r\n    Returns\r\n    -------\r\n    (biosteam.System, biosteam.TEA)\r\n        The simulated system and its TEA object. ``Biorefinery.__new__``\r\n        simulates the system and solves for IRR, so the returned objects are\r\n        ready to export with no further calls.\r\n    \"\"\"\r\n    # Imported inside the function so that reading this module's declarations\r\n    # (as the test suite does) does not pull in the biosteam stack.\r\n    from biorefineries import corn\r\n    biorefinery = corn.Biorefinery()\r\n    return biorefinery.corn_sys, biorefinery.corn_tea\r\n\r\n\r\nif __name__ == '__main__':\r\n    system, tea = load()\r\n    print(system)\r\n    print(f'IRR: {tea.IRR}')\r\n",
                 "path": "pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/load.py",
                 "entry_point": "load"
             },
@@ -64,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-13T02:47:29Z",
+                "exported_at": "2026-08-13T16:44:09Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -79,6 +82,13 @@
                     "numba": "0.60.0",
                     "llvmlite": "0.43.0"
                 }
+            },
+            "extended_metadata": {
+                "format": "yaml",
+                "filename": "extended_metadata.yaml",
+                "sha256": "a0503af8c7d53af4a198fcf445ee2de4eff7631c39a308ed09c9e7fedc569b55",
+                "content": "# extended_metadata.yaml -- human-authored descriptive metadata for this\n# flowsheet. Read by pisces_sff._runner.load_extended_metadata and written into\n# the exported SFF metadata block. Top-level keys map one-to-one onto exporter\n# keyword arguments.\n#\nsource_doi: \"https://doi.org/10.1016/j.indcrop.2005.08.004\"\n#\n# Note this particular model was not developed as part of the source_doi publication --\n# it was built based faithfully on the design in that publication but not itself published.\n#\nprocess_title: \"Corn \u2192 Ethanol + Crude oil + DDGS\"\n#\nflowsheet_designers: \"Yoel Cortes-Pena\"\n#\n# A BioSTEAM System carries no explicit host identity, so the fermenting organism cannot\n# be inferred and must be declared. The dry-grind process ferments via\n# simultaneous saccharification and fermentation (biorefineries.corn.units.SSF):\n# Glucose -> 2 Ethanol + 2 CO2 alongside a Yeast growth reaction -- one host.\nmicroorganisms:\n  - name: \"Saccharomyces cerevisiae\"\n    label: \"ethanologen\"\n",
+                "path": "pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/extended_metadata.yaml"
             }
         }
     },
@@ -1240,6 +1250,16 @@
             "reactions": [
                 {
                     "index": 0,
+                    "equation": "Glucose -> Yeast",
+                    "reactant": "Glucose",
+                    "conversion": 1.0,
+                    "stoichiometry": {
+                        "Glucose": -1.0,
+                        "Yeast": 1.0
+                    }
+                },
+                {
+                    "index": 1,
                     "equation": "Glucose -> 2 Ethanol + 2 CO2",
                     "reactant": "Glucose",
                     "conversion": 0.95,
@@ -1247,16 +1267,6 @@
                         "Ethanol": 2.0,
                         "Glucose": -1.0,
                         "CO2": 2.0
-                    }
-                },
-                {
-                    "index": 1,
-                    "equation": "Glucose -> Yeast",
-                    "reactant": "Glucose",
-                    "conversion": 1.0,
-                    "stoichiometry": {
-                        "Glucose": -1.0,
-                        "Yeast": 1.0
                     }
                 }
             ],
