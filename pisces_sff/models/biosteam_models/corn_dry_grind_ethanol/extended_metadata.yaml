@@ -1,0 +1,17 @@
+# extended_metadata.yaml -- human-authored descriptive metadata for this
+# flowsheet. Read by pisces_sff._runner.load_extended_metadata and written into
+# the exported SFF metadata block. Top-level keys map one-to-one onto exporter
+# keyword arguments.
+#
+# NOTE: source_doi and flowsheet_designers below are PLACEHOLDERS to be filled
+# in with real values before the committed corpus file is regenerated.
+source_doi: "10.0000/PLACEHOLDER"
+process_title: "Conventional corn dry-grind ethanol biorefinery"
+flowsheet_designers: "PLACEHOLDER"
+# A BioSTEAM System carries no host identity, so the fermenting organism cannot
+# be inferred and must be declared. The dry-grind process ferments via
+# simultaneous saccharification and fermentation (biorefineries.corn.units.SSF):
+# Glucose -> 2 Ethanol + 2 CO2 alongside a Yeast growth reaction -- one host.
+microorganisms:
+  - name: "Saccharomyces cerevisiae"
+    label: "ethanologen"

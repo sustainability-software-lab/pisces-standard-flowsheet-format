@@ -108,5 +108,32 @@ class TestModelRecipeContract(unittest.TestCase):
                     self.assertIsInstance(constants["PACKAGE_BRANCHES"], dict)
 
 
+class TestCornExtendedMetadata(unittest.TestCase):
+    # The corn model is the flagship recipe and documents the extended_metadata
+    # convention. (Missing files are allowed in general -- see load_extended_
+    # metadata -- so this pins only corn, not every model.)
+    def setUp(self):
+        self.corn = (MODELS_ROOT / "biosteam_models" / "corn_dry_grind_ethanol")
+
+    def test_corn_ships_extended_metadata(self):
+        self.assertTrue((self.corn / "extended_metadata.yaml").is_file())
+
+    def test_corn_export_kwargs_no_longer_carries_microorganisms(self):
+        constants = module_constants(self.corn / "load.py")
+        self.assertNotIn("microorganisms", constants["EXPORT_KWARGS"])
+        self.assertEqual(constants["EXPORT_KWARGS"], {"stoichiometry": "dict"})
+
+    def test_corn_extended_metadata_has_expected_keys(self):
+        import yaml
+        data = yaml.safe_load(
+            (self.corn / "extended_metadata.yaml").read_text(encoding="utf-8"))
+        self.assertIsInstance(data, dict)
+        for key in ("source_doi", "process_title", "flowsheet_designers",
+                    "microorganisms"):
+            self.assertIn(key, data)
+        self.assertEqual(data["microorganisms"][0]["name"],
+                         "Saccharomyces cerevisiae")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,13 +34,12 @@ PACKAGE_BRANCHES = {'biorefineries': 'master'}
 
 MODEL_NAME = 'corn_dry_grind_ethanol'
 
-# Forwarded to the exporter. The dry-grind process ferments via simultaneous
-# saccharification and fermentation (`biorefineries.corn.units.SSF`), whose
-# reaction is Glucose -> 2 Ethanol + 2 CO2 alongside a Yeast growth reaction --
-# hence the single yeast host. A BioSTEAM System carries no host identity, so
-# this cannot be inferred and must be declared.
+# Export-behavior flags forwarded to the exporter. Authored descriptive
+# metadata (source_doi, process_title, flowsheet_designers, microorganisms)
+# lives in extended_metadata.yaml, not here -- this dict is for how the export
+# is produced, not what a human knows about the flowsheet. `stoichiometry`
+# controls how reactions serialize (dict vs vector).
 EXPORT_KWARGS = {
-    'microorganisms': [{'name': 'Saccharomyces cerevisiae', 'label': 'ethanologen'}],
     'stoichiometry': 'dict',
 }
 

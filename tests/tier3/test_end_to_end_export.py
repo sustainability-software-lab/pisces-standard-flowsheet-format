@@ -140,6 +140,18 @@ class TestEndToEndExport(unittest.TestCase):
         hosts = self.flowsheet["metadata"]["microorganisms"]
         self.assertEqual(hosts[0]["name"], "Saccharomyces cerevisiae")
 
+    def test_authored_metadata_comes_from_extended_metadata_yaml(self):
+        import yaml
+        authored = yaml.safe_load(
+            (MODEL_DIR / "extended_metadata.yaml").read_text(encoding="utf-8"))
+        md = self.flowsheet["metadata"]
+        self.assertEqual(md["source_doi"], authored["source_doi"])
+        self.assertEqual(md["process_title"], authored["process_title"])
+        self.assertEqual(md["flowsheet_designers"],
+                         authored["flowsheet_designers"])
+        self.assertEqual(md["microorganisms"][0]["name"],
+                         authored["microorganisms"][0]["name"])
+
     def test_graph_is_non_empty(self):
         self.assertTrue(self.flowsheet["units"])
         self.assertTrue(self.flowsheet["streams"])
@@ -174,6 +186,14 @@ class TestEndToEndExport(unittest.TestCase):
         self.assertEqual(block["sha256"], hashlib.sha256(data).hexdigest())
         self.assertEqual(block["content"], data.decode("utf-8"))
         self.assertEqual(block["entry_point"], "load")
+
+    def test_embedded_extended_metadata_matches_the_committed_file(self):
+        block = self.flowsheet["metadata"]["reproducibility"]["extended_metadata"]
+        data = (MODEL_DIR / "extended_metadata.yaml").read_bytes()
+        self.assertEqual(block["sha256"], hashlib.sha256(data).hexdigest())
+        self.assertEqual(block["content"], data.decode("utf-8"))
+        self.assertEqual(block["filename"], "extended_metadata.yaml")
+        self.assertEqual(block["format"], "yaml")
 
     def test_package_pins_are_recorded(self):
         block = self.flowsheet["metadata"]["reproducibility"]
