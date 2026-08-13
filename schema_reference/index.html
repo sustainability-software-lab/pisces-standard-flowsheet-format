@@ -736,13 +736,13 @@
 <li><strong>sink_unit_id</strong>: The ID of the receiving unit operation. <em>(Required)</em></li>
 <li><strong>stream_description</strong>: A qualitative description (e.g., "Make-up solvent").</li>
 <li><strong>price</strong>: A bare number giving the cost per quantity of the stream material. Its units come from <code>quantity_units_global</code> under <code>price</code> (BioSTEAM-native default <code>USD/kg</code>), not an inline unit string.</li>
-<li><strong>stream_properties</strong>: A detailed block of stream state. <code>total_molar_flow</code>, <code>temperature</code>, and <code>pressure</code> are required; the remaining scalars are optional. Each scalar below is a bare number whose units come from <code>quantity_units_global</code> (BioSTEAM-native defaults noted):<ul>
+<li><strong>stream_properties</strong>: A detailed block of stream state. <code>total_molar_flow</code>, <code>temperature</code>, <code>pressure</code>, and <code>phases</code> are required; the remaining scalars are optional. Each scalar below is a bare number whose units come from <code>quantity_units_global</code> (BioSTEAM-native defaults noted); <code>phases</code> is an object (see below):<ul>
 <li><strong>total_molar_flow</strong> (<code>kmol/hr</code>)</li>
 <li><strong>temperature</strong> (<code>K</code>)</li>
 <li><strong>pressure</strong> (<code>Pa</code>)</li>
 <li><strong>total_mass_flow</strong> (<code>kg/hr</code>, optional)</li>
 <li><strong>total_volumetric_flow</strong> (<code>m3/hr</code>, optional)</li>
-<li><strong>composition</strong>: An array defining the phase, component name (linking to the <code>chemicals</code> array IDs), and exact mol fraction.</li>
+<li><strong>phases</strong>: An object keyed by phase symbol (<code>l</code>, <code>g</code>, <code>s</code>, ...). Each phase carries its own <code>total_molar_flow</code> (required) and <code>composition</code> (required), plus optional <code>total_mass_flow</code> and <code>total_volumetric_flow</code>. Each <code>composition</code> entry gives a <code>component_name</code> (linking to the <code>chemicals</code> array IDs) and mol/mass fractions <strong>relative to that phase</strong>; the phase is the parent key, not a per-component field.</li>
 </ul>
 </li>
 </ul>
