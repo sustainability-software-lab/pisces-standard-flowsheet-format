@@ -70,7 +70,12 @@ class TestVersionShapeGuard(unittest.TestCase):
 
         cls.path_010 = tmp / "small_010.json"
         _export.export_biosteam_flowsheet(
-            system, str(cls.path_010), sff_version="0.0.10", tea=tea)
+            system, str(cls.path_010), sff_version="0.0.10", tea=tea,
+            source_doi="10.0000/small-fixture",
+            process_title="Small fixture process",
+            flowsheet_designers="Fixture Author",
+            microorganisms=[{"name": "Saccharomyces cerevisiae",
+                             "label": "ethanologen"}])
         cls.doc_010 = json.loads(cls.path_010.read_text(encoding="utf-8"))
 
     @classmethod
@@ -196,6 +201,23 @@ class TestVersionShapeGuard(unittest.TestCase):
         for doc in (self.doc_009, self.doc_008, self.doc_007, self.doc_006):
             for stream in doc["streams"]:
                 self.assertNotIn("roles", stream)
+
+    def test_0_0_10_emits_authored_metadata(self):
+        md = self.doc_010["metadata"]
+        self.assertEqual(md["source_doi"], "10.0000/small-fixture")
+        self.assertEqual(md["process_title"], "Small fixture process")
+        self.assertEqual(md["flowsheet_designers"], "Fixture Author")
+        self.assertEqual(md["microorganisms"][0]["name"],
+                         "Saccharomyces cerevisiae")
+
+    def test_pre_0_0_10_versions_omit_authored_metadata(self):
+        # The three authored fields are passed only to the 0.0.10 export; the
+        # shared 0.0.6-0.0.9 exports never receive them (their exporters do not
+        # accept them, per design D3), so they must be absent there.
+        for doc in (self.doc_009, self.doc_008, self.doc_007, self.doc_006):
+            self.assertNotIn("source_doi", doc["metadata"])
+            self.assertNotIn("process_title", doc["metadata"])
+            self.assertNotIn("flowsheet_designers", doc["metadata"])
 
 
 if __name__ == "__main__":

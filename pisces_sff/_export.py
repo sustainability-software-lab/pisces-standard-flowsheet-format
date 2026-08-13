@@ -147,6 +147,9 @@ def _build_sff_dict(sys, tea=None,
                     stoichiometry="dict", # must be one of (None, "vector", "dict")
                     composition_units="both", # "mol%", "mass%", or "both"
                     microorganisms=None, # optional list of microbial hosts; see metadata section below
+                    source_doi=None, # optional; authored, see metadata section below
+                    process_title=None, # optional; authored
+                    flowsheet_designers=None, # optional; authored
                     sff_version=None, # recorded as metadata['sff_version']
                     ):
     """
@@ -164,6 +167,12 @@ def _build_sff_dict(sys, tea=None,
         ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
     sff_version : str
         Version recorded as ``metadata['sff_version']``.
 
@@ -204,6 +213,20 @@ def _build_sff_dict(sys, tea=None,
                               for stream in all_streams if is_feedstock(stream, all_sys_feeds)]
     metadata['products'] = [{"display_name": format_name(stream.ID), "stream_id": stream.ID}
                             for stream in all_streams if is_product(stream, all_sys_products)]
+
+    # ------- Authored descriptive metadata (optional) -------
+    # Human-authored fields a simulated System cannot carry: the source
+    # publication and authorship of the flowsheet. Supplied by the caller (in
+    # practice from a model's extended_metadata.yaml via the runner) and each
+    # emitted only when truthy, so an absent value is simply omitted and output
+    # for callers that pass nothing stays byte-stable. These properties already
+    # exist (optional) in the schema from v0.0.10, so no version gate is needed.
+    if source_doi:
+        metadata['source_doi'] = source_doi
+    if process_title:
+        metadata['process_title'] = process_title
+    if flowsheet_designers:
+        metadata['flowsheet_designers'] = flowsheet_designers
 
     # ------- Microorganisms (optional) -------
     # A BioSTEAM System does not carry any host-organism identity, so this value
@@ -608,6 +631,9 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
                                          stoichiometry="dict", # must be one of (None, "vector", "dict")
                                          composition_units="both", # "mol%", "mass%", or "both"
                                          microorganisms=None, # optional list of microbial hosts
+                                         source_doi=None, # optional; authored descriptive metadata
+                                         process_title=None, # optional; authored
+                                         flowsheet_designers=None, # optional; authored
                                          reproducibility=None, # optional recipe block; see pisces_sff._runner
                                          sff_version='0.0.10', # must match this function's name suffix
                                          ):
@@ -636,6 +662,12 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
         ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
         :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
@@ -645,6 +677,8 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
         composition_units=composition_units, microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
         sff_version=sff_version,
     )
     if reproducibility:
