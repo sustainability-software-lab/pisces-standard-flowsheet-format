@@ -3,12 +3,16 @@
 # the exported SFF metadata block. Top-level keys map one-to-one onto exporter
 # keyword arguments.
 #
-# NOTE: source_doi and flowsheet_designers below are PLACEHOLDERS to be filled
-# in with real values before the committed corpus file is regenerated.
-source_doi: "10.0000/PLACEHOLDER"
-process_title: "Conventional corn dry-grind ethanol biorefinery"
-flowsheet_designers: "PLACEHOLDER"
-# A BioSTEAM System carries no host identity, so the fermenting organism cannot
+source_doi: "https://doi.org/10.1016/j.indcrop.2005.08.004"
+#
+# Note this particular model was not developed as part of the source_doi publication --
+# it was built based faithfully on the design in that publication but not itself published.
+#
+process_title: "Corn → Ethanol + Crude oil + DDGS"
+#
+flowsheet_designers: "Yoel Cortes-Pena"
+#
+# A BioSTEAM System carries no explicit host identity, so the fermenting organism cannot
 # be inferred and must be declared. The dry-grind process ferments via
 # simultaneous saccharification and fermentation (biorefineries.corn.units.SSF):
 # Glucose -> 2 Ethanol + 2 CO2 alongside a Yeast growth reaction -- one host.
