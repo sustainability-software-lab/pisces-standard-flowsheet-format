@@ -16,8 +16,8 @@
 #      listed explicitly below. Adding a package here is how a missing import
 #      gets fixed -- there is no resolver to fall back on.
 #
-#   PowerShell:  $env:PIP_NO_DEPS = "1"; conda env create -f environment.yml
-#   bash:        PIP_NO_DEPS=1 conda env create -f environment.yml
+#   PowerShell:  $env:PIP_NO_DEPS = "1"; conda env create -f environment.yaml
+#   bash:        PIP_NO_DEPS=1 conda env create -f environment.yaml
 #
 # `name` is ignored by the harness, which creates the environment as
 # sff-<first 12 hex chars of the environment key>, and is excluded from that

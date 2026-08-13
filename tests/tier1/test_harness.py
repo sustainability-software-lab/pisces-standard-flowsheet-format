@@ -34,7 +34,7 @@ CORN_ENV = (
     / "models"
     / "biosteam_models"
     / "corn_dry_grind_ethanol"
-    / "environment.yml"
+    / "environment.yaml"
 )
 
 
@@ -342,7 +342,7 @@ class TestEnsureEnvironment(unittest.TestCase):
     def setUp(self):
         self.harness = load_harness()
         self.tmp = tempfile.TemporaryDirectory()
-        self.env_yaml = Path(self.tmp.name) / "environment.yml"
+        self.env_yaml = Path(self.tmp.name) / "environment.yaml"
         self.env_yaml.write_text(BASE_YAML, encoding="utf-8")
         self.name = self.harness.environment_name(BASE_YAML)
         self.conda_exe = fake_conda_exe(self.tmp.name)
@@ -447,7 +447,7 @@ class TestExportModelInvocation(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.model_dir = Path(self.tmp.name) / "some_model"
         self.model_dir.mkdir()
-        (self.model_dir / "environment.yml").write_text(BASE_YAML, encoding="utf-8")
+        (self.model_dir / "environment.yaml").write_text(BASE_YAML, encoding="utf-8")
         (self.model_dir / "load.py").write_text("def load():\n    pass\n", encoding="utf-8")
         self.output = Path(self.tmp.name) / "out" / "some_model.json"
         self.conda_exe = fake_conda_exe(self.tmp.name)

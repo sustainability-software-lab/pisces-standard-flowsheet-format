@@ -11,7 +11,7 @@
 #     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier3/test_end_to_end_export.py -q
 #
 # This is the ONLY tier in which the recipe's pins are what actually ran -- the
-# export happens inside the environment environment.yml describes -- and
+# export happens inside the environment environment.yaml describes -- and
 # therefore the only tier permitted to assert numeric baselines. Those baselines
 # are measurements recorded from the first successful run, not targets.
 #
@@ -175,10 +175,10 @@ class TestEndToEndExport(unittest.TestCase):
 
     def test_embedded_environment_matches_the_committed_file(self):
         block = self.flowsheet["metadata"]["reproducibility"]["environment"]
-        data = (MODEL_DIR / "environment.yml").read_bytes()
+        data = (MODEL_DIR / "environment.yaml").read_bytes()
         self.assertEqual(block["sha256"], hashlib.sha256(data).hexdigest())
         self.assertEqual(block["content"], data.decode("utf-8"))
-        self.assertEqual(block["filename"], "environment.yml")
+        self.assertEqual(block["filename"], "environment.yaml")
 
     def test_embedded_load_script_matches_the_committed_file(self):
         block = self.flowsheet["metadata"]["reproducibility"]["load_script"]

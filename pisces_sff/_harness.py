@@ -94,7 +94,7 @@ def canonical_environment_text(text):
     Parameters
     ----------
     text : str
-        Contents of an ``environment.yml`` file.
+        Contents of an ``environment.yaml`` file.
 
     Returns
     -------
@@ -113,7 +113,7 @@ def environment_key(text):
     Parameters
     ----------
     text : str
-        Contents of an ``environment.yml`` file.
+        Contents of an ``environment.yaml`` file.
 
     Returns
     -------
@@ -132,7 +132,7 @@ def environment_name(text):
     Parameters
     ----------
     text : str
-        Contents of an ``environment.yml`` file.
+        Contents of an ``environment.yaml`` file.
 
     Returns
     -------
@@ -149,7 +149,7 @@ def pip_requirements(text):
     Parameters
     ----------
     text : str
-        Contents of an ``environment.yml`` file.
+        Contents of an ``environment.yaml`` file.
 
     Returns
     -------
@@ -249,7 +249,7 @@ def package_record(env_text, package_name, branch=None):
     Parameters
     ----------
     env_text : str
-        Contents of an ``environment.yml`` file.
+        Contents of an ``environment.yaml`` file.
     package_name : str
         Distribution name to look up; matched ignoring case and ``-``/``_``.
     branch : str, optional
@@ -353,7 +353,7 @@ def ensure_environment(env_yaml_path, recreate=False, conda_exe=None, run=None):
     Parameters
     ----------
     env_yaml_path : str or Path
-        Path to an ``environment.yml``.
+        Path to an ``environment.yaml``.
     recreate : bool, optional
         Remove and rebuild the environment even if it already exists.
     conda_exe : str, optional
@@ -463,7 +463,7 @@ def export_model(model_dir, output_path, recreate_env=False, conda_exe=None,
     """
     Export a model to SFF from inside the environment its recipe pins.
 
-    Provisions the conda environment described by ``<model_dir>/environment.yml``
+    Provisions the conda environment described by ``<model_dir>/environment.yaml``
     (reusing it when one already matches), then runs :mod:`pisces_sff._runner`
     with that environment's interpreter. The child's ``PYTHONPATH`` is set to the
     repository root alone, so source clones on a user-level ``PYTHONPATH`` cannot
@@ -473,7 +473,7 @@ def export_model(model_dir, output_path, recreate_env=False, conda_exe=None,
     Parameters
     ----------
     model_dir : str or Path
-        Directory containing ``environment.yml`` and ``load.py``.
+        Directory containing ``environment.yaml`` and ``load.py``.
     output_path : str or Path
         Path to write the SFF JSON file to. Parent directories are created.
     recreate_env : bool, optional
@@ -504,13 +504,13 @@ def export_model(model_dir, output_path, recreate_env=False, conda_exe=None,
     if sff_version is None:
         sff_version = DEFAULT_SFF_VERSION
     model_dir = Path(model_dir).resolve()
-    env_yaml_path = model_dir / 'environment.yml'
+    env_yaml_path = model_dir / 'environment.yaml'
     load_script_path = model_dir / 'load.py'
     for required in (env_yaml_path, load_script_path):
         if not required.is_file():
             raise FileNotFoundError(
                 f'{required} is required: a model directory must contain both '
-                'environment.yml and load.py.'
+                'environment.yaml and load.py.'
             )
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)

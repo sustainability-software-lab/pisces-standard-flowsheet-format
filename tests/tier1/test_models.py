@@ -74,7 +74,7 @@ class TestModelRecipeContract(unittest.TestCase):
     def test_every_model_has_an_environment_spec(self):
         for directory in model_dirs():
             with self.subTest(model=directory.name):
-                self.assertTrue((directory / "environment.yml").is_file())
+                self.assertTrue((directory / "environment.yaml").is_file())
 
     def test_every_model_declares_the_required_constants(self):
         for directory in model_dirs():

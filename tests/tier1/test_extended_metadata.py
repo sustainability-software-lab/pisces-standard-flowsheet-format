@@ -91,7 +91,7 @@ ENV_YML = (
 class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
     def _model_dir(self, tmp, with_extended):
         d = Path(tmp)
-        (d / "environment.yml").write_text(ENV_YML, encoding="utf-8")
+        (d / "environment.yaml").write_text(ENV_YML, encoding="utf-8")
         (d / "load.py").write_text("# fixture load.py\n", encoding="utf-8")
         if with_extended:
             _write(d, 'process_title: "Fixture"\n')

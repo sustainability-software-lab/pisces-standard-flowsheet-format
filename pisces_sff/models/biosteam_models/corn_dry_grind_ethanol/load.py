@@ -21,7 +21,7 @@ Run this file directly to load and simulate the model without the harness:
 # name, so a model from another simulator only changes this line.
 SIMULATOR = 'biosteam'
 
-# Distribution names, resolved against environment.yml's pip requirements to
+# Distribution names, resolved against environment.yaml's pip requirements to
 # fill metadata.reproducibility.simulator_package / .flowsheet_model_package.
 # Deriving the pins from the environment specification (instead of restating
 # them here) is what keeps the two representations from disagreeing.

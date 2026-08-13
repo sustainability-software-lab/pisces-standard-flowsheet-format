@@ -43,7 +43,7 @@ def minimal_block():
     return {
         "environment": {
             "format": "conda-environment-yaml",
-            "filename": "environment.yml",
+            "filename": "environment.yaml",
             "sha256": "0" * 64,
             "content": "name: sff-test\n",
         },

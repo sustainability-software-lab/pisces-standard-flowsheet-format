@@ -9,7 +9,7 @@
 """
 Per-model export recipes.
 
-Each model lives in its own directory holding an ``environment.yml`` (a pinned
+Each model lives in its own directory holding an ``environment.yaml`` (a pinned
 environment specification) and a ``load.py`` (which loads and simulates the
 model). :func:`pisces_sff.export_model` builds the environment from the former
 and runs the latter inside it, so a recipe cannot claim pins it did not use.

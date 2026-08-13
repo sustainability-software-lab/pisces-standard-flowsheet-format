@@ -188,7 +188,7 @@ def build_reproducibility(model_dir, module, env_key=None):
     Parameters
     ----------
     model_dir : str or Path
-        Directory containing ``environment.yml`` and ``load.py``.
+        Directory containing ``environment.yaml`` and ``load.py``.
     module : module
         The model's imported ``load.py``, read for its declarations.
     env_key : str, optional
@@ -202,7 +202,7 @@ def build_reproducibility(model_dir, module, env_key=None):
         schema.
     """
     model_dir = Path(model_dir).resolve()
-    env_path = model_dir / 'environment.yml'
+    env_path = model_dir / 'environment.yaml'
     env_text = env_path.read_text(encoding='utf-8')
     branches = getattr(module, 'PACKAGE_BRANCHES', None) or {}
     simulator_package = module.SIMULATOR_PACKAGE
@@ -227,7 +227,7 @@ def build_reproducibility(model_dir, module, env_key=None):
         },
     }
     # Authored metadata now affects export output (microorganisms lives here),
-    # so record the file alongside environment.yml and load.py to keep an export
+    # so record the file alongside environment.yaml and load.py to keep an export
     # reproducible from its recorded inputs. Present only when the file exists.
     extended_path = model_dir / EXTENDED_METADATA_FILENAME
     if extended_path.exists():
@@ -244,7 +244,7 @@ def run_model_export(model_dir, output_path, sff_version=None, env_key=None):
     Parameters
     ----------
     model_dir : str or Path
-        Directory containing ``environment.yml`` and ``load.py``.
+        Directory containing ``environment.yaml`` and ``load.py``.
     output_path : str or Path
         Path to write the SFF JSON file to.
     sff_version : str, optional
@@ -340,7 +340,7 @@ def main(argv=None):
         description='Load, simulate, and export one model to SFF.',
     )
     parser.add_argument('--model-dir', required=True,
-                        help='directory containing environment.yml and load.py')
+                        help='directory containing environment.yaml and load.py')
     parser.add_argument('--output', required=True,
                         help='path to write the SFF JSON file to')
     parser.add_argument('--sff-version', default=None,
