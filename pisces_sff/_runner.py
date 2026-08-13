@@ -24,14 +24,23 @@ import argparse
 import importlib.util
 import platform
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
+
+import yaml
 
 from ._harness import (DEFAULT_SFF_VERSION, REPO_ROOT, environment_key,
                        package_record, sha256_bytes)
 from ._validate import validate_json_against_schema
 
-__all__ = ('run_model_export', 'build_reproducibility', 'load_model_module')
+__all__ = ('run_model_export', 'build_reproducibility', 'load_model_module',
+           'load_extended_metadata')
+
+#: Per-model file holding human-authored descriptive metadata (source_doi,
+#: process_title, flowsheet_designers, microorganisms). Its top-level keys map
+#: one-to-one onto versioned-exporter keyword arguments.
+EXTENDED_METADATA_FILENAME = 'extended_metadata.yaml'
 
 SCHEMA_PATH = Path(__file__).resolve().parent / 'schema' / 'sff_schema.json'
 
@@ -68,6 +77,59 @@ def load_model_module(model_dir):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_extended_metadata(model_dir):
+    """
+    Read a model's ``extended_metadata.yaml`` into a dict of authored metadata.
+
+    This file is the home for human-authored descriptive metadata that a
+    simulated system cannot carry -- ``source_doi``, ``process_title``,
+    ``flowsheet_designers``, and ``microorganisms``. Its top-level keys map
+    one-to-one onto keyword arguments of the versioned exporter, so the exporter
+    signature (not an allowlist here) is the authority on which keys are valid:
+    an unknown key surfaces as a ``TypeError`` when the runner forwards the dict.
+
+    Parameters
+    ----------
+    model_dir : str or Path
+        Directory that may contain ``extended_metadata.yaml``.
+
+    Returns
+    -------
+    dict
+        The parsed mapping, or ``{}`` when the file is absent or empty.
+
+    Raises
+    ------
+    ValueError
+        If the file exists but does not parse to a mapping (malformed YAML, or a
+        top-level list/scalar).
+    """
+    path = Path(model_dir).resolve() / EXTENDED_METADATA_FILENAME
+    if not path.exists():
+        # Missing file is allowed: every authored field is schema-optional. Warn
+        # (rather than fail) so minimal or legacy models still export, while the
+        # convention is nudged for models that should carry this metadata.
+        warnings.warn(
+            f'no {EXTENDED_METADATA_FILENAME} in {path.parent}; exporting '
+            'without authored metadata (source_doi, process_title, '
+            'flowsheet_designers, microorganisms).',
+            stacklevel=2,
+        )
+        return {}
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding='utf-8'))
+    except yaml.YAMLError as error:
+        raise ValueError(f'{path} is not valid YAML: {error}') from error
+    if loaded is None:  # present but empty -- a valid "nothing to declare yet"
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError(
+            f'{path} must contain a top-level mapping of metadata fields, got '
+            f'{type(loaded).__name__}.'
+        )
+    return loaded
 
 #%% Reproducibility payload
 
