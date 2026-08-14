@@ -663,6 +663,130 @@ def _check_zero_flow_consistency(ctx):  # STR-13
     return [_passed('STR-13', 'error', 'streams')]
 
 
+#%% Checks -- streams: material balance (sff_checks.md section 3 + 7 (i)/(ii))
+
+def _rel_close(a, b, rel_tol):
+    """True if a and b agree to a relative tolerance (scaled by |b|, or |a| when
+    b is ~0)."""
+    scale = max(abs(a), abs(b))
+    if scale == 0:
+        return True
+    return abs(a - b) <= rel_tol * scale
+
+
+def _check_fraction_sums(ctx):  # STR-08 (material balance (i))
+    bad, any_comp = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        for phase_symbol, comp in _iter_named_compositions(s):
+            if not comp:
+                continue
+            any_comp = True
+            for frac_key in ('mol_fraction', 'mass_fraction'):
+                values = [e.get(frac_key) for e in comp
+                          if isinstance(e, dict) and isinstance(e.get(frac_key),
+                                                                (int, float))]
+                if not values:
+                    continue
+                total = sum(values)
+                if abs(total - 1.0) > TOL_FRACTION:
+                    bad.append(f"{s.get('id')}[{phase_symbol}].{frac_key}={total:.6g}")
+    if not any_comp:
+        return [_skipped('STR-08', 'warning',
+                         'no non-empty composition', 'streams')]
+    if bad:
+        return [_failed('STR-08', 'warning',
+                        f'composition fractions do not sum to 1: {bad}', 'streams')]
+    return [_passed('STR-08', 'warning', 'streams')]
+
+
+def _iter_named_compositions(stream):
+    """Yield (phase_symbol, composition_list) for each phase of a stream."""
+    sp = (stream.get('stream_properties') or {}) if isinstance(stream, dict) else {}
+    for symbol, phase in (sp.get('phases') or {}).items():
+        if isinstance(phase, dict) and isinstance(phase.get('composition'), list):
+            yield symbol, phase['composition']
+
+
+def _check_phase_flow_sums(ctx):  # STR-09
+    bad, any_check = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        sp = s.get('stream_properties') or {}
+        phases = sp.get('phases') or {}
+        for name in ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow'):
+            stream_total = sp.get(name)
+            phase_values = [p.get(name) for p in phases.values()
+                            if isinstance(p, dict) and isinstance(p.get(name),
+                                                                  (int, float))]
+            if not isinstance(stream_total, (int, float)) or not phase_values:
+                continue
+            any_check = True
+            if not _rel_close(sum(phase_values), stream_total, TOL_FLOW):
+                bad.append(f"{s.get('id')}.{name}: phases sum "
+                           f"{sum(phase_values):.6g} != total {stream_total:.6g}")
+    if not any_check:
+        return [_skipped('STR-09', 'warning',
+                         'no stream has both phase and total flows', 'streams')]
+    if bad:
+        return [_failed('STR-09', 'warning',
+                        f'phase flows do not sum to the stream total: {bad}',
+                        'streams')]
+    return [_passed('STR-09', 'warning', 'streams')]
+
+
+def _mean_molar_mass(composition, ctx):
+    """Composition-weighted molar mass (C-05) over a phase composition, or None
+    if any present component's molar mass cannot be resolved."""
+    total = 0.0
+    for entry in composition:
+        if not isinstance(entry, dict):
+            continue
+        x = entry.get('mol_fraction')
+        if not isinstance(x, (int, float)):
+            return None
+        m = ctx.molar_mass(entry.get('component_name'))
+        if m is None:
+            return None
+        total += x * m
+    return total
+
+
+def _check_mass_molar_flow_consistency(ctx):  # STR-10 (material balance (ii))
+    bad, any_check = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict) or _stream_is_empty(s):
+            continue
+        sp = s.get('stream_properties') or {}
+        # Evaluate per phase (each phase has a single, well-defined composition).
+        for symbol, comp in _iter_named_compositions(s):
+            phase = sp['phases'][symbol]
+            mass = phase.get('total_mass_flow')
+            molar = phase.get('total_molar_flow')
+            if not comp or not isinstance(mass, (int, float)) \
+                    or not isinstance(molar, (int, float)):
+                continue
+            mbar = _mean_molar_mass(comp, ctx)
+            if mbar is None:
+                continue  # unresolved molar mass -> skip this phase
+            any_check = True
+            predicted = molar * mbar  # kmol/hr * g/mol == kg/hr numerically
+            if not _rel_close(predicted, mass, TOL_FLOW):
+                bad.append(f"{s.get('id')}[{symbol}]: mass {mass:.6g} != "
+                           f"molar*M_bar {predicted:.6g}")
+    if not any_check:
+        return [_skipped('STR-10', 'warning',
+                         'no phase with mass, molar, and resolvable molar masses',
+                         'streams')]
+    if bad:
+        return [_failed('STR-10', 'warning',
+                        f'mass flow disagrees with molar*molar_mass: {bad}',
+                        'streams')]
+    return [_passed('STR-10', 'warning', 'streams')]
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
