@@ -1,0 +1,13 @@
+# Normalize line endings to LF in the working tree on every platform.
+#
+# The reproducibility exporter embeds *verbatim* recipe bytes -- environment.yaml,
+# load.py, extended_metadata.yaml -- into each corpus flowsheet (content + a
+# sha256 of those bytes). If a Windows checkout materializes those recipes as
+# CRLF (git's core.autocrlf default), a re-export would bake CRLF content and a
+# CRLF-based sha256 into the corpus, making the reproducibility block mismatch
+# the LF-committed recipes and differ from a Linux/CI checkout. Pinning eol=lf
+# keeps exports portable and byte-stable regardless of the exporting machine.
+* text=auto eol=lf
+
+# Never munge binary assets.
+*.png binary
