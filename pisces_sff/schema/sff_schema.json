@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -99,15 +99,19 @@
       "properties": {
         "sff_version": {
           "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
           "description": "Version of the SFF schema used, in semantic versioning notation; e.g., '1.0.0'."
         },
         "TEA_currency": {
           "type": "string",
+          "minLength": 1,
           "description": "Currency used to report all cost results; e.g., 'USD'.",
           "default": "USD"
         },
         "TEA_year": {
           "type": "number",
+          "minimum": 1900,
+          "maximum": 2027,
           "description": "TEA year used to report cost results."
         },
         "source_doi": {
@@ -207,7 +211,7 @@
                 "format": { "type": "string", "description": "Specification format; e.g., 'conda-environment-yaml'." },
                 "filename": { "type": "string", "description": "File name of the environment specification." },
                 "path": { "type": "string", "description": "Path of the source file relative to the repository root, when known." },
-                "sha256": { "type": "string", "description": "SHA-256 hex digest of the verbatim file bytes." },
+                "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 hex digest of the verbatim file bytes." },
                 "content": { "type": "string", "description": "Full text of the environment specification, embedded so this flowsheet is reproducible on its own." }
               },
               "required": ["format", "filename", "sha256", "content"]
@@ -219,7 +223,7 @@
                 "format": { "type": "string", "description": "Script format; e.g., 'python'." },
                 "filename": { "type": "string", "description": "File name of the load script." },
                 "path": { "type": "string", "description": "Path of the source file relative to the repository root, when known." },
-                "sha256": { "type": "string", "description": "SHA-256 hex digest of the verbatim file bytes." },
+                "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 hex digest of the verbatim file bytes." },
                 "content": { "type": "string", "description": "Full text of the load script, embedded so this flowsheet is reproducible on its own." },
                 "entry_point": { "type": "string", "description": "Name of the callable in the script that returns the simulated model; e.g., 'load'." }
               },
@@ -275,7 +279,7 @@
               "properties": {
                 "python_version": { "type": "string", "description": "Python version the export ran under." },
                 "platform": { "type": "string", "description": "Platform identifier the export ran on." },
-                "env_key": { "type": "string", "description": "SHA-256 hex digest of the canonicalized environment specification; identifies the environment the export ran in." },
+                "env_key": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 hex digest of the canonicalized environment specification; identifies the environment the export ran in." },
                 "exported_at": { "type": "string", "description": "UTC timestamp of the export, ISO-8601." },
                 "package_versions": {
                   "type": "object",
@@ -370,13 +374,19 @@
                   "type": "string"
                 },
                 "conversion": {
-                  "type": "number"
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
                 },
                 "stoichiometry": {
                 "type": ["array", "object"],
                 "description": "An array of reaction stoichiometries ordered based on the indices in the 'chemicals' object, OR an object with keys corresponding to chemical indices or IDs and values corresponding to stoichiometries. (If the stoichiometry vector is lengthy, consider using the object format for brevity.)"
                 }
-              }
+              },
+              "anyOf": [
+                { "required": ["equation"] },
+                { "required": ["stoichiometry"] }
+              ]
             }
           },
           "design_results": {
@@ -483,6 +493,7 @@
               },
               "pressure": {
                 "type": "number",
+                "exclusiveMinimum": 0,
                 "description": "Pressure. Quantity units: quantity_units_global 'pressure' (default 'Pa')."
               },
               "enthalpy_flow": {
@@ -499,6 +510,7 @@
               }
             },
             "required": [
+              "total_mass_flow",
               "total_molar_flow",
               "temperature",
               "pressure",
@@ -541,6 +553,7 @@
           },
           "molar_mass": {
             "type": "number",
+            "exclusiveMinimum": 0,
             "description": "Molar mass (in grams)."
           }
         },
@@ -583,10 +596,12 @@
                   },
                   "temperature": {
                     "type": "number",
+                    "exclusiveMinimum": 0,
                     "description": "Temperature. Quantity units: quantity_units_global 'temperature' (default 'K')."
                   },
                   "pressure": {
                     "type": "number",
+                    "exclusiveMinimum": 0,
                     "description": "Pressure. Quantity units: quantity_units_global 'pressure' (default 'Pa')."
                   },
                   "regeneration_price": {
@@ -688,10 +703,12 @@
                   },
                   "temperature": {
                     "type": "number",
+                    "exclusiveMinimum": 0,
                     "description": "Temperature. Quantity units: quantity_units_global 'temperature' (default 'K')."
                   },
                   "pressure": {
                     "type": "number",
+                    "exclusiveMinimum": 0,
                     "description": "Pressure. Quantity units: quantity_units_global 'pressure' (default 'Pa')."
                   },
                   "price": {

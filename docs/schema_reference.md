@@ -87,11 +87,28 @@ The `streams` array maps out the connectivity of the flowsheet, defining how mat
 - **stream_description**: A qualitative description (e.g., "Make-up solvent").
 - **roles**: An optional array (added in v0.0.10) naming the roles this stream plays. Every non-isolated stream carries exactly one base topology role — `input` (a sink but no source), `output` (a source but no sink), or `internal` (both) — and may additionally carry designation roles: `purchased_raw_material` (a priced input), `feedstock` (a feedstock input; can co-occur with `purchased_raw_material`), and `product` (a product output). Values are unique; the enum is `["input", "output", "purchased_raw_material", "feedstock", "product", "internal"]`. Omitted by exporters targeting pre-0.0.10 schemas.
 - **price**: A bare number giving the cost per quantity of the stream material. Its units come from `quantity_units_global` under `price` (BioSTEAM-native default `USD/kg`), not an inline unit string.
-- **stream_properties**: A detailed block of stream state. `total_molar_flow`, `temperature`, `pressure`, and `phases` are required; the remaining scalars are optional. Each scalar below is a bare number whose units come from `quantity_units_global` (BioSTEAM-native defaults noted); `phases` is an object (see below):
+- **stream_properties**: A detailed block of stream state. `total_mass_flow`, `total_molar_flow`, `temperature`, `pressure`, and `phases` are required (`total_mass_flow` became required in v0.0.12); the remaining scalars are optional. Each scalar below is a bare number whose units come from `quantity_units_global` (BioSTEAM-native defaults noted); `phases` is an object (see below):
+    - **total_mass_flow** (`kg/hr`; required as of v0.0.12)
     - **total_molar_flow** (`kmol/hr`)
     - **temperature** (`K`)
-    - **pressure** (`Pa`)
-    - **total_mass_flow** (`kg/hr`, optional)
+    - **pressure** (`Pa`; must be greater than 0 as of v0.0.12)
     - **total_volumetric_flow** (`m3/hr`, optional)
     - **enthalpy_flow** (`kJ/hr`, optional; added in v0.0.11): The whole-stream enthalpy flow rate, relative to the simulator's reference state (from BioSTEAM `stream.H`). Omitted by exporters targeting pre-0.0.11 schemas.
     - **phases**: An object keyed by phase symbol (`l`, `g`, `s`, ...). Each phase carries its own `total_molar_flow` (required) and `composition` (required), plus optional `total_mass_flow` and `total_volumetric_flow`. Each `composition` entry gives a `component_name` (linking to the `chemicals` array IDs) and mol/mass fractions **relative to that phase**; the phase is the parent key, not a per-component field.
+
+---
+
+### Validation constraints (v0.0.12)
+
+v0.0.12 adds ten declarative JSON-Schema constraints, catalogued in `sff_checks.md`. All are enforced by the schema itself (no code required to check them):
+
+- **MET-01**: `metadata.sff_version` must match the semver pattern `^[0-9]+\.[0-9]+\.[0-9]+$`.
+- **MET-04**: `metadata.TEA_year` must be between 1900 and 2027, inclusive.
+- **MET-05**: `metadata.TEA_currency` must be a non-empty string (`minLength: 1`).
+- **MET-06**: `reproducibility.environment.sha256`, `reproducibility.load_script.sha256`, and `reproducibility.resolved.env_key` must each match the 64-hex pattern `^[0-9a-f]{64}$`.
+- **UNIT-04**: a reaction's `conversion` must be between 0 and 1, inclusive.
+- **UNIT-05**: a reaction must provide at least one of `equation` or `stoichiometry`.
+- **STR-11**: a stream's `stream_properties.pressure` must be strictly greater than 0.
+- **STR-12**: `stream_properties.total_mass_flow` is required on every stream (gated, breaking change vs. pre-0.0.12 schemas).
+- **CHEM-02**: a chemical's `molar_mass` must be strictly greater than 0.
+- **UTIL-05**: `temperature` and `pressure` on `heat_utilities` and `other_utilities` entries must each be strictly greater than 0 (`temperature_limit` is exempt — a cooling-utility limit may legitimately take any value).

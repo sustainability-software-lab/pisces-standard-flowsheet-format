@@ -21,6 +21,7 @@
 #
 # Gated on SFF_TEST_BIOSTEAM=1.
 
+import copy
 import json
 import os
 import sys
@@ -82,6 +83,11 @@ class TestVersionShapeGuard(unittest.TestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_011), sff_version="0.0.11", tea=tea)
         cls.doc_011 = json.loads(cls.path_011.read_text(encoding="utf-8"))
+
+        cls.path_012 = tmp / "small_012.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_012), sff_version="0.0.12", tea=tea)
+        cls.doc_012 = json.loads(cls.path_012.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -249,6 +255,19 @@ class TestVersionShapeGuard(unittest.TestCase):
             for stream in doc["streams"]:
                 self.assertNotIn(
                     "enthalpy_flow", stream["stream_properties"])
+
+    def test_0_0_12_validates_against_committed_schema(self):
+        is_valid, errors = self.validate(str(self.path_012), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_012["metadata"]["sff_version"], "0.0.12")
+
+    def test_0_0_12_is_shape_identical_to_0_0_11_except_version(self):
+        # v0.0.12 only tightens schema constraints; the emitted document is
+        # byte-identical to the 0.0.11 export apart from metadata.sff_version.
+        a = copy.deepcopy(self.doc_011)
+        b = copy.deepcopy(self.doc_012)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
 
 
 if __name__ == "__main__":

@@ -82,6 +82,7 @@ class TestEnthalpyFlowValidation(unittest.TestCase):
                          "sink_unit_id": "None", "price": 0.1,
                          "roles": ["output", "product"],
                          "stream_properties": {
+                             "total_mass_flow": 1.0,
                              "total_molar_flow": 1.0, "temperature": 300.0,
                              "pressure": 101325.0, "enthalpy_flow": -12345.6,
                              "phases": {"l": {

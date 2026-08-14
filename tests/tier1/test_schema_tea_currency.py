@@ -71,6 +71,7 @@ class TestTeaCurrencyValidation(unittest.TestCase):
             "streams": [{"id": "s1", "source_unit_id": "U1", "sink_unit_id": "None",
                          "price": 0.1,
                          "stream_properties": {
+                             "total_mass_flow": 1.0,
                              "total_molar_flow": 1.0, "temperature": 300.0,
                              "pressure": 101325.0,
                              "phases": {"l": {
