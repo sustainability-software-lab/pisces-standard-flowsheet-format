@@ -700,7 +700,7 @@
 - <strong>registry_id</strong>: A standard chemical identifier, like a CAS number or SMILES string.</p>
 <hr />
 <h3 id="quantity-units-global">Quantity Units Global</h3>
-<p>The <code>quantity_units_global</code> object is a registry of default quantity units for widely-used quantities and prices, keyed by canonical name (e.g., <code>temperature</code>, <code>mass_flow</code>, <code>price</code>). Each entry carries:
+<p>The <code>quantity_units_global</code> object is a registry of default quantity units for widely-used quantities and prices, keyed by canonical name (e.g., <code>temperature</code>, <code>mass_flow</code>, <code>price</code>, <code>enthalpy_flow</code>). Each entry carries:
 - <strong>aliases</strong>: The field names a quantity appears under across the flowsheet (e.g., <code>temperature</code> also covers <code>T</code> and <code>temperature_limit</code>).
 - <strong>quantity_units</strong>: The unit string for that quantity (e.g., <code>"K"</code>, <code>"kg/hr"</code>, <code>"USD/kg"</code>).</p>
 <p>Bare numeric scalars elsewhere in the file (stream and utility properties, prices) resolve their units by looking up the relevant field name against this registry's aliases.</p>
@@ -743,6 +743,7 @@
 <li><strong>pressure</strong> (<code>Pa</code>)</li>
 <li><strong>total_mass_flow</strong> (<code>kg/hr</code>, optional)</li>
 <li><strong>total_volumetric_flow</strong> (<code>m3/hr</code>, optional)</li>
+<li><strong>enthalpy_flow</strong> (<code>kJ/hr</code>, optional; added in v0.0.11): The whole-stream enthalpy flow rate, relative to the simulator's reference state (from BioSTEAM <code>stream.H</code>). Omitted by exporters targeting pre-0.0.11 schemas.</li>
 <li><strong>phases</strong>: An object keyed by phase symbol (<code>l</code>, <code>g</code>, <code>s</code>, ...). Each phase carries its own <code>total_molar_flow</code> (required) and <code>composition</code> (required), plus optional <code>total_mass_flow</code> and <code>total_volumetric_flow</code>. Each <code>composition</code> entry gives a <code>component_name</code> (linking to the <code>chemicals</code> array IDs) and mol/mass fractions <strong>relative to that phase</strong>; the phase is the parent key, not a per-component field.</li>
 </ul>
 </li>
