@@ -17,6 +17,7 @@ information is always called 'quantity units'.
 
 __all__ = (
     "QUANTITY_UNITS_GLOBAL",
+    "quantity_units_global_for",
     "scalar",
     "version_tuple",
     "uses_inline_scalar_style",
@@ -42,7 +43,41 @@ QUANTITY_UNITS_GLOBAL = {
     "electrical_energy_price": {"aliases": ["electrical_energy_price"], "quantity_units": "USD/kWh"},
     "regeneration_price":      {"aliases": ["regeneration_price"], "quantity_units": "USD/kmol"},
     "heat_transfer_price":     {"aliases": ["heat_transfer_price"], "quantity_units": "USD/kJ"},
+    "enthalpy_flow":           {"aliases": ["enthalpy_flow", "H"], "quantity_units": "kJ/hr"},
 }
+
+#: Schema version at which each quantity_units_global entry was introduced.
+#: Entries not listed here have existed since the registry itself (0.0.7) and
+#: are emitted by every bare-number exporter; listed entries are filtered out of
+#: exports older than their introduction version so those exporters stay
+#: byte-stable. See quantity_units_global_for.
+_QUANTITY_INTRODUCED_SINCE = {"enthalpy_flow": (0, 0, 11)}
+
+
+def quantity_units_global_for(version):
+    """
+    Return the ``quantity_units_global`` registry as of schema `version`.
+
+    Entries introduced in a schema version newer than `version` (per
+    ``_QUANTITY_INTRODUCED_SINCE``) are omitted, so an exporter for an older
+    version reproduces its historical registry byte-for-byte. Entries not listed
+    in ``_QUANTITY_INTRODUCED_SINCE`` are assumed to predate the registry's own
+    introduction (``_BARE_SCALAR_SINCE``, 0.0.7) and are always included.
+
+    Parameters
+    ----------
+    version : str
+        Semantic-version string; e.g. ``'0.0.11'``.
+
+    Returns
+    -------
+    dict
+        The registry filtered to entries available at `version`, preserving the
+        insertion order of ``QUANTITY_UNITS_GLOBAL``.
+    """
+    v = version_tuple(version)
+    return {name: entry for name, entry in QUANTITY_UNITS_GLOBAL.items()
+            if _QUANTITY_INTRODUCED_SINCE.get(name, _BARE_SCALAR_SINCE) <= v}
 
 
 def scalar(value, units, inline):

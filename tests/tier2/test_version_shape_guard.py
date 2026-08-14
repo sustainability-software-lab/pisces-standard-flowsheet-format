@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
-# 0.0.6, 0.0.7, 0.0.8, 0.0.9, and 0.0.10 and asserts the scalar-shape,
-# results-key, required-metadata, and stream-roles differences the schema
-# versions require. This is about
+# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, and 0.0.11 and asserts the scalar-shape,
+# results-key, required-metadata, stream-roles, and enthalpy-flow differences
+# the schema versions require. This is about
 # exporter version dispatch, not the corn model, so it needs no whole-model
 # simulation -- which is why it lives in Tier 2 rather than Tier 3.
 #
@@ -77,6 +77,11 @@ class TestVersionShapeGuard(unittest.TestCase):
             microorganisms=[{"name": "Saccharomyces cerevisiae",
                              "label": "ethanologen"}])
         cls.doc_010 = json.loads(cls.path_010.read_text(encoding="utf-8"))
+
+        cls.path_011 = tmp / "small_011.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_011), sff_version="0.0.11", tea=tea)
+        cls.doc_011 = json.loads(cls.path_011.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -218,6 +223,32 @@ class TestVersionShapeGuard(unittest.TestCase):
             self.assertNotIn("source_doi", doc["metadata"])
             self.assertNotIn("process_title", doc["metadata"])
             self.assertNotIn("flowsheet_designers", doc["metadata"])
+
+    def test_0_0_11_validates_against_committed_schema(self):
+        is_valid, errors = self.validate(str(self.path_011), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_011["metadata"]["sff_version"], "0.0.11")
+
+    def test_0_0_11_emits_numeric_enthalpy_flow_on_every_stream(self):
+        for stream in self.doc_011["streams"]:
+            with self.subTest(stream=stream["id"]):
+                self.assertIn("enthalpy_flow", stream["stream_properties"])
+                self.assertIsInstance(
+                    stream["stream_properties"]["enthalpy_flow"], (int, float))
+
+    def test_0_0_11_registry_carries_the_enthalpy_flow_entry(self):
+        self.assertIn("enthalpy_flow",
+                      self.doc_011["quantity_units_global"])
+
+    def test_pre_0_0_11_versions_omit_enthalpy_flow(self):
+        # enthalpy_flow is emitted only from 0.0.11; older exporters must stay
+        # byte-stable and therefore not emit it -- neither on the stream nor in
+        # the shared quantity_units_global registry.
+        for doc in (self.doc_010, self.doc_009, self.doc_008, self.doc_007):
+            self.assertNotIn("enthalpy_flow", doc["quantity_units_global"])
+            for stream in doc["streams"]:
+                self.assertNotIn(
+                    "enthalpy_flow", stream["stream_properties"])
 
 
 if __name__ == "__main__":

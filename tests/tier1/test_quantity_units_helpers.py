@@ -87,6 +87,7 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(reg["electrical_energy_price"]["quantity_units"], "USD/kWh")
         self.assertEqual(reg["regeneration_price"]["quantity_units"], "USD/kmol")
         self.assertEqual(reg["heat_transfer_price"]["quantity_units"], "USD/kJ")
+        self.assertEqual(reg["enthalpy_flow"]["quantity_units"], "kJ/hr")
 
     def test_aliases_cover_biosteam_attribute_names(self):
         reg = self.m.QUANTITY_UNITS_GLOBAL
@@ -97,6 +98,38 @@ class TestRegistry(unittest.TestCase):
         self.assertIn("total_molar_flow", reg["molar_flow"]["aliases"])
         self.assertIn("total_volumetric_flow", reg["volumetric_flow"]["aliases"])
         self.assertIn("MW", reg["molar_mass"]["aliases"])
+        self.assertIn("H", reg["enthalpy_flow"]["aliases"])
+
+
+class TestRegistryForVersion(unittest.TestCase):
+    """quantity_units_global_for gates version-introduced entries so older
+    exporters reproduce their historical registry byte-for-byte."""
+
+    def setUp(self):
+        self.m = load_module()
+
+    def test_0_0_11_includes_enthalpy_flow(self):
+        self.assertIn("enthalpy_flow", self.m.quantity_units_global_for("0.0.11"))
+
+    def test_pre_0_0_11_omits_enthalpy_flow(self):
+        for version in ("0.0.7", "0.0.9", "0.0.10"):
+            with self.subTest(version=version):
+                self.assertNotIn(
+                    "enthalpy_flow", self.m.quantity_units_global_for(version))
+
+    def test_always_present_entries_are_kept_at_every_version(self):
+        # Entries not listed in _QUANTITY_INTRODUCED_SINCE predate the registry
+        # (0.0.7) and must appear regardless of the requested version.
+        for version in ("0.0.7", "0.0.11"):
+            reg = self.m.quantity_units_global_for(version)
+            for key in ("temperature", "pressure", "mass_flow", "price"):
+                with self.subTest(version=version, quantity=key):
+                    self.assertIn(key, reg)
+
+    def test_preserves_registry_insertion_order(self):
+        full = list(self.m.QUANTITY_UNITS_GLOBAL)
+        got = list(self.m.quantity_units_global_for("0.0.11"))
+        self.assertEqual(got, [k for k in full if k in got])
 
 
 class TestDesignResultUnits(unittest.TestCase):

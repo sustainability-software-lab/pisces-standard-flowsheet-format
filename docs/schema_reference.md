@@ -42,7 +42,7 @@ The `chemicals` array defines the chemical species available in the simulation. 
 
 ### Quantity Units Global
 
-The `quantity_units_global` object is a registry of default quantity units for widely-used quantities and prices, keyed by canonical name (e.g., `temperature`, `mass_flow`, `price`). Each entry carries:
+The `quantity_units_global` object is a registry of default quantity units for widely-used quantities and prices, keyed by canonical name (e.g., `temperature`, `mass_flow`, `price`, `enthalpy_flow`). Each entry carries:
 - **aliases**: The field names a quantity appears under across the flowsheet (e.g., `temperature` also covers `T` and `temperature_limit`).
 - **quantity_units**: The unit string for that quantity (e.g., `"K"`, `"kg/hr"`, `"USD/kg"`).
 
@@ -93,4 +93,5 @@ The `streams` array maps out the connectivity of the flowsheet, defining how mat
     - **pressure** (`Pa`)
     - **total_mass_flow** (`kg/hr`, optional)
     - **total_volumetric_flow** (`m3/hr`, optional)
+    - **enthalpy_flow** (`kJ/hr`, optional; added in v0.0.11): The whole-stream enthalpy flow rate, relative to the simulator's reference state (from BioSTEAM `stream.H`). Omitted by exporters targeting pre-0.0.11 schemas.
     - **phases**: An object keyed by phase symbol (`l`, `g`, `s`, ...). Each phase carries its own `total_molar_flow` (required) and `composition` (required), plus optional `total_mass_flow` and `total_volumetric_flow`. Each `composition` entry gives a `component_name` (linking to the `chemicals` array IDs) and mol/mass fractions **relative to that phase**; the phase is the parent key, not a per-component field.

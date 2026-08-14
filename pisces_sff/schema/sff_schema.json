@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -88,7 +88,8 @@
         "price":                   { "$ref": "#/definitions/quantity_unit_entry" },
         "electrical_energy_price": { "$ref": "#/definitions/quantity_unit_entry" },
         "regeneration_price":      { "$ref": "#/definitions/quantity_unit_entry" },
-        "heat_transfer_price":     { "$ref": "#/definitions/quantity_unit_entry" }
+        "heat_transfer_price":     { "$ref": "#/definitions/quantity_unit_entry" },
+        "enthalpy_flow":           { "$ref": "#/definitions/quantity_unit_entry" }
       },
       "additionalProperties": { "$ref": "#/definitions/quantity_unit_entry" }
     },
@@ -483,6 +484,10 @@
               "pressure": {
                 "type": "number",
                 "description": "Pressure. Quantity units: quantity_units_global 'pressure' (default 'Pa')."
+              },
+              "enthalpy_flow": {
+                "type": "number",
+                "description": "Total enthalpy flow rate of the stream (relative to the simulator's reference state). Optional; emitted from schema v0.0.11 on. Quantity units: quantity_units_global 'enthalpy_flow' (default 'kJ/hr')."
               },
               "phases": {
                 "description": "The phases present in this stream, keyed by phase symbol ('l' = liquid, 'g' = gas, 's' = solid, ...). Each value details that phase's own total flows and composition.",
