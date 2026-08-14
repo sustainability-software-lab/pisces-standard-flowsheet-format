@@ -227,6 +227,238 @@ def _present_global_quantity_fields(ctx):
     return present
 
 
+#%% Checks -- units (sff_checks.md section 2)
+
+def _duplicates(values):
+    """Return the set of values that appear more than once (None ignored)."""
+    seen, dup = set(), set()
+    for v in values:
+        if v is None:
+            continue
+        if v in seen:
+            dup.add(v)
+        seen.add(v)
+    return dup
+
+
+def _check_unit_id_uniqueness(ctx):  # UNIT-01
+    dup = _duplicates(u.get('id') for u in ctx.units if isinstance(u, dict))
+    if dup:
+        return [_failed('UNIT-01', 'error',
+                        f'duplicate unit id(s): {sorted(dup)}', 'units')]
+    return [_passed('UNIT-01', 'error', 'units')]
+
+
+def _check_utility_result_refs(ctx):  # UNIT-02
+    bad, any_results = [], False
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            continue
+        for key in ('utility_consumption_results', 'utility_production_results'):
+            for uid in (u.get(key) or {}):
+                any_results = True
+                if uid not in ctx.util_ids:
+                    bad.append(f"{u.get('id')}.{key}['{uid}']")
+    if not any_results:
+        return [_skipped('UNIT-02', 'error',
+                         'no unit declares utility results', 'units')]
+    if bad:
+        return [_failed('UNIT-02', 'error',
+                        f'utility-result keys reference no declared utility: {bad}',
+                        'units')]
+    return [_passed('UNIT-02', 'error', 'units')]
+
+
+def _check_design_result_units_pairing(ctx):  # UNIT-03
+    missing, orphan, any_dr = [], [], False
+    for u in ctx.units:
+        if not isinstance(u, dict) or not isinstance(u.get('design_results'), dict):
+            continue
+        any_dr = True
+        dr = u['design_results']
+        qu = u.get('quantity_units_for_design_results') or {}
+        missing += [f"{u.get('id')}['{k}']" for k in dr if k not in qu]
+        orphan += [f"{u.get('id')}['{k}']" for k in qu if k not in dr]
+    if not any_dr:
+        return [_skipped('UNIT-03', 'error',
+                         'no unit declares design_results', 'units')]
+    out = []
+    if missing:
+        out.append(_failed('UNIT-03', 'error',
+                           f'design result(s) without quantity units: {missing}',
+                           'units'))
+    if orphan:
+        out.append(_failed('UNIT-03', 'warning',
+                           f'quantity-unit key(s) with no matching design result: '
+                           f'{orphan}', 'units'))
+    return out or [_passed('UNIT-03', 'error', 'units')]
+
+
+def _iter_reactions(ctx):
+    """Yield (unit, reaction) for every reaction dict in the document."""
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            continue
+        for r in (u.get('reactions') or []):
+            if isinstance(r, dict):
+                yield u, r
+
+
+def _check_reaction_reactant_refs(ctx):  # UNIT-04 (validator part; conversion is schema)
+    bad, any_reactant = [], False
+    for u, r in _iter_reactions(ctx):
+        if 'reactant' not in r:
+            continue
+        any_reactant = True
+        if r['reactant'] not in ctx.chem_by_id:
+            bad.append(f"{u.get('id')}: reactant '{r['reactant']}'")
+    if not any_reactant:
+        return [_skipped('UNIT-04', 'error',
+                         'no reaction declares a reactant', 'units')]
+    if bad:
+        return [_failed('UNIT-04', 'error',
+                        f'reaction reactant(s) reference no chemical: {bad}',
+                        'units')]
+    return [_passed('UNIT-04', 'error', 'units')]
+
+
+def _stoich_to_coeffs(stoich, ctx):
+    """Resolve a stoichiometry (array-by-index or object-by-index-or-id) to
+    {chem_id: signed coeff} over nonzero entries. Returns (coeffs, None) or
+    (None, reason)."""
+    coeffs = {}
+    if isinstance(stoich, list):
+        if len(stoich) != len(ctx.chemicals):
+            return None, (f'array length {len(stoich)} != number of chemicals '
+                          f'{len(ctx.chemicals)}')
+        for pos, val in enumerate(stoich):
+            chem = ctx.chem_by_index.get(pos)
+            if chem is None:
+                return None, f'no chemical has index {pos}'
+            if val:
+                coeffs[chem.get('id')] = float(val)
+        return coeffs, None
+    if isinstance(stoich, dict):
+        for key, val in stoich.items():
+            chem = ctx.chem_by_id.get(key)
+            if chem is None:
+                try:
+                    chem = ctx.chem_by_index.get(int(key))
+                except (TypeError, ValueError):
+                    chem = None
+            if chem is None:
+                return None, f"key '{key}' resolves to no chemical"
+            if val:
+                coeffs[chem.get('id')] = float(val)
+        return coeffs, None
+    return None, 'stoichiometry is neither array nor object'
+
+
+def _parse_equation(equation, ctx):
+    """Parse 'A + 2 B -> 3 C + D' to {chem_id: signed coeff} (LHS negative, RHS
+    positive). Returns None if the arrow is missing or any species does not
+    resolve to a chemical id (caller then skips the consistency check)."""
+    if not isinstance(equation, str) or '->' not in equation:
+        return None
+    lhs, rhs = equation.split('->', 1)
+    coeffs = {}
+    for side, sign in ((lhs, -1.0), (rhs, 1.0)):
+        for term in side.split('+'):
+            term = term.strip()
+            if not term:
+                continue
+            m = re.match(r'^(\d+(?:\.\d+)?)?\s*(.+?)$', term)
+            if not m:
+                return None
+            coeff = float(m.group(1)) if m.group(1) else 1.0
+            species = m.group(2).strip()
+            if species not in ctx.chem_by_id:
+                return None
+            coeffs[species] = coeffs.get(species, 0.0) + sign * coeff
+    return {k: v for k, v in coeffs.items() if v}
+
+
+def _same_reaction_up_to_scale(a, b):
+    """True if coeff maps a and b describe one reaction up to a common positive
+    scale factor (same component set, equal positive ratios)."""
+    if set(a) != set(b):
+        return False
+    ratio = None
+    for k in a:
+        if b[k] == 0:
+            return False
+        r = a[k] / b[k]
+        if r <= 0:
+            return False
+        if ratio is None:
+            ratio = r
+        elif abs(r - ratio) > 1e-6 * abs(ratio):
+            return False
+    return True
+
+
+def _check_reaction_equation_stoichiometry_consistency(ctx):  # UNIT-05 (validator part)
+    problems, checked = [], False
+    for u, r in _iter_reactions(ctx):
+        if 'equation' not in r or 'stoichiometry' not in r:
+            continue
+        eq = _parse_equation(r['equation'], ctx)
+        st, err = _stoich_to_coeffs(r['stoichiometry'], ctx)
+        if eq is None or err or not eq or not st:
+            continue  # cannot verify -> skip (schema anyOf already ensured >=1)
+        checked = True
+        if not _same_reaction_up_to_scale(eq, st):
+            problems.append(f"{u.get('id')}: equation {r['equation']!r} != "
+                            f"stoichiometry {r['stoichiometry']}")
+    if not checked:
+        return [_skipped('UNIT-05', 'error',
+                         'no reaction provides both equation and parseable '
+                         'stoichiometry', 'units')]
+    if problems:
+        return [_failed('UNIT-05', 'error',
+                        f'equation/stoichiometry disagree: {problems}', 'units')]
+    return [_passed('UNIT-05', 'error', 'units')]
+
+
+def _check_stoichiometry_wellformed(ctx):  # UNIT-06
+    problems, any_stoich = [], False
+    for u, r in _iter_reactions(ctx):
+        if 'stoichiometry' not in r:
+            continue
+        any_stoich = True
+        coeffs, err = _stoich_to_coeffs(r['stoichiometry'], ctx)
+        if err:
+            problems.append(f"{u.get('id')}: {err}")
+            continue
+        reactant = r.get('reactant')
+        if reactant is not None:
+            coeff = coeffs.get(reactant, 0.0)
+            if coeff >= 0:
+                problems.append(f"{u.get('id')}: reactant '{reactant}' has "
+                                f'non-negative coefficient {coeff}')
+    if not any_stoich:
+        return [_skipped('UNIT-06', 'error',
+                         'no reaction declares stoichiometry', 'units')]
+    if problems:
+        return [_failed('UNIT-06', 'error',
+                        f'malformed stoichiometry: {problems}', 'units')]
+    return [_passed('UNIT-06', 'error', 'units')]
+
+
+def _check_unit_connectivity(ctx):  # UNIT-07
+    connected = set()
+    for s in ctx.streams:
+        if isinstance(s, dict):
+            connected.add(s.get('source_unit_id'))
+            connected.add(s.get('sink_unit_id'))
+    orphans = [uid for uid in ctx.unit_ids if uid not in connected]
+    if orphans:
+        return [_failed('UNIT-07', 'warning',
+                        f'unit(s) attached to no stream: {sorted(orphans)}',
+                        'units')]
+    return [_passed('UNIT-07', 'warning', 'units')]
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
