@@ -459,6 +459,210 @@ def _check_unit_connectivity(ctx):  # UNIT-07
     return [_passed('UNIT-07', 'warning', 'units')]
 
 
+#%% Checks -- streams: referential, roles, zero-flow (sff_checks.md section 3)
+
+BOUNDARY = 'None'  # C-01 system-boundary sentinel written to source/sink_unit_id
+TOPOLOGY_ROLES = ('input', 'output', 'internal')
+DESIGNATION_ROLES = ('purchased_raw_material', 'feedstock', 'product')
+
+
+def _stream_flow_scalars(stream):
+    """Yield every present numeric flow scalar of a stream: stream-level totals
+    and each phase's totals. Non-flow scalars (T, P) are excluded."""
+    sp = (stream.get('stream_properties') or {}) if isinstance(stream, dict) else {}
+    for name in ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow'):
+        v = sp.get(name)
+        if isinstance(v, (int, float)):
+            yield v
+    for phase in (sp.get('phases') or {}).values():
+        for name in ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow'):
+            v = phase.get(name) if isinstance(phase, dict) else None
+            if isinstance(v, (int, float)):
+                yield v
+
+
+def _stream_compositions(stream):
+    """Yield each phase composition list of a stream."""
+    sp = (stream.get('stream_properties') or {}) if isinstance(stream, dict) else {}
+    for phase in (sp.get('phases') or {}).values():
+        if isinstance(phase, dict) and isinstance(phase.get('composition'), list):
+            yield phase['composition']
+
+
+def _stream_is_empty(stream):
+    """True if every present flow scalar is ~zero and every composition is empty."""
+    flows_zero = all(abs(v) <= ZERO_FLOW for v in _stream_flow_scalars(stream))
+    comps_empty = all(len(c) == 0 for c in _stream_compositions(stream))
+    return flows_zero and comps_empty
+
+
+def _check_stream_id_uniqueness(ctx):  # STR-01
+    dup = _duplicates(s.get('id') for s in ctx.streams if isinstance(s, dict))
+    if dup:
+        return [_failed('STR-01', 'error',
+                        f'duplicate stream id(s): {sorted(dup)}', 'streams')]
+    return [_passed('STR-01', 'error', 'streams')]
+
+
+def _check_stream_endpoint_refs(ctx):  # STR-02
+    valid = ctx.unit_ids | {BOUNDARY}
+    bad = []
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        for end in ('source_unit_id', 'sink_unit_id'):
+            if s.get(end) not in valid:
+                bad.append(f"{s.get('id')}.{end}={s.get(end)!r}")
+    if bad:
+        return [_failed('STR-02', 'error',
+                        f'stream endpoint(s) resolve to neither a unit nor the '
+                        f'boundary: {bad}', 'streams')]
+    return [_passed('STR-02', 'error', 'streams')]
+
+
+def _check_isolated_stream_empty(ctx):  # STR-03
+    bad, any_isolated = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        if s.get('source_unit_id') == BOUNDARY and s.get('sink_unit_id') == BOUNDARY:
+            any_isolated = True
+            if not _stream_is_empty(s):
+                bad.append(s.get('id'))
+    if not any_isolated:
+        return [_skipped('STR-03', 'error',
+                         'no doubly-isolated streams', 'streams')]
+    if bad:
+        return [_failed('STR-03', 'error',
+                        f'isolated stream(s) carry material/energy: {bad}',
+                        'streams')]
+    return [_passed('STR-03', 'error', 'streams')]
+
+
+def _topology_roles(roles):
+    return [r for r in roles if r in TOPOLOGY_ROLES]
+
+
+def _check_stream_topology_role(ctx):  # STR-04
+    bad, any_roles = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict) or not isinstance(s.get('roles'), list):
+            continue
+        any_roles = True
+        if len(_topology_roles(s['roles'])) != 1:
+            bad.append(f"{s.get('id')}: {s['roles']}")
+    if not any_roles:
+        return [_skipped('STR-04', 'error',
+                         'no stream declares roles (pre-v0.0.10)', 'streams')]
+    if bad:
+        return [_failed('STR-04', 'error',
+                        f'stream(s) without exactly one topology role: {bad}',
+                        'streams')]
+    return [_passed('STR-04', 'error', 'streams')]
+
+
+def _expected_topology(stream):
+    has_source = stream.get('source_unit_id') != BOUNDARY
+    has_sink = stream.get('sink_unit_id') != BOUNDARY
+    if has_source and has_sink:
+        return 'internal'
+    if has_sink:
+        return 'input'
+    if has_source:
+        return 'output'
+    return None  # doubly isolated -- STR-03 territory
+
+
+def _check_stream_role_topology_agreement(ctx):  # STR-05
+    bad, any_roles = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict) or not isinstance(s.get('roles'), list):
+            continue
+        topo = _topology_roles(s['roles'])
+        if len(topo) != 1:
+            continue  # STR-04 owns this
+        any_roles = True
+        expected = _expected_topology(s)
+        if expected is not None and topo[0] != expected:
+            bad.append(f"{s.get('id')}: role {topo[0]} but topology {expected}")
+    if not any_roles:
+        return [_skipped('STR-05', 'warning',
+                         'no stream declares a single topology role', 'streams')]
+    if bad:
+        return [_failed('STR-05', 'warning',
+                        f'topology role disagrees with connectivity: {bad}',
+                        'streams')]
+    return [_passed('STR-05', 'warning', 'streams')]
+
+
+def _check_stream_designation_roles(ctx):  # STR-06
+    bad, any_designation = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict) or not isinstance(s.get('roles'), list):
+            continue
+        roles = s['roles']
+        designations = [r for r in roles if r in DESIGNATION_ROLES]
+        if not designations:
+            continue
+        any_designation = True
+        for d in designations:
+            if d in ('feedstock', 'purchased_raw_material') and 'input' not in roles:
+                bad.append(f"{s.get('id')}: {d} without input role")
+            if d == 'product' and 'output' not in roles:
+                bad.append(f"{s.get('id')}: product without output role")
+    if not any_designation:
+        return [_skipped('STR-06', 'warning',
+                         'no stream carries a designation role', 'streams')]
+    if bad:
+        return [_failed('STR-06', 'warning',
+                        f'designation role illegal for topology: {bad}', 'streams')]
+    return [_passed('STR-06', 'warning', 'streams')]
+
+
+def _check_composition_component_refs(ctx):  # STR-07
+    bad, any_component = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        for comp in _stream_compositions(s):
+            for entry in comp:
+                if not isinstance(entry, dict):
+                    continue
+                any_component = True
+                name = entry.get('component_name')
+                if name not in ctx.chem_by_id:
+                    bad.append(f"{s.get('id')}: '{name}'")
+    if not any_component:
+        return [_skipped('STR-07', 'error',
+                         'no stream declares composition components', 'streams')]
+    if bad:
+        return [_failed('STR-07', 'error',
+                        f'composition component(s) reference no chemical: {bad}',
+                        'streams')]
+    return [_passed('STR-07', 'error', 'streams')]
+
+
+def _check_zero_flow_consistency(ctx):  # STR-13
+    bad, any_zero = [], False
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        scalars = list(_stream_flow_scalars(s))
+        if not any(abs(v) <= ZERO_FLOW for v in scalars):
+            continue  # no zero flow present -> not applicable to this stream
+        any_zero = True
+        if not _stream_is_empty(s):
+            bad.append(s.get('id'))
+    if not any_zero:
+        return [_skipped('STR-13', 'error',
+                         'no stream has a zero flow scalar', 'streams')]
+    if bad:
+        return [_failed('STR-13', 'error',
+                        f'stream(s) with a zero flow but nonzero other flow/'
+                        f'composition: {bad}', 'streams')]
+    return [_passed('STR-13', 'error', 'streams')]
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
