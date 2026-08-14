@@ -119,7 +119,112 @@ class _Context:
         self.util_ids = set(self.util_by_id)
         self._mm_cache = {}
 
-    # molar_mass(cid) is added in Task 4 (needs the chemicals library).
+    def molar_mass(self, cid):
+        """Resolve a component's molar mass (g/mol): declared molar_mass if a
+        positive number, else derived from its formula, else None. Cached."""
+        if cid in self._mm_cache:
+            return self._mm_cache[cid]
+        chem = self.chem_by_id.get(cid)
+        value = None
+        if isinstance(chem, dict):
+            declared = chem.get('molar_mass')
+            if isinstance(declared, (int, float)) and declared > 0:
+                value = float(declared)
+            elif chem.get('formula'):
+                value = _molar_mass_from_formula(chem['formula'])
+        self._mm_cache[cid] = value
+        return value
+
+
+def _molar_mass_from_formula(formula):
+    """Molar mass (g/mol) parsed from a chemical formula, or None if unparseable.
+    Uses the `chemicals` library (imported lazily to keep this module light).
+    A formula that parses to no atoms (or a non-positive mass) is treated as
+    unparseable and returns None: `chemicals` 1.2.0's simple_formula_parser
+    returns {} for garbage rather than raising, and molecular_weight({}) is 0."""
+    try:
+        from chemicals.elements import molecular_weight, simple_formula_parser
+    except Exception:
+        return None
+    try:
+        parsed = simple_formula_parser(formula)
+        if not parsed:
+            return None
+        mm = molecular_weight(parsed)
+        return mm if mm > 0 else None
+    except Exception:
+        return None
+
+
+# thermosteam's pint registry, cached at module scope after first use. Unlike a
+# bare pint registry it parses SFF unit strings such as 'm3/hr' and 'USD/kg'.
+_UREG = None
+
+
+def _unit_is_parseable(unit_string):
+    """True if `unit_string` is a unit the SFF unit system can parse. The empty
+    string is treated as parseable: the schema documents '' as the explicit
+    dimensionless sentinel for design results."""
+    if unit_string == '':
+        return True
+    if not isinstance(unit_string, str) or not unit_string.strip():
+        return False
+    global _UREG
+    if _UREG is None:
+        try:
+            from thermosteam.units_of_measure import ureg
+        except Exception:
+            return False
+        _UREG = ureg
+    try:
+        _UREG.Quantity(1.0, unit_string)
+        return True
+    except Exception:
+        return False
+
+
+# Field names whose bare-number values resolve to units through
+# quantity_units_global. Enumerated from the reference exporter's emitted shape
+# (sff_checks.md C-03; QU-01/QU-03/QU-04 resolve against these). Per-object maps
+# (quantity_units_for_design_results / _utility_results) are handled separately
+# by UNIT-03 / UNIT-02 and are NOT listed here.
+GLOBAL_QUANTITY_FIELDS = (
+    'total_mass_flow', 'total_molar_flow', 'total_volumetric_flow',
+    'temperature', 'pressure', 'enthalpy_flow', 'price', 'molar_mass',
+    'regeneration_price', 'heat_transfer_price', 'electrical_energy_price',
+    'temperature_limit',
+)
+
+
+def _present_global_quantity_fields(ctx):
+    """Return the subset of GLOBAL_QUANTITY_FIELDS actually present as a
+    quantity-bearing field somewhere in the document."""
+    present = set()
+
+    def scan(obj, names):
+        for name in names:
+            if isinstance(obj, dict) and isinstance(obj.get(name), (int, float)):
+                present.add(name)
+
+    stream_scalar = ('total_mass_flow', 'total_molar_flow',
+                     'total_volumetric_flow', 'temperature', 'pressure',
+                     'enthalpy_flow')
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            continue
+        scan(s, ('price',))
+        sp = s.get('stream_properties') or {}
+        scan(sp, stream_scalar)
+        for phase in (sp.get('phases') or {}).values():
+            scan(phase, ('total_mass_flow', 'total_molar_flow',
+                         'total_volumetric_flow'))
+    for c in ctx.chemicals:
+        scan(c, ('molar_mass',))
+    for u in ctx.utilities_list:
+        scan(u, ('temperature', 'pressure', 'temperature_limit', 'price',
+                 'regeneration_price', 'heat_transfer_price',
+                 'electrical_energy_price'))
+    return present
 
 
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
