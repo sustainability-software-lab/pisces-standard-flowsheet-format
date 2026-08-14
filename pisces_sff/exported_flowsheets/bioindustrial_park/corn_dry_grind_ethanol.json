@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "sff_version": "0.0.10",
+        "sff_version": "0.0.11",
         "TEA_currency": "USD",
         "TEA_year": 2018,
         "process_simulator": {
@@ -40,15 +40,15 @@
             "environment": {
                 "format": "conda-environment-yaml",
                 "filename": "environment.yaml",
-                "sha256": "6903a452f29b3d79bf7df3fe3e513342785cb0338d3862abd6fd7f6024bafe32",
-                "content": "# Pinned environment for the corn dry-grind ethanol model.\r\n#\r\n# `pisces_sff.export_model` builds this environment and runs the export inside\r\n# it, so these pins are what actually produced the exported flowsheet.\r\n#\r\n# Two things to know when reproducing this by hand:\r\n#\r\n#   1. Set PIP_NO_DEPS=1 before running `conda env create`. Bioindustrial-Park\r\n#      declares `biosteam>=2.53.0`, which pip would otherwise honour by\r\n#      replacing the pinned biosteam commit below with a newer PyPI build --\r\n#      defeating the point of pinning. That declaration overstates the real\r\n#      requirement: this model loads and simulates against biosteam 2.46.1.\r\n#      (`--no-deps` cannot be written into the pip: block; pip's\r\n#      requirements-file parser rejects it as an unknown option.)\r\n#   2. Because dependency resolution is off, every transitive dependency is\r\n#      listed explicitly below. Adding a package here is how a missing import\r\n#      gets fixed -- there is no resolver to fall back on.\r\n#\r\n#   PowerShell:  $env:PIP_NO_DEPS = \"1\"; conda env create -f environment.yaml\r\n#   bash:        PIP_NO_DEPS=1 conda env create -f environment.yaml\r\n#\r\n# `name` is ignored by the harness, which creates the environment as\r\n# sff-<first 12 hex chars of the environment key>, and is excluded from that\r\n# key so renaming this field does not fork the environment.\r\nname: sff-corn-dry-grind-ethanol\r\nchannels:\r\n  - defaults\r\ndependencies:\r\n  - python=3.9.25\r\n  - pip\r\n  - pip:\r\n      # Simulator and flowsheet model, pinned to commits (PEP 508 direct\r\n      # references, so the distribution name is stated rather than guessed\r\n      # from the repository name -- Bioindustrial-Park installs as\r\n      # `biorefineries`).\r\n      - biosteam @ git+https://github.com/BioSTEAMDevelopmentGroup/biosteam@e2d3942dd1076a4516efc91ae194f9e558428551\r\n      - biorefineries @ git+https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park@584232846c999986f108cbd14d53437cd06c8f3d\r\n      # Thermodynamics and property packages\r\n      - thermosteam==0.45.0\r\n      - chemicals==1.2.0\r\n      - thermo==0.2.27\r\n      - fluids==1.0.26\r\n      - flexsolve==0.5.7\r\n      - free-properties==0.3.6\r\n      - colorpalette==0.3.3\r\n      # Numerics\r\n      - numpy==1.26.4\r\n      - scipy==1.13.1\r\n      - pandas==2.2.2\r\n      - numba==0.60.0\r\n      - llvmlite==0.43.0\r\n      # Plotting, units, IO\r\n      - matplotlib==3.5.2\r\n      - Pint==0.23\r\n      - graphviz==0.20.3\r\n      - xlrd==2.0.1\r\n      - openpyxl==3.1.2\r\n      - xlsxwriter==3.2.9\r\n      # Used by the exporter and runner themselves\r\n      - jsonschema==4.25.0\r\n      - PyYAML==6.0.1\r\n      # Declared by biosteam\r\n      - ipython==8.15.0\r\n      - chaospy==4.3.15\r\n      # Declared by Bioindustrial-Park (SALib and seaborn are deliberately\r\n      # excluded: BIP declares them, but neither is installed in the reference\r\n      # HP_2024 environment that exports this model today, so neither is\r\n      # required to load and simulate it.)\r\n      - scikit-learn==1.6.1\r\n      # Transitive dependencies. Because dependency resolution is off\r\n      # (PIP_NO_DEPS=1), every transitive requirement of the packages above must\r\n      # be listed explicitly. These were discovered empirically -- the\r\n      # environment was built and the model loaded and simulated repeatedly,\r\n      # each missing import added here at its HP_2024 version -- until every\r\n      # import resolved. Grouped by the direct dependency that pulls them in.\r\n      - colorama==0.4.6      # colorpalette\r\n      - ansicolors==1.1.8    # colorpalette (imports as `colors`)\r\n      - pytz==2026.2         # pandas\r\n      - python-dateutil==2.9.0.post0  # pandas, matplotlib\r\n      - six==1.17.0          # python-dateutil\r\n      - packaging==25.0      # matplotlib\r\n      - pillow==11.3.0       # matplotlib (imports as `PIL`)\r\n      - pyparsing==3.3.2     # matplotlib\r\n      - cycler==0.12.1       # matplotlib\r\n      - kiwisolver==1.4.7    # matplotlib\r\n      - et-xmlfile==2.0.0    # openpyxl\r\n      - typing_extensions==4.15.0     # ipython, others\r\n      - importlib_metadata==8.5.0     # backport used under Python 3.9\r\n      - numpoly==1.3.4       # chaospy\r\n      # ipython's own dependency tail\r\n      - traitlets==5.14.3\r\n      - prompt_toolkit==3.0.52\r\n      - wcwidth==0.2.13      # prompt_toolkit\r\n      - pygments==2.19.1\r\n      - decorator==5.2.1\r\n      - pickleshare==0.7.5\r\n      - backcall==0.2.0\r\n      - stack_data==0.6.3\r\n      - executing==2.2.1     # stack_data\r\n      - asttokens==3.0.0     # stack_data\r\n      - pure_eval==0.2.3     # stack_data\r\n      - exceptiongroup==1.3.0\r\n      # jsonschema's own dependency tail (imported by pisces_sff._validate)\r\n      - attrs==25.4.0\r\n      - referencing==0.30.2\r\n      - rpds-py==0.22.3      # attrs/referencing (imports as `rpds`)\r\n      - jsonschema-specifications==2023.7.1\r\n",
+                "sha256": "11c3d78cc73dd477fea6f2747e8c1a1118f3cea9d26861b5433e4842631ee9b0",
+                "content": "# Pinned environment for the corn dry-grind ethanol model.\n#\n# `pisces_sff.export_model` builds this environment and runs the export inside\n# it, so these pins are what actually produced the exported flowsheet.\n#\n# Two things to know when reproducing this by hand:\n#\n#   1. Set PIP_NO_DEPS=1 before running `conda env create`. Bioindustrial-Park\n#      declares `biosteam>=2.53.0`, which pip would otherwise honour by\n#      replacing the pinned biosteam commit below with a newer PyPI build --\n#      defeating the point of pinning. That declaration overstates the real\n#      requirement: this model loads and simulates against biosteam 2.46.1.\n#      (`--no-deps` cannot be written into the pip: block; pip's\n#      requirements-file parser rejects it as an unknown option.)\n#   2. Because dependency resolution is off, every transitive dependency is\n#      listed explicitly below. Adding a package here is how a missing import\n#      gets fixed -- there is no resolver to fall back on.\n#\n#   PowerShell:  $env:PIP_NO_DEPS = \"1\"; conda env create -f environment.yaml\n#   bash:        PIP_NO_DEPS=1 conda env create -f environment.yaml\n#\n# `name` is ignored by the harness, which creates the environment as\n# sff-<first 12 hex chars of the environment key>, and is excluded from that\n# key so renaming this field does not fork the environment.\nname: sff-corn-dry-grind-ethanol\nchannels:\n  - defaults\ndependencies:\n  - python=3.9.25\n  - pip\n  - pip:\n      # Simulator and flowsheet model, pinned to commits (PEP 508 direct\n      # references, so the distribution name is stated rather than guessed\n      # from the repository name -- Bioindustrial-Park installs as\n      # `biorefineries`).\n      - biosteam @ git+https://github.com/BioSTEAMDevelopmentGroup/biosteam@e2d3942dd1076a4516efc91ae194f9e558428551\n      - biorefineries @ git+https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park@584232846c999986f108cbd14d53437cd06c8f3d\n      # Thermodynamics and property packages\n      - thermosteam==0.45.0\n      - chemicals==1.2.0\n      - thermo==0.2.27\n      - fluids==1.0.26\n      - flexsolve==0.5.7\n      - free-properties==0.3.6\n      - colorpalette==0.3.3\n      # Numerics\n      - numpy==1.26.4\n      - scipy==1.13.1\n      - pandas==2.2.2\n      - numba==0.60.0\n      - llvmlite==0.43.0\n      # Plotting, units, IO\n      - matplotlib==3.5.2\n      - Pint==0.23\n      - graphviz==0.20.3\n      - xlrd==2.0.1\n      - openpyxl==3.1.2\n      - xlsxwriter==3.2.9\n      # Used by the exporter and runner themselves\n      - jsonschema==4.25.0\n      - PyYAML==6.0.1\n      # Declared by biosteam\n      - ipython==8.15.0\n      - chaospy==4.3.15\n      # Declared by Bioindustrial-Park (SALib and seaborn are deliberately\n      # excluded: BIP declares them, but neither is installed in the reference\n      # HP_2024 environment that exports this model today, so neither is\n      # required to load and simulate it.)\n      - scikit-learn==1.6.1\n      # Transitive dependencies. Because dependency resolution is off\n      # (PIP_NO_DEPS=1), every transitive requirement of the packages above must\n      # be listed explicitly. These were discovered empirically -- the\n      # environment was built and the model loaded and simulated repeatedly,\n      # each missing import added here at its HP_2024 version -- until every\n      # import resolved. Grouped by the direct dependency that pulls them in.\n      - colorama==0.4.6      # colorpalette\n      - ansicolors==1.1.8    # colorpalette (imports as `colors`)\n      - pytz==2026.2         # pandas\n      - python-dateutil==2.9.0.post0  # pandas, matplotlib\n      - six==1.17.0          # python-dateutil\n      - packaging==25.0      # matplotlib\n      - pillow==11.3.0       # matplotlib (imports as `PIL`)\n      - pyparsing==3.3.2     # matplotlib\n      - cycler==0.12.1       # matplotlib\n      - kiwisolver==1.4.7    # matplotlib\n      - et-xmlfile==2.0.0    # openpyxl\n      - typing_extensions==4.15.0     # ipython, others\n      - importlib_metadata==8.5.0     # backport used under Python 3.9\n      - numpoly==1.3.4       # chaospy\n      # ipython's own dependency tail\n      - traitlets==5.14.3\n      - prompt_toolkit==3.0.52\n      - wcwidth==0.2.13      # prompt_toolkit\n      - pygments==2.19.1\n      - decorator==5.2.1\n      - pickleshare==0.7.5\n      - backcall==0.2.0\n      - stack_data==0.6.3\n      - executing==2.2.1     # stack_data\n      - asttokens==3.0.0     # stack_data\n      - pure_eval==0.2.3     # stack_data\n      - exceptiongroup==1.3.0\n      # jsonschema's own dependency tail (imported by pisces_sff._validate)\n      - attrs==25.4.0\n      - referencing==0.30.2\n      - rpds-py==0.22.3      # attrs/referencing (imports as `rpds`)\n      - jsonschema-specifications==2023.7.1\n",
                 "path": "pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml"
             },
             "load_script": {
                 "format": "python",
                 "filename": "load.py",
-                "sha256": "f50f7ce1f9a61654d8503c573ef50889f57627ae07a4869bd33705d949bad85f",
-                "content": "# -*- coding: utf-8 -*-\r\n# Code to export flowsheets from multiple tools into a standardized JSON format.\r\n# Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>\r\n#\r\n# This module is under the MIT open-source license. See\r\n# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE\r\n# for license details.\r\n\r\n\"\"\"\r\nConventional corn dry-grind ethanol biorefinery, from the Bioindustrial-Park\r\n``biorefineries.corn`` module.\r\n\r\nRun this file directly to load and simulate the model without the harness:\r\n``python load.py``.\r\n\"\"\"\r\n\r\n#%% Model declarations\r\n\r\n# Selects the export entry point: the runner resolves `export_<SIMULATOR>_flowsheet`\r\n# in pisces_sff._export. Dispatch is by this value rather than by directory\r\n# name, so a model from another simulator only changes this line.\r\nSIMULATOR = 'biosteam'\r\n\r\n# Distribution names, resolved against environment.yaml's pip requirements to\r\n# fill metadata.reproducibility.simulator_package / .flowsheet_model_package.\r\n# Deriving the pins from the environment specification (instead of restating\r\n# them here) is what keeps the two representations from disagreeing.\r\nSIMULATOR_PACKAGE = 'biosteam'\r\nFLOWSHEET_MODEL_PACKAGE = 'biorefineries'\r\n\r\n# Branches the pinned commits are reachable from, where known. Advisory only --\r\n# a branch is not a pin, and is recorded so a reader can locate the commit.\r\nPACKAGE_BRANCHES = {'biorefineries': 'master'}\r\n\r\nMODEL_NAME = 'corn_dry_grind_ethanol'\r\n\r\n# Export-behavior flags forwarded to the exporter. Authored descriptive\r\n# metadata (source_doi, process_title, flowsheet_designers, microorganisms)\r\n# lives in extended_metadata.yaml, not here -- this dict is for how the export\r\n# is produced, not what a human knows about the flowsheet. `stoichiometry`\r\n# controls how reactions serialize (dict vs vector).\r\nEXPORT_KWARGS = {\r\n    'stoichiometry': 'dict',\r\n}\r\n\r\n#%% Loader\r\n\r\n\r\ndef load():\r\n    \"\"\"\r\n    Load and simulate the corn dry-grind ethanol biorefinery.\r\n\r\n    Returns\r\n    -------\r\n    (biosteam.System, biosteam.TEA)\r\n        The simulated system and its TEA object. ``Biorefinery.__new__``\r\n        simulates the system and solves for IRR, so the returned objects are\r\n        ready to export with no further calls.\r\n    \"\"\"\r\n    # Imported inside the function so that reading this module's declarations\r\n    # (as the test suite does) does not pull in the biosteam stack.\r\n    from biorefineries import corn\r\n    biorefinery = corn.Biorefinery()\r\n    return biorefinery.corn_sys, biorefinery.corn_tea\r\n\r\n\r\nif __name__ == '__main__':\r\n    system, tea = load()\r\n    print(system)\r\n    print(f'IRR: {tea.IRR}')\r\n",
+                "sha256": "89e29452908ee77faa28a27342ad20810bd6741336885f9357b31161e00da08a",
+                "content": "# -*- coding: utf-8 -*-\n# Code to export flowsheets from multiple tools into a standardized JSON format.\n# Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>\n#\n# This module is under the MIT open-source license. See\n# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE\n# for license details.\n\n\"\"\"\nConventional corn dry-grind ethanol biorefinery, from the Bioindustrial-Park\n``biorefineries.corn`` module.\n\nRun this file directly to load and simulate the model without the harness:\n``python load.py``.\n\"\"\"\n\n#%% Model declarations\n\n# Selects the export entry point: the runner resolves `export_<SIMULATOR>_flowsheet`\n# in pisces_sff._export. Dispatch is by this value rather than by directory\n# name, so a model from another simulator only changes this line.\nSIMULATOR = 'biosteam'\n\n# Distribution names, resolved against environment.yaml's pip requirements to\n# fill metadata.reproducibility.simulator_package / .flowsheet_model_package.\n# Deriving the pins from the environment specification (instead of restating\n# them here) is what keeps the two representations from disagreeing.\nSIMULATOR_PACKAGE = 'biosteam'\nFLOWSHEET_MODEL_PACKAGE = 'biorefineries'\n\n# Branches the pinned commits are reachable from, where known. Advisory only --\n# a branch is not a pin, and is recorded so a reader can locate the commit.\nPACKAGE_BRANCHES = {'biorefineries': 'master'}\n\nMODEL_NAME = 'corn_dry_grind_ethanol'\n\n# Export-behavior flags forwarded to the exporter. Authored descriptive\n# metadata (source_doi, process_title, flowsheet_designers, microorganisms)\n# lives in extended_metadata.yaml, not here -- this dict is for how the export\n# is produced, not what a human knows about the flowsheet. `stoichiometry`\n# controls how reactions serialize (dict vs vector).\nEXPORT_KWARGS = {\n    'stoichiometry': 'dict',\n}\n\n#%% Loader\n\n\ndef load():\n    \"\"\"\n    Load and simulate the corn dry-grind ethanol biorefinery.\n\n    Returns\n    -------\n    (biosteam.System, biosteam.TEA)\n        The simulated system and its TEA object. ``Biorefinery.__new__``\n        simulates the system and solves for IRR, so the returned objects are\n        ready to export with no further calls.\n    \"\"\"\n    # Imported inside the function so that reading this module's declarations\n    # (as the test suite does) does not pull in the biosteam stack.\n    from biorefineries import corn\n    biorefinery = corn.Biorefinery()\n    return biorefinery.corn_sys, biorefinery.corn_tea\n\n\nif __name__ == '__main__':\n    system, tea = load()\n    print(system)\n    print(f'IRR: {tea.IRR}')\n",
                 "path": "pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/load.py",
                 "entry_point": "load"
             },
@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-13T16:53:51Z",
+                "exported_at": "2026-08-14T01:29:44Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -2807,7 +2807,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.301402054009344
+                "total_volumetric_flow": 33.301402054009344,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -2869,7 +2870,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.301402054009344
+                "total_volumetric_flow": 33.301402054009344,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -2929,7 +2931,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.301402054009344
+                "total_volumetric_flow": 33.301402054009344,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -2989,7 +2992,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.201497847847314
+                "total_volumetric_flow": 33.201497847847314,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3049,7 +3053,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.09990420616202718
+                "total_volumetric_flow": 0.09990420616202718,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "output"
@@ -3109,7 +3114,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.201497847847314
+                "total_volumetric_flow": 33.201497847847314,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3169,7 +3175,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.201497847847314
+                "total_volumetric_flow": 33.201497847847314,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3229,7 +3236,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.201497847847314
+                "total_volumetric_flow": 33.201497847847314,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3289,7 +3297,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 33.201497847847314
+                "total_volumetric_flow": 33.201497847847314,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3319,7 +3328,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.021537424963703162
+                "total_volumetric_flow": 0.021537424963703162,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -3350,7 +3360,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.021537424963703162
+                "total_volumetric_flow": 0.021537424963703162,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3380,7 +3391,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.021537424963703162
+                "total_volumetric_flow": 0.021537424963703162,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3410,7 +3422,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.13075077921078435
+                "total_volumetric_flow": 0.13075077921078435,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -3441,7 +3454,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.13075077921078435
+                "total_volumetric_flow": 0.13075077921078435,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3471,7 +3485,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.13075077921078435
+                "total_volumetric_flow": 0.13075077921078435,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3506,7 +3521,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.012011709758980187
+                "total_volumetric_flow": 0.012011709758980187,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -3542,7 +3558,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.012011709758980187
+                "total_volumetric_flow": 0.012011709758980187,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3577,7 +3594,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.012011709758980187
+                "total_volumetric_flow": 0.012011709758980187,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3607,7 +3625,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 4.730249999999999e-05
+                "total_volumetric_flow": 4.730249999999999e-05,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -3638,7 +3657,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 4.730249999999999e-05
+                "total_volumetric_flow": 4.730249999999999e-05,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3673,7 +3693,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.04825439641158931
+                "total_volumetric_flow": 0.04825439641158931,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -3709,7 +3730,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.04825439641158931
+                "total_volumetric_flow": 0.04825439641158931,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3744,7 +3766,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.04825439641158931
+                "total_volumetric_flow": 0.04825439641158931,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3779,7 +3802,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.032409168243188
+                "total_volumetric_flow": 0.032409168243188,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -3815,7 +3839,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.032409168243188
+                "total_volumetric_flow": 0.032409168243188,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3850,7 +3875,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.032409168243188
+                "total_volumetric_flow": 0.032409168243188,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -3880,7 +3906,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 87.38271475007711
+                "total_volumetric_flow": 87.38271475007711,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -3945,7 +3972,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 17.44426431213511
+                "total_volumetric_flow": 17.44426431213511,
+                "enthalpy_flow": 4273415.448733194
             },
             "roles": [
                 "internal"
@@ -4030,7 +4058,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 137.97137727430163
+                "total_volumetric_flow": 137.97137727430163,
+                "enthalpy_flow": 4273410.379019015
             },
             "roles": [
                 "internal"
@@ -4115,7 +4144,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 137.93463182713415
+                "total_volumetric_flow": 137.93463182713415,
+                "enthalpy_flow": 4273410.379019015
             },
             "roles": [
                 "internal"
@@ -4200,7 +4230,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 158.03179593573213
+                "total_volumetric_flow": 158.03179593573213,
+                "enthalpy_flow": 98732942.10749257
             },
             "roles": [
                 "internal"
@@ -4285,7 +4316,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 155.50607846023706
+                "total_volumetric_flow": 155.50607846023706,
+                "enthalpy_flow": 94870172.07978408
             },
             "roles": [
                 "internal"
@@ -4370,7 +4402,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 139.61225312486653
+                "total_volumetric_flow": 139.61225312486653,
+                "enthalpy_flow": 8136180.406727509
             },
             "roles": [
                 "internal"
@@ -4400,7 +4433,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 91.21598399792812
+                "total_volumetric_flow": 91.21598399792812,
+                "enthalpy_flow": 3862770.137640766
             },
             "roles": [
                 "input",
@@ -4486,7 +4520,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 158.03179593573213
+                "total_volumetric_flow": 158.03179593573213,
+                "enthalpy_flow": 98732942.10749257
             },
             "roles": [
                 "internal"
@@ -4571,7 +4606,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 158.03179593573213
+                "total_volumetric_flow": 158.03179593573213,
+                "enthalpy_flow": 98732942.10749257
             },
             "roles": [
                 "internal"
@@ -4656,7 +4692,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 142.4983410474408
+                "total_volumetric_flow": 142.4983410474408,
+                "enthalpy_flow": 32424462.828956738
             },
             "roles": [
                 "internal"
@@ -4741,7 +4778,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 121.18933991006945
+                "total_volumetric_flow": 121.18933991006945,
+                "enthalpy_flow": 32447193.89831162
             },
             "roles": [
                 "internal"
@@ -4816,7 +4854,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 140.87168550979322
+                "total_volumetric_flow": 140.87168550979322,
+                "enthalpy_flow": 29050732.890829533
             },
             "roles": [
                 "internal"
@@ -4901,7 +4940,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 121.17987656152519
+                "total_volumetric_flow": 121.17987656152519,
+                "enthalpy_flow": 32382039.738796163
             },
             "roles": [
                 "internal"
@@ -4976,7 +5016,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 140.88440184592451
+                "total_volumetric_flow": 140.88440184592451,
+                "enthalpy_flow": 29115887.05034501
             },
             "roles": [
                 "internal"
@@ -5061,7 +5102,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 121.2878241927816
+                "total_volumetric_flow": 121.2878241927816,
+                "enthalpy_flow": 32395425.961018045
             },
             "roles": [
                 "internal"
@@ -5146,7 +5188,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 121.2878241927816
+                "total_volumetric_flow": 121.2878241927816,
+                "enthalpy_flow": 32395425.961018045
             },
             "roles": [
                 "internal"
@@ -5221,7 +5264,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 136.85306243471044
+                "total_volumetric_flow": 136.85306243471044,
+                "enthalpy_flow": 2901737.884912882
             },
             "roles": [
                 "internal"
@@ -5306,7 +5350,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 118.33469856519145
+                "total_volumetric_flow": 118.33469856519145,
+                "enthalpy_flow": 6246430.955101393
             },
             "roles": [
                 "internal"
@@ -5381,7 +5426,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 140.87168550979322
+                "total_volumetric_flow": 140.87168550979322,
+                "enthalpy_flow": 29050732.890829533
             },
             "roles": [
                 "internal"
@@ -5466,7 +5512,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 118.15326732771858
+                "total_volumetric_flow": 118.15326732771858,
+                "enthalpy_flow": 3742311.00390554
             },
             "roles": [
                 "internal"
@@ -5506,7 +5553,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 8656.834816589328
+                "total_volumetric_flow": 8656.834816589328,
+                "enthalpy_flow": 848301.8886691097
             },
             "roles": [
                 "internal"
@@ -5581,7 +5629,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 136.85306243471044
+                "total_volumetric_flow": 136.85306243471044,
+                "enthalpy_flow": 2901737.884912882
             },
             "roles": [
                 "internal"
@@ -5656,7 +5705,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 136.85306243471044
+                "total_volumetric_flow": 136.85306243471044,
+                "enthalpy_flow": 2901737.884912882
             },
             "roles": [
                 "internal"
@@ -5731,7 +5781,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 140.88440184592451
+                "total_volumetric_flow": 140.88440184592451,
+                "enthalpy_flow": 29115887.05034501
             },
             "roles": [
                 "internal"
@@ -5806,7 +5857,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 140.88440184592451
+                "total_volumetric_flow": 140.88440184592451,
+                "enthalpy_flow": 29115887.05034501
             },
             "roles": [
                 "internal"
@@ -5881,7 +5933,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 140.86563288734285
+                "total_volumetric_flow": 140.86563288734285,
+                "enthalpy_flow": 29115887.05034501
             },
             "roles": [
                 "internal"
@@ -5956,7 +6009,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 106.09097556501429
+                "total_volumetric_flow": 106.09097556501429,
+                "enthalpy_flow": 30579426.217929065
             },
             "roles": [
                 "internal"
@@ -6031,7 +6085,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 141.94587160284325
+                "total_volumetric_flow": 141.94587160284325,
+                "enthalpy_flow": 34429996.00266754
             },
             "roles": [
                 "internal"
@@ -6106,7 +6161,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 105.19370599934459
+                "total_volumetric_flow": 105.19370599934459,
+                "enthalpy_flow": 25265317.26560652
             },
             "roles": [
                 "internal"
@@ -6141,7 +6197,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 34250.562181693596
+                "total_volumetric_flow": 34250.562181693596,
+                "enthalpy_flow": 53742069.51699273
             },
             "roles": [
                 "internal"
@@ -6216,7 +6273,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 106.10297877144284
+                "total_volumetric_flow": 106.10297877144284,
+                "enthalpy_flow": 30579426.217929065
             },
             "roles": [
                 "internal"
@@ -6291,7 +6349,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 105.19370599934459
+                "total_volumetric_flow": 105.19370599934459,
+                "enthalpy_flow": 25265317.26560652
             },
             "roles": [
                 "internal"
@@ -6366,7 +6425,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 105.19370599934459
+                "total_volumetric_flow": 105.19370599934459,
+                "enthalpy_flow": 25265317.26560652
             },
             "roles": [
                 "internal"
@@ -6431,7 +6491,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 83.86665534680343
+                "total_volumetric_flow": 83.86665534680343,
+                "enthalpy_flow": 20545266.58044805
             },
             "roles": [
                 "internal"
@@ -6506,7 +6567,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 21.327050652541164
+                "total_volumetric_flow": 21.327050652541164,
+                "enthalpy_flow": 4720050.685158467
             },
             "roles": [
                 "internal"
@@ -6571,7 +6633,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 66.42239103466831
+                "total_volumetric_flow": 66.42239103466831,
+                "enthalpy_flow": 16271851.131714854
             },
             "roles": [
                 "internal"
@@ -6636,7 +6699,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 66.42239103466831
+                "total_volumetric_flow": 66.42239103466831,
+                "enthalpy_flow": 16271851.131714854
             },
             "roles": [
                 "internal"
@@ -6701,7 +6765,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 66.42239103466831
+                "total_volumetric_flow": 66.42239103466831,
+                "enthalpy_flow": 16271851.131714854
             },
             "roles": [
                 "internal"
@@ -6766,7 +6831,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 9.469992566538869
+                "total_volumetric_flow": 9.469992566538869,
+                "enthalpy_flow": 1121014.3702065435
             },
             "roles": [
                 "internal"
@@ -6801,7 +6867,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 56.55388168606677
+                "total_volumetric_flow": 56.55388168606677,
+                "enthalpy_flow": 12393928.549022473
             },
             "roles": [
                 "internal"
@@ -6831,7 +6898,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.7642542445312499
+                "total_volumetric_flow": 0.7642542445312499,
+                "enthalpy_flow": 49083.432114969204
             },
             "roles": [
                 "output",
@@ -6897,7 +6965,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 8.705738322007619
+                "total_volumetric_flow": 8.705738322007619,
+                "enthalpy_flow": 1071930.9380915742
             },
             "roles": [
                 "internal"
@@ -6972,7 +7041,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 21.327050652541164
+                "total_volumetric_flow": 21.327050652541164,
+                "enthalpy_flow": 4720050.685158467
             },
             "roles": [
                 "internal"
@@ -7047,7 +7117,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 30.020212278566902
+                "total_volumetric_flow": 30.020212278566902,
+                "enthalpy_flow": 5791981.62325031
             },
             "roles": [
                 "internal"
@@ -7082,7 +7153,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 2700.0651603786396
+                "total_volumetric_flow": 2700.0651603786396,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -7112,7 +7184,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 1695.5677125314082
+                "total_volumetric_flow": 1695.5677125314082,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -7182,7 +7255,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 8.517170095109854
+                "total_volumetric_flow": 8.517170095109854,
+                "enthalpy_flow": 875337.6801808255
             },
             "roles": [
                 "internal"
@@ -7227,7 +7301,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 5779.37137403089
+                "total_volumetric_flow": 5779.37137403089,
+                "enthalpy_flow": 54004142.126653925
             },
             "roles": [
                 "internal"
@@ -7262,7 +7337,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 6319.081582730465
+                "total_volumetric_flow": 6319.081582730465,
+                "enthalpy_flow": 6632384.150548574
             },
             "roles": [
                 "output"
@@ -7332,7 +7408,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 8.517170095109854
+                "total_volumetric_flow": 8.517170095109854,
+                "enthalpy_flow": 875337.6801808255
             },
             "roles": [
                 "output",
@@ -7368,7 +7445,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 939.8780958202289
+                "total_volumetric_flow": 939.8780958202289,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -7398,7 +7476,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 98.54415954096349
+                "total_volumetric_flow": 98.54415954096349,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -7443,7 +7522,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 64158.762402858134
+                "total_volumetric_flow": 64158.762402858134,
+                "enthalpy_flow": 57602577.90364655
             },
             "roles": [
                 "output"
@@ -7478,7 +7558,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 4659.9012359316885
+                "total_volumetric_flow": 4659.9012359316885,
+                "enthalpy_flow": 7052149.649123645
             },
             "roles": [
                 "internal"
@@ -7513,7 +7594,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 38950.636355538205
+                "total_volumetric_flow": 38950.636355538205,
+                "enthalpy_flow": 60794219.16611639
             },
             "roles": [
                 "internal"
@@ -7548,7 +7630,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 13519.535085491263
+                "total_volumetric_flow": 13519.535085491263,
+                "enthalpy_flow": 21964899.263066325
             },
             "roles": [
                 "internal"
@@ -7583,7 +7666,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 15.604826140800562
+                "total_volumetric_flow": 15.604826140800562,
+                "enthalpy_flow": 4697883.318807788
             },
             "roles": [
                 "internal"
@@ -7618,7 +7702,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 15059.210210321253
+                "total_volumetric_flow": 15059.210210321253,
+                "enthalpy_flow": 23167330.762311064
             },
             "roles": [
                 "internal"
@@ -7653,7 +7738,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 10399.308974389562
+                "total_volumetric_flow": 10399.308974389562,
+                "enthalpy_flow": 16115181.113187416
             },
             "roles": [
                 "internal"
@@ -7688,7 +7774,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 20.185048994569808
+                "total_volumetric_flow": 20.185048994569808,
+                "enthalpy_flow": 1663131.1752525987
             },
             "roles": [
                 "internal"
@@ -7723,7 +7810,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 20.185048994569808
+                "total_volumetric_flow": 20.185048994569808,
+                "enthalpy_flow": 1663131.1752525987
             },
             "roles": [
                 "internal"
@@ -7758,7 +7846,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 20.185048994569808
+                "total_volumetric_flow": 20.185048994569808,
+                "enthalpy_flow": 1663131.1752525987
             },
             "roles": [
                 "internal"
@@ -7788,7 +7877,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.9403041221215739
+                "total_volumetric_flow": 0.9403041221215739,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input",
@@ -7819,7 +7909,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.9403041221215739
+                "total_volumetric_flow": 0.9403041221215739,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -7849,7 +7940,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 0.9403041221215739
+                "total_volumetric_flow": 0.9403041221215739,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -7889,7 +7981,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 21.13598775684553
+                "total_volumetric_flow": 21.13598775684553,
+                "enthalpy_flow": 1663131.175252598
             },
             "roles": [
                 "internal"
@@ -7929,7 +8022,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 21.13598775684553
+                "total_volumetric_flow": 21.13598775684553,
+                "enthalpy_flow": 1663131.175252598
             },
             "roles": [
                 "output",
@@ -7965,7 +8059,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 15.604826140800562
+                "total_volumetric_flow": 15.604826140800562,
+                "enthalpy_flow": 4697883.318807788
             },
             "roles": [
                 "internal"
@@ -7995,7 +8090,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 18.306499697982737
+                "total_volumetric_flow": 18.306499697982737,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -8025,7 +8121,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 8228.811725721642
+                "total_volumetric_flow": 8228.811725721642,
+                "enthalpy_flow": 70751.22057400622
             },
             "roles": [
                 "output"
@@ -8060,7 +8157,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 18.875460791666573
+                "total_volumetric_flow": 18.875460791666573,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -8095,7 +8193,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 18.875460791666573
+                "total_volumetric_flow": 18.875460791666573,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "internal"
@@ -8130,7 +8229,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 90.86518669710664
+                "total_volumetric_flow": 90.86518669710664,
+                "enthalpy_flow": 17091811.86783052
             },
             "roles": [
                 "internal"
@@ -8154,7 +8254,8 @@
                         "composition": []
                     }
                 },
-                "total_volumetric_flow": 0.0
+                "total_volumetric_flow": 0.0,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -8178,7 +8279,8 @@
                         "composition": []
                     }
                 },
-                "total_volumetric_flow": 0.0
+                "total_volumetric_flow": 0.0,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "output"
@@ -8202,7 +8304,8 @@
                         "composition": []
                     }
                 },
-                "total_volumetric_flow": 0.0
+                "total_volumetric_flow": 0.0,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -8226,7 +8329,8 @@
                         "composition": []
                     }
                 },
-                "total_volumetric_flow": 0.0
+                "total_volumetric_flow": 0.0,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -8250,7 +8354,8 @@
                         "composition": []
                     }
                 },
-                "total_volumetric_flow": 0.0
+                "total_volumetric_flow": 0.0,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "input"
@@ -8274,7 +8379,8 @@
                         "composition": []
                     }
                 },
-                "total_volumetric_flow": 0.0
+                "total_volumetric_flow": 0.0,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "output"
@@ -8304,7 +8410,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 87.38271475007711
+                "total_volumetric_flow": 87.38271475007711,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "output"
@@ -8334,7 +8441,8 @@
                         ]
                     }
                 },
-                "total_volumetric_flow": 1.2967488494169381
+                "total_volumetric_flow": 1.2967488494169381,
+                "enthalpy_flow": 0.0
             },
             "roles": [
                 "output"
@@ -8543,7 +8651,7 @@
         ],
         "other_utilities": [
             {
-                "id": "s78",
+                "id": "natural_gas",
                 "temperature": 298.15,
                 "pressure": 101325.0,
                 "price": 0.0,
@@ -8558,7 +8666,7 @@
                 ]
             },
             {
-                "id": "natural_gas",
+                "id": "s78",
                 "temperature": 298.15,
                 "pressure": 101325.0,
                 "price": 0.0,
@@ -8644,6 +8752,13 @@
                 "heat_transfer_price"
             ],
             "quantity_units": "USD/kJ"
+        },
+        "enthalpy_flow": {
+            "aliases": [
+                "enthalpy_flow",
+                "H"
+            ],
+            "quantity_units": "kJ/hr"
         }
     }
 }
