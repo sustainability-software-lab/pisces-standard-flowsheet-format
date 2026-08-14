@@ -119,6 +119,22 @@ class TestEndToEndExport(unittest.TestCase):
                 self.assertIn(stream_id, flows)
                 self.assertClose(flows[stream_id], expected, stream_id)
 
+    def test_stream_enthalpy_flows_match_the_baseline(self):
+        # enthalpy_flow (biosteam stream.H, kJ/hr) is a v0.0.11 addition; this is
+        # the only tier whose pins actually ran, so it is the only place the
+        # numeric value is asserted. Feed streams sit at the reference state
+        # (H == 0), for which a relative-tolerance check is degenerate, so the
+        # baseline pins only the non-zero product/co-product streams.
+        flows = {s["id"]: s["stream_properties"].get("enthalpy_flow")
+                 for s in self.flowsheet["streams"]}
+        for stream_id, expected in self.baseline["stream_enthalpy_flows"].items():
+            with self.subTest(stream=stream_id):
+                self.assertIn(stream_id, flows)
+                self.assertIsNotNone(
+                    flows[stream_id],
+                    f"{stream_id}: enthalpy_flow missing from stream_properties")
+                self.assertClose(flows[stream_id], expected, stream_id)
+
     def test_total_installed_cost_matches_the_baseline(self):
         total = sum(sum(u["installed_costs"].values())
                     for u in self.flowsheet["units"])
