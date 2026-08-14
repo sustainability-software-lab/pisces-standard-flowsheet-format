@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "sff_version": "0.0.11",
+        "sff_version": "0.0.12",
         "TEA_currency": "USD",
         "TEA_year": 2018,
         "process_simulator": {
@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-14T01:29:44Z",
+                "exported_at": "2026-08-14T10:00:17Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -8651,7 +8651,7 @@
         ],
         "other_utilities": [
             {
-                "id": "natural_gas",
+                "id": "s78",
                 "temperature": 298.15,
                 "pressure": 101325.0,
                 "price": 0.0,
@@ -8666,7 +8666,7 @@
                 ]
             },
             {
-                "id": "s78",
+                "id": "natural_gas",
                 "temperature": 298.15,
                 "pressure": 101325.0,
                 "price": 0.0,
