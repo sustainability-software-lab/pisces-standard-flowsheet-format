@@ -666,12 +666,14 @@ def _check_zero_flow_consistency(ctx):  # STR-13
 #%% Checks -- streams: material balance (sff_checks.md section 3 + 7 (i)/(ii))
 
 def _rel_close(a, b, rel_tol):
-    """True if a and b agree to a relative tolerance (scaled by |b|, or |a| when
-    b is ~0)."""
+    """True if a and b agree to a relative tolerance (scaled by the larger
+    magnitude), with an absolute floor of ZERO_FLOW so a value at or below the
+    module's zero threshold compared against exact zero counts as agreement
+    (a bare relative test is degenerate when one side is exactly 0)."""
     scale = max(abs(a), abs(b))
     if scale == 0:
         return True
-    return abs(a - b) <= rel_tol * scale
+    return abs(a - b) <= max(rel_tol * scale, ZERO_FLOW)
 
 
 def _check_fraction_sums(ctx):  # STR-08 (material balance (i))
@@ -680,14 +682,16 @@ def _check_fraction_sums(ctx):  # STR-08 (material balance (i))
         if not isinstance(s, dict):
             continue
         for phase_symbol, comp in _iter_named_compositions(s):
-            if not comp:
+            entries = [e for e in comp if isinstance(e, dict)]
+            if not entries:
                 continue
             any_comp = True
             for frac_key in ('mol_fraction', 'mass_fraction'):
-                values = [e.get(frac_key) for e in comp
-                          if isinstance(e, dict) and isinstance(e.get(frac_key),
-                                                                (int, float))]
-                if not values:
+                # Sum a fraction field only when EVERY entry declares it
+                # numerically; mass_fraction is schema-optional per entry, so a
+                # partial sum would false-fail against 1.0.
+                values = [e.get(frac_key) for e in entries]
+                if not all(isinstance(v, (int, float)) for v in values):
                     continue
                 total = sum(values)
                 if abs(total - 1.0) > TOL_FRACTION:
@@ -716,12 +720,16 @@ def _check_phase_flow_sums(ctx):  # STR-09
             continue
         sp = s.get('stream_properties') or {}
         phases = sp.get('phases') or {}
+        dict_phases = [p for p in phases.values() if isinstance(p, dict)]
         for name in ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow'):
             stream_total = sp.get(name)
-            phase_values = [p.get(name) for p in phases.values()
-                            if isinstance(p, dict) and isinstance(p.get(name),
-                                                                  (int, float))]
-            if not isinstance(stream_total, (int, float)) or not phase_values:
+            if not isinstance(stream_total, (int, float)) or not dict_phases:
+                continue
+            # Compare only when EVERY phase declares this field numerically;
+            # per-phase totals are schema-optional, so a partial sum would
+            # false-fail against the (required) stream-level total.
+            phase_values = [p.get(name) for p in dict_phases]
+            if not all(isinstance(v, (int, float)) for v in phase_values):
                 continue
             any_check = True
             if not _rel_close(sum(phase_values), stream_total, TOL_FLOW):
@@ -729,7 +737,8 @@ def _check_phase_flow_sums(ctx):  # STR-09
                            f"{sum(phase_values):.6g} != total {stream_total:.6g}")
     if not any_check:
         return [_skipped('STR-09', 'warning',
-                         'no stream has both phase and total flows', 'streams')]
+                         'no field present on all phases alongside the stream total',
+                         'streams')]
     if bad:
         return [_failed('STR-09', 'warning',
                         f'phase flows do not sum to the stream total: {bad}',
