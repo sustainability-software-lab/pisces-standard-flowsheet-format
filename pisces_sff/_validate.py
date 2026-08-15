@@ -1048,7 +1048,11 @@ def _check_alias_uniqueness(ctx):  # QU-03
     # Skipped when: never (sff_checks.md). An empty registry has no
     # ambiguous aliases, so this is a genuine (vacuous) pass.
     idx = _alias_index(ctx)
-    ambiguous = {a: keys for a, keys in idx.items() if len(keys) > 1}
+    # Ambiguous only when an alias spans more than one DISTINCT entry; a
+    # duplicate alias within a single entry's own list (schema allows it --
+    # no uniqueItems) is not a cross-entry collision.
+    ambiguous = {a: sorted(set(keys)) for a, keys in idx.items()
+                 if len(set(keys)) > 1}
     if ambiguous:
         return [_failed('QU-03', 'error',
                         f'alias(es) under multiple quantity_units_global entries: '

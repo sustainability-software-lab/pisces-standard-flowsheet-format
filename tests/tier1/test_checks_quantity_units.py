@@ -85,6 +85,15 @@ class TestAliasUniqueness(unittest.TestCase):
         c = ctx()
         self.assertEqual(V._check_alias_uniqueness(c)[0].status, "pass")
 
+    def test_duplicate_alias_within_one_entry_is_not_a_collision(self):
+        # An entry's own `aliases` list may legally repeat a value (the schema
+        # has no uniqueItems on `aliases`). QU-03 is about an alias spanning
+        # more than one DISTINCT entry -- a repeat within a single entry must
+        # not false-fail.
+        c = ctx(quantity_units_global={
+            "mass_flow": {"aliases": ["F", "F"], "quantity_units": "kg/hr"}})
+        self.assertEqual(V._check_alias_uniqueness(c)[0].status, "pass")
+
 
 class TestUnusedAliases(unittest.TestCase):
     def test_entry_used_passes(self):
