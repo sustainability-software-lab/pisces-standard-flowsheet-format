@@ -1141,5 +1141,62 @@ class TestCoverageDeclarationHelpers(unittest.TestCase):
                          set())
 
 
+class TestExportStubIsolation(unittest.TestCase):
+    """The Tier 1 biosteam stub's blast radius.
+
+    Pinned because the failure it prevents is silent and misattributed: with the
+    fakes left in sys.modules, Tier 5 reports the reference corpus file as
+    non-conforming (QU-02, UTIL-03 and CHEM-05 all fail) and every symptom points
+    at the validator rather than at Tier 1.
+    """
+
+    def test_load_export_leaves_no_fake_modules_behind(self):
+        """
+        After load_export(), sys.modules must be free of the stubs so a later
+        tier's lazy `import thermosteam` gets the real library.
+
+        Expected: none of 'biosteam', 'thermosteam', 'thermosteam.reaction' or
+        'thermosteam.reaction._reaction' is present in sys.modules carrying the
+        _SFF_STUB marker.
+        """
+        import _export_stub
+        _export_stub.load_export()
+        for name in ('biosteam', 'thermosteam', 'thermosteam.reaction',
+                     'thermosteam.reaction._reaction'):
+            module = sys.modules.get(name)
+            with self.subTest(module=name):
+                self.assertFalse(getattr(module, '_SFF_STUB', False))
+
+    def test_the_exported_module_still_holds_the_fakes(self):
+        """
+        Removing the stubs from sys.modules must not un-stub _export itself --
+        Tier 1 depends on _export having the fakes bound in its globals.
+
+        Expected: pisces_sff._export.Reaction is the stub class, i.e. its
+        __module__ is the stub module, not thermosteam.
+        """
+        import _export_stub
+        export = _export_stub.load_export()
+        self.assertNotEqual(getattr(export.Reaction, '__module__', ''),
+                            'thermosteam')
+
+    def test_the_real_unit_registry_is_reachable_after_a_tier_1_import(self):
+        """
+        The end the isolation exists for: a later tier's parseability check must
+        work in a process where Tier 1 already ran.
+
+        Expected: _validate._unit_is_parseable('kg/hr') is True.
+        """
+        import importlib.util
+        import _export_stub
+        _export_stub.load_export()
+        path = TESTS_ROOT.parent / 'pisces_sff' / '_validate.py'
+        spec = importlib.util.spec_from_file_location('sff_validate_isolation',
+                                                      path)
+        validate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validate)
+        self.assertTrue(validate._unit_is_parseable('kg/hr'))
+
+
 if __name__ == '__main__':
     unittest.main()

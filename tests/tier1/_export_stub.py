@@ -9,10 +9,22 @@
 # touching a new biosteam/thermosteam attribute, extend the fakes here.
 #
 # The leading underscore keeps pytest from collecting this as a test module.
+#
+# The stubs are installed only for the duration of the _export import and then
+# removed from sys.modules again. They must not outlive it: Tier 5 runs in the
+# same pytest process and asks the validator to parse quantity units, which
+# lazily imports thermosteam. A fake thermosteam left in sys.modules makes every
+# unit unparseable and the reference corpus file report as non-conforming, with
+# no symptom pointing back here. _export keeps the fakes regardless -- it bound
+# them into its own globals at import time -- which is all Tier 1 needs.
 
 import importlib
 import sys
 import types
+
+#: The sys.modules keys install_biosteam_stubs() owns.
+_STUB_MODULE_NAMES = ('biosteam', 'thermosteam', 'thermosteam.reaction',
+                      'thermosteam.reaction._reaction')
 
 
 def install_biosteam_stubs():
@@ -54,6 +66,8 @@ def install_biosteam_stubs():
 
     reaction_impl.get_stoichiometric_string = get_stoichiometric_string
     reaction_pkg._reaction = reaction_impl
+    reaction_pkg._SFF_STUB = True
+    reaction_impl._SFF_STUB = True
     thermosteam.reaction = reaction_pkg
 
     biosteam = types.ModuleType("biosteam")
@@ -72,7 +86,28 @@ def install_biosteam_stubs():
     sys.modules["biosteam"] = biosteam
 
 
+def uninstall_biosteam_stubs():
+    """Remove the fake modules from sys.modules (idempotent).
+
+    Only removes entries this module installed -- an entry that is not marked
+    _SFF_STUB belongs to someone else and is left alone.
+    """
+    for name in _STUB_MODULE_NAMES:
+        module = sys.modules.get(name)
+        if module is not None and getattr(module, '_SFF_STUB', False):
+            del sys.modules[name]
+
+
 def load_export():
-    """Install the stubs, then import and return the real pisces_sff._export."""
+    """Import and return the real pisces_sff._export with fake simulator modules.
+
+    The fakes are installed, `_export` is imported against them, and the fakes
+    are then removed from sys.modules again. `_export` keeps them (they are bound
+    in its globals); nothing imported afterwards sees them. See the note at the
+    top of this file for why that matters.
+    """
     install_biosteam_stubs()
-    return importlib.import_module("pisces_sff._export")
+    try:
+        return importlib.import_module("pisces_sff._export")
+    finally:
+        uninstall_biosteam_stubs()
