@@ -16,7 +16,7 @@ from typing import Any, Tuple
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError
 
-__all__ = ('validate_json_against_schema', 'validate_flowsheet_against_SFF',
+__all__ = ('validate_flowsheet_against_SFF', 'validate_json_against_schema',
            'CheckResult')
 
 #%%
