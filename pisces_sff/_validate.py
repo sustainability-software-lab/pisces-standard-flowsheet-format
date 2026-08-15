@@ -906,6 +906,83 @@ def _check_unused_chemicals(ctx):  # CHEM-05
     return [_passed('CHEM-05', 'info', 'chemicals')]
 
 
+#%% Checks -- utilities (sff_checks.md section 5)
+
+def _check_utility_id_uniqueness(ctx):  # UTIL-01
+    # Skipped when: never (sff_checks.md). An empty utilities registry has no
+    # duplicates, so this is a genuine (vacuous) pass, not a skip.
+    dup = _duplicates(u.get('id') for u in ctx.utilities_list)
+    if dup:
+        return [_failed('UTIL-01', 'error',
+                        f'duplicate utility id(s) across groups: {sorted(dup)}',
+                        'utilities')]
+    return [_passed('UTIL-01', 'error', 'utilities')]
+
+
+def _check_unused_utilities(ctx):  # UTIL-02
+    # Skipped when: never (sff_checks.md). Zero declared utilities are
+    # trivially all "referenced", so this is a genuine (vacuous) pass.
+    used = set()
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            continue
+        for key in ('utility_consumption_results', 'utility_production_results'):
+            used.update(u.get(key) or {})
+    unused = [uid for uid in ctx.util_by_id if uid not in used]
+    if unused:
+        return [_failed('UTIL-02', 'info',
+                        f'utility(ies) referenced by no unit: {sorted(unused)}',
+                        'utilities')]
+    return [_passed('UTIL-02', 'info', 'utilities')]
+
+
+def _check_utility_result_units_parseable(ctx):  # UTIL-03
+    # Skipped when: never (sff_checks.md) -- the field is schema-required for
+    # each group, so an empty utilities registry is a genuine (vacuous) pass.
+    bad = []
+    for u in ctx.utilities_list:
+        s = u.get('quantity_units_for_utility_results')
+        if not isinstance(s, str) or s == '' or not _unit_is_parseable(s):
+            bad.append(f"{u.get('id')}: {s!r}")
+    if bad:
+        return [_failed('UTIL-03', 'warning',
+                        f'utility-result quantity units empty/unparseable: {bad}',
+                        'utilities')]
+    return [_passed('UTIL-03', 'warning', 'utilities')]
+
+
+def _check_utility_composition(ctx):  # UTIL-04
+    ref_bad, sum_bad, any_comp = [], [], False
+    for u in ctx.utilities_list:
+        comp = u.get('composition')
+        if not isinstance(comp, list) or not comp:
+            continue
+        any_comp = True
+        values = []
+        for e in comp:
+            if not isinstance(e, dict):
+                continue
+            if e.get('component_name') not in ctx.chem_by_id:
+                ref_bad.append(f"{u.get('id')}: '{e.get('component_name')}'")
+            if isinstance(e.get('mol_fraction'), (int, float)):
+                values.append(e['mol_fraction'])
+        if values and abs(sum(values) - 1.0) > TOL_FRACTION:
+            sum_bad.append(f"{u.get('id')}: {sum(values):.6g}")
+    if not any_comp:
+        return [_skipped('UTIL-04', 'error',
+                         'no utility declares a composition', 'utilities')]
+    out = []
+    if ref_bad:
+        out.append(_failed('UTIL-04', 'error',
+                           f'utility composition component(s) reference no '
+                           f'chemical: {ref_bad}', 'utilities'))
+    if sum_bad:
+        out.append(_failed('UTIL-04', 'warning',
+                           f'utility composition fractions do not sum to 1: '
+                           f'{sum_bad}', 'utilities'))
+    return out or [_passed('UTIL-04', 'error', 'utilities')]
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
