@@ -325,6 +325,12 @@ with open(out_path, 'w', encoding='utf-8') as handle:
 '''
 
 
+# The child imports thermosteam, which is slow and JIT-heavy on a cold numba
+# cache -- generous but finite, so a hung child fails the test instead of
+# hanging the whole suite.
+_VALIDATE_SUBPROCESS_TIMEOUT_S = 300
+
+
 def _validate_conforming_document_in_a_clean_process(case):
     """Validate the base document in a child interpreter; return the report as
     ``{'is_valid': bool, 'results': [[check_id, severity, status, message], ...]}``."""
@@ -334,10 +340,16 @@ def _validate_conforming_document_in_a_clean_process(case):
     validate_path = TESTS_ROOT.parent / 'pisces_sff' / '_validate.py'
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp) / 'report.json'
-        completed = subprocess.run(
-            [sys.executable, '-c', _VALIDATE_IN_CLEAN_PROCESS,
-             str(TESTS_ROOT), str(validate_path), str(out_path)],
-            capture_output=True, text=True)
+        try:
+            completed = subprocess.run(
+                [sys.executable, '-c', _VALIDATE_IN_CLEAN_PROCESS,
+                 str(TESTS_ROOT), str(validate_path), str(out_path)],
+                capture_output=True, text=True,
+                timeout=_VALIDATE_SUBPROCESS_TIMEOUT_S)
+        except subprocess.TimeoutExpired as exc:
+            case.fail(
+                'validator subprocess timed out after '
+                f'{_VALIDATE_SUBPROCESS_TIMEOUT_S}s running: {exc.cmd!r}')
         case.assertEqual(completed.returncode, 0,
                          f'validator subprocess failed:\n{completed.stderr}')
         with out_path.open('r', encoding='utf-8') as handle:
@@ -422,6 +434,52 @@ class TestConformingDocument(unittest.TestCase):
         doc = docs.conforming_document()
         self.assertFalse(
             docs.pointer_exists(doc, '/utilities/other_utilities/0/price'))
+
+    def test_pointer_exists_raises_on_a_malformed_pointer(self):
+        """
+        A pointer missing its leading '/' is a programmer typo, not a locator
+        that is legitimately absent from the document -- conflating the two
+        would let the generated sweep score a malformed pointer as "covered".
+
+        Expected: pointer_exists(doc, 'metadata/TEA_currency') raises
+        ValueError instead of returning False.
+        """
+        doc = docs.conforming_document()
+        with self.assertRaises(ValueError):
+            docs.pointer_exists(doc, 'metadata/TEA_currency')
+
+    def test_pointer_resolution_treats_a_digit_string_dict_key_as_a_key(self):
+        """
+        RFC 6901 resolves a token against the *container's* type: a dict key
+        that looks like an integer (or is zero-padded, e.g. '01') must stay a
+        string key, never be coerced into a list index just because the token
+        is all digits.
+
+        Expected: against a dict keyed '01' (string) and 1 (int), pointer_get
+        on '/container/01' returns the string-keyed value, pointer_set on the
+        same pointer changes only that entry, and the int-keyed entry 1 is
+        left untouched throughout.
+        """
+        doc = {'container': {'01': 'zero-one', 1: 'do-not-touch'}}
+        self.assertEqual(docs.pointer_get(doc, '/container/01'), 'zero-one')
+        docs.pointer_set(doc, '/container/01', 'changed')
+        self.assertEqual(doc['container']['01'], 'changed')
+        self.assertEqual(doc['container'][1], 'do-not-touch')
+        docs.pointer_delete(doc, '/container/01')
+        self.assertNotIn('01', doc['container'])
+        self.assertEqual(doc['container'][1], 'do-not-touch')
+
+    def test_pointer_resolution_still_indexes_a_list_by_position(self):
+        """
+        Pins that resolving a token against the container's type does not
+        regress the ordinary case: every pointer this document's own mutation
+        tests use addresses a list by numeric position.
+
+        Expected: pointer_get(doc, '/streams/1/id') returns 'product', the
+        second entry of the streams list.
+        """
+        doc = docs.conforming_document()
+        self.assertEqual(docs.pointer_get(doc, '/streams/1/id'), 'product')
 
     def test_mutated_returns_a_document_with_one_change(self):
         """

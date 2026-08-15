@@ -223,22 +223,38 @@ def conforming_document():
 #%% JSON-pointer helpers
 
 def _split(pointer):
-    """Return the RFC-6901 `pointer` as a list of string/int steps."""
+    """Return the RFC-6901 `pointer` as a list of unescaped string tokens.
+
+    Tokens are kept as strings here -- whether a token addresses a list index
+    or a dict key depends on the *container* it is resolved against, which is
+    only known during the walk (see :func:`_walk`), not from the token's own
+    spelling.
+    """
     if not pointer.startswith('/'):
         raise ValueError('not a JSON pointer: %r' % (pointer,))
     steps = []
     for token in pointer[1:].split('/'):
         token = token.replace('~1', '/').replace('~0', '~')
-        steps.append(int(token) if token.isdigit() else token)
+        steps.append(token)
     return steps
+
+
+def _resolve_step(node, step):
+    """Resolve one RFC-6901 `step` against `node`, per the container's type.
+
+    A list only ever accepts an integer index; a dict key that happens to look
+    like an integer (or is zero-padded, e.g. ``'01'``) must still be used as a
+    string key against a dict. The container decides, not the token.
+    """
+    return int(step) if isinstance(node, list) else step
 
 
 def _walk(doc, steps):
     """Return the container holding the last step, and that step."""
     node = doc
     for step in steps[:-1]:
-        node = node[step]
-    return node, steps[-1]
+        node = node[_resolve_step(node, step)]
+    return node, _resolve_step(node, steps[-1])
 
 
 def pointer_get(doc, pointer):
@@ -259,6 +275,8 @@ def pointer_get(doc, pointer):
     ------
     KeyError, IndexError
         If the pointer does not resolve.
+    ValueError
+        If `pointer` is malformed (e.g. missing its leading ``/``).
     """
     container, last = _walk(doc, _split(pointer))
     return container[last]
@@ -306,10 +324,20 @@ def pointer_exists(doc, pointer):
     Returns
     -------
     bool
+
+    Raises
+    ------
+    ValueError
+        If `pointer` is malformed (e.g. missing its leading ``/``). This is
+        deliberately NOT reported as ``False``: a malformed pointer is a
+        programmer error, distinct from a locator that is simply absent from
+        this document, and the two must never be conflated -- most of all by
+        the generated sweep that drives this helper across ~265 locators,
+        which would otherwise silently score a typo'd pointer as "covered".
     """
     try:
         pointer_get(doc, pointer)
-    except (KeyError, IndexError, TypeError, ValueError):
+    except (KeyError, IndexError, TypeError):
         return False
     return True
 
