@@ -144,6 +144,63 @@ _ROLES_SINCE = (0, 0, 10)
 #: 0.0.5-0.0.10 stay byte-stable. See quantity_units_global_for.
 _ENTHALPY_SINCE = (0, 0, 11)
 
+# 0.0.12+ synthesizes a deterministic unique id for BioSTEAM streams whose .ID is
+# blank ('') -- several auxiliary streams share an empty id, which is an ambiguous
+# cross-reference key. Older exporters keep raw .ID so their historical output stays
+# byte-stable.
+_STREAM_ID_SYNTH_SINCE = (0, 0, 12)
+# 0.0.12+ normalizes BioSTEAM's dimensionless design-result unit labels to '' (the
+# SFF convention for dimensionless quantities), so quantity-unit strings are all
+# pint-parseable. Older exporters keep the raw label for byte-stable output.
+_DIMLESS_UNIT_NORM_SINCE = (0, 0, 12)
+# BioSTEAM design-result "unit" strings that denote a dimensionless quantity and so
+# map to '' under _DIMLESS_UNIT_NORM_SINCE. 'Ratio' is BioSTEAM's label for reflux
+# ratios; extend this set if other dimensionless labels surface.
+_DIMENSIONLESS_DESIGN_UNITS = frozenset({"Ratio"})
+
+
+def _assign_stream_ids(all_streams, sff_version):
+    """Map each stream object to the id the SFF document should use for it.
+
+    For ``sff_version`` below :data:`_STREAM_ID_SYNTH_SINCE`, this is the raw
+    BioSTEAM ``stream.ID`` (byte-stable historical behavior). From 0.0.12 on,
+    a stream whose ``.ID`` is blank (``''``) -- BioSTEAM leaves some auxiliary
+    streams unnamed, and multiple blank ids collide -- is assigned a
+    deterministic ``'unnamed_stream_<n>'`` id, ``n`` counting blank streams in
+    system order and skipping any id already in use.
+
+    Parameters
+    ----------
+    all_streams : list
+        Streams in system order (``list(sys.streams)``).
+    sff_version : str
+
+    Returns
+    -------
+    dict
+        ``{stream_object: resolved_id_str}`` for every stream in ``all_streams``.
+    """
+    resolved = {}
+    if version_tuple(sff_version) < _STREAM_ID_SYNTH_SINCE:
+        for s in all_streams:
+            resolved[s] = s.ID
+        return resolved
+    existing = {s.ID for s in all_streams if s.ID}
+    n = 0
+    for s in all_streams:
+        if s.ID:
+            resolved[s] = s.ID
+            continue
+        n += 1
+        candidate = "unnamed_stream_%d" % n
+        while candidate in existing:
+            n += 1
+            candidate = "unnamed_stream_%d" % n
+        existing.add(candidate)
+        resolved[s] = candidate
+    return resolved
+
+
 # Every versioned exporter assembles the same core document; only the
 # version-specific additions differ. Keeping the assembly here means adding a
 # schema version costs one thin function rather than a copy of ~170 lines that
@@ -190,6 +247,7 @@ def _build_sff_dict(sys, tea=None,
     f = sys.flowsheet
     u, s = sys.units, sys.streams
     all_streams = list(s)
+    stream_ids = _assign_stream_ids(all_streams, sff_version)
     all_sys_feeds = list(sys.feeds)
     all_sys_products = list(sys.products)
     if tea is None:
@@ -215,9 +273,9 @@ def _build_sff_dict(sys, tea=None,
     metadata['TEA_year'] = tea.duration[0]
     metadata['process_simulator'] = {'name': 'BioSTEAM',
                                      'version': bst.__version__}
-    metadata['feedstocks'] = [{"display_name": format_name(stream.ID), "stream_id": stream.ID} 
+    metadata['feedstocks'] = [{"display_name": format_name(stream_ids[stream]), "stream_id": stream_ids[stream]}
                               for stream in all_streams if is_feedstock(stream, all_sys_feeds)]
-    metadata['products'] = [{"display_name": format_name(stream.ID), "stream_id": stream.ID}
+    metadata['products'] = [{"display_name": format_name(stream_ids[stream]), "stream_id": stream_ids[stream]}
                             for stream in all_streams if is_product(stream, all_sys_products)]
 
     # ------- Authored descriptive metadata (optional) -------
@@ -296,7 +354,11 @@ def _build_sff_dict(sys, tea=None,
                 "utility_production_results": u_prod,
                 }
         if not inline:
-            unit["quantity_units_for_design_results"] = quantity_units_for_design_results(ru)
+            qufd = quantity_units_for_design_results(ru)
+            if version_tuple(sff_version) >= _DIMLESS_UNIT_NORM_SINCE:
+                qufd = {k: ("" if v in _DIMENSIONLESS_DESIGN_UNITS else v)
+                        for k, v in qufd.items()}
+            unit["quantity_units_for_design_results"] = qufd
         units.append(unit)
         
     ## ------ Streams ------ ##
@@ -317,7 +379,7 @@ def _build_sff_dict(sys, tea=None,
             stream_properties["phases"] = get_phase_properties(rs, inline)
         else:
             stream_properties["composition"] = get_composition(rs)
-        stream = {"id": rs.ID,
+        stream = {"id": stream_ids[rs],
                   "source_unit_id": rs.source.ID if rs.source is not None else "None",
                   "sink_unit_id": rs.sink.ID if rs.sink is not None else "None",
                   "price": scalar(rs.price, "$/kg", inline),

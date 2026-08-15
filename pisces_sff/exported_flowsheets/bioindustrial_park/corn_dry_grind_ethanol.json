@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-14T10:00:17Z",
+                "exported_at": "2026-08-15T02:41:41Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -1639,8 +1639,8 @@
             "quantity_units_for_design_results": {
                 "Theoretical feed stage": "",
                 "Theoretical stages": "",
-                "Minimum reflux": "Ratio",
-                "Reflux": "Ratio",
+                "Minimum reflux": "",
+                "Reflux": "",
                 "Actual stages": "",
                 "Height": "ft",
                 "Diameter": "ft",
@@ -2223,8 +2223,8 @@
             "quantity_units_for_design_results": {
                 "Theoretical feed stage": "",
                 "Theoretical stages": "",
-                "Minimum reflux": "Ratio",
-                "Reflux": "Ratio",
+                "Minimum reflux": "",
+                "Reflux": "",
                 "Rectifier stages": "",
                 "Stripper stages": "",
                 "Rectifier height": "ft",
@@ -8237,7 +8237,7 @@
             ]
         },
         {
-            "id": "",
+            "id": "unnamed_stream_1",
             "source_unit_id": "None",
             "sink_unit_id": "other_facilities",
             "price": 0.0,
@@ -8312,7 +8312,7 @@
             ]
         },
         {
-            "id": "",
+            "id": "unnamed_stream_2",
             "source_unit_id": "None",
             "sink_unit_id": "T608",
             "price": 0.0,
@@ -8337,7 +8337,7 @@
             ]
         },
         {
-            "id": "",
+            "id": "unnamed_stream_3",
             "source_unit_id": "None",
             "sink_unit_id": "T608",
             "price": 0.0,
@@ -8418,7 +8418,7 @@
             ]
         },
         {
-            "id": "",
+            "id": "unnamed_stream_4",
             "source_unit_id": "T608",
             "sink_unit_id": "None",
             "price": 0.0,
@@ -8651,7 +8651,7 @@
         ],
         "other_utilities": [
             {
-                "id": "s78",
+                "id": "natural_gas",
                 "temperature": 298.15,
                 "pressure": 101325.0,
                 "price": 0.0,
@@ -8666,7 +8666,7 @@
                 ]
             },
             {
-                "id": "natural_gas",
+                "id": "s78",
                 "temperature": 298.15,
                 "pressure": 101325.0,
                 "price": 0.0,
