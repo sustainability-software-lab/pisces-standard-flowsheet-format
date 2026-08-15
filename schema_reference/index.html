@@ -16,7 +16,7 @@
         <link rel="prev" href="../extending/">
       
       
-        <link rel="next" href="../full_schema/">
+        <link rel="next" href="../validation/">
       
       
         
@@ -282,6 +282,25 @@
     
   
   Schema Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../validation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Validation
 
       </a>
     </li>
@@ -606,6 +625,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#validation-constraints-v0012" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Validation constraints (v0.0.12)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -615,6 +645,33 @@
   
 </nav>
       
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -737,16 +794,33 @@
 <li><strong>stream_description</strong>: A qualitative description (e.g., "Make-up solvent").</li>
 <li><strong>roles</strong>: An optional array (added in v0.0.10) naming the roles this stream plays. Every non-isolated stream carries exactly one base topology role — <code>input</code> (a sink but no source), <code>output</code> (a source but no sink), or <code>internal</code> (both) — and may additionally carry designation roles: <code>purchased_raw_material</code> (a priced input), <code>feedstock</code> (a feedstock input; can co-occur with <code>purchased_raw_material</code>), and <code>product</code> (a product output). Values are unique; the enum is <code>["input", "output", "purchased_raw_material", "feedstock", "product", "internal"]</code>. Omitted by exporters targeting pre-0.0.10 schemas.</li>
 <li><strong>price</strong>: A bare number giving the cost per quantity of the stream material. Its units come from <code>quantity_units_global</code> under <code>price</code> (BioSTEAM-native default <code>USD/kg</code>), not an inline unit string.</li>
-<li><strong>stream_properties</strong>: A detailed block of stream state. <code>total_molar_flow</code>, <code>temperature</code>, <code>pressure</code>, and <code>phases</code> are required; the remaining scalars are optional. Each scalar below is a bare number whose units come from <code>quantity_units_global</code> (BioSTEAM-native defaults noted); <code>phases</code> is an object (see below):<ul>
+<li><strong>stream_properties</strong>: A detailed block of stream state. <code>total_mass_flow</code>, <code>total_molar_flow</code>, <code>temperature</code>, <code>pressure</code>, and <code>phases</code> are required (<code>total_mass_flow</code> became required in v0.0.12); the remaining scalars are optional. Each scalar below is a bare number whose units come from <code>quantity_units_global</code> (BioSTEAM-native defaults noted); <code>phases</code> is an object (see below):<ul>
+<li><strong>total_mass_flow</strong> (<code>kg/hr</code>; required as of v0.0.12)</li>
 <li><strong>total_molar_flow</strong> (<code>kmol/hr</code>)</li>
 <li><strong>temperature</strong> (<code>K</code>)</li>
-<li><strong>pressure</strong> (<code>Pa</code>)</li>
-<li><strong>total_mass_flow</strong> (<code>kg/hr</code>, optional)</li>
+<li><strong>pressure</strong> (<code>Pa</code>; must be greater than 0 as of v0.0.12)</li>
 <li><strong>total_volumetric_flow</strong> (<code>m3/hr</code>, optional)</li>
 <li><strong>enthalpy_flow</strong> (<code>kJ/hr</code>, optional; added in v0.0.11): The whole-stream enthalpy flow rate, relative to the simulator's reference state (from BioSTEAM <code>stream.H</code>). Omitted by exporters targeting pre-0.0.11 schemas.</li>
 <li><strong>phases</strong>: An object keyed by phase symbol (<code>l</code>, <code>g</code>, <code>s</code>, ...). Each phase carries its own <code>total_molar_flow</code> (required) and <code>composition</code> (required), plus optional <code>total_mass_flow</code> and <code>total_volumetric_flow</code>. Each <code>composition</code> entry gives a <code>component_name</code> (linking to the <code>chemicals</code> array IDs) and mol/mass fractions <strong>relative to that phase</strong>; the phase is the parent key, not a per-component field.</li>
 </ul>
 </li>
+</ul>
+<hr />
+<h3 id="validation-constraints-v0012">Validation constraints (v0.0.12)</h3>
+<p>v0.0.12 adds nine declarative JSON-Schema constraints, catalogued in <code>sff_checks.md</code> and enforced by the schema itself (no code required to check them), plus one validator-enforced warning check (MET-04):</p>
+<ul>
+<li><strong>MET-01</strong>: <code>metadata.sff_version</code> must match the semver pattern <code>^[0-9]+\.[0-9]+\.[0-9]+$</code>.</li>
+<li><strong>MET-04</strong>: <code>metadata.TEA_year</code> should lie within a plausible range (1900 ≤ year ≤ current
+  calendar year + 1). Enforced by the validator as a <code>warning</code> (not the schema), so an
+  implausible year flags a warning without making the file non-conforming.</li>
+<li><strong>MET-05</strong>: <code>metadata.TEA_currency</code> must be a non-empty string (<code>minLength: 1</code>).</li>
+<li><strong>MET-06</strong>: <code>reproducibility.environment.sha256</code>, <code>reproducibility.load_script.sha256</code>, and <code>reproducibility.resolved.env_key</code> must each match the 64-hex pattern <code>^[0-9a-f]{64}$</code>.</li>
+<li><strong>UNIT-04</strong>: a reaction's <code>conversion</code> must be between 0 and 1, inclusive.</li>
+<li><strong>UNIT-05</strong>: a reaction must provide at least one of <code>equation</code> or <code>stoichiometry</code>.</li>
+<li><strong>STR-11</strong>: a stream's <code>stream_properties.pressure</code> must be strictly greater than 0.</li>
+<li><strong>STR-12</strong>: <code>stream_properties.total_mass_flow</code> is required on every stream (gated, breaking change vs. pre-0.0.12 schemas).</li>
+<li><strong>CHEM-02</strong>: a chemical's <code>molar_mass</code> must be strictly greater than 0.</li>
+<li><strong>UTIL-05</strong>: <code>temperature</code> and <code>pressure</code> on <code>heat_utilities</code> and <code>other_utilities</code> entries must each be strictly greater than 0 (<code>temperature_limit</code> is exempt — a cooling-utility limit may legitimately take any value).</li>
 </ul>
 
 
