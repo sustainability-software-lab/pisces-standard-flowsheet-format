@@ -208,7 +208,6 @@ def _assign_stream_ids(all_streams, sff_version):
 # argument here and nowhere else -- see tests/test_version_sync.py.
 def _build_sff_dict(sys, tea=None,
                     stoichiometry="dict", # must be one of (None, "vector", "dict")
-                    composition_units="both", # "mol%", "mass%", or "both"
                     microorganisms=None, # optional list of microbial hosts; see metadata section below
                     source_doi=None, # optional; authored, see metadata section below
                     process_title=None, # optional; authored
@@ -226,8 +225,6 @@ def _build_sff_dict(sys, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     source_doi : str, optional
@@ -504,14 +501,13 @@ def _write_sff_json(flowsheet_to_export, filepath):
 #%% Export function for SFF schema v0.0.5
 def export_biosteam_flowsheet_sff_0_0_5(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                        composition_units="both", # "mol%", "mass%", or "both"
                                         microorganisms=None, # optional list of microbial hosts
                                         sff_version='0.0.5', # must match this function's name suffix
                                         ):
     """Export a simulated BioSTEAM system against SFF schema v0.0.5."""
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         sff_version=sff_version,
     )
     _write_sff_json(flowsheet_to_export, filepath)
@@ -520,7 +516,6 @@ def export_biosteam_flowsheet_sff_0_0_5(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.6
 def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                        composition_units="both", # "mol%", "mass%", or "both"
                                         microorganisms=None, # optional list of microbial hosts
                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
                                         sff_version='0.0.6', # must match this function's name suffix
@@ -538,8 +533,6 @@ def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
@@ -553,7 +546,7 @@ def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         sff_version=sff_version,
     )
     if reproducibility:
@@ -564,7 +557,6 @@ def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.7
 def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                        composition_units="both", # "mol%", "mass%", or "both"
                                         microorganisms=None, # optional list of microbial hosts
                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
                                         sff_version='0.0.7', # must match this function's name suffix
@@ -589,8 +581,6 @@ def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
@@ -601,7 +591,7 @@ def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         sff_version=sff_version,
     )
     if reproducibility:
@@ -612,7 +602,6 @@ def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.8
 def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                        composition_units="both", # "mol%", "mass%", or "both"
                                         microorganisms=None, # optional list of microbial hosts
                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
                                         sff_version='0.0.8', # must match this function's name suffix
@@ -634,8 +623,6 @@ def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
@@ -646,7 +633,7 @@ def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         sff_version=sff_version,
     )
     if reproducibility:
@@ -657,7 +644,6 @@ def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.9
 def export_biosteam_flowsheet_sff_0_0_9(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                        composition_units="both", # "mol%", "mass%", or "both"
                                         microorganisms=None, # optional list of microbial hosts
                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
                                         sff_version='0.0.9', # must match this function's name suffix
@@ -682,8 +668,6 @@ def export_biosteam_flowsheet_sff_0_0_9(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
@@ -694,7 +678,7 @@ def export_biosteam_flowsheet_sff_0_0_9(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         sff_version=sff_version,
     )
     if reproducibility:
@@ -705,7 +689,6 @@ def export_biosteam_flowsheet_sff_0_0_9(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.10
 def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
                                          stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                         composition_units="both", # "mol%", "mass%", or "both"
                                          microorganisms=None, # optional list of microbial hosts
                                          source_doi=None, # optional; authored descriptive metadata
                                          process_title=None, # optional; authored
@@ -734,8 +717,6 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     source_doi : str, optional
@@ -752,7 +733,7 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         source_doi=source_doi, process_title=process_title,
         flowsheet_designers=flowsheet_designers,
         sff_version=sff_version,
@@ -765,7 +746,6 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.11
 def export_biosteam_flowsheet_sff_0_0_11(sys, filepath, tea=None,
                                          stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                         composition_units="both", # "mol%", "mass%", or "both"
                                          microorganisms=None, # optional list of microbial hosts
                                          source_doi=None, # optional; authored descriptive metadata
                                          process_title=None, # optional; authored
@@ -793,8 +773,6 @@ def export_biosteam_flowsheet_sff_0_0_11(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     source_doi : str, optional
@@ -811,7 +789,7 @@ def export_biosteam_flowsheet_sff_0_0_11(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         source_doi=source_doi, process_title=process_title,
         flowsheet_designers=flowsheet_designers,
         sff_version=sff_version,
@@ -824,7 +802,6 @@ def export_biosteam_flowsheet_sff_0_0_11(sys, filepath, tea=None,
 #%% Export function for SFF schema v0.0.12
 def export_biosteam_flowsheet_sff_0_0_12(sys, filepath, tea=None,
                                          stoichiometry="dict", # must be one of (None, "vector", "dict")
-                                         composition_units="both", # "mol%", "mass%", or "both"
                                          microorganisms=None, # optional list of microbial hosts
                                          source_doi=None, # optional; authored descriptive metadata
                                          process_title=None, # optional; authored
@@ -854,8 +831,6 @@ def export_biosteam_flowsheet_sff_0_0_12(sys, filepath, tea=None,
         TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
     stoichiometry : str, optional
         One of ``None``, ``'vector'``, or ``'dict'``.
-    composition_units : str, optional
-        ``'mol%'``, ``'mass%'``, or ``'both'``.
     microorganisms : list, optional
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     source_doi : str, optional
@@ -872,7 +847,7 @@ def export_biosteam_flowsheet_sff_0_0_12(sys, filepath, tea=None,
     """
     flowsheet_to_export = _build_sff_dict(
         sys, tea=tea, stoichiometry=stoichiometry,
-        composition_units=composition_units, microorganisms=microorganisms,
+        microorganisms=microorganisms,
         source_doi=source_doi, process_title=process_title,
         flowsheet_designers=flowsheet_designers,
         sff_version=sff_version,
