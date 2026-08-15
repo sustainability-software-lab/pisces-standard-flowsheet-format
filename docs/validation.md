@@ -34,5 +34,8 @@ year + 1, rather than a schema constraint), and more. It returns
 Every check cites the `sff_checks.md` ID it implements. See that catalogue for
 the authoritative statement, rationale, and tolerance of each check.
 
-> Energy-balance checking (catalogue **BAL-01**) is **not yet implemented** — see
-> the note in `sff_checks.md`.
+> Scope of physical checking: balance checking is limited to **local, per-stream
+> self-consistency** (fraction sums, phase-to-total flow agreement, and
+> mass ↔ molar-flow agreement). There is no cross-unit or system-wide mass
+> closure, no component or elemental balances, and **no energy-balance
+> checking**.

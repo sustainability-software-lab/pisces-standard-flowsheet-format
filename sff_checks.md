@@ -21,8 +21,12 @@ another.
 > Scope note (physical checks): by deliberate decision, material-balance checking is
 > limited to **local, per-stream self-consistency** (fraction sums and mass/molar-flow
 > agreement). There is **no** cross-unit or system-wide total-mass closure, **no**
-> component balances, and **no** elemental/atom balances across reactions. Energy-balance
-> checking is limited to unit operations that declare **no reactions**. See §7.
+> component balances, and **no** elemental/atom balances across reactions. There is
+> **no** energy-balance checking of any kind: an energy balance was catalogued and then
+> removed (2026-08-15) because a per-unit enthalpy balance does not close against a clean
+> reference flowsheet — inconsistent utility sign conventions, work duties not reflected in
+> stream enthalpy, and heat-integration/reference-state effects at unit granularity. Any
+> future energy check needs a model-aware design and a new ID.
 
 ---
 
@@ -75,7 +79,6 @@ is implemented.
 | `TOL_FRACTION` | absolute `1e-6` | fraction sums that should equal 1 |
 | `TOL_FLOW` | relative `1e-3` | mass ↔ molar-flow agreement; phase-sum ↔ total-flow agreement |
 | `TOL_MOLAR_MASS` | relative `1e-3` | formula-derived vs declared molar mass |
-| `TOL_ENERGY` | relative `1e-2` | energy-balance closure |
 | `ZERO_FLOW` | absolute `1e-12` | treating a flow as exactly zero (empty-stream logic) |
 
 ---
@@ -590,33 +593,6 @@ These are not checks; they define terms the checks rely on.
 - **Skipped when:** never.
 - **Enforcement:** validator (`_check_boundary_streams_exist`).
 
-### BAL-01 — energy balance closes on non-reacting units *(energy balance)*
-- **Statement:** for each unit operation that declares **no reactions**, the net enthalpy
-  flow of its streams is balanced by its utility duties:
-  `Σ enthalpy_flow(inlet streams) + Σ heat duties supplied − Σ heat duties removed ≈
-  Σ enthalpy_flow(outlet streams)`, within `TOL_ENERGY`. (Exact sign convention for
-  consumption vs production and for heating vs cooling utilities is fixed when the helper is
-  implemented.)
-- **Rationale:** For a unit with no reaction, there is no heat of reaction to account for, so
-  enthalpy in plus net utility heat should equal enthalpy out. A gross imbalance flags a
-  wrong duty, a wrong stream enthalpy, or a missing stream.
-- **Scope:** a non-reacting unit's inlet/outlet `streams[].stream_properties.enthalpy_flow`,
-  its `utility_consumption_results`/`utility_production_results`, and the referenced
-  utilities' quantity units.
-- **Severity:** `warning`.
-- **Skipped when:** the unit declares any reaction; or any adjoining stream lacks
-  `enthalpy_flow` (optional, v0.0.11+); or a utility duty's quantity units do not resolve to a
-  power/energy-rate that can be compared against enthalpy flow.
-- **Enforcement:** validator (`_check_energy_balance_nonreacting_units`).
-- **Tolerance:** `TOL_ENERGY`.
-- **Status (2026-08-14): deferred, not implemented.** Empirical check against the corn
-  reference corpus showed a naive per-unit enthalpy balance does not close (inconsistent
-  utility sign conventions; electrical/work duties not reflected in stream enthalpy;
-  heat-integration and reference-state effects at unit granularity), so BAL-01 would emit
-  persistent warnings against a clean reference file. Energy-balance validation needs a
-  model-aware design and is left to a future iteration; `TOL_ENERGY` is undefined until
-  then.
-
 ---
 
 ## Appendix — check index
@@ -665,4 +641,3 @@ These are not checks; they define terms the checks rely on.
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |
-| BAL-01 | energy balance closes on non-reacting units | warning | validator — **deferred, not implemented (2026-08-14)** |
