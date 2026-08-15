@@ -24,6 +24,7 @@ if str(TESTS_ROOT) not in sys.path:
 import _helper_inventory as inv
 import _catalogue as cat
 import _documents as docs
+import _schema_constraints as sc
 
 
 class TestHelperInventory(unittest.TestCase):
@@ -544,6 +545,123 @@ class TestConformingDocument(unittest.TestCase):
         for check_id, _severity, status, _message in non_pass:
             with self.subTest(check_id=check_id):
                 self.assertEqual(status, 'skip')
+
+
+class TestSchemaConstraintLocators(unittest.TestCase):
+    """The enumeration of declarative constraints in sff_schema.json.
+
+    This is Tier 3's second coverage axis. Pinned because an enumerator that
+    misses a keyword lets a constraint enter the schema untested while the tier
+    still reports complete coverage.
+    """
+
+    def test_all_eleven_keywords_are_tracked(self):
+        """
+        Spec §3 names the keyword set Tier 3 must cover.
+
+        Expected: KEYWORDS is exactly required, enum, type, pattern, minimum,
+        maximum, exclusiveMinimum, minLength, minItems, anyOf,
+        additionalProperties.
+        """
+        self.assertEqual(set(sc.KEYWORDS), {
+            'required', 'enum', 'type', 'pattern', 'minimum', 'maximum',
+            'exclusiveMinimum', 'minLength', 'minItems', 'anyOf',
+            'additionalProperties'})
+
+    def test_locator_count_matches_the_measured_schema(self):
+        """
+        The constraint count, measured 2026-08-15 against schema v0.0.12.
+
+        Expected: 265 locators. A change means the schema gained or lost a
+        constraint; update this number in the same commit as the schema edit.
+        """
+        self.assertEqual(len(sc.locators()), 265)
+
+    def test_keyword_breakdown_matches_the_measured_schema(self):
+        """
+        Per-keyword counts, measured 2026-08-15.
+
+        Expected: type 156, required 76, exclusiveMinimum 6, minimum 6,
+        maximum 5, pattern 4, anyOf 3, minItems 3, additionalProperties 3,
+        minLength 2, enum 1.
+        """
+        import collections
+        counts = collections.Counter(loc.keyword for loc in sc.locators())
+        self.assertEqual(dict(counts), {
+            'type': 156, 'required': 76, 'exclusiveMinimum': 6, 'minimum': 6,
+            'maximum': 5, 'pattern': 4, 'anyOf': 3, 'minItems': 3,
+            'additionalProperties': 3, 'minLength': 2, 'enum': 1})
+
+    def test_a_known_catalogue_constraint_is_located(self):
+        """
+        STR-11's exclusiveMinimum on stream pressure must be enumerated, and its
+        instance pointer must address the conforming document's field.
+
+        Expected: exactly one locator with keyword 'exclusiveMinimum' whose
+        instance_pointer is '/streams/0/stream_properties/pressure'.
+        """
+        matches = [l for l in sc.locators()
+                   if l.keyword == 'exclusiveMinimum'
+                   and l.instance_pointer == '/streams/0/stream_properties/pressure']
+        self.assertEqual(len(matches), 1)
+
+    def test_locator_ids_are_unique(self):
+        """
+        The id is the token a Tier 3 class declares in SCHEMA_CONSTRAINTS; a
+        collision would let one claim silently satisfy two constraints.
+
+        Expected: locator_id() yields 265 distinct strings.
+        """
+        ids = [sc.locator_id(l) for l in sc.locators()]
+        self.assertEqual(len(set(ids)), len(ids))
+
+    def test_violating_value_for_exclusive_minimum_is_the_boundary(self):
+        """
+        exclusiveMinimum: 0 is violated by exactly 0, which is also the value
+        STR-11's own test uses.
+
+        Expected: violating_value for the stream-pressure locator is 0.
+        """
+        loc = [l for l in sc.locators()
+               if l.instance_pointer == '/streams/0/stream_properties/pressure'
+               and l.keyword == 'exclusiveMinimum'][0]
+        self.assertEqual(sc.violating_value(loc), 0)
+
+    def test_violating_value_for_required_is_the_delete_sentinel(self):
+        """
+        A `required` constraint is violated by removing the property.
+
+        Expected: violating_value returns _documents.DELETE for any required
+        locator.
+        """
+        import _documents
+        loc = [l for l in sc.locators() if l.keyword == 'required'][0]
+        self.assertIs(sc.violating_value(loc), _documents.DELETE)
+
+    def test_anyof_cannot_be_synthesized(self):
+        """
+        anyOf and additionalProperties: false need a hand-written violation; the
+        enumerator must say so rather than guess.
+
+        Expected: violating_value raises CannotSynthesize for every anyOf
+        locator.
+        """
+        for loc in [l for l in sc.locators() if l.keyword == 'anyOf']:
+            with self.subTest(locator=sc.locator_id(loc)):
+                with self.assertRaises(sc.CannotSynthesize):
+                    sc.violating_value(loc)
+
+    def test_sweepable_and_unsweepable_partition_the_locators(self):
+        """
+        Every locator is either machine-sweepable or hand-claimed; none may fall
+        between, which is what would create a silent gap.
+
+        Expected: the two sets are disjoint and together account for all 265.
+        """
+        sweep = {sc.locator_id(l) for l in sc.sweepable()}
+        hand = {sc.locator_id(l) for l in sc.unsweepable()}
+        self.assertEqual(sweep & hand, set())
+        self.assertEqual(len(sweep | hand), len(sc.locators()))
 
 
 if __name__ == '__main__':
