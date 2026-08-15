@@ -983,6 +983,97 @@ def _check_utility_composition(ctx):  # UTIL-04
     return out or [_passed('UTIL-04', 'error', 'utilities')]
 
 
+#%% Checks -- quantity units (sff_checks.md section 6)
+
+def _alias_index(ctx):
+    """Map each alias -> list of quantity_units_global entry keys declaring it."""
+    idx = {}
+    for key, entry in ctx.qug.items():
+        if not isinstance(entry, dict):
+            continue
+        for alias in (entry.get('aliases') or []):
+            idx.setdefault(alias, []).append(key)
+    return idx
+
+
+def _check_quantity_unit_pairing(ctx):  # QU-01 (global side; per-object maps are
+                                        # covered by UNIT-02 / UNIT-03)
+    # Skipped when: never (sff_checks.md). Zero present quantity fields is a
+    # vacuous pass -- every one of zero fields is trivially resolvable.
+    present = _present_global_quantity_fields(ctx)
+    idx = _alias_index(ctx)
+    unresolved = sorted(f for f in present if f not in idx)
+    if unresolved:
+        return [_failed('QU-01', 'error',
+                        f'quantity field(s) with no quantity_units_global alias: '
+                        f'{unresolved}', 'quantity_units_global')]
+    return [_passed('QU-01', 'error', 'quantity_units_global')]
+
+
+def _iter_quantity_unit_strings(ctx):
+    """Yield (location, unit_string, empty_allowed) for every quantity-unit
+    string. Empty '' is permitted only for design-result entries (schema-
+    documented dimensionless sentinel)."""
+    for key, entry in ctx.qug.items():
+        if isinstance(entry, dict) and 'quantity_units' in entry:
+            yield f'quantity_units_global.{key}', entry['quantity_units'], False
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            continue
+        for k, v in (u.get('quantity_units_for_design_results') or {}).items():
+            yield f"{u.get('id')}.design['{k}']", v, True
+    for u in ctx.utilities_list:
+        if 'quantity_units_for_utility_results' in u:
+            yield (f"{u.get('id')}.utility_results",
+                   u['quantity_units_for_utility_results'], False)
+
+
+def _check_quantity_unit_strings_parseable(ctx):  # QU-02
+    # Skipped when: never (sff_checks.md). Zero quantity-unit strings present
+    # is a vacuous pass.
+    bad = []
+    for loc, s, empty_ok in _iter_quantity_unit_strings(ctx):
+        if s == '' and empty_ok:
+            continue
+        if not isinstance(s, str) or s == '' or not _unit_is_parseable(s):
+            bad.append(f'{loc}={s!r}')
+    if bad:
+        return [_failed('QU-02', 'error',
+                        f'empty/unparseable quantity-unit string(s): {bad}',
+                        'quantity_units_global')]
+    return [_passed('QU-02', 'error', 'quantity_units_global')]
+
+
+def _check_alias_uniqueness(ctx):  # QU-03
+    # Skipped when: never (sff_checks.md). An empty registry has no
+    # ambiguous aliases, so this is a genuine (vacuous) pass.
+    idx = _alias_index(ctx)
+    ambiguous = {a: keys for a, keys in idx.items() if len(keys) > 1}
+    if ambiguous:
+        return [_failed('QU-03', 'error',
+                        f'alias(es) under multiple quantity_units_global entries: '
+                        f'{ambiguous}', 'quantity_units_global')]
+    return [_passed('QU-03', 'error', 'quantity_units_global')]
+
+
+def _check_unused_aliases(ctx):  # QU-04 (entry granularity -- see the plan note)
+    # Skipped when: never (sff_checks.md). An empty registry has no unused
+    # entries, so this is a genuine (vacuous) pass, not a skip.
+    present = _present_global_quantity_fields(ctx)
+    unused = []
+    for key, entry in ctx.qug.items():
+        if not isinstance(entry, dict):
+            continue
+        aliases = entry.get('aliases') or []
+        if not any(a in present for a in aliases):
+            unused.append(key)
+    if unused:
+        return [_failed('QU-04', 'info',
+                        f'quantity_units_global entry(ies) whose aliases match no '
+                        f'present field: {sorted(unused)}', 'quantity_units_global')]
+    return [_passed('QU-04', 'info', 'quantity_units_global')]
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
