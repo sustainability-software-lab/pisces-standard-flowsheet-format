@@ -796,6 +796,116 @@ def _check_mass_molar_flow_consistency(ctx):  # STR-10 (material balance (ii))
     return [_passed('STR-10', 'warning', 'streams')]
 
 
+#%% Checks -- chemicals (sff_checks.md section 4)
+
+def _check_chemical_id_index_uniqueness(ctx):  # CHEM-01
+    dup_id = _duplicates(c.get('id') for c in ctx.chemicals if isinstance(c, dict))
+    dup_idx = _duplicates(c['index'] for c in ctx.chemicals
+                          if isinstance(c, dict) and 'index' in c)
+    problems = []
+    if dup_id:
+        problems.append(f'duplicate id(s): {sorted(dup_id)}')
+    if dup_idx:
+        problems.append(f'duplicate index(es): {sorted(dup_idx)}')
+    if problems:
+        return [_failed('CHEM-01', 'error', '; '.join(problems), 'chemicals')]
+    return [_passed('CHEM-01', 'error', 'chemicals')]
+
+
+def _check_formula_molar_mass_agreement(ctx):  # CHEM-03
+    bad, any_check = [], False
+    for c in ctx.chemicals:
+        if not isinstance(c, dict):
+            continue
+        formula, declared = c.get('formula'), c.get('molar_mass')
+        if not formula or not isinstance(declared, (int, float)):
+            continue
+        computed = _molar_mass_from_formula(formula)
+        if computed is None:
+            continue
+        any_check = True
+        if not _rel_close(computed, declared, TOL_MOLAR_MASS):
+            bad.append(f"{c.get('id')}: formula {computed:.6g} != declared "
+                       f"{declared:.6g}")
+    if not any_check:
+        return [_skipped('CHEM-03', 'warning',
+                         'no chemical has both a parseable formula and molar_mass',
+                         'chemicals')]
+    if bad:
+        return [_failed('CHEM-03', 'warning',
+                        f'formula/molar_mass disagree: {bad}', 'chemicals')]
+    return [_passed('CHEM-03', 'warning', 'chemicals')]
+
+
+def _reaction_uses_index_stoichiometry(reaction, ctx):
+    """True if a reaction's stoichiometry is index-based: an array, or an object
+    with a key that is not a chemical id (hence an index)."""
+    st = reaction.get('stoichiometry')
+    if isinstance(st, list):
+        return True
+    if isinstance(st, dict):
+        return any(k not in ctx.chem_by_id for k in st)
+    return False
+
+
+def _check_index_coverage(ctx):  # CHEM-04
+    uses_index = any(_reaction_uses_index_stoichiometry(r, ctx)
+                     for _, r in _iter_reactions(ctx))
+    if not uses_index:
+        return [_skipped('CHEM-04', 'error',
+                         'no reaction uses index-based stoichiometry', 'chemicals')]
+    missing = [c.get('id') for c in ctx.chemicals
+               if isinstance(c, dict) and 'index' not in c]
+    if missing:
+        return [_failed('CHEM-04', 'error',
+                        f'index-based stoichiometry present but chemical(s) lack '
+                        f'index: {missing}', 'chemicals')]
+    indices = sorted(c['index'] for c in ctx.chemicals if isinstance(c, dict))
+    if indices != list(range(len(ctx.chemicals))):
+        return [_failed('CHEM-04', 'error',
+                        f'chemical indices are not a 0..n-1 set: {indices}',
+                        'chemicals')]
+    return [_passed('CHEM-04', 'error', 'chemicals')]
+
+
+def _referenced_chemical_ids(ctx):
+    """The set of chemical ids referenced by any composition or reaction."""
+    refs = set()
+    for s in ctx.streams:
+        if isinstance(s, dict):
+            for comp in _stream_compositions(s):
+                for e in comp:
+                    if isinstance(e, dict):
+                        refs.add(e.get('component_name'))
+    for u in ctx.utilities_list:
+        for e in (u.get('composition') or []):
+            if isinstance(e, dict):
+                refs.add(e.get('component_name'))
+    for _, r in _iter_reactions(ctx):
+        if 'reactant' in r:
+            refs.add(r['reactant'])
+        eq = _parse_equation(r.get('equation', ''), ctx)
+        if eq:
+            refs.update(eq)
+        if 'stoichiometry' in r:
+            coeffs, _err = _stoich_to_coeffs(r['stoichiometry'], ctx)
+            if coeffs:
+                refs.update(coeffs)
+    return refs
+
+
+def _check_unused_chemicals(ctx):  # CHEM-05
+    if not ctx.chemicals:
+        return [_skipped('CHEM-05', 'info', 'no chemicals declared', 'chemicals')]
+    refs = _referenced_chemical_ids(ctx)
+    unused = [cid for cid in ctx.chem_by_id if cid not in refs]
+    if unused:
+        return [_failed('CHEM-05', 'info',
+                        f'chemical(s) referenced nowhere: {sorted(unused)}',
+                        'chemicals')]
+    return [_passed('CHEM-05', 'info', 'chemicals')]
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
