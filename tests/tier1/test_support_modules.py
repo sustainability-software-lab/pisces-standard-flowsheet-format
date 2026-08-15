@@ -547,6 +547,91 @@ class TestConformingDocument(unittest.TestCase):
                 self.assertEqual(status, 'skip')
 
 
+# The exact hand-claimed bucket, measured 2026-08-15 against schema v0.0.12.
+# Pinned as a *set*, not just a count: Task 15 requires every entry here to be
+# claimed by a hand-written test, and Task 14's generated sweep covers everything
+# not here. A locator drifting sweepable -> unsweepable would otherwise silently
+# shrink the sweep while the suite stayed green.
+#
+# Every entry falls in exactly one of three buckets, each justified in the fix
+# report accompanying this commit:
+#   * 40 whose instance pointer does not resolve in the conforming document (24
+#     of them the entirely-unpopulated `other_utilities` block, plus optional
+#     fields the compact document does not carry and the schema root's own
+#     `type`);
+#   * 11 in _schema_constraints.UNREJECTABLE -- real constraints whose
+#     single-field violation the schema does not reject (sibling `anyOf`
+#     branches, `if` conditions, `const` discriminators);
+#   *  5 whose violation cannot be synthesized mechanically (3 `anyOf`,
+#     2 `additionalProperties: false`) despite resolving.
+_EXPECTED_UNSWEEPABLE = frozenset((
+    '/definitions/stream_phase/properties/total_volumetric_flow/type#type:"number"',
+    '/properties/chemicals/items/allOf/0/if/properties/included_in_thermo/const#const:true',
+    '/properties/chemicals/items/allOf/1/if/properties/included_in_thermo/const#const:false',
+    '/properties/chemicals/items/allOf/1/then/required#required:molar_mass',
+    '/properties/metadata/additionalProperties/type#type:"string"',
+    '/properties/metadata/properties/reproducibility/properties/environment/properties/path/type#type:"string"',
+    '/properties/metadata/properties/reproducibility/properties/flowsheet_model_package/allOf/0/if/required#required:commit',
+    '/properties/metadata/properties/reproducibility/properties/flowsheet_model_package/anyOf#anyOf:2',
+    '/properties/metadata/properties/reproducibility/properties/flowsheet_model_package/anyOf/0/required#required:commit',
+    '/properties/metadata/properties/reproducibility/properties/flowsheet_model_package/anyOf/1/required#required:version',
+    '/properties/metadata/properties/reproducibility/properties/load_script/properties/path/type#type:"string"',
+    '/properties/metadata/properties/reproducibility/properties/simulator_package/allOf/0/if/required#required:commit',
+    '/properties/metadata/properties/reproducibility/properties/simulator_package/anyOf#anyOf:2',
+    '/properties/metadata/properties/reproducibility/properties/simulator_package/anyOf/0/required#required:commit',
+    '/properties/metadata/properties/reproducibility/properties/simulator_package/anyOf/1/required#required:version',
+    '/properties/streams/items/properties/stream_properties/properties/enthalpy_flow/type#type:"number"',
+    '/properties/streams/items/properties/stream_properties/properties/total_volumetric_flow/type#type:"number"',
+    '/properties/units/items/additionalProperties#additionalProperties:false',
+    '/properties/units/items/properties/reactions/items/anyOf#anyOf:2',
+    '/properties/units/items/properties/reactions/items/anyOf/0/required#required:equation',
+    '/properties/units/items/properties/reactions/items/anyOf/1/required#required:stoichiometry',
+    '/properties/units/items/properties/thermo_property_package/additionalProperties/type#type:"string"',
+    '/properties/units/items/properties/thermo_property_package/properties/PCF/type#type:"string"',
+    '/properties/units/items/properties/thermo_property_package/properties/gamma/type#type:"string"',
+    '/properties/units/items/properties/thermo_property_package/properties/mixture/type#type:"string"',
+    '/properties/units/items/properties/thermo_property_package/properties/phi/type#type:"string"',
+    '/properties/units/items/properties/utility_production_results/additionalProperties/type#type:"number"',
+    '/properties/units/items/properties/utility_production_results/type#type:"object"',
+    '/properties/utilities/properties/heat_utilities/items/additionalProperties#additionalProperties:false',
+    '/properties/utilities/properties/heat_utilities/items/properties/temperature_limit/type#type:"number"',
+    '/properties/utilities/properties/other_utilities/items/additionalProperties#additionalProperties:false',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/properties/component_name/type#type:"string"',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/properties/mol_fraction/maximum#maximum:1',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/properties/mol_fraction/minimum#minimum:0',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/properties/mol_fraction/type#type:"number"',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/properties/phase/type#type:"string"',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/required#required:component_name',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/required#required:mol_fraction',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/items/type#type:"object"',
+    '/properties/utilities/properties/other_utilities/items/properties/composition/type#type:"array"',
+    '/properties/utilities/properties/other_utilities/items/properties/id/type#type:"string"',
+    '/properties/utilities/properties/other_utilities/items/properties/pressure/exclusiveMinimum#exclusiveMinimum:0',
+    '/properties/utilities/properties/other_utilities/items/properties/pressure/type#type:"number"',
+    '/properties/utilities/properties/other_utilities/items/properties/price/type#type:"number"',
+    '/properties/utilities/properties/other_utilities/items/properties/quantity_units_for_utility_results/type#type:"string"',
+    '/properties/utilities/properties/other_utilities/items/properties/temperature/exclusiveMinimum#exclusiveMinimum:0',
+    '/properties/utilities/properties/other_utilities/items/properties/temperature/type#type:"number"',
+    '/properties/utilities/properties/other_utilities/items/required#required:composition',
+    '/properties/utilities/properties/other_utilities/items/required#required:id',
+    '/properties/utilities/properties/other_utilities/items/required#required:pressure',
+    '/properties/utilities/properties/other_utilities/items/required#required:quantity_units_for_utility_results',
+    '/properties/utilities/properties/other_utilities/items/required#required:temperature',
+    '/properties/utilities/properties/other_utilities/items/type#type:"object"',
+    '/properties/utilities/properties/other_utilities/type#type:"array"',
+    '/properties/utilities/properties/power_utilities/items/additionalProperties/type#type:"number"',
+    '/type#type:"object"',
+))
+
+
+def _schema_validator():
+    """Return a Draft-07 validator bound to the real committed schema."""
+    import json
+    import jsonschema
+    schema = json.loads(sc.SCHEMA_PATH.read_text(encoding='utf-8'))
+    return jsonschema.validators.validator_for(schema)(schema)
+
+
 class TestSchemaConstraintLocators(unittest.TestCase):
     """The enumeration of declarative constraints in sff_schema.json.
 
@@ -555,42 +640,128 @@ class TestSchemaConstraintLocators(unittest.TestCase):
     still reports complete coverage.
     """
 
-    def test_all_eleven_keywords_are_tracked(self):
+    def test_all_fourteen_keywords_are_tracked(self):
         """
-        Spec §3 names the keyword set Tier 3 must cover.
+        The keyword set Tier 3 must cover: every keyword sff_schema.json uses to
+        constrain an instance. `const`, `uniqueItems` and `minProperties` were
+        added 2026-08-15 -- they were real constraints in the schema that the
+        original eleven-keyword tuple silently dropped.
 
-        Expected: KEYWORDS is exactly required, enum, type, pattern, minimum,
-        maximum, exclusiveMinimum, minLength, minItems, anyOf,
-        additionalProperties.
+        Expected: KEYWORDS is exactly required, enum, const, type, pattern,
+        minimum, maximum, exclusiveMinimum, minLength, minItems, uniqueItems,
+        minProperties, anyOf, additionalProperties.
         """
         self.assertEqual(set(sc.KEYWORDS), {
-            'required', 'enum', 'type', 'pattern', 'minimum', 'maximum',
-            'exclusiveMinimum', 'minLength', 'minItems', 'anyOf',
-            'additionalProperties'})
+            'required', 'enum', 'const', 'type', 'pattern', 'minimum',
+            'maximum', 'exclusiveMinimum', 'minLength', 'minItems',
+            'uniqueItems', 'minProperties', 'anyOf', 'additionalProperties'})
+
+    def test_no_constraining_keyword_is_left_unmodeled(self):
+        """
+        A constraining keyword outside KEYWORDS would enter the schema with no
+        locator and therefore no test. The walk reports such keywords instead of
+        skipping them, so this test is what makes a fifteenth one visible.
+
+        Expected: unmodeled_keywords() is empty.
+        """
+        self.assertEqual(sc.unmodeled_keywords(), ())
 
     def test_locator_count_matches_the_measured_schema(self):
         """
-        The constraint count, measured 2026-08-15 against schema v0.0.12.
+        The constraint count, re-measured 2026-08-15 against schema v0.0.12
+        after the walk learned to descend into schema-valued
+        `additionalProperties`, to follow `$ref`, and to track four more
+        keywords.
 
-        Expected: 265 locators. A change means the schema gained or lost a
+        Expected: 278 locators. A change means the schema gained or lost a
         constraint; update this number in the same commit as the schema edit.
         """
-        self.assertEqual(len(sc.locators()), 265)
+        self.assertEqual(len(sc.locators()), 278)
 
     def test_keyword_breakdown_matches_the_measured_schema(self):
         """
-        Per-keyword counts, measured 2026-08-15.
+        Per-keyword counts, re-measured 2026-08-15.
 
-        Expected: type 156, required 76, exclusiveMinimum 6, minimum 6,
+        Expected: type 165, required 76, exclusiveMinimum 6, minimum 6,
         maximum 5, pattern 4, anyOf 3, minItems 3, additionalProperties 3,
-        minLength 2, enum 1.
+        const 2, minLength 2, enum 1, minProperties 1, uniqueItems 1.
         """
         import collections
         counts = collections.Counter(loc.keyword for loc in sc.locators())
         self.assertEqual(dict(counts), {
-            'type': 156, 'required': 76, 'exclusiveMinimum': 6, 'minimum': 6,
+            'type': 165, 'required': 76, 'exclusiveMinimum': 6, 'minimum': 6,
             'maximum': 5, 'pattern': 4, 'anyOf': 3, 'minItems': 3,
-            'additionalProperties': 3, 'minLength': 2, 'enum': 1})
+            'additionalProperties': 3, 'const': 2, 'minLength': 2, 'enum': 1,
+            'minProperties': 1, 'uniqueItems': 1})
+
+    def test_type_locator_count_matches_the_schema_text(self):
+        """
+        Every `"type":` key in the raw schema text is a value-type constraint,
+        so the walk's `type` count must equal the literal count. This is the
+        assertion that caught nine constraints hiding behind schema-valued
+        `additionalProperties` (purchase_costs, installed_costs, the two
+        utility_*_results maps, package_versions, ...).
+
+        Expected: the number of `type` locators equals the number of `"type":`
+        occurrences in sff_schema.json (165).
+        """
+        text = sc.SCHEMA_PATH.read_text(encoding='utf-8')
+        self.assertEqual(len([l for l in sc.locators() if l.keyword == 'type']),
+                         text.count('"type":'))
+
+    def test_additional_properties_value_constraints_are_enumerated(self):
+        """
+        A schema-valued `additionalProperties` constrains every key the sibling
+        `properties` does not name -- "purchase costs must be numbers" is
+        exactly such a constraint, and a downstream consumer relies on it.
+
+        Expected: the `type` locator under
+        /properties/units/items/properties/purchase_costs/additionalProperties
+        exists and addresses the conforming document's own cost entry.
+        """
+        matches = [l for l in sc.locators()
+                   if l.schema_pointer == ('/properties/units/items/properties'
+                                           '/purchase_costs/additionalProperties'
+                                           '/type')]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].instance_pointer,
+                         '/units/0/purchase_costs/Heat exchanger')
+
+    def test_a_ref_target_constraint_carries_a_use_site_instance_pointer(self):
+        """
+        `$ref` targets are reported under the definition's canonical schema
+        pointer -- so each is counted exactly once, however many use sites there
+        are -- but must still resolve to a real field, or all 24 constraints in
+        stream_phase and quantity_unit_entry are stranded in the hand-written
+        bucket for no reason.
+
+        Expected: stream_phase's `mol_fraction` maximum is enumerated once,
+        under /definitions/stream_phase/..., addressing the conforming
+        document's phase composition.
+        """
+        matches = [l for l in sc.locators()
+                   if l.schema_pointer == ('/definitions/stream_phase/properties'
+                                           '/composition/items/properties'
+                                           '/mol_fraction/maximum')]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(
+            matches[0].instance_pointer,
+            '/streams/0/stream_properties/phases/l/composition/0/mol_fraction')
+
+    def test_array_expansion_finds_a_field_populated_on_a_later_element(self):
+        """
+        Sweeping one array element is enough to prove a constraint fires, but
+        *which* element cannot be hardcoded: `price` is absent from
+        /streams/0 and present on /streams/1, so scoring index 0 alone would
+        falsely call the constraint unreachable.
+
+        Expected: the streams `price` type locator resolves to '/streams/1/price'.
+        """
+        matches = [l for l in sc.locators()
+                   if l.schema_pointer == ('/properties/streams/items/properties'
+                                           '/price/type')]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].instance_pointer, '/streams/1/price')
 
     def test_a_known_catalogue_constraint_is_located(self):
         """
@@ -608,9 +779,11 @@ class TestSchemaConstraintLocators(unittest.TestCase):
     def test_locator_ids_are_unique(self):
         """
         The id is the token a Tier 3 class declares in SCHEMA_CONSTRAINTS; a
-        collision would let one claim silently satisfy two constraints.
+        collision would let one claim silently satisfy two constraints. Following
+        `$ref` makes this load-bearing: a definition reached from twelve use
+        sites must still yield one id per constraint.
 
-        Expected: locator_id() yields 265 distinct strings.
+        Expected: locator_id() yields 278 distinct strings.
         """
         ids = [sc.locator_id(l) for l in sc.locators()]
         self.assertEqual(len(set(ids)), len(ids))
@@ -651,17 +824,142 @@ class TestSchemaConstraintLocators(unittest.TestCase):
                 with self.assertRaises(sc.CannotSynthesize):
                     sc.violating_value(loc)
 
+    def test_unsynthesizable_cases_raise_cannot_synthesize_not_a_stray_error(self):
+        """
+        `violating_value` is the sweep's only documented failure mode; a
+        ValueError from an unresolved pointer or a KeyError from an unmodeled
+        type name would crash the generator instead of routing the locator to
+        the hand-written bucket. Both paths are unreachable in today's schema
+        and are exactly the paths a schema edit would hit first.
+
+        Expected: CannotSynthesize for a minItems/uniqueItems/minProperties
+        locator with no instance pointer, and for an unmodeled type name.
+        """
+        for keyword, detail in (('minItems', '2'), ('uniqueItems', 'true'),
+                                ('minProperties', '2')):
+            loc = sc.Locator('/fake', keyword, detail, '')
+            with self.subTest(keyword=keyword):
+                with self.assertRaises(sc.CannotSynthesize):
+                    sc.violating_value(loc)
+        with self.assertRaises(sc.CannotSynthesize):
+            sc.violating_value(sc.Locator('/fake', 'type', '"nonesuch"',
+                                          '/metadata/TEA_year'))
+
     def test_sweepable_and_unsweepable_partition_the_locators(self):
         """
         Every locator is either machine-sweepable or hand-claimed; none may fall
         between, which is what would create a silent gap.
 
-        Expected: the two sets are disjoint and together account for all 265.
+        Expected: the two sets are disjoint and together account for all 278.
         """
         sweep = {sc.locator_id(l) for l in sc.sweepable()}
         hand = {sc.locator_id(l) for l in sc.unsweepable()}
         self.assertEqual(sweep & hand, set())
         self.assertEqual(len(sweep | hand), len(sc.locators()))
+
+    def test_the_split_sizes_and_the_hand_claimed_set_are_pinned(self):
+        """
+        Pinning only the partition would let a locator migrate sweepable ->
+        unsweepable with the suite still green and the generated sweep quietly
+        one test smaller. Task 15 also claims each unsweepable id by hand, so
+        the set itself -- not just its size -- is the contract.
+
+        Expected: 222 sweepable, and the unsweepable ids are exactly
+        _EXPECTED_UNSWEEPABLE (56 entries).
+        """
+        self.assertEqual(len(sc.sweepable()), 222)
+        self.assertEqual({sc.locator_id(l) for l in sc.unsweepable()},
+                         set(_EXPECTED_UNSWEEPABLE))
+
+    def test_the_conforming_document_is_accepted_unmutated(self):
+        """
+        Every matched pair reads "conforming accepted, mutated rejected". The
+        first half has to be true independently, or a rejection proves nothing
+        about the mutation.
+
+        Expected: the Draft-07 validator reports zero errors on
+        conforming_document().
+        """
+        errors = list(_schema_validator().iter_errors(docs.conforming_document()))
+        self.assertEqual([e.message for e in errors], [])
+
+    def test_every_sweepable_violation_is_rejected_by_its_own_keyword(self):
+        """
+        `sweepable()` decides statically, from UNREJECTABLE, and never runs the
+        validator -- otherwise Task 14's "the violation is rejected" assertion
+        would be true by construction. This test is where that claim is actually
+        checked, once, against the real schema: each single-field violation must
+        be rejected, and rejected *citing its own keyword*, or the generated
+        sweep would prove something other than what it says.
+
+        One locator legitimately trips two keywords: the `roles` item
+        `type: "string"` sits beside an `enum` of six strings, so no string can
+        violate the type and the synthesized 12345 fails both. `type` is still
+        among the cited keywords, which is what is asserted.
+
+        Expected: for all 222 sweepable locators the mutated document has at
+        least one error, and the locator's keyword is among the cited
+        validators.
+        """
+        import _documents
+        validator = _schema_validator()
+        for loc in sc.sweepable():
+            with self.subTest(locator=sc.locator_id(loc)):
+                doc = _documents.mutated(loc.instance_pointer,
+                                         sc.violating_value(loc))
+                cited = {e.validator for e in validator.iter_errors(doc)}
+                self.assertTrue(cited, 'violation was not rejected at all')
+                self.assertIn(loc.keyword, cited)
+
+    def test_every_unrejectable_entry_is_a_real_locator_that_is_not_rejected(self):
+        """
+        UNREJECTABLE is hand-maintained, so it can go stale in two directions: an
+        id that no longer names a locator is dead bookkeeping, and an id whose
+        violation the schema *does* now reject is a constraint wrongly kept out
+        of the generated sweep.
+
+        Expected: every UNREJECTABLE id names a current locator with a resolvable
+        instance pointer, and its synthesized violation leaves the document
+        valid.
+        """
+        import _documents
+        validator = _schema_validator()
+        by_id = {sc.locator_id(l): l for l in sc.locators()}
+        for lid in sorted(sc.UNREJECTABLE):
+            with self.subTest(locator=lid):
+                self.assertIn(lid, by_id, 'stale UNREJECTABLE entry')
+                loc = by_id[lid]
+                self.assertTrue(loc.instance_pointer)
+                doc = _documents.mutated(loc.instance_pointer,
+                                         sc.violating_value(loc))
+                errors = [e.message for e in validator.iter_errors(doc)]
+                self.assertEqual(errors, [])
+
+    def test_every_unsweepable_locator_has_a_holding_reason(self):
+        """
+        A locator excluded from the sweep for no stated reason is an untracked
+        coverage hole. There are exactly three admissible reasons.
+
+        Expected: each unsweepable locator either has no resolvable instance
+        pointer, or is listed in UNREJECTABLE, or raises CannotSynthesize --
+        and the three buckets account for all 56 (40 / 11 / 5).
+        """
+        import collections
+        reasons = collections.Counter()
+        for loc in sc.unsweepable():
+            lid = sc.locator_id(loc)
+            with self.subTest(locator=lid):
+                if not loc.instance_pointer:
+                    reasons['unresolved_pointer'] += 1
+                elif lid in sc.UNREJECTABLE:
+                    reasons['unrejectable'] += 1
+                else:
+                    with self.assertRaises(sc.CannotSynthesize):
+                        sc.violating_value(loc)
+                    reasons['cannot_synthesize'] += 1
+        self.assertEqual(dict(reasons), {'unresolved_pointer': 40,
+                                         'unrejectable': 11,
+                                         'cannot_synthesize': 5})
 
 
 if __name__ == '__main__':
