@@ -34,7 +34,7 @@ _HEADING = re.compile(r'^###\s+(?P<id>[A-Z]+-\d+)\s+—\s+(?P<title>.+?)\s*$')
 _ANY_HEADING = re.compile(r'^#{2,}\s')
 _FIELD = re.compile(r'^-\s+\*\*(?P<name>[^:*]+):\*\*\s*(?P<text>.*)$')
 _LEVEL = re.compile(r'`(error|warning|info)`')
-_ENFORCEMENT_CLAUSE_SEP = re.compile(r'\s\+\s')
+_ENFORCEMENT_CLAUSE_SEP = re.compile(r'(?<=\))\s+\+\s+')
 _ENFORCEMENT_KIND = re.compile(r'^(schema|validator)\b', re.IGNORECASE)
 
 _CACHE = {}
@@ -119,7 +119,7 @@ def check_ids():
     return tuple(sorted(catalogue()))
 
 
-def _enforcement_kinds(enforcement_text):
+def _enforcement_kinds(enforcement_text, check_id=None):
     """
     Return the enforcement-location keywords declared at the head of an
     Enforcement field.
@@ -131,23 +131,51 @@ def _enforcement_kinds(enforcement_text):
     with "(JSON **Schema** cannot express ...)". Neither record is
     schema-enforced. The catalogue's own notation for dual enforcement is
     ``schema (...) + validator (...)``, so restricting the match to the first
-    word of each literal ``" + "``-separated clause recovers exactly the
-    declared designations and nothing incidental.
+    word of each clause recovers exactly the declared designations and
+    nothing incidental.
+
+    The clause separator is anchored on a closing parenthesis immediately
+    before the ``+`` (``_ENFORCEMENT_CLAUSE_SEP``), not on a bare
+    whitespace-padded ``+``: the catalogue's dual-enforcement notation always
+    closes the first clause's parenthetical before the ``+`` (e.g.
+    ``schema (narrowing — ...) + validator (...)``), whereas MET-04's
+    Enforcement text contains an arithmetic ``year + 1`` that is not a clause
+    boundary at all -- it sits mid-sentence with no preceding ``)``. Anchoring
+    on ``)`` is therefore a structural signal, not a coincidence: it is true
+    of every genuine dual-enforcement record and false of every incidental
+    ``+``.
+
+    A field with no clause whose leading word is ``schema`` or ``validator``
+    is not silently unclassified -- it raises, because a record that
+    classifies as neither would otherwise vanish from both
+    `schema_enforced_ids` and `validator_enforced_ids` without any signal,
+    silently narrowing what the Tier 3/4 coverage meta-tests require.
 
     Parameters
     ----------
     enforcement_text : str
+    check_id : str, optional
+        Included in the raised message to identify the offending record.
 
     Returns
     -------
     set of str
-        Subset of ``{'schema', 'validator'}``.
+        Non-empty subset of ``{'schema', 'validator'}``.
+
+    Raises
+    ------
+    ValueError
+        If no clause's leading word is ``schema`` or ``validator``.
     """
     kinds = set()
     for clause in _ENFORCEMENT_CLAUSE_SEP.split(enforcement_text):
         match = _ENFORCEMENT_KIND.match(clause.strip())
         if match:
             kinds.add(match.group(1).lower())
+    if not kinds:
+        raise ValueError(
+            f'{check_id or "<unknown>"}: Enforcement text has no clause '
+            f'designating schema or validator: {enforcement_text!r}')
     return kinds
 
 
@@ -162,7 +190,7 @@ def schema_enforced_ids():
     """
     return tuple(sorted(
         cid for cid, rec in catalogue().items()
-        if 'schema' in _enforcement_kinds(rec.enforcement)))
+        if 'schema' in _enforcement_kinds(rec.enforcement, cid)))
 
 
 def validator_enforced_ids():
@@ -177,7 +205,7 @@ def validator_enforced_ids():
     """
     return tuple(sorted(
         cid for cid, rec in catalogue().items()
-        if 'validator' in _enforcement_kinds(rec.enforcement)))
+        if 'validator' in _enforcement_kinds(rec.enforcement, cid)))
 
 
 def severity_of(check_id):

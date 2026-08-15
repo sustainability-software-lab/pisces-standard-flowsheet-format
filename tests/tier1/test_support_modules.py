@@ -243,6 +243,54 @@ class TestCatalogueParser(unittest.TestCase):
                 self.assertTrue(record.severity)
                 self.assertTrue(record.enforcement)
 
+    def test_every_check_id_is_schema_or_validator_enforced(self):
+        """
+        Union invariant: no catalogue ID is classified into neither set.
+
+        A classification bug that drops a record from both
+        `schema_enforced_ids()` and `validator_enforced_ids()` (rather than
+        raising) would silently narrow what the Tier 3/4 coverage meta-tests
+        require, with no test noticing. Pinning the union against the full ID
+        set catches that even if a future record's Enforcement wording
+        happens to slip past `_enforcement_kinds` without raising.
+
+        Expected: the union of schema_enforced_ids() and
+        validator_enforced_ids() equals check_ids() exactly (42 IDs, no
+        fewer, no extras).
+        """
+        union = set(cat.schema_enforced_ids()) | set(cat.validator_enforced_ids())
+        self.assertEqual(union, set(cat.check_ids()))
+
+    def test_unclassifiable_enforcement_text_raises(self):
+        """
+        `_enforcement_kinds` must fail loudly, not vanish the record, when no
+        clause's leading word is `schema` or `validator`.
+
+        Expected: calling `_enforcement_kinds` directly on prose that never
+        leads a clause with either keyword (e.g. "Enforced through the
+        schema layer.", where "schema" is not the first word) raises
+        ValueError.
+        """
+        with self.assertRaises(ValueError):
+            cat._enforcement_kinds('Enforced through the schema layer.', 'FAKE-00')
+
+    def test_arithmetic_plus_does_not_split_the_enforcement_clause(self):
+        """
+        MET-04's Enforcement text contains "...current calendar year + 1...",
+        an arithmetic plus, not the catalogue's dual-enforcement separator.
+        The separator is anchored on a closing parenthesis immediately before
+        the `+` (the catalogue's actual dual-enforcement notation is
+        `schema (...) + validator (...)`), which is structurally absent here
+        since "year" has no preceding `)`.
+
+        Expected: `_enforcement_kinds` on MET-04's own enforcement text
+        returns exactly {'validator'}, not a set poisoned by an extra clause
+        starting with "1,".
+        """
+        text = cat.catalogue()['MET-04'].enforcement
+        self.assertIn('+', text)
+        self.assertEqual(cat._enforcement_kinds(text, 'MET-04'), {'validator'})
+
 
 if __name__ == '__main__':
     unittest.main()
