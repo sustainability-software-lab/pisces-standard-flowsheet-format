@@ -548,8 +548,10 @@ These are not checks; they define terms the checks rely on.
 - **Enforcement:** validator (`_check_alias_uniqueness`).
 
 ### QU-04 — no unused aliases
-- **Statement:** every alias listed in `quantity_units_global` appears as a quantity field
-  name somewhere in the flowsheet.
+- **Statement:** every `quantity_units_global` **entry** is used — i.e. at least one of its
+  `aliases` appears as a quantity field name somewhere in the flowsheet. (An entry
+  deliberately carries synonym aliases, e.g. `mass_flow`/`total_mass_flow`/`F_mass`; only
+  whole-entry disuse is flagged.)
 - **Rationale:** An alias that names no present field is a stale registry entry — the
   "quantity units actually being used" requirement, in its reverse direction.
 - **Scope:** `quantity_units_global[].aliases` ↔ quantity field names in use.
@@ -602,6 +604,13 @@ These are not checks; they define terms the checks rely on.
   power/energy-rate that can be compared against enthalpy flow.
 - **Enforcement:** validator (`_check_energy_balance_nonreacting_units`).
 - **Tolerance:** `TOL_ENERGY`.
+- **Status (2026-08-14): deferred, not implemented.** Empirical check against the corn
+  reference corpus showed a naive per-unit enthalpy balance does not close (inconsistent
+  utility sign conventions; electrical/work duties not reflected in stream enthalpy;
+  heat-integration and reference-state effects at unit granularity), so BAL-01 would emit
+  persistent warnings against a clean reference file. Energy-balance validation needs a
+  model-aware design and is left to a future iteration; `TOL_ENERGY` is undefined until
+  then.
 
 ---
 
@@ -651,4 +660,4 @@ These are not checks; they define terms the checks rely on.
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |
-| BAL-01 | energy balance closes on non-reacting units | warning | validator |
+| BAL-01 | energy balance closes on non-reacting units | warning | validator — **deferred, not implemented (2026-08-14)** |

@@ -7,8 +7,13 @@
 # for license details.
 #
 # Tier 1: the validator foundation -- result model, _Context, and the
-# validate_flowsheet_against_SFF entry point (schema gate + empty check registry).
+# validate_flowsheet_against_SFF entry point's schema-gate/invalid-doc path.
 # Loads _validate.py by path so the heavy pisces_sff package need not import.
+# The positive (schema-valid AND fully checks-clean) case now needs the live
+# _CHECKS registry, whose QU-01/QU-02 require a populated quantity_units_global
+# parsed via thermosteam -- that case lives in Tier 2
+# (tests/tier2/test_validate_corpus_integration.py::TestMinimalValidDoc), not
+# here, to keep this file import-light.
 
 import importlib.util
 import json
@@ -83,14 +88,6 @@ class TestEntryPoint(unittest.TestCase):
         json.dump(doc, tmp)
         tmp.close()
         return tmp.name
-
-    def test_schema_valid_doc_is_valid(self):
-        path = self._write(minimal_doc())
-        is_valid, results = V.validate_flowsheet_against_SFF(path, str(SCHEMA_PATH))
-        self.assertTrue(is_valid)
-        schema_results = [r for r in results if r.check_id == "SCHEMA"]
-        self.assertEqual(len(schema_results), 1)
-        self.assertEqual(schema_results[0].status, "pass")
 
     def test_schema_invalid_doc_is_invalid(self):
         doc = minimal_doc()

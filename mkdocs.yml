@@ -18,6 +18,7 @@ nav:
   - Contributions: contributions.md
   - Extending: extending.md
   - Schema Reference: schema_reference.md
+  - Validation: validation.md
   - Full JSON Schema: full_schema.md
 
 extra_css:

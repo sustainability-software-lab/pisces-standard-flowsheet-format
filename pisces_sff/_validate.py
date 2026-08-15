@@ -1149,9 +1149,7 @@ def _xref_gate(results):  # XREF-01
                        'a referential check failed' if ref_fail else '', '<root>')
 
 
-# Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
-# and finalized in Task 12; empty here.
-_CHECKS = []
+# _CHECKS is defined at the end of this module, after all _check_* functions.
 
 # The constituent error-checks XREF-01 aggregates (see Task 11). Kept beside the
 # registry so the aggregate and its parts cannot drift.
@@ -1214,3 +1212,51 @@ def validate_flowsheet_against_SFF(json_file, schema_file=None):
     is_valid = not any(r.status == 'fail' and r.severity == 'error'
                        for r in results)
     return is_valid, results
+
+
+# Ordered registry of check(ctx) -> list[CheckResult], in sff_checks.md order.
+# The XREF-01 aggregate is NOT here -- it is computed from these results inside
+# validate_flowsheet_against_SFF (see _xref_gate).
+_CHECKS = [
+    # metadata
+    _check_metadata_stream_refs,             # MET-02
+    _check_metadata_role_agreement,          # MET-03
+    # units
+    _check_unit_id_uniqueness,               # UNIT-01
+    _check_utility_result_refs,              # UNIT-02
+    _check_design_result_units_pairing,      # UNIT-03
+    _check_reaction_reactant_refs,           # UNIT-04
+    _check_reaction_equation_stoichiometry_consistency,  # UNIT-05
+    _check_stoichiometry_wellformed,         # UNIT-06
+    _check_unit_connectivity,                # UNIT-07
+    # streams: referential / roles / zero-flow
+    _check_stream_id_uniqueness,             # STR-01
+    _check_stream_endpoint_refs,             # STR-02
+    _check_isolated_stream_empty,            # STR-03
+    _check_stream_topology_role,             # STR-04
+    _check_stream_role_topology_agreement,   # STR-05
+    _check_stream_designation_roles,         # STR-06
+    _check_composition_component_refs,       # STR-07
+    _check_zero_flow_consistency,            # STR-13
+    # streams: material balance
+    _check_fraction_sums,                    # STR-08
+    _check_phase_flow_sums,                  # STR-09
+    _check_mass_molar_flow_consistency,      # STR-10
+    # chemicals
+    _check_chemical_id_index_uniqueness,     # CHEM-01
+    _check_formula_molar_mass_agreement,     # CHEM-03
+    _check_index_coverage,                   # CHEM-04
+    _check_unused_chemicals,                 # CHEM-05
+    # utilities
+    _check_utility_id_uniqueness,            # UTIL-01
+    _check_unused_utilities,                 # UTIL-02
+    _check_utility_result_units_parseable,   # UTIL-03
+    _check_utility_composition,              # UTIL-04
+    # quantity units
+    _check_quantity_unit_pairing,            # QU-01
+    _check_quantity_unit_strings_parseable,  # QU-02
+    _check_alias_uniqueness,                 # QU-03
+    _check_unused_aliases,                   # QU-04
+    # cross-object
+    _check_boundary_streams_exist,           # GRAPH-01
+]
