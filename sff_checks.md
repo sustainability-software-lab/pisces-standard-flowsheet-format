@@ -21,12 +21,14 @@ another.
 > Scope note (physical checks): by deliberate decision, material-balance checking is
 > limited to **local, per-stream self-consistency** (fraction sums and mass/molar-flow
 > agreement). There is **no** cross-unit or system-wide total-mass closure, **no**
-> component balances, and **no** elemental/atom balances across reactions. There is
-> **no** energy-balance checking of any kind: an energy balance was catalogued and then
-> removed (2026-08-15) because a per-unit enthalpy balance does not close against a clean
-> reference flowsheet — inconsistent utility sign conventions, work duties not reflected in
-> stream enthalpy, and heat-integration/reference-state effects at unit granularity. Any
-> future energy check needs a model-aware design and a new ID.
+> component balances, and **no** elemental/atom balances across reactions.
+> Energy-balance checking is **currently out of scope**: an energy balance was
+> catalogued and then removed (2026-08-15) because a per-unit enthalpy balance does not
+> close against a clean reference flowsheet — inconsistent utility sign conventions, work
+> duties not reflected in stream enthalpy, and heat-integration/reference-state effects at
+> unit granularity. This is a matter of the design not being ready rather than the idea
+> being unwanted; if a model-aware approach emerges, an energy check can be catalogued
+> afresh with its own ID.
 
 ---
 

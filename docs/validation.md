@@ -36,6 +36,6 @@ the authoritative statement, rationale, and tolerance of each check.
 
 > Scope of physical checking: balance checking is limited to **local, per-stream
 > self-consistency** (fraction sums, phase-to-total flow agreement, and
-> mass ↔ molar-flow agreement). There is no cross-unit or system-wide mass
-> closure, no component or elemental balances, and **no energy-balance
-> checking**.
+> mass ↔ molar-flow agreement). Cross-unit and system-wide mass closure,
+> component and elemental balances, and energy-balance checking are all
+> **currently out of scope**.
