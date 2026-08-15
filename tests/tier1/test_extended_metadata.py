@@ -13,8 +13,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _export_stub  # noqa: E402
 
+# Install the fake simulator only for the duration of the _runner import, then
+# remove it from sys.modules again. _runner (via pisces_sff/__init__ -> _export)
+# binds the fakes into its own globals, so it keeps them; leaving them installed
+# would poison a later tier's real `import thermosteam` in the same pytest
+# process. Mirrors _export_stub.load_export()'s install/import/uninstall.
 _export_stub.install_biosteam_stubs()
-_runner = importlib.import_module("pisces_sff._runner")
+try:
+    _runner = importlib.import_module("pisces_sff._runner")
+finally:
+    _export_stub.uninstall_biosteam_stubs()
 load_extended_metadata = _runner.load_extended_metadata
 
 
@@ -98,9 +106,23 @@ class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
         return d
 
     def test_record_present_when_file_exists(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            d = self._model_dir(tmp, with_extended=True)
-            repro = _runner.build_reproducibility(d, _fixture_module())
+        """
+        build_reproducibility's resolved.package_versions calls
+        _installed_versions(), which falls back to a real `import biosteam` /
+        `import biorefineries` for any TRACKED_PACKAGES name with no dist-info
+        -- exactly how this repo's editable dev checkout resolves both. Without
+        a stub installed for the duration of the call, that fallback loads the
+        real simulator into sys.modules and re-triggers the same isolation
+        hazard the module-top fix above closes. Same install/uninstall pattern,
+        scoped to this call only.
+        """
+        _export_stub.install_biosteam_stubs()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                d = self._model_dir(tmp, with_extended=True)
+                repro = _runner.build_reproducibility(d, _fixture_module())
+        finally:
+            _export_stub.uninstall_biosteam_stubs()
         self.assertIn("extended_metadata", repro)
         rec = repro["extended_metadata"]
         self.assertEqual(rec["filename"], "extended_metadata.yaml")
@@ -109,9 +131,19 @@ class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
         self.assertEqual(len(rec["sha256"]), 64)
 
     def test_record_absent_when_file_missing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            d = self._model_dir(tmp, with_extended=False)
-            repro = _runner.build_reproducibility(d, _fixture_module())
+        """
+        Same isolation hazard as test_record_present_when_file_exists above:
+        build_reproducibility's package-version lookup falls back to a real
+        import of biosteam/biorefineries in this dev checkout, so the stub is
+        installed for the duration of the call only.
+        """
+        _export_stub.install_biosteam_stubs()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                d = self._model_dir(tmp, with_extended=False)
+                repro = _runner.build_reproducibility(d, _fixture_module())
+        finally:
+            _export_stub.uninstall_biosteam_stubs()
         self.assertNotIn("extended_metadata", repro)
         # The existing records are unaffected.
         self.assertIn("environment", repro)

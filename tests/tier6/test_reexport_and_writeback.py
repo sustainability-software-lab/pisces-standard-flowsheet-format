@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Tier 3: the full harness, including conda environment creation, driven through
+# Tier 6: the full harness, including conda environment creation, driven through
 # the same regenerate_corpus() function the deliberate corpus-regeneration
 # command uses -- but writing to a TEMP directory, so running this test never
 # touches the committed corpus.
@@ -8,7 +8,7 @@
 # a cache miss (tens of minutes) and then simulates. Run it with:
 #
 #     $env:SFF_TEST_E2E = "1"
-#     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier3/test_end_to_end_export.py -q
+#     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier6/test_reexport_and_writeback.py -q
 #
 # This is the ONLY tier in which the recipe's pins are what actually ran -- the
 # export happens inside the environment environment.yaml describes -- and
@@ -38,10 +38,10 @@ BASELINE_PATH = REPO_ROOT / "tests" / "baselines" / "corn_dry_grind_ethanol.json
 #: enough that a genuine model change fails.
 RTOL = 1e-4
 
-RUN_TIER_3 = os.environ.get("SFF_TEST_E2E") == "1"
+RUN_TIER_6 = os.environ.get("SFF_TEST_E2E") == "1"
 
 
-@unittest.skipUnless(RUN_TIER_3, "set SFF_TEST_E2E=1 to run (creates a conda environment)")
+@unittest.skipUnless(RUN_TIER_6, "set SFF_TEST_E2E=1 to run (creates a conda environment)")
 class TestEndToEndExport(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

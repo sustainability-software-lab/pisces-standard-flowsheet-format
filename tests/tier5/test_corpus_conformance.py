@@ -6,10 +6,13 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 #
-# Tier 2: the full validator over the committed corn corpus file. Runs every
-# check (QU-02 imports thermosteam; STR-10/CHEM-03 import chemicals), so gated on
-# SFF_TEST_BIOSTEAM=1. Asserts the reference corpus is clean at error severity and
-# that a deliberately-broken variant is caught.
+# Tier 5: validate every committed flowsheet in exported_flowsheets/ against the
+# quarantine manifest in tests/corpus_manifest.yaml.
+#
+# Always on, and it costs about 4 s: QU-02, UTIL-03 and CHEM-03 lazily import
+# thermosteam and chemicals (~3 s), and validating all 18 files takes ~1 s.
+# Gating it would hide corpus regressions behind an environment variable, which
+# is the opposite of what this tier is for.
 
 import copy
 import importlib.util
@@ -24,7 +27,6 @@ VALIDATE_PATH = REPO_ROOT / "pisces_sff" / "_validate.py"
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
 CORN_PATH = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
              / "bioindustrial_park" / "corn_dry_grind_ethanol.json")
-RUN = os.environ.get("SFF_TEST_BIOSTEAM") == "1"
 
 
 def load_validate_module():
@@ -35,7 +37,6 @@ def load_validate_module():
     return module
 
 
-@unittest.skipUnless(RUN, "set SFF_TEST_BIOSTEAM=1 (imports thermosteam/chemicals)")
 class TestCornCorpusIntegration(unittest.TestCase):
     def setUp(self):
         self.V = load_validate_module()
@@ -89,7 +90,6 @@ class TestCornCorpusIntegration(unittest.TestCase):
         self.assertEqual(by_id["XREF-01"], "fail")
 
 
-@unittest.skipUnless(RUN, "set SFF_TEST_BIOSTEAM=1 (imports thermosteam/chemicals)")
 class TestMinimalValidDoc(unittest.TestCase):
     def setUp(self):
         self.V = load_validate_module()

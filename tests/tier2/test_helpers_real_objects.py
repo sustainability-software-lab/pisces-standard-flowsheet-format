@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _small_system import build_small_system_and_tea  # noqa: E402
+from _real_system import build_small_system_and_tea  # noqa: E402
 
 RUN_TIER_2 = os.environ.get("SFF_TEST_BIOSTEAM") == "1"
 

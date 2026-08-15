@@ -20,8 +20,17 @@ _export = _export_stub.load_export()
 
 class TestStubKeepsBiosteamFake(unittest.TestCase):
     def test_biosteam_import_is_the_stub_not_the_real_package(self):
-        self.assertTrue(getattr(sys.modules["biosteam"], "_SFF_STUB", False))
-        self.assertTrue(getattr(sys.modules["thermosteam"], "_SFF_STUB", False))
+        # Checked against _export's own bound globals, not sys.modules:
+        # load_export() removes the fakes from sys.modules right after this
+        # import completes (so a later tier's real `import thermosteam` is not
+        # poisoned -- see _export_stub.py), but _export keeps its own
+        # references to the fake classes/module bound at import time. Whether
+        # sys.modules still carries the stub by the time this test body runs
+        # depends on what else the process has done since, so that would be an
+        # order-dependent check; _export's own globals are not.
+        self.assertNotEqual(getattr(_export.Reaction, "__module__", ""),
+                            "thermosteam")
+        self.assertTrue(getattr(_export.bst, "_SFF_STUB", False))
 
 
 class TestFormatName(unittest.TestCase):
