@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 
 TESTS_ROOT = Path(__file__).resolve().parents[1]
+TIER1_DIR = Path(__file__).resolve().parent
 if str(TESTS_ROOT) not in sys.path:
     sys.path.insert(0, str(TESTS_ROOT))
 
@@ -25,6 +26,7 @@ import _helper_inventory as inv
 import _catalogue as cat
 import _documents as docs
 import _schema_constraints as sc
+import _docstrings as ds
 
 
 class TestHelperInventory(unittest.TestCase):
@@ -960,6 +962,183 @@ class TestSchemaConstraintLocators(unittest.TestCase):
         self.assertEqual(dict(reasons), {'unresolved_pointer': 40,
                                          'unrejectable': 11,
                                          'cannot_synthesize': 5})
+
+
+class TestDocstringIntrospection(unittest.TestCase):
+    """The introspection behind every tier's docstring meta-test.
+
+    Pinned because a walker that finds no classes reports zero offences, which
+    reads exactly like full compliance.
+    """
+
+    def test_it_finds_the_test_classes_in_this_tier(self):
+        """
+        The walker must actually reach a tier's TestCase subclasses.
+
+        Expected: iter_test_classes over tests/tier1 yields at least 10 classes,
+        including this one.
+        """
+        found = {cls.__name__ for _, cls in ds.iter_test_classes(TIER1_DIR)}
+        self.assertGreaterEqual(len(found), 10)
+        self.assertIn('TestDocstringIntrospection', found)
+
+    def test_a_method_without_a_docstring_is_an_offence(self):
+        """
+        The convention's first half: every test method is documented.
+
+        Expected: a synthetic TestCase whose method has no docstring produces one
+        offence whose reason mentions 'missing docstring'.
+        """
+        class Sample(unittest.TestCase):
+            """Synthetic."""
+            def test_undocumented(self):
+                pass
+        found = ds.offences_in_class('synthetic', Sample)
+        self.assertEqual(len(found), 1)
+        self.assertIn('missing docstring', found[0].reason)
+
+    def test_a_docstring_without_an_expected_line_is_an_offence(self):
+        """
+        The convention's second half (spec §6): the docstring states the expected
+        output, not only what the test does.
+
+        Expected: one offence whose reason mentions 'Expected:'.
+        """
+        class Sample(unittest.TestCase):
+            """Synthetic."""
+            def test_partial(self):
+                """Does a thing."""
+        found = ds.offences_in_class('synthetic', Sample)
+        self.assertEqual(len(found), 1)
+        self.assertIn('Expected:', found[0].reason)
+
+    def test_a_conforming_method_is_not_an_offence(self):
+        """
+        The walker must not flag a compliant method, or the meta-test can never
+        go green.
+
+        Expected: zero offences for a class with a docstring and a method whose
+        docstring carries an Expected: line.
+        """
+        class Sample(unittest.TestCase):
+            """Synthetic subject."""
+            def test_good(self):
+                """
+                Does a thing.
+
+                Expected: the thing happens.
+                """
+        self.assertEqual(ds.offences_in_class('synthetic', Sample), ())
+
+    def test_a_class_without_a_docstring_is_an_offence(self):
+        """
+        Spec §6: test classes carry a docstring stating their subject.
+
+        Expected: one offence whose reason mentions 'class'.
+        """
+        class Sample(unittest.TestCase):
+            def test_good(self):
+                """
+                Does a thing.
+
+                Expected: the thing happens.
+                """
+        found = ds.offences_in_class('synthetic', Sample)
+        self.assertEqual(len(found), 1)
+        self.assertIn('class', found[0].reason)
+
+    def test_the_mixin_passes_a_clean_tier_and_fails_a_dirty_one(self):
+        """
+        The shared meta-test body is what makes six tiers' docstring gate real,
+        so it must both pass a compliant tier and fail a non-compliant one.
+
+        Expected: a DocstringConventionMixin subclass over a temp tier whose one
+        test is fully documented passes; over a temp tier whose test has no
+        Expected: line, the assertion fails.
+        """
+        import tempfile
+        import textwrap
+        clean = textwrap.dedent('''
+            import unittest
+            class TestClean(unittest.TestCase):
+                """Subject."""
+                def test_ok(self):
+                    """Does a thing.
+
+                    Expected: the thing happens.
+                    """
+        ''')
+        dirty = textwrap.dedent('''
+            import unittest
+            class TestDirty(unittest.TestCase):
+                """Subject."""
+                def test_bad(self):
+                    """No expected line here."""
+        ''')
+        for body, should_fail in ((clean, False), (dirty, True)):
+            with tempfile.TemporaryDirectory() as tmp:
+                tier = Path(tmp)
+                (tier / 'test_probe.py').write_text(body, encoding='utf-8')
+
+                class _Probe(ds.DocstringConventionMixin, unittest.TestCase):
+                    """Probe over a synthetic tier."""
+                    TIER_DIR = tier
+
+                probe = _Probe('test_every_test_obeys_the_docstring_convention')
+                if should_fail:
+                    with self.assertRaises(AssertionError):
+                        probe.test_every_test_obeys_the_docstring_convention()
+                else:
+                    probe.test_every_test_obeys_the_docstring_convention()
+
+
+class TestCoverageDeclarationHelpers(unittest.TestCase):
+    """The shared collectors behind every tier's coverage meta-test.
+
+    Pinned because a collector that silently returns less than a tier declares
+    would let the coverage diff pass while real coverage shrank.
+    """
+
+    def test_declared_in_unions_the_attribute_and_honours_exclude(self):
+        """
+        declared_in gathers each class's coverage claims into one set and drops
+        any class named in exclude_classes.
+
+        Expected: over two classes declaring COVERS ('x','y') and ('y','z') the
+        union is {'x','y','z'}; excluding the second by name yields {'x','y'}.
+        """
+        class A(unittest.TestCase):
+            COVERS = ('x', 'y')
+
+        class B(unittest.TestCase):
+            COVERS = ('y', 'z')
+
+        self.assertEqual(ds.declared_in([A, B], 'COVERS'), {'x', 'y', 'z'})
+        self.assertEqual(
+            ds.declared_in([A, B], 'COVERS', exclude_classes={'B'}), {'x', 'y'})
+
+    def test_declared_in_ignores_a_class_without_the_attribute(self):
+        """
+        A class that declares no coverage (e.g. a support-lib self-test)
+        contributes nothing rather than raising.
+
+        Expected: declared_in over a class with no COVERS returns an empty set.
+        """
+        class A(unittest.TestCase):
+            pass
+
+        self.assertEqual(ds.declared_in([A], 'COVERS'), set())
+
+    def test_declared_walks_a_real_tier_without_error(self):
+        """
+        The tier-dir wrapper must reach real modules via iter_test_classes; no
+        Tier 1 class declares this sentinel attribute, so the union is empty --
+        proving the wrapper both runs and unions nothing when nothing matches.
+
+        Expected: declared(TIER1_DIR, '_declared_selftest_unused') is empty.
+        """
+        self.assertEqual(ds.declared(TIER1_DIR, '_declared_selftest_unused'),
+                         set())
 
 
 if __name__ == '__main__':
