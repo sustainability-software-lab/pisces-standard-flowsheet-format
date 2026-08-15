@@ -70,24 +70,6 @@ class TestMET01SemVer(unittest.TestCase):
         self.assertFalse(self.v.is_valid(doc))
 
 
-class TestMET04TeaYear(unittest.TestCase):
-    def setUp(self):
-        self.v = Draft7Validator(load_schema())
-
-    def test_plausible_year_accepted(self):
-        self.assertTrue(self.v.is_valid(minimal_doc()))
-
-    def test_year_zero_rejected(self):
-        doc = minimal_doc()
-        doc["metadata"]["TEA_year"] = 0
-        self.assertFalse(self.v.is_valid(doc))
-
-    def test_far_future_year_rejected(self):
-        doc = minimal_doc()
-        doc["metadata"]["TEA_year"] = 20000
-        self.assertFalse(self.v.is_valid(doc))
-
-
 class TestMET05Currency(unittest.TestCase):
     def setUp(self):
         self.v = Draft7Validator(load_schema())

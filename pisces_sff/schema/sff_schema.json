@@ -110,8 +110,6 @@
         },
         "TEA_year": {
           "type": "number",
-          "minimum": 1900,
-          "maximum": 2027,
           "description": "TEA year used to report cost results."
         },
         "source_doi": {

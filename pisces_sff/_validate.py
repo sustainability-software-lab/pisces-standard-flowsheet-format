@@ -6,6 +6,7 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 
+import datetime
 import json
 import re
 from collections import namedtuple
@@ -1123,6 +1124,23 @@ def _check_metadata_role_agreement(ctx):  # MET-03
     return [_passed('MET-03', 'warning', 'metadata')]
 
 
+def _check_tea_year_plausible(ctx):  # MET-04
+    # Skipped when: TEA_year absent (sff_checks.md). Warning severity -- a wild
+    # year is suspicious but does not make the file non-conforming, so this is a
+    # validator warning rather than a schema constraint. The upper bound is
+    # computed at validation time (current calendar year + 1) so it never needs
+    # an annual schema bump.
+    year = ctx.metadata.get('TEA_year')
+    if not isinstance(year, (int, float)):
+        return [_skipped('MET-04', 'warning', 'TEA_year absent', 'metadata')]
+    upper = datetime.date.today().year + 1
+    if not (1900 <= year <= upper):
+        return [_failed('MET-04', 'warning',
+                        f'TEA_year {year} outside plausible range [1900, {upper}]',
+                        'metadata')]
+    return [_passed('MET-04', 'warning', 'metadata')]
+
+
 def _check_boundary_streams_exist(ctx):  # GRAPH-01
     # Skipped when: never (sff_checks.md). An empty streams array has neither a
     # boundary input nor output, which is exactly the truncated-export case this
@@ -1221,6 +1239,7 @@ _CHECKS = [
     # metadata
     _check_metadata_stream_refs,             # MET-02
     _check_metadata_role_agreement,          # MET-03
+    _check_tea_year_plausible,               # MET-04
     # units
     _check_unit_id_uniqueness,               # UNIT-01
     _check_utility_result_refs,              # UNIT-02

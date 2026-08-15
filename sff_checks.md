@@ -144,7 +144,8 @@ These are not checks; they define terms the checks rely on.
 - **Scope:** `metadata.TEA_year`.
 - **Severity:** `warning`.
 - **Skipped when:** `TEA_year` absent.
-- **Enforcement:** schema (narrowing — add `minimum`/`maximum`).
+- **Enforcement:** validator (`_check_tea_year_plausible`). The upper bound is the current
+  calendar year + 1, evaluated at validation time, so it needs no annual schema bump.
 
 ### MET-05 — `TEA_currency` non-empty
 - **Statement:** `metadata.TEA_currency` is a non-empty string.
@@ -422,6 +423,10 @@ These are not checks; they define terms the checks rely on.
 - **Severity:** `warning`.
 - **Skipped when:** `molar_mass` absent.
 - **Enforcement:** schema (narrowing — add `exclusiveMinimum: 0`).
+- **Note (2026-08-15):** enforced via the schema (`exclusiveMinimum: 0`), so in practice a
+  non-positive molar mass fails the schema gate and makes the file non-conforming — effectively
+  `error`-gated despite the `warning` label above. Kept schema-enforced by decision: a
+  non-positive molar mass is unphysical, not merely suspicious.
 
 ### CHEM-03 — formula agrees with declared molar mass
 - **Statement:** when both `formula` and `molar_mass` are present, the molar mass computed
@@ -621,7 +626,7 @@ These are not checks; they define terms the checks rely on.
 | MET-01 | `sff_version` valid semver | error | schema (narrowing) |
 | MET-02 | feed/product stream refs resolve | error | validator |
 | MET-03 | feed/product roles agree with stream roles | warning | validator |
-| MET-04 | `TEA_year` plausible | warning | schema (narrowing) |
+| MET-04 | `TEA_year` plausible | warning | validator |
 | MET-05 | `TEA_currency` non-empty | error | schema (narrowing) |
 | MET-06 | reproducibility digests well-formed | error | schema (narrowing) |
 | UNIT-01 | unit `id` unique | error | validator |

@@ -66,6 +66,32 @@ class TestMetadataRoleAgreement(unittest.TestCase):
         self.assertEqual(V._check_metadata_role_agreement(c)[0].status, "skip")
 
 
+class TestTeaYearPlausible(unittest.TestCase):
+    def test_plausible_year_passes(self):
+        c = ctx(metadata={"TEA_year": 2020})
+        self.assertEqual(V._check_tea_year_plausible(c)[0].status, "pass")
+
+    def test_absent_year_skips(self):
+        c = ctx(metadata={})
+        r = V._check_tea_year_plausible(c)[0]
+        self.assertEqual((r.status, r.severity), ("skip", "warning"))
+
+    def test_year_zero_is_warning(self):
+        c = ctx(metadata={"TEA_year": 0})
+        r = V._check_tea_year_plausible(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "warning"))
+
+    def test_far_future_year_is_warning(self):
+        c = ctx(metadata={"TEA_year": 20000})
+        r = V._check_tea_year_plausible(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "warning"))
+
+    def test_current_plus_one_is_allowed(self):
+        import datetime as _dt
+        c = ctx(metadata={"TEA_year": _dt.date.today().year + 1})
+        self.assertEqual(V._check_tea_year_plausible(c)[0].status, "pass")
+
+
 class TestBoundaryStreamsExist(unittest.TestCase):
     def test_both_boundaries_pass(self):
         c = ctx(streams=[{"id": "a", "source_unit_id": "None", "sink_unit_id": "U"},

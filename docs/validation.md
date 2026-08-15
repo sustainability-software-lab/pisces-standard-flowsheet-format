@@ -8,7 +8,7 @@ SFF files are validated in two layers, both reachable from `pisces_sff`:
 JSON Schema (`pisces_sff/schema/sff_schema.json`) and returns
 `(is_valid, [error, ...])`. This is the structural gate — types, required
 properties, enums, and the declarative constraints tightened in v0.0.12
-(semver `sff_version`, `TEA_year` bounds, non-empty `TEA_currency`, 64-hex
+(semver `sff_version`, non-empty `TEA_currency`, 64-hex
 reproducibility digests, reaction `conversion` in `[0, 1]` and
 equation-or-stoichiometry, positive stream pressure, required `total_mass_flow`,
 positive molar mass, positive utility temperature/pressure).
@@ -18,7 +18,9 @@ positive molar mass, positive utility temperature/pressure).
 `validate_flowsheet_against_SFF(json_file, schema_file=None)` runs the schema
 gate **and** the semantic checks catalogued in `sff_checks.md` — referential
 integrity, stream roles, per-stream material-balance self-consistency,
-quantity-unit pairing and parseability, and more. It returns
+quantity-unit pairing and parseability, TEA-year plausibility (MET-04, a
+`warning`-severity check with a dynamic upper bound of the current calendar
+year + 1, rather than a schema constraint), and more. It returns
 `(is_valid, [CheckResult, ...])`, where each `CheckResult` has fields
 `check_id, severity, status, message, path`:
 

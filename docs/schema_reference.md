@@ -100,10 +100,12 @@ The `streams` array maps out the connectivity of the flowsheet, defining how mat
 
 ### Validation constraints (v0.0.12)
 
-v0.0.12 adds ten declarative JSON-Schema constraints, catalogued in `sff_checks.md`. All are enforced by the schema itself (no code required to check them):
+v0.0.12 adds nine declarative JSON-Schema constraints, catalogued in `sff_checks.md` and enforced by the schema itself (no code required to check them), plus one validator-enforced warning check (MET-04):
 
 - **MET-01**: `metadata.sff_version` must match the semver pattern `^[0-9]+\.[0-9]+\.[0-9]+$`.
-- **MET-04**: `metadata.TEA_year` must be between 1900 and 2027, inclusive.
+- **MET-04**: `metadata.TEA_year` should lie within a plausible range (1900 ≤ year ≤ current
+  calendar year + 1). Enforced by the validator as a `warning` (not the schema), so an
+  implausible year flags a warning without making the file non-conforming.
 - **MET-05**: `metadata.TEA_currency` must be a non-empty string (`minLength: 1`).
 - **MET-06**: `reproducibility.environment.sha256`, `reproducibility.load_script.sha256`, and `reproducibility.resolved.env_key` must each match the 64-hex pattern `^[0-9a-f]{64}$`.
 - **UNIT-04**: a reaction's `conversion` must be between 0 and 1, inclusive.
