@@ -23,6 +23,7 @@ if str(TESTS_ROOT) not in sys.path:
 
 import _helper_inventory as inv
 import _catalogue as cat
+import _documents as docs
 
 
 class TestHelperInventory(unittest.TestCase):
@@ -290,6 +291,201 @@ class TestCatalogueParser(unittest.TestCase):
         text = cat.catalogue()['MET-04'].enforcement
         self.assertIn('+', text)
         self.assertEqual(cat._enforcement_kinds(text, 'MET-04'), {'validator'})
+
+
+# Running the full validator over the base document has to happen in a FRESH
+# interpreter, not in this one. Tier 1 installs fake biosteam/thermosteam modules
+# into sys.modules (tests/tier1/_export_stub.py) so the export helpers can be
+# tested without the real simulator; with that stub in place, _validate's
+# `from thermosteam.units_of_measure import ureg` fails, `_unit_is_parseable`
+# returns False for every string, and QU-02/UTIL-03 report spurious failures
+# against a perfectly good document. Whether the stub is loaded depends on which
+# other test modules pytest collected first, so an in-process check would also be
+# order-dependent. A child process sees the real thermosteam and gives the honest
+# answer either way.
+_VALIDATE_IN_CLEAN_PROCESS = r'''
+import importlib.util, json, sys, tempfile
+
+tests_root, validate_path, out_path = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path.insert(0, tests_root)
+import _documents
+
+spec = importlib.util.spec_from_file_location('sff_validate_subprocess',
+                                              validate_path)
+validate = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(validate)
+
+with tempfile.TemporaryDirectory() as tmp:
+    path = _documents.write_temp(_documents.conforming_document(), tmp)
+    is_valid, results = validate.validate_flowsheet_against_SFF(str(path))
+
+with open(out_path, 'w', encoding='utf-8') as handle:
+    json.dump({'is_valid': is_valid,
+               'results': [list(r[:4]) for r in results]}, handle)
+'''
+
+
+def _validate_conforming_document_in_a_clean_process(case):
+    """Validate the base document in a child interpreter; return the report as
+    ``{'is_valid': bool, 'results': [[check_id, severity, status, message], ...]}``."""
+    import json
+    import subprocess
+    import tempfile
+    validate_path = TESTS_ROOT.parent / 'pisces_sff' / '_validate.py'
+    with tempfile.TemporaryDirectory() as tmp:
+        out_path = Path(tmp) / 'report.json'
+        completed = subprocess.run(
+            [sys.executable, '-c', _VALIDATE_IN_CLEAN_PROCESS,
+             str(TESTS_ROOT), str(validate_path), str(out_path)],
+            capture_output=True, text=True)
+        case.assertEqual(completed.returncode, 0,
+                         f'validator subprocess failed:\n{completed.stderr}')
+        with out_path.open('r', encoding='utf-8') as handle:
+            return json.load(handle)
+
+
+class TestConformingDocument(unittest.TestCase):
+    """The compact SFF document Tiers 3 and 4 mutate.
+
+    Pinned here rather than in the tiers that use it: if the base document stops
+    conforming, every mutation test built on it fails for the wrong reason, and
+    the resulting noise hides the one real regression.
+    """
+
+    def test_document_has_the_four_required_top_level_sections(self):
+        """
+        The schema requires metadata, units, streams and utilities at the root.
+
+        Expected: all four keys are present in conforming_document().
+        """
+        doc = docs.conforming_document()
+        for key in ('metadata', 'units', 'streams', 'utilities'):
+            self.assertIn(key, doc)
+
+    def test_each_call_returns_an_independent_copy(self):
+        """
+        Tiers mutate the document in place; a shared object would leak a mutation
+        from one test into the next and make failures order-dependent.
+
+        Expected: mutating one returned document leaves a second call unaffected.
+        """
+        first = docs.conforming_document()
+        first['streams'][0]['id'] = 'MUTATED'
+        self.assertNotEqual(docs.conforming_document()['streams'][0]['id'],
+                            'MUTATED')
+
+    def test_pointer_get_reaches_a_nested_scalar(self):
+        """
+        JSON pointers address the fields Tier 3 mutates.
+
+        Expected: pointer_get(doc, '/streams/0/stream_properties/pressure')
+        returns 101325.0.
+        """
+        doc = docs.conforming_document()
+        self.assertEqual(
+            docs.pointer_get(doc, '/streams/0/stream_properties/pressure'),
+            101325.0)
+
+    def test_pointer_set_replaces_only_the_addressed_field(self):
+        """
+        A mutation must be single-field, or a rejection cannot be attributed.
+
+        Expected: after pointer_set on pressure, pressure is the new value and
+        temperature is unchanged.
+        """
+        doc = docs.conforming_document()
+        docs.pointer_set(doc, '/streams/0/stream_properties/pressure', 0)
+        props = doc['streams'][0]['stream_properties']
+        self.assertEqual(props['pressure'], 0)
+        self.assertEqual(props['temperature'], 298.15)
+
+    def test_pointer_delete_removes_the_addressed_field(self):
+        """
+        Deletion is how a `required` constraint is violated.
+
+        Expected: after pointer_delete on '/metadata/TEA_currency', the key is
+        absent and pointer_exists returns False.
+        """
+        doc = docs.conforming_document()
+        docs.pointer_delete(doc, '/metadata/TEA_currency')
+        self.assertNotIn('TEA_currency', doc['metadata'])
+        self.assertFalse(docs.pointer_exists(doc, '/metadata/TEA_currency'))
+
+    def test_pointer_exists_is_false_for_an_unreachable_path(self):
+        """
+        Tier 3's sweep uses this to report locators the base document cannot
+        reach, rather than skipping them silently.
+
+        Expected: pointer_exists(doc, '/utilities/other_utilities/0/price') is
+        False -- the document declares no other_utilities.
+        """
+        doc = docs.conforming_document()
+        self.assertFalse(
+            docs.pointer_exists(doc, '/utilities/other_utilities/0/price'))
+
+    def test_mutated_returns_a_document_with_one_change(self):
+        """
+        The convenience wrapper Tier 3 builds each matched pair from.
+
+        Expected: mutated('/metadata/TEA_year', 'not-a-number') has that string
+        at TEA_year while a fresh conforming_document() still has 2018.
+        """
+        doc = docs.mutated('/metadata/TEA_year', 'not-a-number')
+        self.assertEqual(doc['metadata']['TEA_year'], 'not-a-number')
+        self.assertEqual(docs.conforming_document()['metadata']['TEA_year'], 2018)
+
+    def test_mutated_with_the_DELETE_sentinel_removes_the_field(self):
+        """
+        `required` violations need removal, not replacement.
+
+        Expected: mutated('/metadata/TEA_currency', DELETE) has no TEA_currency.
+        """
+        doc = docs.mutated('/metadata/TEA_currency', docs.DELETE)
+        self.assertNotIn('TEA_currency', doc['metadata'])
+
+    def test_write_temp_produces_a_readable_json_file(self):
+        """
+        Both validators take file paths, so the fixture must be able to land on
+        disk.
+
+        Expected: write_temp returns an existing path whose JSON round-trips to
+        an equal document.
+        """
+        import json
+        import tempfile
+        doc = docs.conforming_document()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = docs.write_temp(doc, tmp)
+            self.assertTrue(path.exists())
+            with path.open('r', encoding='utf-8') as handle:
+                self.assertEqual(json.load(handle), doc)
+
+    def test_the_base_document_conforms_to_schema_and_every_check(self):
+        """
+        The guard that keeps Tiers 3 and 4 honest: run the REAL two-layer
+        validator over the base document. Tier 3 asserts that a mutation is
+        rejected and Tier 4 that a mutation makes a check fire; both readings
+        are only meaningful if the unmutated document is clean to begin with.
+
+        The three skips are structural properties of a compact flowsheet, not
+        slack: STR-03 needs a doubly-isolated stream, STR-13 needs a stream
+        carrying a zero flow scalar, and CHEM-04 needs index-based
+        stoichiometry -- none of which a two-stream, id-keyed document has.
+
+        Expected: is_valid is True, no result has status 'fail' at any severity,
+        and the non-'pass' results are exactly {STR-03, STR-13, CHEM-04}, all of
+        them 'skip'.
+        """
+        report = _validate_conforming_document_in_a_clean_process(self)
+        failures = [r for r in report['results'] if r[2] == 'fail']
+        self.assertEqual(failures, [], f'unexpected failures: {failures}')
+        self.assertTrue(report['is_valid'])
+        non_pass = [r for r in report['results'] if r[2] != 'pass']
+        self.assertEqual({r[0] for r in non_pass},
+                         {'STR-03', 'STR-13', 'CHEM-04'})
+        for check_id, _severity, status, _message in non_pass:
+            with self.subTest(check_id=check_id):
+                self.assertEqual(status, 'skip')
 
 
 if __name__ == '__main__':
