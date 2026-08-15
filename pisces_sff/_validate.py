@@ -1078,6 +1078,77 @@ def _check_unused_aliases(ctx):  # QU-04 (entry granularity -- see the plan note
     return [_passed('QU-04', 'info', 'quantity_units_global')]
 
 
+#%% Checks -- metadata + cross-object (sff_checks.md sections 1 + 7)
+
+def _check_metadata_stream_refs(ctx):  # MET-02
+    bad, any_ref = [], False
+    for key in ('feedstocks', 'products'):
+        for entry in (ctx.metadata.get(key) or []):
+            if not isinstance(entry, dict) or 'stream_id' not in entry:
+                continue
+            any_ref = True
+            if entry['stream_id'] not in ctx.stream_ids:
+                bad.append(f"{key}: '{entry['stream_id']}'")
+    if not any_ref:
+        return [_skipped('MET-02', 'error',
+                         'no feedstock/product stream references', 'metadata')]
+    if bad:
+        return [_failed('MET-02', 'error',
+                        f'metadata stream reference(s) resolve to no stream: {bad}',
+                        'metadata')]
+    return [_passed('MET-02', 'error', 'metadata')]
+
+
+def _check_metadata_role_agreement(ctx):  # MET-03
+    stream_roles = {s.get('id'): s.get('roles') for s in ctx.streams
+                    if isinstance(s, dict)}
+    bad, any_check = [], False
+    for key, role in (('feedstocks', 'feedstock'), ('products', 'product')):
+        for entry in (ctx.metadata.get(key) or []):
+            if not isinstance(entry, dict):
+                continue
+            roles = stream_roles.get(entry.get('stream_id'))
+            if not isinstance(roles, list):
+                continue  # pre-v0.0.10 stream, or reference unresolved (MET-02)
+            any_check = True
+            if role not in roles:
+                bad.append(f"{key} stream '{entry.get('stream_id')}' lacks role "
+                           f"'{role}'")
+    if not any_check:
+        return [_skipped('MET-03', 'warning',
+                         'no referenced stream carries a roles array', 'metadata')]
+    if bad:
+        return [_failed('MET-03', 'warning',
+                        f'metadata/stream role disagreement: {bad}', 'metadata')]
+    return [_passed('MET-03', 'warning', 'metadata')]
+
+
+def _check_boundary_streams_exist(ctx):  # GRAPH-01
+    # Skipped when: never (sff_checks.md). An empty streams array has neither a
+    # boundary input nor output, which is exactly the truncated-export case this
+    # check exists to catch -- so it fails (warning), it does not skip.
+    has_in = any(isinstance(s, dict) and s.get('source_unit_id') == BOUNDARY
+                 and s.get('sink_unit_id') != BOUNDARY for s in ctx.streams)
+    has_out = any(isinstance(s, dict) and s.get('sink_unit_id') == BOUNDARY
+                  and s.get('source_unit_id') != BOUNDARY for s in ctx.streams)
+    missing = []
+    if not has_in:
+        missing.append('no boundary input (source_unit_id "None")')
+    if not has_out:
+        missing.append('no boundary output (sink_unit_id "None")')
+    if missing:
+        return [_failed('GRAPH-01', 'warning', '; '.join(missing), 'streams')]
+    return [_passed('GRAPH-01', 'warning', 'streams')]
+
+
+def _xref_gate(results):  # XREF-01
+    """Aggregate: fail if any constituent referential error-check failed."""
+    ref_fail = any(r.check_id in _REFERENTIAL_IDS and r.status == 'fail'
+                   and r.severity == 'error' for r in results)
+    return CheckResult('XREF-01', 'error', 'fail' if ref_fail else 'pass',
+                       'a referential check failed' if ref_fail else '', '<root>')
+
+
 # Ordered registry of check(ctx) -> list[CheckResult]. Populated in Tasks 5-11
 # and finalized in Task 12; empty here.
 _CHECKS = []
@@ -1136,6 +1207,9 @@ def validate_flowsheet_against_SFF(json_file, schema_file=None):
             results.append(_failed(
                 getattr(check, 'check_id', check.__name__), 'error',
                 f'check raised {type(exc).__name__}: {exc}'))
+
+    # XREF-01: referential-integrity gate, aggregated from the checks just run.
+    results.append(_xref_gate(results))
 
     is_valid = not any(r.status == 'fail' and r.severity == 'error'
                        for r in results)
