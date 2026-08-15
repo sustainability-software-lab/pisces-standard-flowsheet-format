@@ -895,8 +895,8 @@ def _referenced_chemical_ids(ctx):
 
 
 def _check_unused_chemicals(ctx):  # CHEM-05
-    if not ctx.chemicals:
-        return [_skipped('CHEM-05', 'info', 'no chemicals declared', 'chemicals')]
+    # Skipped when: never (sff_checks.md). An empty chemicals registry is a
+    # vacuous pass -- every one of zero chemicals is trivially referenced.
     refs = _referenced_chemical_ids(ctx)
     unused = [cid for cid in ctx.chem_by_id if cid not in refs]
     if unused:

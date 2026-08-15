@@ -81,6 +81,13 @@ class TestUnusedChemicals(unittest.TestCase):
         r = V._check_unused_chemicals(c)[0]
         self.assertEqual((r.status, r.severity), ("fail", "info"))
 
+    def test_empty_chemicals_is_vacuous_pass(self):
+        # sff_checks.md CHEM-05: "Skipped when: never" -- an empty chemicals
+        # registry is a vacuous pass, not a skip.
+        c = ctx(chemicals=[])
+        r = V._check_unused_chemicals(c)[0]
+        self.assertEqual((r.status, r.severity), ("pass", "info"))
+
 
 if __name__ == "__main__":
     unittest.main()
