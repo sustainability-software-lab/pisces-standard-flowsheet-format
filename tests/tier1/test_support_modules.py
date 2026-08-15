@@ -22,6 +22,7 @@ if str(TESTS_ROOT) not in sys.path:
     sys.path.insert(0, str(TESTS_ROOT))
 
 import _helper_inventory as inv
+import _catalogue as cat
 
 
 class TestHelperInventory(unittest.TestCase):
@@ -131,6 +132,116 @@ class TestHelperInventory(unittest.TestCase):
         for (dotted, tier) in inv.EXEMPT:
             with self.subTest(name=dotted):
                 self.assertIn(dotted, names)
+
+
+class TestCatalogueParser(unittest.TestCase):
+    """The sff_checks.md parser behind the Tier 3 and Tier 4 coverage claims.
+
+    Pinned because the catalogue is prose: a parser that silently drops a record
+    makes the tier that consumes it report full coverage of a smaller set.
+    """
+
+    def test_catalogue_holds_forty_two_checks(self):
+        """
+        The catalogue's ID count, pinned as of 2026-08-15.
+
+        Expected: check_ids() has exactly 42 entries. A change here means a
+        requirement was added or removed and the Tier 3/4 coverage sets moved.
+        """
+        self.assertEqual(len(cat.check_ids()), 42)
+
+    def test_nine_ids_are_schema_enforced(self):
+        """
+        Spec §3: the schema-enforced set is the nine IDs whose Enforcement field
+        mentions `schema`, two of which (UNIT-04, UNIT-05) are schema+validator.
+
+        Expected: schema_enforced_ids() equals exactly MET-01, MET-05, MET-06,
+        UNIT-04, UNIT-05, STR-11, STR-12, CHEM-02, UTIL-05.
+        """
+        self.assertEqual(set(cat.schema_enforced_ids()), {
+            'MET-01', 'MET-05', 'MET-06', 'UNIT-04', 'UNIT-05',
+            'STR-11', 'STR-12', 'CHEM-02', 'UTIL-05'})
+
+    def test_thirty_five_ids_are_validator_enforced(self):
+        """
+        Spec §3: the validator-enforced set is 35 IDs, already including XREF-01.
+
+        Expected: validator_enforced_ids() has 35 entries and contains XREF-01,
+        UNIT-04 and UNIT-05 (the last two being schema+validator).
+        """
+        ids = cat.validator_enforced_ids()
+        self.assertEqual(len(ids), 35)
+        for expected in ('XREF-01', 'UNIT-04', 'UNIT-05'):
+            self.assertIn(expected, ids)
+
+    def test_severity_is_read_from_the_record(self):
+        """
+        Severity drives Tier 4's assertion that a check has not been silently
+        downgraded, so it must come from the catalogue, not from the code.
+
+        Expected: MET-01 is 'error', MET-03 is 'warning', CHEM-05 is 'info'.
+        """
+        self.assertEqual(cat.severity_of('MET-01'), 'error')
+        self.assertEqual(cat.severity_of('MET-03'), 'warning')
+        self.assertEqual(cat.severity_of('CHEM-05'), 'info')
+
+    def test_dual_severity_records_take_the_first_level(self):
+        """
+        UNIT-03 declares `error` for a missing unit and `warning` for an orphan
+        key on one line; the first is the primary failure mode.
+
+        Expected: severity_of('UNIT-03') is 'error'.
+        """
+        self.assertEqual(cat.severity_of('UNIT-03'), 'error')
+
+    def test_never_skipped_checks_are_marked_unskippable(self):
+        """
+        Tier 4 only demands a skip case where the catalogue declares one.
+
+        Expected: is_skippable('MET-01') is False ("Skipped when: never"), and
+        is_skippable('MET-04') is True ("Skipped when: TEA_year absent").
+        """
+        self.assertFalse(cat.is_skippable('MET-01'))
+        self.assertTrue(cat.is_skippable('MET-04'))
+
+    def test_wrapped_enforcement_field_is_joined(self):
+        """
+        MET-04's Enforcement field wraps over three source lines; a parser that
+        stops at the first newline would lose the helper name for other records
+        the same way.
+
+        Expected: MET-04's enforcement text contains both the helper name
+        '_check_tea_year_plausible' and the trailing words 'current' and 'year',
+        proving the continuation lines were joined.
+        """
+        text = cat.catalogue()['MET-04'].enforcement
+        self.assertIn('_check_tea_year_plausible', text)
+        self.assertIn('current', text)
+        self.assertIn('year', text)
+
+    def test_non_check_headings_are_not_parsed_as_checks(self):
+        """
+        sff_checks.md carries prose `###` headings ("Severity levels", "Default
+        tolerances") that are not requirement records.
+
+        Expected: every key in catalogue() matches the ID pattern, so no prose
+        heading leaks into the coverage sets.
+        """
+        import re
+        for key in cat.catalogue():
+            with self.subTest(key=key):
+                self.assertRegex(key, r'^[A-Z]+-\d+$')
+
+    def test_every_record_has_a_severity_and_an_enforcement(self):
+        """
+        A record missing either field cannot be assigned to Tier 3 or Tier 4.
+
+        Expected: all 42 records have non-empty severity and enforcement text.
+        """
+        for check_id, record in cat.catalogue().items():
+            with self.subTest(check_id=check_id):
+                self.assertTrue(record.severity)
+                self.assertTrue(record.enforcement)
 
 
 if __name__ == '__main__':
