@@ -205,7 +205,7 @@ def _assign_stream_ids(all_streams, sff_version):
 # version-specific additions differ. Keeping the assembly here means adding a
 # schema version costs one thin function rather than a copy of ~170 lines that
 # would drift from this one. metadata['sff_version'] is assigned from the
-# argument here and nowhere else -- see tests/test_version_sync.py.
+# argument here and nowhere else -- see tests/tier1/test_version.py.
 def _build_sff_dict(sys, tea=None,
                     stoichiometry="dict", # must be one of (None, "vector", "dict")
                     microorganisms=None, # optional list of microbial hosts; see metadata section below
