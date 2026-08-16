@@ -11,23 +11,9 @@
 # chemicals/thermosteam import happens -- and asserts the full set of validator
 # IDs is present exactly once.
 
-import importlib.util
 import unittest
-from pathlib import Path
 
-VALIDATE_PATH = (
-    Path(__file__).resolve().parents[2] / "pisces_sff" / "_validate.py")
-
-
-def load_validate_module():
-    spec = importlib.util.spec_from_file_location(
-        "pisces_sff_validate_registry_under_test", VALIDATE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-V = load_validate_module()
+from tests._validate_loader import V
 
 EXPECTED_IDS = {
     "MET-02", "MET-03", "MET-04",
