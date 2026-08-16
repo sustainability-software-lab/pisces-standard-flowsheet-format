@@ -19,26 +19,44 @@
 #   0.0.6 -> inline {"value","units"} scalars, NO registry, and the legacy
 #            units_for_utility_results key; omits TEA_currency.
 #
-# Gated on SFF_TEST_BIOSTEAM=1.
+# Gated on RUN_TIER2 (default on).
 
 import copy
 import json
-import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+from tests._gating import RUN_TIER2
 from tests._real_objects import build_small_system_and_tea
+from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
-RUN_TIER_2 = os.environ.get("SFF_TEST_BIOSTEAM") == "1"
 
 
-@unittest.skipUnless(RUN_TIER_2, "set SFF_TEST_BIOSTEAM=1 to run (imports biosteam)")
-class TestVersionShapeGuard(unittest.TestCase):
+@unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
+class TestVersionShapeGuard(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
+        super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
+
+        # If Tier 1 already ran in this same pytest process, its collection-time
+        # tests._fakes.load_export() call imported the real `pisces_sff._export`
+        # module WHILE the fake biosteam stub was installed, permanently binding
+        # that module's top-level `import biosteam as bst` to the fake object.
+        # Evicting sys.modules['biosteam']/['thermosteam'] above does not touch
+        # that already-bound name -- Python only re-resolves a module-level
+        # import on a fresh import, and 'pisces_sff._export' is already cached.
+        # Discard the whole pisces_sff package tree so the import below
+        # re-executes against the (now real, just-evicted) biosteam/thermosteam;
+        # sys.modules['biosteam']/['thermosteam'] themselves are left untouched,
+        # so this does not force a second real import of the simulator itself.
+        for key in [k for k in sys.modules
+                    if k == "pisces_sff" or k.startswith("pisces_sff.")]:
+            del sys.modules[key]
+
         from pisces_sff import _export
         from pisces_sff._validate import validate_json_against_schema
 

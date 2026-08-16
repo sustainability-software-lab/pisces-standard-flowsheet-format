@@ -6,25 +6,28 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 #
-# Tier 2: the full validator over the committed corn corpus file. Runs every
-# check (QU-02 imports thermosteam; STR-10/CHEM-03 import chemicals), so gated on
-# SFF_TEST_BIOSTEAM=1. Asserts the reference corpus is clean at error severity and
-# that a deliberately-broken variant is caught.
+# Tier 5: the full validator over the committed corn corpus file. Runs every
+# check (QU-02 imports thermosteam; STR-10/CHEM-03 import chemicals). Tier 5 is
+# import-light -- it only reads JSON and runs the validator -- so it stays
+# default-on and is unskipped except by its own gate. Asserts the reference
+# corpus is clean at error severity and that a deliberately-broken variant is
+# caught.
 
 import copy
 import importlib.util
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
+
+from tests._gating import RUN_TIER5
+from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VALIDATE_PATH = REPO_ROOT / "pisces_sff" / "_validate.py"
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
 CORN_PATH = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
              / "bioindustrial_park" / "corn_dry_grind_ethanol.json")
-RUN = os.environ.get("SFF_TEST_BIOSTEAM") == "1"
 
 
 def load_validate_module():
@@ -35,8 +38,8 @@ def load_validate_module():
     return module
 
 
-@unittest.skipUnless(RUN, "set SFF_TEST_BIOSTEAM=1 (imports thermosteam/chemicals)")
-class TestCornCorpusIntegration(unittest.TestCase):
+@unittest.skipUnless(RUN_TIER5, "set SFF_TEST_TIER5=1 (default on) to run; runs the real validator")
+class TestCornCorpusIntegration(RealBiosteamTestCase):
     def setUp(self):
         self.V = load_validate_module()
 
@@ -89,8 +92,8 @@ class TestCornCorpusIntegration(unittest.TestCase):
         self.assertEqual(by_id["XREF-01"], "fail")
 
 
-@unittest.skipUnless(RUN, "set SFF_TEST_BIOSTEAM=1 (imports thermosteam/chemicals)")
-class TestMinimalValidDoc(unittest.TestCase):
+@unittest.skipUnless(RUN_TIER5, "set SFF_TEST_TIER5=1 (default on) to run; runs the real validator")
+class TestMinimalValidDoc(RealBiosteamTestCase):
     def setUp(self):
         self.V = load_validate_module()
 

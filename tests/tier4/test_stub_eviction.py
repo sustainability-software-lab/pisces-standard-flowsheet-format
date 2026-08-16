@@ -49,15 +49,29 @@ class TestStubEviction(RealBiosteamTestCase):
         is_valid True."""
         from tests._fakes import install_biosteam_stubs
         from tests._stub_eviction import evict_biosteam_stubs
-        install_biosteam_stubs()                       # simulate Tier 1 having run
-        self.assertTrue(getattr(sys.modules.get("thermosteam"), "_SFF_STUB", False))
-        evict_biosteam_stubs()
-        self.assertFalse(getattr(sys.modules.get("thermosteam"), "_SFF_STUB", False))
-        is_valid, results = run_validator(valid_doc())
-        qu02 = [r for r in results if r.check_id == "QU-02"]
-        self.assertTrue(is_valid, [r for r in results if r.status == "fail"])
-        self.assertFalse([r for r in qu02
-                          if r.severity == "error" and r.status == "fail"])
+        # install_biosteam_stubs() refuses to run when a REAL 'biosteam' is
+        # already resident in sys.modules -- a guard meant to catch Tier 1
+        # genuinely importing the real package. In a whole-suite run, Tier 2's
+        # real-object tests (default-on since Task 2.4) may have already
+        # imported real biosteam earlier in this same pytest process, which
+        # would otherwise trip that guard here even though nothing has gone
+        # wrong. Stash any real 'biosteam' aside for the duration of this
+        # simulated Tier-1-stub scenario and restore it afterward so this test
+        # stays order-independent.
+        real_biosteam = sys.modules.pop("biosteam", None)
+        try:
+            install_biosteam_stubs()                   # simulate Tier 1 having run
+            self.assertTrue(getattr(sys.modules.get("thermosteam"), "_SFF_STUB", False))
+            evict_biosteam_stubs()
+            self.assertFalse(getattr(sys.modules.get("thermosteam"), "_SFF_STUB", False))
+            is_valid, results = run_validator(valid_doc())
+            qu02 = [r for r in results if r.check_id == "QU-02"]
+            self.assertTrue(is_valid, [r for r in results if r.status == "fail"])
+            self.assertFalse([r for r in qu02
+                              if r.severity == "error" and r.status == "fail"])
+        finally:
+            if real_biosteam is not None:
+                sys.modules["biosteam"] = real_biosteam
 
     def test_evict_is_noop_without_stub(self):
         """evict_biosteam_stubs() with no fake stub present does not raise and

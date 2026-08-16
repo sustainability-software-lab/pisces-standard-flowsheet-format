@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-# Tier 3: the full harness, including conda environment creation, driven through
+# Tier 6: the full harness, including conda environment creation, driven through
 # the same regenerate_corpus() function the deliberate corpus-regeneration
 # command uses -- but writing to a TEMP directory, so running this test never
 # touches the committed corpus.
 #
-# Gated on SFF_TEST_E2E=1 because it builds a conda environment from scratch on
-# a cache miss (tens of minutes) and then simulates. Run it with:
+# Gated on SFF_TEST_TIER6 (default on) because it builds a conda environment from
+# scratch on a cache miss (tens of minutes) and then simulates. Run it with:
 #
-#     $env:SFF_TEST_E2E = "1"
-#     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier3/test_end_to_end_export.py -q
+#     $env:SFF_TEST_TIER6 = "1"
+#     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier6/test_end_to_end_export.py -q
 #
 # This is the ONLY tier in which the recipe's pins are what actually ran -- the
 # export happens inside the environment environment.yaml describes -- and
@@ -20,10 +20,11 @@
 
 import hashlib
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
+
+from tests._gating import RUN_TIER6
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = (
@@ -38,10 +39,8 @@ BASELINE_PATH = REPO_ROOT / "tests" / "baselines" / "corn_dry_grind_ethanol.json
 #: enough that a genuine model change fails.
 RTOL = 1e-4
 
-RUN_TIER_3 = os.environ.get("SFF_TEST_E2E") == "1"
 
-
-@unittest.skipUnless(RUN_TIER_3, "set SFF_TEST_E2E=1 to run (creates a conda environment)")
+@unittest.skipUnless(RUN_TIER6, "set SFF_TEST_TIER6=1 (default on) to run; builds a conda env")
 class TestEndToEndExport(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

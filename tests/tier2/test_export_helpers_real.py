@@ -1,23 +1,31 @@
 # -*- coding: utf-8 -*-
+# Code to export flowsheets from multiple tools into a standardized JSON format.
+# Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>
+#
+# This module is under the MIT open-source license. See
+# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
+# for license details.
+#
 # Tier 2 walking skeleton: re-verify, against a REAL biosteam Stream, the
 # is_product behavior that Task 2 tested with a fake object in Tier 1. This is
 # the Tier-1 rule in action: a fake-object assertion earns a real-object check
-# in a higher tier.
+# in a higher tier. Consolidated from test_helpers_real_objects.py (Task 2.4).
 #
-# Gated on SFF_TEST_BIOSTEAM=1 (imports biosteam, runs a small simulation).
+# Gated on RUN_TIER2 (default on; imports biosteam, runs a small simulation).
 
-import os
 import unittest
 
+from tests._gating import RUN_TIER2
 from tests._real_objects import build_small_system_and_tea
+from tests._stub_eviction import RealBiosteamTestCase
 
-RUN_TIER_2 = os.environ.get("SFF_TEST_BIOSTEAM") == "1"
 
-
-@unittest.skipUnless(RUN_TIER_2, "set SFF_TEST_BIOSTEAM=1 to run (imports biosteam)")
-class TestIsProductWithRealStream(unittest.TestCase):
+@unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
+class TestIsProductWithRealStream(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
+        super().setUpClass()   # evicts Tier-1 stubs (RealBiosteamTestCase)
+
         from pisces_sff import _export
 
         cls._export = _export
