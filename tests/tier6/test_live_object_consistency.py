@@ -66,12 +66,31 @@ def _isclose(actual, expected):
 class TestLiveObjectConsistency(RealBiosteamTestCase):
     RTOL = RTOL
 
+    #: Module roots purged from sys.modules before the in-process corn load (see
+    #: setUpClass). "pisces_sff" evicts the package tree that tier1 collection
+    #: bound to the fake biosteam stub. The simulator roots evict the REAL
+    #: biosteam/thermosteam/biorefineries stack that earlier tiers left in a
+    #: split-identity state: tier2 builds real biosteam systems and tiers 4/5 run
+    #: the real validator (which re-imports thermosteam submodules), and across
+    #: that churn two distinct thermosteam.Chemical classes end up resident. If
+    #: corn's chemicals are built against one while bst.settings.set_thermo uses
+    #: the other, thermosteam's `isinstance(chemicals, Chemicals)` fails and the
+    #: load dies with "'Chemical' object has no attribute 'strip'". Purging the
+    #: whole stack forces `from biorefineries import corn` below to rebuild one
+    #: internally consistent import graph. Safe because this class is the only
+    #: in-process consumer of the real simulator after these tiers and nothing
+    #: runs after it (the sibling tier6 test exports in a subprocess).
+    _PURGE_ROOTS = ("pisces_sff", "biosteam", "thermosteam", "biorefineries",
+                    "thermo", "chemicals", "fluids", "flexsolve")
+
     @classmethod
     def setUpClass(cls):
-        super().setUpClass()   # layer 1: evict biosteam/thermosteam stubs
-        # layer 2: discard the pisces_sff tree bound to the fake at tier1 collection
+        super().setUpClass()   # layer 1: evict any Tier-1 biosteam/thermosteam stub
+        # layer 2: purge the pisces_sff tree AND the real simulator stack so the
+        # in-process corn load below rebuilds a single consistent module graph.
         for key in [k for k in sys.modules
-                    if k == "pisces_sff" or k.startswith("pisces_sff.")]:
+                    if k in cls._PURGE_ROOTS
+                    or any(k.startswith(r + ".") for r in cls._PURGE_ROOTS)]:
             del sys.modules[key]
 
         from pisces_sff._runner import load_model_module
