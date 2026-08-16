@@ -2,7 +2,7 @@
 # Unit tests for pisces_sff/_quantity_units.py — the pure quantity-unit helpers.
 #
 # Import-light by construction: the module under test imports no biosteam, and
-# we load it by file path (like tests/tier1/test_version_sync.py loads _version.py) so
+# we load it by file path (like tests/tier1/test_version.py loads _version.py) so
 # that importing the pisces_sff package — and thus _export/biosteam — never
 # happens here.
 

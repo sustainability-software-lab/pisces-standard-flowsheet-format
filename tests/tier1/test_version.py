@@ -12,7 +12,7 @@
 #      (exactly the failure that made every export report '0.0.3').
 #
 # Design notes:
-#   * As in tests/tier1/test_schema_microorganisms.py, these tests stay import-light:
+#   * As in tests/tier3/test_metadata_schema.py, these tests stay import-light:
 #     importing the `pisces_sff` package would pull in the heavy optional
 #     biosteam/thermosteam stack via _export. We therefore load _version.py
 #     directly by file path (bypassing pisces_sff/__init__.py), and inspect

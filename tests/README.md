@@ -19,7 +19,7 @@ This guide describes the six-tier test suite and where your new test belongs.
 | 2 | on | `SFF_TEST_TIER2=0` | yes (biosteam objects) |
 | 3 | on | `SFF_TEST_TIER3=0` | no |
 | 4 | on | `SFF_TEST_TIER4=0` | no (may lazily import thermosteam for unit parsing) |
-| 5 | on | `SFF_TEST_TIER5=0` | no |
+| 5 | on | `SFF_TEST_TIER5=0` | no (runs the full validator, which lazily imports thermosteam for QU-02 unit parsing) |
 | 6 | on | `SFF_TEST_TIER6=0` | yes (full sim + conda env) |
 
 Every tier gates uniformly on its own `SFF_TEST_TIER<n>` switch (via
