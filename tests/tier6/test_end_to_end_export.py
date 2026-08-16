@@ -25,6 +25,7 @@ import unittest
 from pathlib import Path
 
 from tests._gating import RUN_TIER6
+from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = (
@@ -41,13 +42,16 @@ RTOL = 1e-4
 
 
 @unittest.skipUnless(RUN_TIER6, "set SFF_TEST_TIER6=1 (default on) to run; builds a conda env")
-class TestEndToEndExport(unittest.TestCase):
+class TestEndToEndExport(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
+        super().setUpClass()   # evict Tier-1 stub so the in-process full validator sees real thermosteam
         from pisces_sff._regenerate_corpus import regenerate_corpus
-        from pisces_sff._validate import validate_json_against_schema
+        from pisces_sff._validate import (validate_json_against_schema,
+                                          validate_flowsheet_against_SFF)
 
         cls.validate = staticmethod(validate_json_against_schema)
+        cls.validate_full = staticmethod(validate_flowsheet_against_SFF)
         cls.tmp = tempfile.TemporaryDirectory()
         # Same code path as the committed-corpus command, but to a temp dir.
         cls.written = regenerate_corpus(cls.tmp.name)
@@ -77,6 +81,21 @@ class TestEndToEndExport(unittest.TestCase):
             with self.subTest(file=path.name):
                 is_valid, errors = self.validate(str(path), str(SCHEMA_PATH))
                 self.assertTrue(is_valid, f"{path.name}: {errors[:5]}")
+
+    def test_harness_output_is_semantically_valid(self):
+        """validate_flowsheet_against_SFF(harness corn export) -> is_valid True;
+        the non-pass finding set equals the recorded benign set (STR-03 skip,
+        CHEM-04 skip, CHEM-05 info-fail on 4 unreferenced chemicals)."""
+        is_valid, results = self.validate_full(str(self.output), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, [r for r in results if r.status == "fail"])
+        non_pass = {(r.check_id, r.severity, r.status)
+                    for r in results if r.status != "pass"}
+        expected = {
+            ("STR-03", "error", "skip"),
+            ("CHEM-04", "error", "skip"),
+            ("CHEM-05", "info", "fail"),
+        }
+        self.assertEqual(non_pass, expected)
 
     # ------- Ran in the pinned environment -------
 
