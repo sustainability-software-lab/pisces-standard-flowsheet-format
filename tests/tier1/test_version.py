@@ -105,14 +105,17 @@ class TestPackageVersionFollowsSchema(unittest.TestCase):
     """__version__ is derived from the schema, not restated alongside it."""
 
     def test_read_schema_version_returns_the_schema_field(self):
+        """read_schema_version() (no argument) returns the same value as the schema's top-level "version" field."""
         self.assertEqual(load_version_module().read_schema_version(), schema_version())
 
     def test_default_schema_file_is_the_committed_schema(self):
+        """The module's SCHEMA_FILE constant resolves to the committed sff_schema.json."""
         # read_schema_version() with no argument must read the schema shipped in
         # this package -- that call is what sets __version__.
         self.assertEqual(load_version_module().SCHEMA_FILE.resolve(), SCHEMA_PATH)
 
     def test_missing_version_field_is_reported_clearly(self):
+        """A schema JSON file with no "version" field raises KeyError."""
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -122,6 +125,7 @@ class TestPackageVersionFollowsSchema(unittest.TestCase):
                 load_version_module().read_schema_version(bad)
 
     def test_init_computes_version_instead_of_hardcoding_it(self):
+        """__init__.py assigns __version__ exactly once, from a function call, not a string literal."""
         # A string literal here would reintroduce the drift this change removes.
         assignments = [
             node
@@ -147,15 +151,18 @@ class TestVersionedExporterNaming(unittest.TestCase):
         self.exporters = versioned_exporters()
 
     def test_prefix_is_unchanged(self):
+        """_export.py's source still defines _EXPORTER_PREFIX with this test's EXPORTER_PREFIX value."""
         # get_versioned_exporter builds the function name from this prefix; if it
         # is renamed in _export.py, the constant above (and this suite) is stale.
         source = EXPORT_PATH.read_text(encoding="utf-8")
         self.assertIn(f"_EXPORTER_PREFIX = '{EXPORTER_PREFIX}'", source)
 
     def test_at_least_one_exporter_exists(self):
+        """versioned_exporters() finds at least one exporter function."""
         self.assertTrue(self.exporters, "no versioned exporter functions found")
 
     def test_current_schema_version_has_an_exporter(self):
+        """The schema's declared version has a matching export_biosteam_flowsheet_sff_* function."""
         # Part 2 of the version-bump protocol: a schema bump requires a new
         # export_biosteam_flowsheet_sff_<M>_<m>_<p> function, or the dispatcher
         # cannot export against the current schema at all.
@@ -167,6 +174,7 @@ class TestVersionedExporterNaming(unittest.TestCase):
         )
 
     def test_each_exporter_defaults_to_the_version_in_its_name(self):
+        """Every versioned exporter's sff_version parameter defaults to the version encoded in its own function name."""
         # The dispatcher always passes sff_version explicitly, so this default
         # only applies to direct calls -- but a wrong default there mislabels
         # exports just as badly, and copy-pasting a function for a new version
@@ -176,11 +184,13 @@ class TestVersionedExporterNaming(unittest.TestCase):
                 self.assertEqual(default_of(node, "sff_version"), version)
 
     def test_shared_builder_exists(self):
+        """metadata_writers() includes a function named BUILDER_NAME ("_build_sff_dict")."""
         # If the builder is renamed or inlined, the check below silently stops
         # inspecting the code that actually assigns metadata['sff_version'].
         self.assertIn(BUILDER_NAME, metadata_writers())
 
     def test_no_exporter_hardcodes_a_version_into_metadata(self):
+        """metadata['sff_version'] is assigned from the sff_version argument, in exactly one function, never a literal."""
         # metadata['sff_version'] must come from the sff_version parameter.
         found = 0
         for name, node in metadata_writers().items():

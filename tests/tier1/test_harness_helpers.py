@@ -63,17 +63,20 @@ class TestEnvironmentKey(unittest.TestCase):
         self.harness = load_harness()
 
     def test_key_is_a_sha256_hex_digest(self):
+        """environment_key(BASE_YAML) is a 64-char lowercase-hex string."""
         key = self.harness.environment_key(BASE_YAML)
         self.assertEqual(len(key), 64)
         self.assertTrue(all(c in "0123456789abcdef" for c in key))
 
     def test_key_is_deterministic(self):
+        """environment_key called twice on the same text returns the same key."""
         self.assertEqual(
             self.harness.environment_key(BASE_YAML),
             self.harness.environment_key(BASE_YAML),
         )
 
     def test_key_ignores_the_environment_name(self):
+        """Renaming the 'name:' field does not change the environment_key."""
         renamed = BASE_YAML.replace("name: sff-example", "name: something-else")
         self.assertEqual(
             self.harness.environment_key(BASE_YAML),
@@ -81,6 +84,7 @@ class TestEnvironmentKey(unittest.TestCase):
         )
 
     def test_key_ignores_prefix(self):
+        """Adding a 'prefix:' field does not change the environment_key."""
         with_prefix = BASE_YAML + "prefix: C:\\\\envs\\\\sff-example\n"
         self.assertEqual(
             self.harness.environment_key(BASE_YAML),
@@ -88,6 +92,7 @@ class TestEnvironmentKey(unittest.TestCase):
         )
 
     def test_key_ignores_key_order(self):
+        """Reordering the top-level YAML keys does not change the environment_key."""
         reordered = (
             "dependencies:\n"
             "  - python=3.9.25\n"
@@ -106,6 +111,7 @@ class TestEnvironmentKey(unittest.TestCase):
         )
 
     def test_key_changes_when_a_pin_changes(self):
+        """Bumping the numpy version pin changes the environment_key."""
         bumped = BASE_YAML.replace("numpy==1.26.4", "numpy==1.26.5")
         self.assertNotEqual(
             self.harness.environment_key(BASE_YAML),
@@ -113,6 +119,7 @@ class TestEnvironmentKey(unittest.TestCase):
         )
 
     def test_key_changes_when_a_commit_changes(self):
+        """Changing the pinned biosteam commit hash changes the environment_key."""
         bumped = BASE_YAML.replace(
             "e2d3942dd1076a4516efc91ae194f9e558428551", "0" * 40
         )
@@ -122,6 +129,7 @@ class TestEnvironmentKey(unittest.TestCase):
         )
 
     def test_environment_name_is_prefixed_and_short(self):
+        """environment_name is ENV_NAME_PREFIX + the first 12 chars of the environment_key."""
         name = self.harness.environment_name(BASE_YAML)
         self.assertTrue(name.startswith(self.harness.ENV_NAME_PREFIX))
         self.assertEqual(name, "sff-" + self.harness.environment_key(BASE_YAML)[:12])
@@ -132,18 +140,21 @@ class TestPipRequirementParsing(unittest.TestCase):
         self.harness = load_harness()
 
     def test_version_pin(self):
+        """"numpy==1.26.4" parses to {name: numpy, version: 1.26.4}."""
         self.assertEqual(
             self.harness.parse_pip_requirement("numpy==1.26.4"),
             {"name": "numpy", "version": "1.26.4"},
         )
 
     def test_version_pin_tolerates_whitespace(self):
+        """Extra whitespace around a version pin is stripped before parsing."""
         self.assertEqual(
             self.harness.parse_pip_requirement("  numpy == 1.26.4  "),
             {"name": "numpy", "version": "1.26.4"},
         )
 
     def test_pep508_direct_reference(self):
+        """A "name @ git+URL@commit" PEP 508 reference parses to {name, url, commit}."""
         entry = (
             "biorefineries @ git+https://github.com/BioSTEAMDevelopmentGroup/"
             "Bioindustrial-Park@584232846c999986f108cbd14d53437cd06c8f3d"
@@ -158,6 +169,7 @@ class TestPipRequirementParsing(unittest.TestCase):
         )
 
     def test_bare_git_url_falls_back_to_the_repository_name(self):
+        """A bare "git+URL@commit" entry (no "name @ " prefix) derives the package name from the repo."""
         entry = (
             "git+https://github.com/BioSTEAMDevelopmentGroup/biosteam"
             "@e2d3942dd1076a4516efc91ae194f9e558428551"
@@ -172,6 +184,7 @@ class TestPipRequirementParsing(unittest.TestCase):
         )
 
     def test_egg_fragment_names_the_distribution(self):
+        """A "#egg=<name>" fragment supplies the distribution name and is stripped from the url."""
         entry = (
             "git+https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park"
             "@584232846c999986f108cbd14d53437cd06c8f3d#egg=biorefineries"
@@ -181,13 +194,16 @@ class TestPipRequirementParsing(unittest.TestCase):
         self.assertNotIn("#", record["url"])
 
     def test_directives_are_ignored(self):
+        """pip CLI flags ("--no-deps", "--index-url ...") parse to None, not a package record."""
         self.assertIsNone(self.harness.parse_pip_requirement("--no-deps"))
         self.assertIsNone(self.harness.parse_pip_requirement("--index-url https://x"))
 
     def test_blank_lines_are_ignored(self):
+        """A whitespace-only line parses to None."""
         self.assertIsNone(self.harness.parse_pip_requirement("   "))
 
     def test_pep508_reference_without_a_commit_is_unparseable(self):
+        """A VCS reference with no pinned commit parses to None, not a partial {name, url} record."""
         # A VCS reference with no pinned commit is not a pin -- it resolves to
         # whatever the branch tip happens to be at install time. The parser
         # exists to produce pins, so this must come back None, not a partial
@@ -196,6 +212,7 @@ class TestPipRequirementParsing(unittest.TestCase):
         self.assertIsNone(self.harness.parse_pip_requirement(entry))
 
     def test_bare_git_url_without_a_commit_is_unparseable(self):
+        """A bare git+URL entry with no pinned commit parses to None."""
         entry = "git+https://github.com/org/repo.git"
         self.assertIsNone(self.harness.parse_pip_requirement(entry))
 
@@ -205,31 +222,37 @@ class TestPackageRecord(unittest.TestCase):
         self.harness = load_harness()
 
     def test_finds_a_version_pinned_package(self):
+        """package_record(BASE_YAML, "numpy") returns its {name, version} pin."""
         self.assertEqual(
             self.harness.package_record(BASE_YAML, "numpy"),
             {"name": "numpy", "version": "1.26.4"},
         )
 
     def test_finds_a_commit_pinned_package(self):
+        """package_record(BASE_YAML, "biosteam") returns its pinned commit and repo url."""
         record = self.harness.package_record(BASE_YAML, "biosteam")
         self.assertEqual(record["commit"], "e2d3942dd1076a4516efc91ae194f9e558428551")
         self.assertEqual(record["url"], "https://github.com/BioSTEAMDevelopmentGroup/biosteam")
 
     def test_branch_is_attached_when_given(self):
+        """Passing branch="master" adds a "branch" key to the returned record."""
         record = self.harness.package_record(BASE_YAML, "biosteam", branch="master")
         self.assertEqual(record["branch"], "master")
 
     def test_name_matching_ignores_underscore_dash_and_case(self):
+        """A requirement named "Free_Properties" is found when queried as "free-properties"."""
         yaml_text = BASE_YAML.replace("numpy==1.26.4", "Free_Properties==0.3.6")
         self.assertEqual(
             self.harness.package_record(yaml_text, "free-properties")["version"], "0.3.6"
         )
 
     def test_missing_package_raises(self):
+        """Querying a package absent from the environment spec raises ValueError."""
         with self.assertRaises(ValueError):
             self.harness.package_record(BASE_YAML, "not-installed-anywhere")
 
     def test_commit_less_vcs_entry_raises(self):
+        """A package whose only entry is an unpinned git+ reference raises ValueError naming the package."""
         # The only entry for this package is an unpinned git+ reference, which
         # parse_pip_requirement now rejects (returns None) -- so, from
         # package_record's point of view, the package is simply not found.
@@ -254,10 +277,12 @@ class TestCornEnvironmentSpecification(unittest.TestCase):
         self.text = CORN_ENV.read_text(encoding="utf-8")
 
     def test_simulator_package_is_commit_pinned(self):
+        """The committed corn recipe's biosteam entry parses to its pinned commit."""
         record = self.harness.package_record(self.text, "biosteam")
         self.assertEqual(record["commit"], "e2d3942dd1076a4516efc91ae194f9e558428551")
 
     def test_flowsheet_model_package_is_commit_pinned(self):
+        """The committed corn recipe's biorefineries entry parses to its pinned commit and repo url."""
         record = self.harness.package_record(self.text, "biorefineries")
         self.assertEqual(record["commit"], "584232846c999986f108cbd14d53437cd06c8f3d")
         self.assertEqual(
@@ -266,6 +291,7 @@ class TestCornEnvironmentSpecification(unittest.TestCase):
         )
 
     def test_every_pip_entry_is_parseable(self):
+        """Every pip requirement listed in the committed corn recipe is parseable by parse_pip_requirement."""
         # An unparseable entry would be installed but absent from the recorded
         # provenance -- silent, and exactly what this catches.
         for entry in self.harness.pip_requirements(self.text):
@@ -273,6 +299,7 @@ class TestCornEnvironmentSpecification(unittest.TestCase):
                 self.assertIsNotNone(self.harness.parse_pip_requirement(entry))
 
     def test_runner_dependencies_are_pinned(self):
+        """The corn recipe pins PyYAML and jsonschema, each with a "version" entry."""
         # The child process imports yaml (via _harness) and jsonschema (via
         # _validate); without these pins the export fails inside a freshly
         # created environment.
@@ -349,6 +376,7 @@ class TestEnsureEnvironment(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
 
     def test_creates_the_environment_when_absent(self):
+        """No matching environment exists -> ensure_environment issues "conda env create" and returns its prefix."""
         conda = FakeConda()
         prefix = self.harness.ensure_environment(
             self.env_yaml, conda_exe=self.conda_exe, run=conda
@@ -357,6 +385,7 @@ class TestEnsureEnvironment(unittest.TestCase):
         self.assertTrue(prefix.endswith(self.name))
 
     def test_reuses_an_existing_environment(self):
+        """An environment already named for this key -> ensure_environment does not issue "conda env create"."""
         # The environment key is the reuse criterion; rebuilding a matching
         # environment would cost minutes on every export.
         conda = FakeConda(existing=[self.name])
@@ -366,6 +395,7 @@ class TestEnsureEnvironment(unittest.TestCase):
         self.assertNotIn(["env", "create", "-n"], [c[1:4] for c in conda.calls])
 
     def test_recreate_removes_then_creates(self):
+        """recreate=True on an existing environment issues both "conda env remove" and "conda env create"."""
         conda = FakeConda(existing=[self.name])
         self.harness.ensure_environment(
             self.env_yaml, recreate=True, conda_exe=self.conda_exe, run=conda
@@ -375,6 +405,7 @@ class TestEnsureEnvironment(unittest.TestCase):
         self.assertIn(["env", "create"], commands)
 
     def test_failed_creation_removes_the_partial_environment(self):
+        """A failing "conda env create" raises and is followed by a "conda env remove" cleanup call."""
         # A half-built environment matches the content hash, so without this
         # teardown it would be reused -- broken -- forever after.
         conda = FakeConda(fail_create=True)
@@ -385,6 +416,7 @@ class TestEnsureEnvironment(unittest.TestCase):
         self.assertIn(["env", "remove"], [c[1:3] for c in conda.calls])
 
     def test_pip_dependency_resolution_is_disabled(self):
+        """The "conda env create" call is made with env var PIP_NO_DEPS="1"."""
         # Bioindustrial-Park declares biosteam>=2.53.0; with resolution on, pip
         # replaces the pinned biosteam commit and every pin below it becomes
         # fiction. --no-deps cannot be written into the pip: block (pip's
@@ -402,6 +434,7 @@ class TestEnsureEnvironment(unittest.TestCase):
             self.fail("conda env create was never invoked")
 
     def test_an_explicit_missing_conda_is_reported_rather_than_replaced(self):
+        """An explicit conda_exe path that does not exist raises FileNotFoundError mentioning conda."""
         # Falling back to a different conda than the one asked for would build
         # the environment somewhere the caller did not expect.
         with self.assertRaises(FileNotFoundError) as caught:
@@ -409,6 +442,7 @@ class TestEnsureEnvironment(unittest.TestCase):
         self.assertIn("conda", str(caught.exception).lower())
 
     def test_conda_is_discovered_without_an_explicit_path(self):
+        """find_conda_exe() with no argument resolves to a real, existing file on this machine."""
         # conda is routinely absent from PATH in non-interactive shells even
         # where it is installed; discovery must not depend on PATH alone.
         self.assertTrue(Path(self.harness.find_conda_exe()).exists())
@@ -419,11 +453,13 @@ class TestExportLock(unittest.TestCase):
         self.harness = load_harness()
 
     def test_lock_is_released_after_use(self):
+        """LOCK_PATH exists while the export_lock context is held, and is gone after it exits normally."""
         with self.harness.export_lock():
             self.assertTrue(self.harness.LOCK_PATH.exists())
         self.assertFalse(self.harness.LOCK_PATH.exists())
 
     def test_second_lock_is_refused(self):
+        """Acquiring export_lock while it is already held raises RuntimeError."""
         # Two concurrent simulations corrupt the shared numba cache, so this is
         # enforced rather than left to the caller's discipline.
         with self.harness.export_lock():
@@ -432,6 +468,7 @@ class TestExportLock(unittest.TestCase):
                     pass
 
     def test_lock_is_released_after_an_error(self):
+        """A ValueError raised inside the export_lock context still propagates, and LOCK_PATH is removed."""
         with self.assertRaises(ValueError):
             with self.harness.export_lock():
                 raise ValueError("boom")
@@ -465,6 +502,7 @@ class TestExportModelInvocation(unittest.TestCase):
         self.fake_run = fake_run
 
     def test_child_runs_the_runner_module(self):
+        """export_model launches the child as `python -m pisces_sff._runner <model_dir>`."""
         self.harness.export_model(
             self.model_dir, self.output, conda_exe=self.conda_exe, run=self.fake_run
         )
@@ -474,6 +512,7 @@ class TestExportModelInvocation(unittest.TestCase):
         self.assertIn(str(self.model_dir.resolve()), cmd)
 
     def test_child_python_comes_from_the_provisioned_environment(self):
+        """The child command's python executable path includes the provisioned environment's name."""
         self.harness.export_model(
             self.model_dir, self.output, conda_exe=self.conda_exe, run=self.fake_run
         )
@@ -482,6 +521,7 @@ class TestExportModelInvocation(unittest.TestCase):
         )
 
     def test_child_pythonpath_is_only_the_repository_root(self):
+        """The child process's PYTHONPATH is set to exactly REPO_ROOT."""
         # The reproducibility hole this harness closes: a user-level PYTHONPATH
         # of source clones silently shadows the pinned installs.
         self.harness.export_model(
@@ -492,6 +532,7 @@ class TestExportModelInvocation(unittest.TestCase):
         )
 
     def test_child_neutralizes_breakpoints(self):
+        """The child process's PYTHONBREAKPOINT is set to "0"."""
         # _export.py has bare breakpoint() calls; in a TTY-less child they hang.
         self.harness.export_model(
             self.model_dir, self.output, conda_exe=self.conda_exe, run=self.fake_run
@@ -499,6 +540,7 @@ class TestExportModelInvocation(unittest.TestCase):
         self.assertEqual(self.recorded["env"]["PYTHONBREAKPOINT"], "0")
 
     def test_child_ignores_conda_and_user_site_context(self):
+        """CONDA_PREFIX/CONDA_DEFAULT_ENV are scrubbed from the child's env, and PYTHONNOUSERSITE is set to "1"."""
         # Seeded explicitly: these variables are often unset in a
         # non-interactive shell, so an unseeded assertion would pass without
         # proving anything was scrubbed.
@@ -517,6 +559,7 @@ class TestExportModelInvocation(unittest.TestCase):
         self.assertEqual(env["PYTHONNOUSERSITE"], "1")
 
     def test_environment_key_is_passed_to_the_child(self):
+        """The child command includes "--env-key" followed by the model's environment_key."""
         self.harness.export_model(
             self.model_dir, self.output, conda_exe=self.conda_exe, run=self.fake_run
         )
@@ -527,6 +570,7 @@ class TestExportModelInvocation(unittest.TestCase):
         )
 
     def test_nonzero_child_exit_raises(self):
+        """A child process exiting with a nonzero return code raises RuntimeError."""
         def failing_run(cmd, **kwargs):
             if Path(cmd[0]).name.startswith("conda"):
                 return FakeConda(existing=[self.harness.environment_name(BASE_YAML)])(
@@ -540,6 +584,7 @@ class TestExportModelInvocation(unittest.TestCase):
             )
 
     def test_missing_load_script_is_reported_before_any_work(self):
+        """A model directory with no load.py raises FileNotFoundError before any child process is launched."""
         (self.model_dir / "load.py").unlink()
         with self.assertRaises(FileNotFoundError):
             self.harness.export_model(
@@ -561,6 +606,7 @@ class TestProducedInterfaceIsExported(unittest.TestCase):
         self.harness = load_harness()
 
     def test_produced_names_are_attributes_and_in_all(self):
+        """Each brief-listed produced name is both an attribute of _harness and present in _harness.__all__."""
         for name in (
             "environment_python",
             "export_lock",

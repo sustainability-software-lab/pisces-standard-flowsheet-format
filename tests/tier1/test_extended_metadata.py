@@ -22,10 +22,12 @@ def _write(directory, text):
 
 class TestLoadExtendedMetadata(unittest.TestCase):
     def test_filename_constant(self):
+        """EXTENDED_METADATA_FILENAME is the literal "extended_metadata.yaml"."""
         self.assertEqual(_runner.EXTENDED_METADATA_FILENAME,
                          "extended_metadata.yaml")
 
     def test_present_file_parses_to_dict(self):
+        """A well-formed extended_metadata.yaml parses into a dict with its authored keys intact."""
         with tempfile.TemporaryDirectory() as d:
             _write(d,
                    'source_doi: "10.1234/x"\n'
@@ -42,24 +44,28 @@ class TestLoadExtendedMetadata(unittest.TestCase):
                          "Saccharomyces cerevisiae")
 
     def test_missing_file_warns_and_returns_empty(self):
+        """A model directory with no extended_metadata.yaml -> UserWarning is raised and {} is returned."""
         with tempfile.TemporaryDirectory() as d:
             with self.assertWarns(UserWarning):
                 got = load_extended_metadata(d)
         self.assertEqual(got, {})
 
     def test_empty_file_returns_empty_without_error(self):
+        """An empty extended_metadata.yaml parses (no YAML content) to {} without raising."""
         with tempfile.TemporaryDirectory() as d:
             _write(d, "")
             got = load_extended_metadata(d)
         self.assertEqual(got, {})
 
     def test_malformed_yaml_raises_valueerror(self):
+        """Unparseable YAML (an unterminated quoted string) raises ValueError."""
         with tempfile.TemporaryDirectory() as d:
             _write(d, 'source_doi: "unterminated\n')
             with self.assertRaises(ValueError):
                 load_extended_metadata(d)
 
     def test_non_mapping_top_level_raises_valueerror(self):
+        """A YAML document whose top level is a list (not a mapping) raises ValueError."""
         with tempfile.TemporaryDirectory() as d:
             _write(d, "- just\n- a\n- list\n")
             with self.assertRaises(ValueError):
@@ -96,6 +102,7 @@ class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
         return d
 
     def test_record_present_when_file_exists(self):
+        """A model dir with extended_metadata.yaml -> build_reproducibility embeds it as a filename/format/content/sha256 record."""
         with tempfile.TemporaryDirectory() as tmp:
             d = self._model_dir(tmp, with_extended=True)
             repro = _runner.build_reproducibility(d, _fixture_module())
@@ -107,6 +114,7 @@ class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
         self.assertEqual(len(rec["sha256"]), 64)
 
     def test_record_absent_when_file_missing(self):
+        """A model dir with no extended_metadata.yaml -> no "extended_metadata" key, other records unaffected."""
         with tempfile.TemporaryDirectory() as tmp:
             d = self._model_dir(tmp, with_extended=False)
             repro = _runner.build_reproducibility(d, _fixture_module())

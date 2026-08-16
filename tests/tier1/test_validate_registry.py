@@ -29,11 +29,13 @@ EXPECTED_IDS = {
 
 class TestRegistry(unittest.TestCase):
     def test_all_registered_and_callable(self):
+        """_CHECKS is nonempty and every entry is a callable."""
         self.assertTrue(V._CHECKS)
         for check in V._CHECKS:
             self.assertTrue(callable(check))
 
     def test_registry_emits_every_expected_id_once(self):
+        """Running every registered check on an empty _Context emits each ID in EXPECTED_IDS exactly once."""
         ctx = V._Context({})
         ids = []
         for check in V._CHECKS:

@@ -30,10 +30,12 @@ class TestIterModelDirs(unittest.TestCase):
         self.m = load_module()
 
     def test_finds_the_corn_model(self):
+        """iter_model_dirs() discovers a directory named "corn_dry_grind_ethanol"."""
         names = {d.name for d in self.m.iter_model_dirs()}
         self.assertIn("corn_dry_grind_ethanol", names)
 
     def test_every_discovered_dir_has_a_load_script(self):
+        """Every directory returned by iter_model_dirs() contains a load.py file."""
         for directory in self.m.iter_model_dirs():
             with self.subTest(model=directory.name):
                 self.assertTrue((directory / "load.py").is_file())
@@ -44,6 +46,7 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
         self.m = load_module()
 
     def test_calls_export_once_per_model_and_names_outputs(self):
+        """regenerate_corpus calls the injected export once per discovered model and writes one .json per model named by its stem."""
         calls = []
 
         def fake_export(model_dir, output_path, sff_version=None):
@@ -62,6 +65,7 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
                 self.assertTrue(path.is_file())
 
     def test_threads_explicit_sff_version_to_export(self):
+        """regenerate_corpus(sff_version="0.0.7") passes that exact version to every export call."""
         # An explicit sff_version must reach the export callable unchanged, so a
         # caller (or `python -m ... --sff-version`) can target a chosen schema
         # version without editing any source pin.
@@ -79,6 +83,7 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
         self.assertTrue(all(v == "0.0.7" for v in received))
 
     def test_omitted_sff_version_defers_to_the_export_default(self):
+        """regenerate_corpus called with no sff_version passes sff_version=None to every export call."""
         # With no version given, regenerate_corpus passes sff_version=None so the
         # export callable's own default applies -- for the real harness that
         # default is read_schema_version(), which is how the corpus auto-syncs to

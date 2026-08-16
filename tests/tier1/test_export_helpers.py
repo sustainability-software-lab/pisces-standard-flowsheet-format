@@ -19,21 +19,26 @@ _export = _fakes.load_export()
 
 class TestStubKeepsBiosteamFake(unittest.TestCase):
     def test_biosteam_import_is_the_stub_not_the_real_package(self):
+        """The biosteam and thermosteam modules loaded via _fakes carry the _SFF_STUB marker."""
         self.assertTrue(getattr(sys.modules["biosteam"], "_SFF_STUB", False))
         self.assertTrue(getattr(sys.modules["thermosteam"], "_SFF_STUB", False))
 
 
 class TestFormatName(unittest.TestCase):
     def test_empty_returns_empty(self):
+        """format_name("") -> ""."""
         self.assertEqual(_export.format_name(""), "")
 
     def test_all_caps_passthrough(self):
+        """A recognized all-caps abbreviation ("CSL") is returned unchanged."""
         self.assertEqual(_export.format_name("CSL"), "CSL")
 
     def test_specific_TAL_mapping(self):
+        """format_name("TAL_product") maps via the special-case table to "Triacetic acid lactone"."""
         self.assertEqual(_export.format_name("TAL_product"), "Triacetic acid lactone")
 
     def test_feedstock_suffix_stripped_and_capitalized(self):
+        """format_name("corn_feedstock") strips the "_feedstock" suffix and capitalizes -> "Corn"."""
         self.assertEqual(_export.format_name("corn_feedstock"), "Corn")
 
 
@@ -43,14 +48,17 @@ class TestIsProductWithFakeStream(unittest.TestCase):
         return types.SimpleNamespace(cost=cost)
 
     def test_priced_stream_in_products_is_a_product(self):
+        """A stream with positive cost that is in all_sys_products -> is_product is True."""
         s = self._stream(1.0)
         self.assertTrue(_export.is_product(s, [s]))
 
     def test_zero_cost_is_not_a_product(self):
+        """A stream with zero cost, even if in all_sys_products -> is_product is False."""
         s = self._stream(0.0)
         self.assertFalse(_export.is_product(s, [s]))
 
     def test_stream_absent_from_products_is_not_a_product(self):
+        """A priced stream absent from all_sys_products -> is_product is False."""
         s = self._stream(1.0)
         self.assertFalse(_export.is_product(s, []))
 
