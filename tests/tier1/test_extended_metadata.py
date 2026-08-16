@@ -116,5 +116,62 @@ class TestBuildReproducibilityEmbedsExtendedMetadata(unittest.TestCase):
         self.assertIn("load_script", repro)
 
 
+class TestLoadModelModule(unittest.TestCase):
+    def test_imports_load_py_by_file_path(self):
+        """load_model_module imports a model directory's load.py by file
+        path (no packaging needed) and exposes its top-level names."""
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "load.py").write_text(
+                "MARKER = 'hello'\ndef load():\n    return MARKER\n",
+                encoding="utf-8")
+            module = _runner.load_model_module(d)
+        self.assertEqual(module.MARKER, "hello")
+        self.assertEqual(module.load(), "hello")
+
+    def test_missing_load_py_raises_file_not_found(self):
+        """A model directory with no load.py raises FileNotFoundError."""
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(FileNotFoundError):
+                _runner.load_model_module(d)
+
+
+class TestFileRecordHelper(unittest.TestCase):
+    def test_embeds_format_filename_sha256_and_content(self):
+        """_file_record reads a real file into an embedded record: format,
+        filename, sha256 digest, and verbatim decoded content."""
+        import hashlib
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "environment.yaml"
+            # write_bytes (not write_text): write_text's default newline
+            # translation would turn '\n' into '\r\n' on Windows, and this
+            # test asserts the exact bytes _file_record reads back.
+            path.write_bytes(b"name: x\n")
+            record = _runner._file_record(path, "conda-environment-yaml")
+        self.assertEqual(record["format"], "conda-environment-yaml")
+        self.assertEqual(record["filename"], "environment.yaml")
+        self.assertEqual(record["content"], "name: x\n")
+        self.assertEqual(record["sha256"], hashlib.sha256(b"name: x\n").hexdigest())
+
+    def test_extra_fields_are_merged_in(self):
+        """An `extra` mapping passed to _file_record is merged into the
+        returned record."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "load.py"
+            path.write_text("# x\n", encoding="utf-8")
+            record = _runner._file_record(path, "python", {"entry_point": "load"})
+        self.assertEqual(record["entry_point"], "load")
+
+
+class TestInstalledVersionsHelper(unittest.TestCase):
+    def test_returns_versions_keyed_only_by_tracked_package_names(self):
+        """_installed_versions returns installed-version strings keyed only
+        by names drawn from TRACKED_PACKAGES; numpy (a hard dependency of
+        this environment) is always resolvable to a version string."""
+        versions = _runner._installed_versions()
+        self.assertIn("numpy", versions)
+        self.assertIsInstance(versions["numpy"], str)
+        self.assertTrue(set(versions) <= set(_runner.TRACKED_PACKAGES))
+
+
 if __name__ == "__main__":
     unittest.main()

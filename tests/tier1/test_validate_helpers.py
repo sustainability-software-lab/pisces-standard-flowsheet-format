@@ -823,5 +823,425 @@ class TestEntryPoint(unittest.TestCase):
                             for r in results))
 
 
+#%% ------- Coverage-only: private module-level helpers (Task 3.1) ------- ##
+# These private helpers back the _check_* functions exercised above, but are
+# not yet exercised UNDER THEIR OWN NAME anywhere in Tier 1. Each is called
+# directly here on a small synthetic input. _molar_mass_from_formula and the
+# formula-driven paths of CHEM-03/STR-10 use the real, lightweight `chemicals`
+# formula parser (confirmed importable standalone in ~0.1s, touching neither
+# sys.modules['thermosteam'] nor ['biosteam']) rather than a fake -- so these
+# are genuine assertions, not vacuous ones. _unit_is_parseable itself (and the
+# substantive parseable/unparseable behavior of QU-02/UTIL-03, which depends
+# on it) is the one helper in this file's neighborhood that stays real-only
+# and exempted in test_coverage_meta.py: it needs the real
+# thermosteam.units_of_measure pint registry, which the Tier-1 biosteam stub
+# (installed by test_export_helpers.py, running first alphabetically) poisons
+# for the rest of the pytest process -- see tests/_stub_eviction.py. QU-02 and
+# UTIL-03's documented vacuous-pass-on-no-input path never reaches
+# _unit_is_parseable, so that specific behavior is exercised for real below.
+
+
+class TestDuplicatesHelper(unittest.TestCase):
+    def test_values_appearing_more_than_once_are_reported(self):
+        """_duplicates returns the set of values that appear more than once."""
+        self.assertEqual(V._duplicates(["a", "b", "a", "c", "c", "c"]), {"a", "c"})
+
+    def test_none_values_are_ignored(self):
+        """A repeated None never counts as a duplicate."""
+        self.assertEqual(V._duplicates([None, None, "x"]), set())
+
+    def test_no_repeats_returns_empty_set(self):
+        """All-distinct values return an empty set."""
+        self.assertEqual(V._duplicates(["a", "b"]), set())
+
+
+class TestAliasIndexHelper(unittest.TestCase):
+    def test_maps_each_alias_to_its_declaring_entry_keys(self):
+        """_alias_index maps an alias shared by two entries to both entry keys,
+        and an alias declared by only one entry to just that key."""
+        c = ctx(quantity_units_global={
+            "mass_flow": {"aliases": ["F", "total_mass_flow"]},
+            "molar_flow": {"aliases": ["F"]}})
+        idx = V._alias_index(c)
+        self.assertEqual(sorted(idx["F"]), ["mass_flow", "molar_flow"])
+        self.assertEqual(idx["total_mass_flow"], ["mass_flow"])
+
+    def test_empty_registry_yields_empty_index(self):
+        """An empty quantity_units_global registry indexes no aliases."""
+        self.assertEqual(V._alias_index(ctx()), {})
+
+
+class TestExpectedTopologyHelper(unittest.TestCase):
+    def test_both_endpoints_present_is_internal(self):
+        """A stream with a real source and a real sink is 'internal'."""
+        self.assertEqual(
+            V._expected_topology({"source_unit_id": "A", "sink_unit_id": "B"}),
+            "internal")
+
+    def test_sink_only_is_input(self):
+        """A boundary source with a real sink is 'input'."""
+        self.assertEqual(
+            V._expected_topology({"source_unit_id": "None", "sink_unit_id": "B"}),
+            "input")
+
+    def test_source_only_is_output(self):
+        """A real source with a boundary sink is 'output'."""
+        self.assertEqual(
+            V._expected_topology({"source_unit_id": "A", "sink_unit_id": "None"}),
+            "output")
+
+    def test_doubly_isolated_is_none(self):
+        """A doubly-boundary stream (STR-03 territory) has no expected topology."""
+        self.assertIsNone(
+            V._expected_topology({"source_unit_id": "None", "sink_unit_id": "None"}))
+
+
+class TestIterNamedCompositionsHelper(unittest.TestCase):
+    def test_yields_phase_symbol_and_its_composition_list(self):
+        """_iter_named_compositions yields (phase_symbol, composition_list)
+        pairs, one per declared phase."""
+        stream = {"stream_properties": {"phases": {
+            "l": {"composition": [{"component_name": "W"}]}}}}
+        self.assertEqual(list(V._iter_named_compositions(stream)),
+                         [("l", [{"component_name": "W"}])])
+
+    def test_no_phases_yields_nothing(self):
+        """A stream with no phases block yields no compositions."""
+        self.assertEqual(list(V._iter_named_compositions({})), [])
+
+
+class TestIterQuantityUnitStringsHelper(unittest.TestCase):
+    def test_yields_global_design_and_utility_result_entries(self):
+        """_iter_quantity_unit_strings yields one (location, unit_string,
+        empty_allowed) tuple per quantity_units_global entry, per unit
+        design-result unit, and per utility result-unit string; only the
+        design-result entries allow an empty string."""
+        c = ctx(
+            quantity_units_global={"mass_flow": {"quantity_units": "kg/hr"}},
+            units=[{"id": "U", "quantity_units_for_design_results": {"Area": "m2"}}],
+            utilities={"heat_utilities": [
+                {"id": "steam", "quantity_units_for_utility_results": "kJ/hr"}]})
+        got = list(V._iter_quantity_unit_strings(c))
+        self.assertIn(("quantity_units_global.mass_flow", "kg/hr", False), got)
+        self.assertIn(("U.design['Area']", "m2", True), got)
+        self.assertIn(("steam.utility_results", "kJ/hr", False), got)
+
+
+class TestIterReactionsHelper(unittest.TestCase):
+    def test_yields_unit_reaction_pairs_in_order(self):
+        """_iter_reactions yields (unit, reaction) for every reaction dict,
+        in declaration order."""
+        c = ctx(units=[{"id": "U", "reactions": [
+            {"reactant": "A"}, {"reactant": "B"}]}])
+        got = list(V._iter_reactions(c))
+        self.assertEqual([r["reactant"] for _, r in got], ["A", "B"])
+        self.assertTrue(all(u["id"] == "U" for u, _ in got))
+
+    def test_unit_without_reactions_yields_nothing(self):
+        """A unit with no reactions array contributes no pairs."""
+        self.assertEqual(list(V._iter_reactions(ctx(units=[{"id": "U"}]))), [])
+
+
+class TestMeanMolarMassHelper(unittest.TestCase):
+    def test_weighted_average_over_declared_molar_masses(self):
+        """_mean_molar_mass computes the mol-fraction-weighted average molar
+        mass over a phase composition."""
+        c = ctx(chemicals=[{"id": "W", "molar_mass": 18.0},
+                           {"id": "E", "molar_mass": 46.0}])
+        comp = [{"component_name": "W", "mol_fraction": 0.5},
+                {"component_name": "E", "mol_fraction": 0.5}]
+        self.assertAlmostEqual(V._mean_molar_mass(comp, c), 32.0)
+
+    def test_unresolvable_component_returns_none(self):
+        """A composition entry whose component has no resolvable molar mass
+        makes the whole average unresolvable (None)."""
+        c = ctx(chemicals=[])
+        comp = [{"component_name": "Ghost", "mol_fraction": 1.0}]
+        self.assertIsNone(V._mean_molar_mass(comp, c))
+
+
+class TestParseEquationHelper(unittest.TestCase):
+    def test_parses_simple_equation_to_signed_coefficients(self):
+        """_parse_equation turns 'A + B -> C' into LHS-negative/RHS-positive
+        coefficients keyed by chemical id."""
+        c = ctx(chemicals=[{"id": "A"}, {"id": "B"}, {"id": "C"}])
+        self.assertEqual(V._parse_equation("A + B -> C", c),
+                         {"A": -1.0, "B": -1.0, "C": 1.0})
+
+    def test_parses_leading_numeric_coefficients(self):
+        """A leading numeric coefficient on a species term is honored."""
+        c = ctx(chemicals=[{"id": "A"}, {"id": "B"}])
+        self.assertEqual(V._parse_equation("A -> 2 B", c), {"A": -1.0, "B": 2.0})
+
+    def test_missing_arrow_returns_none(self):
+        """An equation with no '->' cannot be parsed."""
+        c = ctx(chemicals=[{"id": "A"}])
+        self.assertIsNone(V._parse_equation("A", c))
+
+    def test_unresolvable_species_returns_none(self):
+        """A species that resolves to no declared chemical id returns None."""
+        c = ctx(chemicals=[{"id": "A"}])
+        self.assertIsNone(V._parse_equation("A -> Ghost", c))
+
+
+class TestPresentGlobalQuantityFieldsHelper(unittest.TestCase):
+    def test_detects_present_stream_price_and_chemical_fields(self):
+        """_present_global_quantity_fields reports every quantity field that
+        appears as a numeric value somewhere in the document."""
+        c = ctx(streams=[{"price": 1.0,
+                          "stream_properties": {"temperature": 300.0}}],
+                chemicals=[{"molar_mass": 18.0}])
+        self.assertEqual(V._present_global_quantity_fields(c),
+                         {"price", "temperature", "molar_mass"})
+
+    def test_empty_document_reports_no_fields(self):
+        """An empty document has no present quantity fields."""
+        self.assertEqual(V._present_global_quantity_fields(ctx()), set())
+
+
+class TestReactionUsesIndexStoichiometryHelper(unittest.TestCase):
+    def test_array_form_is_always_index_based(self):
+        """An array-form stoichiometry is always index-based."""
+        c = ctx(chemicals=[{"id": "A"}])
+        self.assertTrue(
+            V._reaction_uses_index_stoichiometry({"stoichiometry": [-1, 1]}, c))
+
+    def test_id_keyed_dict_is_not_index_based(self):
+        """A dict-form stoichiometry keyed entirely by chemical id is not
+        index-based (Corn's shape)."""
+        c = ctx(chemicals=[{"id": "A"}, {"id": "B"}])
+        self.assertFalse(V._reaction_uses_index_stoichiometry(
+            {"stoichiometry": {"A": -1, "B": 1}}, c))
+
+    def test_dict_with_an_unresolvable_key_is_index_based(self):
+        """A dict-form stoichiometry key that is not a chemical id is treated
+        as an index reference."""
+        c = ctx(chemicals=[{"id": "A"}])
+        self.assertTrue(
+            V._reaction_uses_index_stoichiometry({"stoichiometry": {"0": -1}}, c))
+
+    def test_no_stoichiometry_is_not_index_based(self):
+        """A reaction without a stoichiometry field is not index-based."""
+        self.assertFalse(V._reaction_uses_index_stoichiometry({}, ctx()))
+
+
+class TestReferencedChemicalIdsHelper(unittest.TestCase):
+    def test_collects_refs_from_composition_and_reactions(self):
+        """_referenced_chemical_ids unions chemical ids referenced by stream
+        composition and reaction reactants."""
+        c = ctx(chemicals=[{"id": "W"}, {"id": "E"}],
+                streams=[{"stream_properties": {"phases": {"l": {
+                    "composition": [{"component_name": "W"}]}}}}],
+                units=[{"reactions": [{"reactant": "E"}]}])
+        self.assertEqual(V._referenced_chemical_ids(c), {"W", "E"})
+
+
+class TestSameReactionUpToScaleHelper(unittest.TestCase):
+    def test_agreeing_up_to_a_positive_scale_factor(self):
+        """Two coefficient maps describing the same reaction at different
+        (positive) scales agree."""
+        self.assertTrue(V._same_reaction_up_to_scale(
+            {"A": -1.0, "B": 1.0}, {"A": -2.0, "B": 2.0}))
+
+    def test_disagreeing_ratios_do_not_match(self):
+        """Coefficient maps whose ratios differ do not agree."""
+        self.assertFalse(V._same_reaction_up_to_scale(
+            {"A": -1.0, "B": 1.0}, {"A": -1.0, "B": 2.0}))
+
+    def test_different_component_sets_disagree(self):
+        """Coefficient maps over different component sets can never agree."""
+        self.assertFalse(V._same_reaction_up_to_scale(
+            {"A": -1.0}, {"A": -1.0, "B": 1.0}))
+
+
+class TestStoichToCoeffsHelper(unittest.TestCase):
+    def test_array_form_resolves_by_declared_index(self):
+        """An array-form stoichiometry resolves each array position via the
+        chemical declaring that index."""
+        c = ctx(chemicals=[{"id": "A", "index": 0}, {"id": "B", "index": 1}])
+        coeffs, err = V._stoich_to_coeffs([-1.0, 1.0], c)
+        self.assertIsNone(err)
+        self.assertEqual(coeffs, {"A": -1.0, "B": 1.0})
+
+    def test_dict_form_resolves_by_id(self):
+        """A dict-form stoichiometry resolves keys directly as chemical ids."""
+        c = ctx(chemicals=[{"id": "A"}])
+        coeffs, err = V._stoich_to_coeffs({"A": -1.0}, c)
+        self.assertIsNone(err)
+        self.assertEqual(coeffs, {"A": -1.0})
+
+    def test_wrong_length_array_is_reported_as_an_error(self):
+        """An array whose length disagrees with the chemicals array returns
+        (None, reason) rather than a partial mapping."""
+        c = ctx(chemicals=[{"id": "A", "index": 0}])
+        coeffs, err = V._stoich_to_coeffs([-1.0, 1.0], c)
+        self.assertIsNone(coeffs)
+        self.assertIsNotNone(err)
+
+    def test_neither_list_nor_dict_is_an_error(self):
+        """A stoichiometry that is neither a list nor a dict returns
+        (None, reason)."""
+        coeffs, err = V._stoich_to_coeffs("nonsense", ctx())
+        self.assertIsNone(coeffs)
+        self.assertIsNotNone(err)
+
+
+class TestStreamCompositionsHelper(unittest.TestCase):
+    def test_yields_each_phases_composition_list(self):
+        """_stream_compositions yields the composition list of every phase."""
+        stream = {"stream_properties": {"phases": {
+            "l": {"composition": [{"component_name": "W"}]}}}}
+        self.assertEqual(list(V._stream_compositions(stream)),
+                         [[{"component_name": "W"}]])
+
+    def test_non_dict_stream_yields_nothing(self):
+        """A non-dict stream (defensive branch) yields no compositions."""
+        self.assertEqual(list(V._stream_compositions("not a stream")), [])
+
+
+class TestStreamFlowScalarsHelper(unittest.TestCase):
+    def test_yields_stream_and_phase_level_numeric_flows(self):
+        """_stream_flow_scalars yields both the stream-level and every
+        phase-level flow scalar."""
+        stream = {"stream_properties": {"total_mass_flow": 1.0, "phases": {
+            "l": {"total_mass_flow": 0.5}}}}
+        self.assertEqual(sorted(V._stream_flow_scalars(stream)), [0.5, 1.0])
+
+    def test_non_numeric_or_absent_values_are_skipped(self):
+        """A stream with no flow fields (only temperature) yields nothing."""
+        stream = {"stream_properties": {"temperature": 300.0, "phases": {}}}
+        self.assertEqual(list(V._stream_flow_scalars(stream)), [])
+
+
+class TestStreamIsEmptyHelper(unittest.TestCase):
+    def test_zero_flow_and_no_composition_is_empty(self):
+        """A stream with only ~zero flow scalars and no composition entries
+        is empty."""
+        stream = {"stream_properties": {"total_mass_flow": 0.0, "phases": {}}}
+        self.assertTrue(V._stream_is_empty(stream))
+
+    def test_nonzero_flow_is_not_empty(self):
+        """A stream with a nonzero flow scalar is not empty."""
+        stream = {"stream_properties": {"total_mass_flow": 5.0, "phases": {}}}
+        self.assertFalse(V._stream_is_empty(stream))
+
+
+class TestValidateJsonAgainstSchemaHelper(unittest.TestCase):
+    def test_the_current_shape_corpus_file_is_schema_valid(self):
+        """validate_json_against_schema reports the current-shape reference
+        corpus file (corn_dry_grind_ethanol.json) as schema-valid, no errors."""
+        is_valid, errors = V.validate_json_against_schema(str(CORN_PATH), str(SCHEMA_PATH))
+        self.assertTrue(is_valid)
+        self.assertEqual(errors, [])
+
+    def test_a_document_missing_a_required_field_is_invalid(self):
+        """A document missing the required metadata.TEA_currency field is
+        reported invalid with a non-empty list of human-readable errors."""
+        doc = minimal_doc()
+        del doc["metadata"]["TEA_currency"]
+        tmp = tempfile.NamedTemporaryFile(
+            "w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(doc, tmp)
+        tmp.close()
+        is_valid, errors = V.validate_json_against_schema(tmp.name, str(SCHEMA_PATH))
+        self.assertFalse(is_valid)
+        self.assertTrue(errors)
+
+
+class TestMolarMassFromFormulaHelper(unittest.TestCase):
+    def test_parses_a_known_formula(self):
+        """_molar_mass_from_formula('H2O') resolves to water's molar mass via
+        the real, lightweight `chemicals` formula parser (~18.015 g/mol)."""
+        self.assertAlmostEqual(V._molar_mass_from_formula("H2O"), 18.01528, places=3)
+
+    def test_unparseable_formula_returns_none(self):
+        """A formula the parser recognizes no atoms in returns None rather
+        than a bogus zero mass."""
+        self.assertIsNone(V._molar_mass_from_formula("not a formula"))
+
+
+class TestCheckFormulaMolarMassAgreementHelper(unittest.TestCase):
+    def test_agreeing_formula_and_declared_mass_pass(self):
+        """CHEM-03: a formula-derived molar mass that agrees with the
+        declared value (within TOL_MOLAR_MASS) passes."""
+        c = ctx(chemicals=[{"id": "W", "formula": "H2O", "molar_mass": 18.01528}])
+        self.assertEqual(
+            V._check_formula_molar_mass_agreement(c)[0].status, "pass")
+
+    def test_disagreeing_formula_and_declared_mass_is_a_warning(self):
+        """CHEM-03: a formula/declared-mass disagreement fails at warning
+        severity."""
+        c = ctx(chemicals=[{"id": "W", "formula": "H2O", "molar_mass": 99.0}])
+        r = V._check_formula_molar_mass_agreement(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "warning"))
+
+    def test_no_formula_declared_mass_pair_skips(self):
+        """A chemical with a declared molar_mass but no formula (or vice
+        versa) contributes no checkable pair -> skip."""
+        c = ctx(chemicals=[{"id": "W", "molar_mass": 18.0}])
+        self.assertEqual(
+            V._check_formula_molar_mass_agreement(c)[0].status, "skip")
+
+
+class TestCheckMassMolarFlowConsistencyHelper(unittest.TestCase):
+    def _ctx(self, mass, molar):
+        # Single-component water phase, declared molar mass (no formula
+        # parsing needed): M-bar = 18.01528 g/mol.
+        return ctx(
+            chemicals=[{"id": "W", "molar_mass": 18.01528}],
+            streams=[{"id": "s", "stream_properties": {
+                "total_mass_flow": mass, "total_molar_flow": molar,
+                "phases": {"l": {"total_mass_flow": mass, "total_molar_flow": molar,
+                                 "composition": [{"component_name": "W",
+                                                  "mol_fraction": 1.0}]}}}}])
+
+    def test_consistent_mass_and_molar_flow_passes(self):
+        """STR-10: mass flow equal to molar flow * mean molar mass passes."""
+        c = self._ctx(mass=18.01528, molar=1.0)
+        self.assertEqual(
+            V._check_mass_molar_flow_consistency(c)[0].status, "pass")
+
+    def test_inconsistent_mass_and_molar_flow_is_a_warning(self):
+        """STR-10: a mass flow that disagrees with molar flow * mean molar
+        mass fails at warning severity."""
+        c = self._ctx(mass=100.0, molar=1.0)
+        r = V._check_mass_molar_flow_consistency(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "warning"))
+
+    def test_unresolvable_molar_mass_skips(self):
+        """A component with no resolvable molar mass (no declared value, no
+        formula) makes that phase unresolvable -> skip."""
+        c = ctx(
+            chemicals=[{"id": "X"}],
+            streams=[{"id": "s", "stream_properties": {
+                "total_mass_flow": 5.0, "total_molar_flow": 1.0,
+                "phases": {"l": {"total_mass_flow": 5.0, "total_molar_flow": 1.0,
+                                 "composition": [{"component_name": "X",
+                                                  "mol_fraction": 1.0}]}}}}])
+        self.assertEqual(
+            V._check_mass_molar_flow_consistency(c)[0].status, "skip")
+
+
+class TestCheckQuantityUnitStringsParseableVacuousPass(unittest.TestCase):
+    def test_no_quantity_unit_strings_present_is_a_vacuous_pass(self):
+        """QU-02 is 'Skipped when: never' (sff_checks.md): zero present
+        quantity-unit strings is a vacuous pass, not a skip. This path never
+        reaches _unit_is_parseable (the loop body never executes), so it is
+        exercisable without the real thermosteam unit registry."""
+        self.assertEqual(
+            V._check_quantity_unit_strings_parseable(ctx())[0].status, "pass")
+
+
+class TestCheckUtilityResultUnitsParseableVacuousPass(unittest.TestCase):
+    def test_no_utilities_present_is_a_vacuous_pass(self):
+        """UTIL-03 is 'Skipped when: never' (sff_checks.md): an empty
+        utilities registry is a vacuous pass. This path never reaches
+        _unit_is_parseable (the loop body never executes), so it is
+        exercisable without the real thermosteam unit registry."""
+        c = ctx(utilities={})
+        self.assertEqual(
+            V._check_utility_result_units_parseable(c)[0].status, "pass")
+
+
 if __name__ == "__main__":
     unittest.main()

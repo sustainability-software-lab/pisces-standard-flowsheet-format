@@ -577,5 +577,129 @@ class TestProducedInterfaceIsExported(unittest.TestCase):
                 )
 
 
+class TestCanonicalEnvironmentTextHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_drops_name_and_prefix_and_sorts_keys(self):
+        """canonical_environment_text drops 'name'/'prefix' and dumps the
+        remaining mapping with keys sorted."""
+        import yaml
+        text = self.harness.canonical_environment_text(BASE_YAML)
+        spec = yaml.safe_load(text)
+        self.assertNotIn("name", spec)
+        self.assertNotIn("prefix", spec)
+        self.assertIn("dependencies", spec)
+        self.assertEqual(
+            text, yaml.safe_dump(spec, sort_keys=True, default_flow_style=False))
+
+    def test_is_exactly_what_environment_key_hashes(self):
+        """environment_key(text) is the sha256 hex digest of
+        canonical_environment_text(text).encode('utf-8')."""
+        import hashlib
+        expected = hashlib.sha256(
+            self.harness.canonical_environment_text(BASE_YAML).encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(self.harness.environment_key(BASE_YAML), expected)
+
+
+class TestSha256BytesHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_matches_hashlib_sha256(self):
+        """sha256_bytes(data) equals hashlib.sha256(data).hexdigest()."""
+        import hashlib
+        data = b"pisces-sff"
+        self.assertEqual(self.harness.sha256_bytes(data),
+                         hashlib.sha256(data).hexdigest())
+
+    def test_digest_is_64_lowercase_hex_characters(self):
+        """The digest is always a 64-character lowercase hex string, even for
+        empty input."""
+        digest = self.harness.sha256_bytes(b"")
+        self.assertEqual(len(digest), 64)
+        self.assertTrue(all(c in "0123456789abcdef" for c in digest))
+
+
+class TestNormalizedHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_lowercases_and_unifies_separators(self):
+        """_normalized lowercases a distribution name and folds '_'/'.' to
+        '-' (PEP 503-ish comparison key)."""
+        self.assertEqual(self.harness._normalized("Free_Properties.Extra"),
+                         "free-properties-extra")
+
+    def test_matches_across_naming_variants(self):
+        """Two spellings of the same distribution name normalize identically."""
+        self.assertEqual(self.harness._normalized("free-properties"),
+                         self.harness._normalized("Free_Properties"))
+
+
+class TestVcsRecordHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_parses_a_commit_pinned_reference(self):
+        """_vcs_record parses a 'git+URL@commit' reference into a
+        {name, url, commit} record."""
+        record = self.harness._vcs_record(
+            "biosteam",
+            "git+https://github.com/BioSTEAMDevelopmentGroup/biosteam@"
+            "e2d3942dd1076a4516efc91ae194f9e558428551")
+        self.assertEqual(record, {
+            "name": "biosteam",
+            "url": "https://github.com/BioSTEAMDevelopmentGroup/biosteam",
+            "commit": "e2d3942dd1076a4516efc91ae194f9e558428551"})
+
+    def test_non_git_reference_is_none(self):
+        """A reference that does not start with 'git+' is not a VCS pin."""
+        self.assertIsNone(self.harness._vcs_record("pkg", "https://example.com/pkg"))
+
+    def test_missing_commit_is_none(self):
+        """A git+ reference with no pinned commit is rejected outright, not
+        partially parsed into a {name, url}-only record."""
+        self.assertIsNone(
+            self.harness._vcs_record("pkg", "git+https://github.com/org/repo"))
+
+
+class TestEnvironmentPrefixHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_returns_the_matching_prefix(self):
+        """_environment_prefix returns the prefix whose basename equals the
+        requested environment name."""
+        conda = FakeConda(existing=["sff-abc123"], root="C:\\envs")
+        prefix = self.harness._environment_prefix("conda.exe", "sff-abc123", conda)
+        self.assertEqual(prefix, "C:\\envs\\sff-abc123")
+
+    def test_returns_none_when_no_environment_matches(self):
+        """_environment_prefix returns None when no existing environment's
+        basename matches the requested name."""
+        conda = FakeConda(existing=["other-env"])
+        self.assertIsNone(
+            self.harness._environment_prefix("conda.exe", "sff-abc123", conda))
+
+
+class TestSchemaVersionHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_matches_the_committed_schemas_version_field(self):
+        """_harness's private _schema_version() -- a deliberate duplicate of
+        _version.read_schema_version(), kept so _harness stays loadable by
+        file path -- reads the same value as the committed schema file's
+        top-level 'version' field, and DEFAULT_SFF_VERSION follows it."""
+        import json
+        schema_path = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
+        with schema_path.open("r", encoding="utf-8") as f:
+            expected = json.load(f)["version"]
+        self.assertEqual(self.harness._schema_version(), expected)
+        self.assertEqual(self.harness.DEFAULT_SFF_VERSION, expected)
+
+
 if __name__ == "__main__":
     unittest.main()
