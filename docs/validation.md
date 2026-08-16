@@ -1,5 +1,9 @@
 # Validation
 
+> **Current schema version: v0.1.0** — a milestone release with no shape or
+> constraint changes over v0.0.12. The `v0.0.12` reference below marks when those
+> declarative constraints were introduced; they remain in force unchanged.
+
 SFF files are validated in two layers, both reachable from `pisces_sff`:
 
 ## Schema validation

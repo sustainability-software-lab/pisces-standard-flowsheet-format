@@ -2,6 +2,8 @@
 
 The Standard Flowsheet Format (SFF) is a JSON document strictly adhering to our JSON schema structure. This page breaks down the core sections of the SFF schema in human-readable terms to help developers quickly understand its structure.
 
+> **Current version: v0.1.0.** This is a milestone release that carries no shape or constraint changes over v0.0.12 — a v0.0.12 document is a valid v0.1.0 document, differing only in `metadata.sff_version`. The `vX.Y.Z` annotations throughout this page record the version at which each field or constraint was **introduced**, and remain the definitive history.
+
 ## Core Properties
 
 Every valid SFF JSON object contains six essential properties at its root:
