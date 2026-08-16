@@ -22,12 +22,9 @@ This guide describes the six-tier test suite and where your new test belongs.
 | 5 | on | `SFF_TEST_TIER5=0` | no |
 | 6 | on | `SFF_TEST_TIER6=0` | yes (full sim + conda env) |
 
-**Rollout note (Phase 1):** the `SFF_TEST_TIER<n>` contract and `tests/_gating.py`
-helper exist now and are used by Tier 1's gating self-test and the Tier 4 tests.
-Some legacy gates (`SFF_TEST_BIOSTEAM` on Tier 2, `SFF_TEST_E2E` on the
-end-to-end test) are repointed onto `SFF_TEST_TIER2`/`SFF_TEST_TIER6` in Phase 2;
-until then the fast-path command produces the right outcome but a couple of tiers
-still read their old env var.
+Every tier gates uniformly on its own `SFF_TEST_TIER<n>` switch (via
+`tests/_gating.py`); the legacy `SFF_TEST_BIOSTEAM` / `SFF_TEST_E2E` variables
+are no longer read by any test.
 
 **Documented fast path** (routine schema/validator/docs work — disables the two simulating tiers):
 
