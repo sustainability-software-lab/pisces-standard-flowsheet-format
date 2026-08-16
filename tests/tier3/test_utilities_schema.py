@@ -72,6 +72,23 @@ class TestUTIL05TempPressure(unittest.TestCase):
             "composition": [], "quantity_units_for_utility_results": "kJ/hr"}]
         self.assertFalse(self.v.is_valid(doc))
 
+    def test_positive_temperature_and_pressure_accepted(self):
+        """UTIL-05 — a heat utility with temperature 500 and pressure 101325 (both >0)
+        → schema accepts the document."""
+        doc = minimal_doc()
+        doc["utilities"]["heat_utilities"] = [{
+            "id": "lps", "temperature": 500.0, "pressure": 101325.0,
+            "composition": [], "quantity_units_for_utility_results": "kJ/hr"}]
+        self.assertTrue(self.v.is_valid(doc))
+
+    def test_zero_utility_pressure_rejected(self):
+        """UTIL-05 — a heat utility with pressure 0 → schema rejects the document."""
+        doc = minimal_doc()
+        doc["utilities"]["heat_utilities"] = [{
+            "id": "lps", "temperature": 500.0, "pressure": 0,
+            "composition": [], "quantity_units_for_utility_results": "kJ/hr"}]
+        self.assertFalse(self.v.is_valid(doc))
+
 
 if __name__ == "__main__":
     unittest.main()

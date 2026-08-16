@@ -71,6 +71,13 @@ class TestCHEM02MolarMass(unittest.TestCase):
             {"id": "A", "included_in_thermo": False, "molar_mass": 0}]
         self.assertFalse(self.v.is_valid(doc))
 
+    def test_positive_molar_mass_accepted(self):
+        """CHEM-02 — a chemical with molar_mass 46.07 (>0) → schema accepts the document."""
+        doc = minimal_doc()
+        doc["chemicals"] = [
+            {"id": "A", "included_in_thermo": False, "molar_mass": 46.07}]
+        self.assertTrue(self.v.is_valid(doc))
+
 
 if __name__ == "__main__":
     unittest.main()

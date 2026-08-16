@@ -82,6 +82,10 @@ class TestSTR11Pressure(unittest.TestCase):
         doc["streams"][0]["stream_properties"]["pressure"] = 0
         self.assertFalse(self.v.is_valid(doc))
 
+    def test_positive_pressure_accepted(self):
+        """STR-11 — pressure 101325 (>0) → schema accepts the document."""
+        self.assertTrue(self.v.is_valid(minimal_doc()))
+
 
 class TestSTR12TotalMassFlowRequired(unittest.TestCase):
     @classmethod
@@ -95,6 +99,10 @@ class TestSTR12TotalMassFlowRequired(unittest.TestCase):
         doc = minimal_doc()
         del doc["streams"][0]["stream_properties"]["total_mass_flow"]
         self.assertFalse(self.v.is_valid(doc))
+
+    def test_total_mass_flow_present_accepted(self):
+        """STR-12 — stream_properties includes total_mass_flow → schema accepts the document."""
+        self.assertTrue(self.v.is_valid(minimal_doc()))
 
 
 # --- from test_schema_stream_phases_0_0_9.py -------------------------------

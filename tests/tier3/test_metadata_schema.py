@@ -118,6 +118,10 @@ class TestMET05Currency(unittest.TestCase):
         doc["metadata"]["TEA_currency"] = ""
         self.assertFalse(self.v.is_valid(doc))
 
+    def test_nonempty_currency_accepted(self):
+        """MET-05 — TEA_currency 'USD' (minLength 1) → schema accepts the document."""
+        self.assertTrue(self.v.is_valid(minimal_doc()))
+
 
 class TestMET06Sha256(unittest.TestCase):
     @classmethod
