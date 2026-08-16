@@ -8,10 +8,19 @@
 #
 # Tier 1 coverage meta-test (Task 3.1). Enumerates every module-level `def` in
 # the source modules listed in MODULES via `ast` (import-light: no `import
-# pisces_sff`), subtracts the explicit `_EXEMPT` set, and asserts each
-# remaining helper name appears as a substring somewhere in the combined
-# source of tests/tier1/test_*.py. This is the authoritative gap list drawn on
-# in Task 3.1's Step 3 to add the missing fake-object tests.
+# pisces_sff`), plus every non-dunder method of a module-level class, subtracts
+# the explicit `_EXEMPT` set, and asserts each remaining helper name appears as
+# a substring somewhere in the combined source of tests/tier1/test_*.py. This is
+# the authoritative gap list drawn on in Task 3.1's Step 3 to add the missing
+# fake-object tests.
+#
+# Scan boundary (known and deliberate): the walk covers module-level functions
+# and the direct methods of module-level classes -- the two places helpers
+# actually live in pisces_sff. It does NOT descend into nested/closure `def`s
+# (never part of a module's tested surface) and it keys everything by bare name,
+# so a future untested helper sharing a name with a tested/exempt one elsewhere
+# would pass silently (see _EXEMPT's "main" note). Class methods are included
+# precisely because _Context.molar_mass once escaped a module-level-only scan.
 
 import ast
 import unittest
@@ -87,6 +96,10 @@ _EXEMPT = {
 }
 
 
+def _is_dunder(name):
+    return name.startswith("__") and name.endswith("__")
+
+
 def source_helpers():
     names = set()
     for m in MODULES:
@@ -94,6 +107,13 @@ def source_helpers():
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
                 names.add(node.name)
+            elif isinstance(node, ast.ClassDef):
+                # Direct methods of a module-level class are helpers too; the
+                # module-level-only scan missed _Context.molar_mass. Dunders are
+                # framework hooks, not independently-tested helpers, so skip them.
+                for sub in node.body:
+                    if isinstance(sub, ast.FunctionDef) and not _is_dunder(sub.name):
+                        names.add(sub.name)
     return names
 
 
@@ -104,8 +124,9 @@ def tier1_text():
 
 class TestTier1Coverage(unittest.TestCase):
     def test_every_helper_has_a_tier1_test(self):
-        """Every module-level helper in pisces_sff/*.py (minus _EXEMPT) is named
-        in some tests/tier1/test_*.py -> expected: empty 'missing' set."""
+        """Every module-level helper AND non-dunder class method in
+        pisces_sff/*.py (minus _EXEMPT) is named in some tests/tier1/test_*.py
+        -> expected: empty 'missing' set."""
         text = tier1_text()
         missing = sorted(n for n in source_helpers()
                          if n not in _EXEMPT and n not in text)
