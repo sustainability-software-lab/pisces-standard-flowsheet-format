@@ -20,6 +20,32 @@ from tests._gating import RUN_TIER2
 from tests._real_objects import build_small_system_and_tea
 from tests._stub_eviction import RealBiosteamTestCase
 
+# Independent ground truth for the fixture's feed composition, used to pin
+# get_composition's fractions without re-deriving them from the built
+# Stream's own imol/imass -- a bug there would otherwise cancel out against
+# an assertion built the same way. Values are the fixture's known feed mass
+# flows (Water=1000, Ethanol=100 kg/hr, see build_small_system_and_tea) and
+# each chemical's real molar mass in kg/kmol (thermosteam.Chemical('Water').MW
+# == 18.01528, thermosteam.Chemical('Ethanol').MW == 46.06844, confirmed
+# 2026-08-16).
+_FEED_WATER_MASS_FLOW = 1000.0    # kg/hr
+_FEED_ETHANOL_MASS_FLOW = 100.0   # kg/hr
+_WATER_MW = 18.01528     # kg/kmol
+_ETHANOL_MW = 46.06844   # kg/kmol
+
+_WATER_MASS_FRACTION = (
+    _FEED_WATER_MASS_FLOW
+    / (_FEED_WATER_MASS_FLOW + _FEED_ETHANOL_MASS_FLOW))
+_ETHANOL_MASS_FRACTION = (
+    _FEED_ETHANOL_MASS_FLOW
+    / (_FEED_WATER_MASS_FLOW + _FEED_ETHANOL_MASS_FLOW))
+
+_WATER_MOLAR_FLOW = _FEED_WATER_MASS_FLOW / _WATER_MW
+_ETHANOL_MOLAR_FLOW = _FEED_ETHANOL_MASS_FLOW / _ETHANOL_MW
+_TOTAL_MOLAR_FLOW = _WATER_MOLAR_FLOW + _ETHANOL_MOLAR_FLOW
+_WATER_MOL_FRACTION = _WATER_MOLAR_FLOW / _TOTAL_MOLAR_FLOW
+_ETHANOL_MOL_FRACTION = _ETHANOL_MOLAR_FLOW / _TOTAL_MOLAR_FLOW
+
 
 @unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
 class TestIsProductWithRealStream(RealBiosteamTestCase):
@@ -95,34 +121,39 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         (phase, chemical) pair present in the real Stream, each carrying only
         'mol_fraction' (no 'mass_fraction'). Expected for the fixture's
         single liquid-phase feed (Water=1000, Ethanol=100 kg/hr): both
-        entries have phase 'l', and mol_fraction equals
-        feed.imol[name]/feed.F_mol exactly (Water ~0.9623662167478366,
-        Ethanol ~0.03763378325216345)."""
+        entries have phase 'l', and mol_fraction matches the value
+        independently derived from the known feed mass flows and each
+        chemical's real molar mass (Water ~0.9623662167478366, Ethanol
+        ~0.03763378325216345), asserted to 1e-9."""
         comp = self._export.get_composition(self.feed, units='mol%')
         by_name = {c['component_name']: c for c in comp}
         self.assertEqual(set(by_name), {'Water', 'Ethanol'})
         for c in comp:
             self.assertEqual(c['phase'], 'l')
             self.assertNotIn('mass_fraction', c)
-        for name in ('Water', 'Ethanol'):
-            self.assertEqual(
-                by_name[name]['mol_fraction'],
-                self.feed.imol[name] / self.feed.F_mol)
+        self.assertAlmostEqual(
+            by_name['Water']['mol_fraction'], _WATER_MOL_FRACTION, places=9)
+        self.assertAlmostEqual(
+            by_name['Ethanol']['mol_fraction'], _ETHANOL_MOL_FRACTION,
+            places=9)
 
     def test_get_composition_both_matches_real_stream_mass_fractions(self):
         """get_composition(feed, units='both') (the exporter's default) adds
         'mass_fraction' alongside 'mol_fraction'. Expected: mass_fraction
-        equals feed.imass[name]/feed.F_mass exactly for both components
-        (Water ~0.9090909090909091 = 1000/1100 kg/hr, Ethanol
-        ~0.09090909090909091 = 100/1100 kg/hr), and 'mol_fraction' is still
-        present on each entry."""
+        matches the value independently derived from the known feed mass
+        flows alone (Water ~0.9090909090909091 = 1000/1100 kg/hr, Ethanol
+        ~0.09090909090909091 = 100/1100 kg/hr), asserted to 1e-9, and
+        'mol_fraction' is still present on each entry."""
         comp = self._export.get_composition(self.feed, units='both')
         by_name = {c['component_name']: c for c in comp}
         for name in ('Water', 'Ethanol'):
             self.assertIn('mol_fraction', by_name[name])
-            self.assertEqual(
-                by_name[name]['mass_fraction'],
-                self.feed.imass[name] / self.feed.F_mass)
+        self.assertAlmostEqual(
+            by_name['Water']['mass_fraction'], _WATER_MASS_FRACTION,
+            places=9)
+        self.assertAlmostEqual(
+            by_name['Ethanol']['mass_fraction'], _ETHANOL_MASS_FRACTION,
+            places=9)
 
     def test_get_phase_properties_matches_real_stream_totals(self):
         """get_phase_properties(feed, inline=False) returns a dict keyed by
@@ -147,8 +178,13 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         utility (heating feed from 298.15 K to 350 K, real duty
         ~242869.9 kJ/hr): u_cons == {agent.ID: agent.duty} for that one
         agent (positive duty => consumption), u_prod == {} (no
-        negative-duty agent), hu_agents == {that one real UtilityAgent}, and
-        ou_agents == set() (H1 has no natural_gas utility)."""
+        negative-duty agent), hu_agents == {that one real UtilityAgent},
+        pu_agents == {the real biosteam.PowerUtility class} (produced
+        unconditionally by get_utility_results regardless of whether H1 has
+        a power duty -- this is the module-level name the class's
+        pisces_sff.* eviction in setUpClass exists to protect, so it must be
+        asserted against the real class, not merely unpacked and discarded),
+        and ou_agents == set() (H1 has no natural_gas utility)."""
         u_cons, u_prod, hu_agents, pu_agents, ou_agents = \
             self._export.get_utility_results(self.H1)
         [hu] = self.H1.heat_utilities
@@ -156,6 +192,7 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         self.assertEqual(u_cons, {hu.agent.ID: hu.duty})
         self.assertEqual(u_prod, {})
         self.assertEqual(hu_agents, {hu.agent})
+        self.assertEqual(pu_agents, {self._export.PowerUtility})
         self.assertEqual(ou_agents, set())
 
     def test_get_stream_roles_matches_real_topology_and_pricing(self):
