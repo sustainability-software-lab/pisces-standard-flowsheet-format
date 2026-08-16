@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
-# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, and 0.0.11 and asserts the scalar-shape,
-# results-key, required-metadata, stream-roles, and enthalpy-flow differences
-# the schema versions require. This is about
+# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, and 0.0.12 and asserts the
+# scalar-shape, results-key, required-metadata, stream-roles, enthalpy-flow, and
+# tightened-constraint (0.0.12 shape-identical to 0.0.11) differences the schema
+# versions require. This is about
 # exporter version dispatch, not the corn model, so it needs no whole-model
 # simulation -- which is why it lives in Tier 2 rather than Tier 3.
 #
