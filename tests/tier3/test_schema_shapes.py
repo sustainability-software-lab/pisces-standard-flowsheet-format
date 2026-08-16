@@ -50,9 +50,15 @@ class TestSchemaVersionConstraints012(unittest.TestCase):
     def setUpClass(cls):
         skip_if_disabled(3)
 
-    def test_schema_declares_0_0_12(self):
-        """The schema "version" field is exactly "0.0.12"."""
-        self.assertEqual(load_schema()["version"], "0.0.12")
+    def test_schema_is_at_least_0_0_12(self):
+        """Schema "version" ≥ 0.0.12 — the declarative constraints this class guards landed at 0.0.12."""
+        # The v0.0.12 constraints (semver sff_version, non-empty TEA_currency,
+        # 64-hex digests, bounded reaction conversion, positive pressure, etc.)
+        # were introduced at 0.0.12 and persist. Assert a floor rather than an
+        # exact version so a later additive/milestone bump (e.g. 0.1.0) does not
+        # break it; the exact current version is guarded by tier1/test_version.py.
+        version = tuple(int(p) for p in load_schema()["version"].split("."))
+        self.assertGreaterEqual(version, (0, 0, 12))
 
 
 # --- from test_schema_quantity_units_0_0_7.py -------------------------------

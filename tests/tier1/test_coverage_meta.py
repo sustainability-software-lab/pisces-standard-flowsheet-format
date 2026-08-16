@@ -43,7 +43,7 @@ _EXEMPT = {
     # meaningful document; a fake object would only prove attribute access
     # works, not that a conforming document is produced. Already exercised
     # against real objects in tests/tier2/test_version_shape_guard.py (every
-    # version 0.0.5-0.0.12) and end-to-end in tests/tier3. (_write_sff_json is
+    # version 0.0.5-0.1.0) and end-to-end in tests/tier3. (_write_sff_json is
     # NOT here -- it is pure I/O and gets a real Tier 1 test below.)
     "export_biosteam_flowsheet_sff_0_0_5": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_0_6": "real-only; needs a simulated System, covered in Tier 2/3",
@@ -53,6 +53,7 @@ _EXEMPT = {
     "export_biosteam_flowsheet_sff_0_0_10": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_0_11": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_0_12": "real-only; needs a simulated System, covered in Tier 2/3",
+    "export_biosteam_flowsheet_sff_0_1_0": "real-only; needs a simulated System, covered in Tier 2/3",
     "_build_sff_dict": "real-only; needs a simulated System (sys.flowsheet/units/streams/feeds/products/TEA), covered in Tier 2/3",
 
     # -- _runner.py: the child process of the full reproducible-export harness.
