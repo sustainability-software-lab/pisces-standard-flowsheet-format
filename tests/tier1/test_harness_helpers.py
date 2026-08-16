@@ -321,6 +321,14 @@ def fake_conda_exe(directory):
     return str(path)
 
 
+# An OS-native absolute root for the fake conda-env prefixes below. Production
+# _environment_prefix compares Path(prefix).name, and pathlib only splits on the
+# running OS's separator, so a hard-coded Windows root (e.g. "C:\\envs") makes
+# these tests pass on Windows but fail on Linux. Emitting native paths keeps the
+# fake portable across both CI runners.
+_FAKE_ENV_ROOT = "C:\\envs" if os.name == "nt" else "/envs"
+
+
 class FakeConda:
     """Records conda invocations and answers `conda env list --json`.
 
@@ -331,7 +339,7 @@ class FakeConda:
     spending minutes building real environments.
     """
 
-    def __init__(self, existing=(), fail_create=False, root="C:\\envs"):
+    def __init__(self, existing=(), fail_create=False, root=_FAKE_ENV_ROOT):
         self.existing = list(existing)
         self.fail_create = fail_create
         self.root = root
@@ -343,7 +351,7 @@ class FakeConda:
         self.kwargs.append(dict(kwargs))
         if cmd[1:4] == ["env", "list", "--json"]:
             payload = json.dumps(
-                {"envs": [self.root + "\\" + name for name in self.existing]}
+                {"envs": [os.path.join(self.root, name) for name in self.existing]}
             )
             return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr="")
         if cmd[1:3] == ["env", "create"]:
@@ -718,9 +726,9 @@ class TestEnvironmentPrefixHelper(unittest.TestCase):
     def test_returns_the_matching_prefix(self):
         """_environment_prefix returns the prefix whose basename equals the
         requested environment name."""
-        conda = FakeConda(existing=["sff-abc123"], root="C:\\envs")
+        conda = FakeConda(existing=["sff-abc123"], root=_FAKE_ENV_ROOT)
         prefix = self.harness._environment_prefix("conda.exe", "sff-abc123", conda)
-        self.assertEqual(prefix, "C:\\envs\\sff-abc123")
+        self.assertEqual(prefix, os.path.join(_FAKE_ENV_ROOT, "sff-abc123"))
 
     def test_returns_none_when_no_environment_matches(self):
         """_environment_prefix returns None when no existing environment's
