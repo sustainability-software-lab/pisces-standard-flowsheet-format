@@ -60,9 +60,9 @@ class TestCorpusValidation(RealBiosteamTestCase):
         super().setUpClass()       # evict the Tier-1 stub so thermosteam is real
 
     def test_on_disk_set_matches_the_table(self):
-        """The set of *.json in exported_flowsheets/** equals EXPECTED's keys ->
-        a newly added/removed corpus file forces a table update (fails until
-        then)."""
+        """The set of *.json in exported_flowsheets/bioindustrial_park equals
+        EXPECTED's keys -> a newly added/removed corpus file forces a table
+        update (fails until then)."""
         on_disk = {p.name for p in CORPUS_DIR.glob("*.json")}
         self.assertEqual(on_disk, set(EXPECTED))
 
