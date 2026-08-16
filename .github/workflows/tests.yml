@@ -62,6 +62,12 @@ jobs:
 
       - name: Compute harness environment name
         run: |
+          # _harness.py imports PyYAML at module load. The step's `python` is
+          # the runner's default interpreter (setup-miniconda does not activate
+          # base here), which lacks PyYAML; modern conda ships ruamel.yaml, not
+          # PyYAML, so base is not a reliable source either. Install it directly
+          # into whichever python runs the heredoc below.
+          python -m pip install --quiet --disable-pip-version-check pyyaml
           NAME=$(python - <<'PY'
           import importlib.util, pathlib
           harness_path = pathlib.Path("pisces_sff/_harness.py")
