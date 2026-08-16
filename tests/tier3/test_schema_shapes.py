@@ -1,12 +1,31 @@
 # -*- coding: utf-8 -*-
-# Pins the breaking v0.0.7 quantity-unit shape in the committed schema.
+# Code to export flowsheets from multiple tools into a standardized JSON format.
+# Copyright (C) 2025-, Sarang S. Bhagwat <sarangbhagwat.developer@gmail.com>
 #
-# Import-light (jsonschema on the committed file, never importing pisces_sff).
-# Why pinned: v0.0.7 drops inline {"value","units"} scalars in favour of bare
-# numbers resolved through quantity_units_global, renames the utility results-
-# unit key, renames the power-utility price, and adds a per-unit-operation
-# quantity_units_for_design_results. Each is a public-contract change a consumer
-# parses against; a silent revert here would desynchronise producers and readers.
+# This module is under the MIT open-source license. See
+# https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
+# for license details.
+#
+# Tier 3: schema-shape tests not tied to a single sff_checks.md requirement ID
+# -- the v0.0.12 top-level version pin, the breaking v0.0.7 bare-number
+# quantity-unit shape (quantity_units_global, renamed utility keys, per-unit
+# quantity_units_for_design_results), and the additive quantity_units_global
+# registry / quantity_unit_entry definition. Import-light: validates synthetic
+# fragments against the real committed schema via jsonschema, never importing
+# pisces_sff.
+#
+# Originally split across test_schema_constraints_v0_0_12.py (top-level
+# TestSchemaVersion), test_schema_quantity_units_0_0_7.py, and
+# test_schema_quantity_units_global.py; merged here per sff_checks.md's
+# "not tied to one ID" grouping. Every reject/accept assertion is preserved
+# verbatim from those files; only class placement and the tier-3 skip gate
+# changed.
+#
+# NAME-COLLISION NOTE: two source files each defined a class named
+# TestSchemaVersion. Renamed here to keep them from silently shadowing one
+# another in this shared module: TestSchemaVersionConstraints012 (from
+# test_schema_constraints_v0_0_12.py), TestSchemaVersionQuantityUnits007 (from
+# test_schema_quantity_units_0_0_7.py). Method bodies are unchanged.
 
 import json
 import unittest
@@ -14,9 +33,10 @@ from pathlib import Path
 
 from jsonschema import Draft7Validator
 
+from tests._gating import skip_if_disabled
+
 SCHEMA_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "pisces_sff" / "schema" / "sff_schema.json"
+    Path(__file__).resolve().parents[2] / "pisces_sff" / "schema" / "sff_schema.json"
 )
 
 
@@ -25,7 +45,22 @@ def load_schema():
         return json.load(f)
 
 
-class TestSchemaVersion(unittest.TestCase):
+class TestSchemaVersionConstraints012(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def test_schema_declares_0_0_12(self):
+        self.assertEqual(load_schema()["version"], "0.0.12")
+
+
+# --- from test_schema_quantity_units_0_0_7.py -------------------------------
+
+class TestSchemaVersionQuantityUnits007(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
     def test_schema_is_at_least_0_0_7(self):
         # The bare-number quantity-unit shape this suite pins was introduced in
         # 0.0.7 and still holds; assert a floor rather than an exact version so
@@ -35,6 +70,10 @@ class TestSchemaVersion(unittest.TestCase):
 
 
 class TestScalarsAreBareNumbers(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
     def setUp(self):
         self.schema = load_schema()
 
@@ -71,6 +110,10 @@ class TestScalarsAreBareNumbers(unittest.TestCase):
 
 
 class TestRenamedUtilityKeys(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
     def setUp(self):
         self.util = load_schema()["properties"]["utilities"]["properties"]
 
@@ -98,6 +141,10 @@ class TestRenamedUtilityKeys(unittest.TestCase):
 
 
 class TestDesignResultUnitsField(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
     def test_units_declare_quantity_units_for_design_results(self):
         unit = load_schema()["properties"]["units"]["items"]["properties"]
         field = unit["quantity_units_for_design_results"]
@@ -107,6 +154,10 @@ class TestDesignResultUnitsField(unittest.TestCase):
 
 class TestOldShapeIsRejected(unittest.TestCase):
     """A whole-document validator proves the retypings actually bite."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
 
     def setUp(self):
         self.validator = Draft7Validator(load_schema())
@@ -153,6 +204,88 @@ class TestOldShapeIsRejected(unittest.TestCase):
             "id": "hps", "temperature": 500.0, "pressure": 101325.0,
             "composition": [], "units_for_utility_results": "kJ/h"}]
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
+
+
+# --- from test_schema_quantity_units_global.py ------------------------------
+
+class TestQuantityUnitsGlobalShape(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.schema = load_schema()
+
+    def test_registry_is_an_optional_top_level_object(self):
+        self.assertIn("quantity_units_global", self.schema["properties"])
+        self.assertEqual(
+            self.schema["properties"]["quantity_units_global"]["type"], "object"
+        )
+        # Optional: adding it must not force every existing file to carry it.
+        self.assertNotIn("quantity_units_global", self.schema.get("required", []))
+
+    def test_entry_definition_requires_aliases_and_quantity_units(self):
+        entry = self.schema["definitions"]["quantity_unit_entry"]
+        self.assertEqual(entry["type"], "object")
+        self.assertEqual(sorted(entry["required"]), ["aliases", "quantity_units"])
+        self.assertEqual(entry["properties"]["aliases"]["type"], "array")
+        self.assertEqual(entry["properties"]["aliases"]["minItems"], 1)
+        self.assertEqual(
+            entry["properties"]["aliases"]["items"]["type"], "string"
+        )
+        self.assertEqual(entry["properties"]["quantity_units"]["type"], "string")
+
+    def test_canonical_quantities_reference_the_entry_definition(self):
+        # Every widely-used scalar and price the exporter emits must be declared.
+        props = self.schema["properties"]["quantity_units_global"]["properties"]
+        for key in ("temperature", "pressure", "mass_flow", "molar_flow",
+                    "volumetric_flow", "molar_mass", "price",
+                    "electrical_energy_price", "regeneration_price",
+                    "heat_transfer_price"):
+            with self.subTest(quantity=key):
+                self.assertEqual(
+                    props[key]["$ref"], "#/definitions/quantity_unit_entry"
+                )
+
+    def test_additional_quantities_also_use_the_entry_definition(self):
+        # A producer may declare quantities beyond the canonical set.
+        reg = self.schema["properties"]["quantity_units_global"]
+        self.assertEqual(
+            reg["additionalProperties"]["$ref"], "#/definitions/quantity_unit_entry"
+        )
+
+
+class TestQuantityUnitEntryValidation(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        schema = load_schema()
+        # Resolve the $ref by validating against the whole schema's definition.
+        self.validator = Draft7Validator(
+            {"definitions": schema["definitions"],
+             "$ref": "#/definitions/quantity_unit_entry"}
+        )
+
+    def assertValid(self, value):
+        errors = list(self.validator.iter_errors(value))
+        self.assertEqual(errors, [], msg=f"expected {value!r} to validate; got {errors}")
+
+    def assertInvalid(self, value):
+        self.assertNotEqual(list(self.validator.iter_errors(value)), [])
+
+    def test_full_entry_validates(self):
+        self.assertValid({"aliases": ["temperature", "T"], "quantity_units": "K"})
+
+    def test_entry_without_aliases_is_rejected(self):
+        self.assertInvalid({"quantity_units": "K"})
+
+    def test_entry_with_empty_aliases_is_rejected(self):
+        self.assertInvalid({"aliases": [], "quantity_units": "K"})
+
+    def test_entry_without_quantity_units_is_rejected(self):
+        self.assertInvalid({"aliases": ["temperature"]})
 
 
 if __name__ == "__main__":
