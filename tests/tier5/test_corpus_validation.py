@@ -6,139 +6,75 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 #
-# Tier 5: the full validator over the committed corn corpus file. Runs every
-# check (QU-02 imports thermosteam; STR-10/CHEM-03 import chemicals). Tier 5 is
-# import-light -- it only reads JSON and runs the validator -- so it stays
-# default-on and is unskipped except by its own gate. Asserts the reference
-# corpus is clean at error severity and that a deliberately-broken variant is
-# caught.
+# Tier 5: an encoded outcome table for the committed corpus. Runs the full
+# validate_flowsheet_against_SFF (QU-02 imports thermosteam; STR-10/CHEM-03
+# import chemicals) over every *.json in exported_flowsheets/bioindustrial_park
+# and asserts each file's is_valid matches its recorded expectation, so an
+# unexpected flip fails loudly. Per-check semantic assertions live in Tier 4
+# (tests/tier4/test_streams_checks.py, test_chemicals_checks.py,
+# test_cross_object_checks.py, test_docs_fixture.py) -- Tier 5's single
+# responsibility is this corpus outcome table.
 
-import copy
-import importlib.util
-import json
-import tempfile
 import unittest
 from pathlib import Path
 
-from tests._gating import RUN_TIER5
+from tests._gating import skip_if_disabled
 from tests._stub_eviction import RealBiosteamTestCase
+from tests._validate_loader import V
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VALIDATE_PATH = REPO_ROOT / "pisces_sff" / "_validate.py"
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
-CORN_PATH = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
-             / "bioindustrial_park" / "corn_dry_grind_ethanol.json")
+CORPUS_DIR = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
+              / "bioindustrial_park")
+
+# Recorded outcomes (see canonical validation ss1 in CLAUDE.md): only
+# corn_dry_grind_ethanol.json has been re-exported to the current schema
+# shape and validates cleanly; the other 17 remain old-shape and fail the
+# schema gate. This is the known, intended state -- not a regression.
+EXPECTED = {
+    "corn_3HP_acrylic.json": False,
+    "corn_TAL.json": False,
+    "corn_TAL_KS.json": False,
+    "corn_dry_grind_ethanol.json": True,
+    "corn_succinic.json": False,
+    "cornstover_3HP_acrylic.json": False,
+    "cornstover_TAL.json": False,
+    "cornstover_TAL_KS.json": False,
+    "cornstover_succinic.json": False,
+    "dextrose_3HP_acrylic.json": False,
+    "dextrose_TAL.json": False,
+    "dextrose_TAL_KS.json": False,
+    "dextrose_succinic.json": False,
+    "sugarcane_3HP_acrylic.json": False,
+    "sugarcane_TAL.json": False,
+    "sugarcane_TAL_KS.json": False,
+    "sugarcane_ethanol.json": False,
+    "sugarcane_succinic.json": False,
+}
 
 
-def load_validate_module():
-    spec = importlib.util.spec_from_file_location(
-        "pisces_sff_validate_corpus_under_test", VALIDATE_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+class TestCorpusValidation(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(5)        # gate first (skips before any eviction work)
+        super().setUpClass()       # evict the Tier-1 stub so thermosteam is real
 
+    def test_on_disk_set_matches_the_table(self):
+        """The set of *.json in exported_flowsheets/** equals EXPECTED's keys ->
+        a newly added/removed corpus file forces a table update (fails until
+        then)."""
+        on_disk = {p.name for p in CORPUS_DIR.glob("*.json")}
+        self.assertEqual(on_disk, set(EXPECTED))
 
-@unittest.skipUnless(RUN_TIER5, "set SFF_TEST_TIER5=1 (default on) to run; runs the real validator")
-class TestCornCorpusIntegration(RealBiosteamTestCase):
-    def setUp(self):
-        self.V = load_validate_module()
-
-    def _write(self, doc):
-        tmp = tempfile.NamedTemporaryFile(
-            "w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(doc, tmp)
-        tmp.close()
-        return tmp.name
-
-    def test_corn_is_valid_with_no_error_findings(self):
-        is_valid, results = self.V.validate_flowsheet_against_SFF(
-            str(CORN_PATH), str(SCHEMA_PATH))
-        error_fails = [r for r in results
-                       if r.status == "fail" and r.severity == "error"]
-        self.assertEqual(error_fails, [],
-                         f"unexpected error findings: {error_fails}")
-        self.assertTrue(is_valid)
-
-    def test_schema_gate_and_xref_pass_on_corn(self):
-        _, results = self.V.validate_flowsheet_against_SFF(
-            str(CORN_PATH), str(SCHEMA_PATH))
-        by_id = {r.check_id: r for r in results}
-        self.assertEqual(by_id["SCHEMA"].status, "pass")
-        self.assertEqual(by_id["XREF-01"].status, "pass")
-
-    def test_corn_reports_expected_unused_chemicals_info(self):
-        # CHEM-05 legitimately flags the four thermo-only chemicals as info; this
-        # is advisory, not a failure, and must not affect is_valid.
-        _, results = self.V.validate_flowsheet_against_SFF(
-            str(CORN_PATH), str(SCHEMA_PATH))
-        chem05 = next(r for r in results if r.check_id == "CHEM-05")
-        self.assertEqual(chem05.severity, "info")
-        for name in ("Cellulose", "H3PO4", "P4O10", "SO2"):
-            self.assertIn(name, chem05.message)
-
-    def test_broken_component_ref_is_caught(self):
-        doc = json.loads(CORN_PATH.read_text(encoding="utf-8"))
-        # Point a composition component at a non-existent chemical.
-        broken = copy.deepcopy(doc)
-        phase = broken["streams"][0]["stream_properties"]["phases"]
-        first = next(iter(phase.values()))
-        first["composition"][0]["component_name"] = "NoSuchChemical"
-        path = self._write(broken)
-        is_valid, results = self.V.validate_flowsheet_against_SFF(
-            path, str(SCHEMA_PATH))
-        self.assertFalse(is_valid)
-        by_id = {r.check_id: r.status for r in results}
-        self.assertEqual(by_id["STR-07"], "fail")
-        self.assertEqual(by_id["XREF-01"], "fail")
-
-
-@unittest.skipUnless(RUN_TIER5, "set SFF_TEST_TIER5=1 (default on) to run; runs the real validator")
-class TestMinimalValidDoc(RealBiosteamTestCase):
-    def setUp(self):
-        self.V = load_validate_module()
-
-    def _minimal_valid_doc(self):
-        return {
-            "metadata": {"sff_version": "0.0.12", "TEA_currency": "USD",
-                         "TEA_year": 2020,
-                         "process_simulator": {"name": "BioSTEAM", "version": "2.46.1"},
-                         "feedstocks": [{"stream_id": "s1"}],
-                         "products": [{"stream_id": "s1"}]},
-            "quantity_units_global": {
-                "mass_flow": {"aliases": ["total_mass_flow"], "quantity_units": "kg/hr"},
-                "molar_flow": {"aliases": ["total_molar_flow"], "quantity_units": "kmol/hr"},
-                "temperature": {"aliases": ["temperature"], "quantity_units": "K"},
-                "pressure": {"aliases": ["pressure"], "quantity_units": "Pa"},
-            },
-            "units": [{"id": "U1", "unit_type": "Mixer"}],
-            "streams": [{"id": "s1", "source_unit_id": "None", "sink_unit_id": "U1",
-                         "stream_properties": {
-                             "total_mass_flow": 1.0, "total_molar_flow": 1.0,
-                             "temperature": 300.0, "pressure": 101325.0,
-                             "phases": {"l": {"total_molar_flow": 1.0,
-                                              "composition": []}}}}],
-            "chemicals": [],
-            "utilities": {"heat_utilities": [], "power_utilities": [],
-                          "other_utilities": []},
-        }
-
-    def _write(self, doc):
-        tmp = tempfile.NamedTemporaryFile(
-            "w", suffix=".json", delete=False, encoding="utf-8")
-        json.dump(doc, tmp)
-        tmp.close()
-        return tmp.name
-
-    def test_minimal_schema_valid_doc_is_valid(self):
-        path = self._write(self._minimal_valid_doc())
-        is_valid, results = self.V.validate_flowsheet_against_SFF(
-            path, str(SCHEMA_PATH))
-        error_fails = [r for r in results
-                       if r.status == "fail" and r.severity == "error"]
-        self.assertEqual(error_fails, [], f"unexpected error findings: {error_fails}")
-        self.assertTrue(is_valid)
-        by_id = {r.check_id: r for r in results}
-        self.assertEqual(by_id["SCHEMA"].status, "pass")
+    def test_each_file_matches_its_recorded_outcome(self):
+        """Each corpus file's validate_flowsheet_against_SFF is_valid equals its
+        recorded EXPECTED value (corn True; the 17 stale files False) -> any
+        unexpected flip fails."""
+        for name, expected in EXPECTED.items():
+            with self.subTest(file=name):
+                is_valid, _ = V.validate_flowsheet_against_SFF(
+                    str(CORPUS_DIR / name), str(SCHEMA_PATH))
+                self.assertEqual(is_valid, expected)
 
 
 if __name__ == "__main__":
