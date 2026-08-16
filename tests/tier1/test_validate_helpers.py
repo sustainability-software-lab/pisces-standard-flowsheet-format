@@ -21,6 +21,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests._validate_loader import V
 
@@ -958,6 +959,43 @@ class TestMeanMolarMassHelper(unittest.TestCase):
         c = ctx(chemicals=[])
         comp = [{"component_name": "Ghost", "mol_fraction": 1.0}]
         self.assertIsNone(V._mean_molar_mass(comp, c))
+
+
+class TestContextMolarMass(unittest.TestCase):
+    """Direct coverage of `_Context.molar_mass` (Task 3.1 review fix): named in
+    the brief as a Tier 1 helper needing its own fake-object test, but the
+    ast-based coverage meta-test only scans module-level `def`s and misses
+    class methods, so this slipped through. Only the declared-value branch was
+    incidentally exercised (via TestMeanMolarMassHelper); the formula-fallback
+    branch and the `_mm_cache` memoization were untested until now."""
+
+    def test_declared_value_is_used_directly(self):
+        """A chemical with an explicit, positive `molar_mass` resolves to that
+        declared value directly, without consulting `formula` at all."""
+        c = ctx(chemicals=[{"id": "W", "molar_mass": 18.0, "formula": "H2O"}])
+        self.assertEqual(c.molar_mass("W"), 18.0)
+
+    def test_formula_fallback_when_no_declared_value(self):
+        """With no declared `molar_mass`, `_Context.molar_mass` falls back to
+        `_molar_mass_from_formula`; for water ("H2O") this resolves to
+        approximately 18.015 g/mol."""
+        c = ctx(chemicals=[{"id": "W", "formula": "H2O"}])
+        self.assertAlmostEqual(c.molar_mass("W"), 18.015, delta=0.01)
+
+    def test_repeated_call_is_memoized(self):
+        """A second `molar_mass` call for the same chemical id returns the
+        identical cached value from `_mm_cache` and does not re-invoke
+        `_molar_mass_from_formula`."""
+        c = ctx(chemicals=[{"id": "W", "formula": "H2O"}])
+        real_formula_lookup = V._molar_mass_from_formula
+        with mock.patch.object(
+                V, '_molar_mass_from_formula',
+                side_effect=real_formula_lookup) as spy:
+            first = c.molar_mass("W")
+            second = c.molar_mass("W")
+        self.assertIs(first, second)
+        self.assertEqual(spy.call_count, 1)
+        self.assertIn("W", c._mm_cache)
 
 
 class TestParseEquationHelper(unittest.TestCase):
