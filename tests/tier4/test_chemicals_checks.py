@@ -6,9 +6,9 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 
-"""Tier 4 -- chemicals checks (CHEM-01, CHEM-03, CHEM-04, CHEM-05). Runs the
-FULL validator on valid_doc() with exactly one thing broken and asserts the
-target check's CheckResult carries the catalogue's declared severity,
+"""Tier 4 -- chemicals checks (CHEM-01, CHEM-02, CHEM-03, CHEM-04, CHEM-05).
+Runs the FULL validator on valid_doc() with exactly one thing broken and asserts
+the target check's CheckResult carries the catalogue's declared severity,
 status == "fail", and the correct effect on is_valid."""
 
 import unittest
@@ -45,6 +45,32 @@ class TestCHEM01(RealBiosteamTestCase):
         r = by_id["CHEM-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "fail"))
         self.assertFalse(is_valid)
+
+
+class TestCHEM02(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def test_conformer(self):
+        """CHEM-02 -- valid_doc()'s Ethanol declares molar_mass 46.07 (> 0) ->
+        CheckResult(CHEM-02, warning, pass); is_valid True."""
+        is_valid, by_id = validate_doc(valid_doc())
+        self.assertEqual(by_id["CHEM-02"][0].status, "pass")
+        self.assertTrue(is_valid)
+
+    def test_violator(self):
+        """CHEM-02 -- Ethanol's molar_mass is changed to 0 (not > 0) ->
+        CheckResult(CHEM-02, warning, fail); is_valid stays True (warnings
+        never flip is_valid). As of v0.1.1 this is validator-enforced, not a
+        schema constraint."""
+        doc = valid_doc()
+        mutate(doc, "chemicals/0/molar_mass", 0)
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["CHEM-02"][0]
+        self.assertEqual((r.severity, r.status), ("warning", "fail"))
+        self.assertTrue(is_valid)
 
 
 class TestCHEM03(RealBiosteamTestCase):

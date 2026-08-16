@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
-# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, and 0.1.0 and asserts the
-# scalar-shape, results-key, required-metadata, stream-roles, enthalpy-flow,
-# tightened-constraint (0.0.12 shape-identical to 0.0.11), and milestone-bump
-# (0.1.0 shape-identical to 0.0.12) differences the schema
-# versions require. This is about
+# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, and 0.1.1 and
+# asserts the scalar-shape, results-key, required-metadata, stream-roles,
+# enthalpy-flow, tightened-constraint (0.0.12 shape-identical to 0.0.11),
+# milestone-bump (0.1.0 shape-identical to 0.0.12), and constraint-loosening
+# (0.1.1 shape-identical to 0.1.0 -- CHEM-02's molar_mass constraint moved from
+# the schema to the validator, a validation-only change with no output effect)
+# differences the schema versions require. This is about
 # exporter version dispatch, not the corn model, so it needs no whole-model
 # simulation -- which is why it lives in Tier 2 rather than Tier 3.
 #
@@ -111,6 +113,11 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_100), sff_version="0.1.0", tea=tea)
         cls.doc_100 = json.loads(cls.path_100.read_text(encoding="utf-8"))
+
+        cls.path_101 = tmp / "small_101.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_101), sff_version="0.1.1", tea=tea)
+        cls.doc_101 = json.loads(cls.path_101.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -328,6 +335,23 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         # metadata.sff_version.
         a = copy.deepcopy(self.doc_012)
         b = copy.deepcopy(self.doc_100)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
+
+    def test_0_1_1_validates_against_committed_schema(self):
+        """v0.1.1 export of the real small System -> validates against the committed schema with no errors, and records metadata.sff_version "0.1.1"."""
+        is_valid, errors = self.validate(str(self.path_101), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_101["metadata"]["sff_version"], "0.1.1")
+
+    def test_0_1_1_is_shape_identical_to_0_1_0_except_version(self):
+        """v0.1.1 export vs v0.1.0 export, with both metadata.sff_version fields normalized -> the two documents are equal (0.1.1 only loosens a schema constraint -- CHEM-02's molar_mass check moved to the validator -- emitting no shape change)."""
+        # v0.1.1 drops the schema's exclusiveMinimum:0 on molar_mass (now a
+        # validator warning); that is a validation-only change, so the emitted
+        # document is byte-identical to the 0.1.0 export apart from
+        # metadata.sff_version.
+        a = copy.deepcopy(self.doc_100)
+        b = copy.deepcopy(self.doc_101)
         a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
         self.assertEqual(a, b)
 

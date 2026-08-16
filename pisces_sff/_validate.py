@@ -813,6 +813,26 @@ def _check_chemical_id_index_uniqueness(ctx):  # CHEM-01
     return [_passed('CHEM-01', 'error', 'chemicals')]
 
 
+def _check_molar_mass_positive(ctx):  # CHEM-02
+    bad, any_check = [], False
+    for c in ctx.chemicals:
+        if not isinstance(c, dict):
+            continue
+        mm = c.get('molar_mass')
+        if not isinstance(mm, (int, float)):
+            continue
+        any_check = True
+        if mm <= 0:
+            bad.append(f"{c.get('id')}: {mm:.6g}")
+    if not any_check:
+        return [_skipped('CHEM-02', 'warning',
+                         'no chemical declares molar_mass', 'chemicals')]
+    if bad:
+        return [_failed('CHEM-02', 'warning',
+                        f'non-positive molar_mass: {bad}', 'chemicals')]
+    return [_passed('CHEM-02', 'warning', 'chemicals')]
+
+
 def _check_formula_molar_mass_agreement(ctx):  # CHEM-03
     bad, any_check = [], False
     for c in ctx.chemicals:
@@ -1263,6 +1283,7 @@ _CHECKS = [
     _check_mass_molar_flow_consistency,      # STR-10
     # chemicals
     _check_chemical_id_index_uniqueness,     # CHEM-01
+    _check_molar_mass_positive,              # CHEM-02
     _check_formula_molar_mass_agreement,     # CHEM-03
     _check_index_coverage,                   # CHEM-04
     _check_unused_chemicals,                 # CHEM-05

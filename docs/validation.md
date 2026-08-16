@@ -1,8 +1,11 @@
 # Validation
 
-> **Current schema version: v0.1.0** — a milestone release with no shape or
-> constraint changes over v0.0.12. The `v0.0.12` reference below marks when those
-> declarative constraints were introduced; they remain in force unchanged.
+> **Current schema version: v0.1.1** — loosens one constraint: the positive
+> `molar_mass` check (CHEM-02) is dropped from the schema and re-homed in the
+> validator as a `warning` (a backwards-compatible widening). The predecessor
+> v0.1.0 was a milestone release with no shape or constraint changes over
+> v0.0.12. The `v0.0.12` reference below marks when the declarative constraints
+> were introduced; they remain in force unchanged except for CHEM-02.
 
 SFF files are validated in two layers, both reachable from `pisces_sff`:
 
@@ -15,7 +18,9 @@ properties, enums, and the declarative constraints tightened in v0.0.12
 (semver `sff_version`, non-empty `TEA_currency`, 64-hex
 reproducibility digests, reaction `conversion` in `[0, 1]` and
 equation-or-stoichiometry, positive stream pressure, required `total_mass_flow`,
-positive molar mass, positive utility temperature/pressure).
+positive utility temperature/pressure). Positive `molar_mass` (CHEM-02) is no
+longer a schema constraint as of v0.1.1 — it moved to the validator as a
+`warning` (see below).
 
 ## Full SFF validation
 

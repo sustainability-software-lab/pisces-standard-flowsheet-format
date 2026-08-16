@@ -426,12 +426,13 @@ These are not checks; they define terms the checks rely on.
   conversion (STR-10) that uses it.
 - **Scope:** `chemicals[].molar_mass`.
 - **Severity:** `warning`.
-- **Skipped when:** `molar_mass` absent.
-- **Enforcement:** schema (narrowing — add `exclusiveMinimum: 0`).
-- **Note (2026-08-15):** enforced via the schema (`exclusiveMinimum: 0`), so in practice a
-  non-positive molar mass fails the schema gate and makes the file non-conforming — effectively
-  `error`-gated despite the `warning` label above. Kept schema-enforced by decision: a
-  non-positive molar mass is unphysical, not merely suspicious.
+- **Skipped when:** no chemical declares `molar_mass`.
+- **Enforcement:** validator (`_check_molar_mass_positive`).
+- **Note (2026-08-16):** previously narrowed in the schema (`exclusiveMinimum: 0`), which made a
+  non-positive molar mass fail the schema gate — effectively `error`-gated despite the `warning`
+  label. As of v0.1.1 that constraint was removed and the check moved to the validator so the declared
+  `warning` severity is what actually applies: a non-positive molar mass is flagged but does not,
+  on its own, make a file non-conforming.
 
 ### CHEM-03 — formula agrees with declared molar mass
 - **Statement:** when both `formula` and `molar_mass` are present, the molar mass computed
@@ -628,7 +629,7 @@ These are not checks; they define terms the checks rely on.
 | STR-12 | `total_mass_flow` required | error | schema (required-addition, gated) |
 | STR-13 | zero-flow streams fully empty | error | validator |
 | CHEM-01 | chemical `id`/`index` unique | error | validator |
-| CHEM-02 | molar mass positive | warning | schema (narrowing) |
+| CHEM-02 | molar mass positive | warning | validator |
 | CHEM-03 | formula agrees with molar mass | warning | validator |
 | CHEM-04 | index coverage for index-based stoichiometry | error | validator |
 | CHEM-05 | no unused chemicals | info | validator |

@@ -11,9 +11,11 @@
 # molar_mass). Import-light: validates synthetic fragments against the real
 # committed schema via jsonschema, never importing pisces_sff.
 #
-# The reject/accept assertion is preserved verbatim from
-# test_schema_constraints_v0_0_12.py; only class placement and the tier-3 skip
-# gate changed.
+# As of v0.1.1 CHEM-02 is NO LONGER a schema constraint (the `exclusiveMinimum: 0`
+# on molar_mass was removed); it is now a validator warning (see the tier-4 test
+# test_chemicals_checks.py). These tests therefore guard that the schema gate
+# accepts BOTH a zero and a positive molar_mass — the schema no longer rejects a
+# non-positive value.
 
 import json
 import unittest
@@ -65,12 +67,14 @@ class TestCHEM02MolarMass(unittest.TestCase):
     def setUp(self):
         self.v = Draft7Validator(load_schema())
 
-    def test_zero_molar_mass_rejected(self):
-        """CHEM-02 — a chemical with molar_mass 0 (not >0) → schema rejects the document."""
+    def test_zero_molar_mass_accepted_by_schema(self):
+        """CHEM-02 — molar_mass 0 is accepted by the schema as of v0.1.1 (the
+        constraint moved to the validator as a warning; the schema no longer
+        rejects a non-positive molar_mass)."""
         doc = minimal_doc()
         doc["chemicals"] = [
             {"id": "A", "included_in_thermo": False, "molar_mass": 0}]
-        self.assertFalse(self.v.is_valid(doc))
+        self.assertTrue(self.v.is_valid(doc))
 
     def test_positive_molar_mass_accepted(self):
         """CHEM-02 — a chemical with molar_mass 46.07 (>0) → schema accepts the document."""

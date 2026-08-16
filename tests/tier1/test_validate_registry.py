@@ -20,7 +20,7 @@ EXPECTED_IDS = {
     "UNIT-01", "UNIT-02", "UNIT-03", "UNIT-04", "UNIT-05", "UNIT-06", "UNIT-07",
     "STR-01", "STR-02", "STR-03", "STR-04", "STR-05", "STR-06", "STR-07",
     "STR-08", "STR-09", "STR-10", "STR-13",
-    "CHEM-01", "CHEM-03", "CHEM-04", "CHEM-05",
+    "CHEM-01", "CHEM-02", "CHEM-03", "CHEM-04", "CHEM-05",
     "UTIL-01", "UTIL-02", "UTIL-03", "UTIL-04",
     "QU-01", "QU-02", "QU-03", "QU-04",
     "GRAPH-01",

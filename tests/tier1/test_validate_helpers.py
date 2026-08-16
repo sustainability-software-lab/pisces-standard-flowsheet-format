@@ -416,7 +416,7 @@ class TestRelClose(unittest.TestCase):
         self.assertIs(V._rel_close(1.0, 0.0, V.TOL_FLOW), False)
 
 
-#%% ------- Chemicals (CHEM-01, CHEM-04, CHEM-05) ------- ##
+#%% ------- Chemicals (CHEM-01, CHEM-02, CHEM-04, CHEM-05) ------- ##
 
 class TestChemIdIndexUniqueness(unittest.TestCase):
     def test_unique_passes(self):
@@ -433,6 +433,30 @@ class TestChemIdIndexUniqueness(unittest.TestCase):
         """A duplicated chemical index fails."""
         c = ctx(chemicals=[{"id": "A", "index": 0}, {"id": "B", "index": 0}])
         self.assertEqual(V._check_chemical_id_index_uniqueness(c)[0].status, "fail")
+
+
+class TestChemMolarMassPositive(unittest.TestCase):
+    def test_positive_passes(self):
+        """A positive declared molar_mass passes (warning severity)."""
+        c = ctx(chemicals=[{"id": "A", "molar_mass": 46.07}])
+        r = V._check_molar_mass_positive(c)[0]
+        self.assertEqual((r.severity, r.status), ("warning", "pass"))
+
+    def test_zero_fails(self):
+        """A zero molar_mass is a warning-severity fail (not >0)."""
+        c = ctx(chemicals=[{"id": "A", "molar_mass": 0}])
+        r = V._check_molar_mass_positive(c)[0]
+        self.assertEqual((r.severity, r.status), ("warning", "fail"))
+
+    def test_negative_fails(self):
+        """A negative molar_mass is a warning-severity fail."""
+        c = ctx(chemicals=[{"id": "A", "molar_mass": -1.0}])
+        self.assertEqual(V._check_molar_mass_positive(c)[0].status, "fail")
+
+    def test_absent_skips(self):
+        """No chemical declaring molar_mass -> the check skips."""
+        c = ctx(chemicals=[{"id": "A"}])
+        self.assertEqual(V._check_molar_mass_positive(c)[0].status, "skip")
 
 
 class TestIndexCoverage(unittest.TestCase):
