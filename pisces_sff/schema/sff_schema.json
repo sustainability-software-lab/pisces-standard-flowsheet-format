@@ -531,7 +531,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "A unique identifier for this chemical, used to reference this chemical in the 'composition' property of stream objects."
+            "description": "A unique identifier for this chemical, used to reference this chemical in the 'composition' property of stream objects and in the 'reactions' property of unit objects."
           },
           "included_in_thermo": {
             "type": "boolean",
