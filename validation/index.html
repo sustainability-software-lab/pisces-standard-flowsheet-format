@@ -653,9 +653,12 @@
 
 <h1 id="validation">Validation</h1>
 <blockquote>
-<p><strong>Current schema version: v0.1.0</strong> — a milestone release with no shape or
-constraint changes over v0.0.12. The <code>v0.0.12</code> reference below marks when those
-declarative constraints were introduced; they remain in force unchanged.</p>
+<p><strong>Current schema version: v0.1.1</strong> — loosens one constraint: the positive
+<code>molar_mass</code> check (CHEM-02) is dropped from the schema and re-homed in the
+validator as a <code>warning</code> (a backwards-compatible widening). The predecessor
+v0.1.0 was a milestone release with no shape or constraint changes over
+v0.0.12. The <code>v0.0.12</code> reference below marks when the declarative constraints
+were introduced; they remain in force unchanged except for CHEM-02.</p>
 </blockquote>
 <p>SFF files are validated in two layers, both reachable from <code>pisces_sff</code>:</p>
 <h2 id="schema-validation">Schema validation</h2>
@@ -666,7 +669,9 @@ properties, enums, and the declarative constraints tightened in v0.0.12
 (semver <code>sff_version</code>, non-empty <code>TEA_currency</code>, 64-hex
 reproducibility digests, reaction <code>conversion</code> in <code>[0, 1]</code> and
 equation-or-stoichiometry, positive stream pressure, required <code>total_mass_flow</code>,
-positive molar mass, positive utility temperature/pressure).</p>
+positive utility temperature/pressure). Positive <code>molar_mass</code> (CHEM-02) is no
+longer a schema constraint as of v0.1.1 — it moved to the validator as a
+<code>warning</code> (see below).</p>
 <h2 id="full-sff-validation">Full SFF validation</h2>
 <p><code>validate_flowsheet_against_SFF(json_file, schema_file=None)</code> runs the schema
 gate <strong>and</strong> the semantic checks catalogued in <code>sff_checks.md</code> — referential

@@ -726,7 +726,7 @@
 <h1 id="schema-reference">Schema Reference</h1>
 <p>The Standard Flowsheet Format (SFF) is a JSON document strictly adhering to our JSON schema structure. This page breaks down the core sections of the SFF schema in human-readable terms to help developers quickly understand its structure.</p>
 <blockquote>
-<p><strong>Current version: v0.1.0.</strong> This is a milestone release that carries no shape or constraint changes over v0.0.12 — a v0.0.12 document is a valid v0.1.0 document, differing only in <code>metadata.sff_version</code>. The <code>vX.Y.Z</code> annotations throughout this page record the version at which each field or constraint was <strong>introduced</strong>, and remain the definitive history.</p>
+<p><strong>Current version: v0.1.1.</strong> This release loosens one constraint: the <code>exclusiveMinimum: 0</code> on <code>chemicals[].molar_mass</code> (CHEM-02) is dropped from the schema and re-homed in the validator as a <code>warning</code>. It is a backwards-compatible widening — every valid v0.1.0 document remains a valid v0.1.1 document — and it does not change export output shape. The predecessor v0.1.0 was a milestone release carrying no shape or constraint changes over v0.0.12. The <code>vX.Y.Z</code> annotations throughout this page record the version at which each field or constraint was <strong>introduced</strong> (or, for CHEM-02, changed), and remain the definitive history.</p>
 </blockquote>
 <h2 id="core-properties">Core Properties</h2>
 <p>Every valid SFF JSON object contains six essential properties at its root:</p>
@@ -810,7 +810,7 @@
 </ul>
 <hr />
 <h3 id="validation-constraints-v0012">Validation constraints (v0.0.12)</h3>
-<p>v0.0.12 adds nine declarative JSON-Schema constraints, catalogued in <code>sff_checks.md</code> and enforced by the schema itself (no code required to check them), plus one validator-enforced warning check (MET-04):</p>
+<p>v0.0.12 adds eight declarative JSON-Schema constraints, catalogued in <code>sff_checks.md</code> and enforced by the schema itself (no code required to check them), plus two validator-enforced warning checks (MET-04 and CHEM-02):</p>
 <ul>
 <li><strong>MET-01</strong>: <code>metadata.sff_version</code> must match the semver pattern <code>^[0-9]+\.[0-9]+\.[0-9]+$</code>.</li>
 <li><strong>MET-04</strong>: <code>metadata.TEA_year</code> should lie within a plausible range (1900 ≤ year ≤ current
@@ -822,7 +822,9 @@
 <li><strong>UNIT-05</strong>: a reaction must provide at least one of <code>equation</code> or <code>stoichiometry</code>.</li>
 <li><strong>STR-11</strong>: a stream's <code>stream_properties.pressure</code> must be strictly greater than 0.</li>
 <li><strong>STR-12</strong>: <code>stream_properties.total_mass_flow</code> is required on every stream (gated, breaking change vs. pre-0.0.12 schemas).</li>
-<li><strong>CHEM-02</strong>: a chemical's <code>molar_mass</code> must be strictly greater than 0.</li>
+<li><strong>CHEM-02</strong>: a chemical's <code>molar_mass</code> should be strictly greater than 0. Enforced by the
+  validator as a <code>warning</code> (not the schema, as of v0.1.1), so a non-positive molar mass flags a
+  warning without making the file non-conforming.</li>
 <li><strong>UTIL-05</strong>: <code>temperature</code> and <code>pressure</code> on <code>heat_utilities</code> and <code>other_utilities</code> entries must each be strictly greater than 0 (<code>temperature_limit</code> is exempt — a cooling-utility limit may legitimately take any value).</li>
 </ul>
 
