@@ -28,6 +28,7 @@ biosteam/thermosteam itself - only sys.modules dict operations - and it never
 touches a real (non-stub) module."""
 
 import sys
+import unittest
 
 
 def evict_biosteam_stubs():
@@ -51,3 +52,17 @@ def evict_biosteam_stubs():
         prefix = root + "."
         for key in [k for k in sys.modules if k == root or k.startswith(prefix)]:
             del sys.modules[key]
+
+
+class RealBiosteamTestCase(unittest.TestCase):
+    """Base for Tier 3/4/5 test classes whose tests run the REAL validator
+    (QU-02 parses unit strings via real thermosteam). Evicts any Tier-1
+    _SFF_STUB in setUpClass so the real package re-imports - under BOTH
+    `pytest` and `python -m unittest discover` (a conftest autouse fixture
+    would only fire under pytest). Subclasses overriding setUpClass MUST call
+    super().setUpClass()."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        evict_biosteam_stubs()

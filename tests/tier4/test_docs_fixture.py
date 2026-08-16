@@ -6,7 +6,6 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 
-import copy
 import json
 import tempfile
 import unittest
@@ -14,6 +13,7 @@ from pathlib import Path
 
 from tests._docs import valid_doc, mutate, remove
 from tests._gating import skip_if_disabled
+from tests._stub_eviction import RealBiosteamTestCase
 from tests._validate_loader import V
 
 SCHEMA_PATH = (
@@ -28,10 +28,11 @@ def run_validator(doc):
         return V.validate_flowsheet_against_SFF(str(p), str(SCHEMA_PATH))
 
 
-class TestDocsFixture(unittest.TestCase):
+class TestDocsFixture(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
         skip_if_disabled(4)
+        super().setUpClass()   # evicts Tier-1 stubs (RealBiosteamTestCase)
 
     def test_valid_doc_is_fully_valid(self):
         """valid_doc() → is_valid True and no error-severity fail (the fixed
@@ -43,10 +44,16 @@ class TestDocsFixture(unittest.TestCase):
 
     def test_mutate_sets_nested_field(self):
         """mutate(doc,'streams/0/stream_properties/pressure',0) sets that field
-        to 0 without touching siblings."""
+        to 0 without touching siblings (asserted here via the sibling
+        `temperature` field, which must remain unchanged)."""
         doc = valid_doc()
+        original_temperature = doc["streams"][0]["stream_properties"]["temperature"]
         mutate(doc, "streams/0/stream_properties/pressure", 0)
         self.assertEqual(doc["streams"][0]["stream_properties"]["pressure"], 0)
+        self.assertEqual(
+            doc["streams"][0]["stream_properties"]["temperature"],
+            original_temperature,
+        )
 
     def test_remove_deletes_nested_field(self):
         """remove(doc,'streams/0/stream_properties/total_mass_flow') deletes that

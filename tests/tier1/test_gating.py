@@ -20,6 +20,11 @@ class TestGating(unittest.TestCase):
     def tearDown(self):
         os.environ.clear()
         os.environ.update(self._saved)
+        # Reload again so tests._gating's module-level RUN_TIER* booleans match
+        # the restored environment, not whatever env the test body last set --
+        # otherwise the module is left stale for anything that imports it later
+        # in the same process (README documents RUN_TIER1..RUN_TIER6 as public).
+        importlib.reload(gating)
 
     def test_unset_is_enabled(self):
         """No SFF_TEST_TIER3 in env → tier_enabled(3) is True."""

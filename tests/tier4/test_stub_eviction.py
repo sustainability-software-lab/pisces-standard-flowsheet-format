@@ -21,6 +21,7 @@ from pathlib import Path
 
 from tests._docs import valid_doc
 from tests._gating import skip_if_disabled
+from tests._stub_eviction import RealBiosteamTestCase
 from tests._validate_loader import V
 
 SCHEMA_PATH = (
@@ -35,10 +36,11 @@ def run_validator(doc):
         return V.validate_flowsheet_against_SFF(str(p), str(SCHEMA_PATH))
 
 
-class TestStubEviction(unittest.TestCase):
+class TestStubEviction(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
         skip_if_disabled(4)
+        super().setUpClass()   # evicts Tier-1 stubs (RealBiosteamTestCase)
 
     def test_eviction_restores_real_unit_parsing_after_tier1_stub(self):
         """After install_biosteam_stubs() poisons sys.modules['thermosteam'],

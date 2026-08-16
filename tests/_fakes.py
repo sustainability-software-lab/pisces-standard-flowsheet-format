@@ -28,7 +28,7 @@ def install_biosteam_stubs():
     if existing is not None and not getattr(existing, "_SFF_STUB", False):
         raise RuntimeError(
             "the real biosteam is already imported; Tier 1 must not load it. "
-            "Import _export_stub before anything that imports biosteam."
+            "Import tests._fakes before anything that imports biosteam."
         )
 
     thermosteam = types.ModuleType("thermosteam")
