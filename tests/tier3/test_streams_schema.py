@@ -78,6 +78,7 @@ class TestSTR11Pressure(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_zero_pressure_rejected(self):
+        """STR-11 — stream pressure 0 (not >0) → schema rejects the document."""
         doc = minimal_doc()
         doc["streams"][0]["stream_properties"]["pressure"] = 0
         self.assertFalse(self.v.is_valid(doc))
@@ -96,6 +97,7 @@ class TestSTR12TotalMassFlowRequired(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_missing_total_mass_flow_rejected(self):
+        """STR-12 — stream_properties missing total_mass_flow → schema rejects the document."""
         doc = minimal_doc()
         del doc["streams"][0]["stream_properties"]["total_mass_flow"]
         self.assertFalse(self.v.is_valid(doc))
@@ -113,6 +115,7 @@ class TestSchemaVersionPhases009(unittest.TestCase):
         skip_if_disabled(3)
 
     def test_schema_is_at_least_0_0_9(self):
+        """Schema "version" ≥ 0.0.9 — the per-phase stream structure landed at 0.0.9."""
         version = tuple(int(p) for p in load_schema()["version"].split("."))
         self.assertGreaterEqual(version, (0, 0, 9))
 
@@ -127,12 +130,15 @@ class TestStreamPropertiesShape(unittest.TestCase):
                    ["properties"]["stream_properties"])
 
     def test_phases_is_required(self):
+        """stream_properties lists "phases" in its required set."""
         self.assertIn("phases", self.sp["required"])
 
     def test_flat_composition_is_removed(self):
+        """stream_properties no longer declares a flat top-level "composition" property (it moved under phases)."""
         self.assertNotIn("composition", self.sp["properties"])
 
     def test_phases_is_an_object_keyed_by_phase_symbol(self):
+        """"phases" is an object whose additionalProperties $ref the stream_phase definition, with minProperties 1."""
         phases = self.sp["properties"]["phases"]
         self.assertEqual(phases["type"], "object")
         self.assertEqual(
@@ -142,6 +148,7 @@ class TestStreamPropertiesShape(unittest.TestCase):
         self.assertEqual(phases["minProperties"], 1)
 
     def test_whole_stream_totals_are_retained(self):
+        """Whole-stream totals (mass/molar/volumetric flow, temperature, pressure) remain number-typed on stream_properties."""
         for key in ("total_mass_flow", "total_molar_flow",
                     "total_volumetric_flow", "temperature", "pressure"):
             with self.subTest(field=key):
@@ -157,18 +164,21 @@ class TestStreamPhaseDefinition(unittest.TestCase):
         self.phase = load_schema()["definitions"]["stream_phase"]
 
     def test_requires_molar_flow_and_composition(self):
+        """The stream_phase definition requires exactly composition + total_molar_flow."""
         self.assertEqual(
             sorted(self.phase["required"]),
             ["composition", "total_molar_flow"],
         )
 
     def test_phase_totals_are_numbers(self):
+        """Per-phase total mass/molar/volumetric flow fields are number-typed in the stream_phase definition."""
         for key in ("total_mass_flow", "total_molar_flow",
                     "total_volumetric_flow"):
             with self.subTest(field=key):
                 self.assertEqual(self.phase["properties"][key]["type"], "number")
 
     def test_composition_items_have_no_phase_field(self):
+        """Per-phase composition items drop the "phase" field and require component_name + mol_fraction."""
         item = self.phase["properties"]["composition"]["items"]
         self.assertNotIn("phase", item["properties"])
         self.assertEqual(
@@ -214,19 +224,23 @@ class TestOldShapeIsRejected(unittest.TestCase):
         }
 
     def test_minimal_v0_0_9_document_validates(self):
+        """A minimal-but-valid v0.0.9 (per-phase) document → validator reports no errors."""
         self.assertEqual(list(self.validator.iter_errors(self._minimal())), [])
 
     def test_stream_without_phases_is_rejected(self):
+        """Deleting stream_properties.phases → validator reports errors (phases is required)."""
         doc = self._minimal()
         del doc["streams"][0]["stream_properties"]["phases"]
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
 
     def test_phase_without_composition_is_rejected(self):
+        """Deleting a phase's composition → validator reports errors (composition is required per phase)."""
         doc = self._minimal()
         del doc["streams"][0]["stream_properties"]["phases"]["l"]["composition"]
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
 
     def test_empty_phases_object_is_rejected(self):
+        """phases set to {} (violates minProperties 1) → validator reports errors."""
         doc = self._minimal()
         doc["streams"][0]["stream_properties"]["phases"] = {}
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
@@ -244,6 +258,7 @@ class TestSchemaVersionRoles010(unittest.TestCase):
         skip_if_disabled(3)
 
     def test_schema_is_at_least_0_0_10(self):
+        """Schema "version" ≥ 0.0.10 — the stream `roles` array landed at 0.0.10."""
         version = tuple(int(p) for p in load_schema()["version"].split("."))
         self.assertGreaterEqual(version, (0, 0, 10))
 
@@ -258,15 +273,19 @@ class TestRolesShape(unittest.TestCase):
         self.roles = self.stream_items["properties"]["roles"]
 
     def test_roles_is_an_array(self):
+        """The stream "roles" property is declared type array."""
         self.assertEqual(self.roles["type"], "array")
 
     def test_roles_has_unique_items(self):
+        """The "roles" array sets uniqueItems true (no duplicate roles)."""
         self.assertTrue(self.roles["uniqueItems"])
 
     def test_roles_item_enum_is_the_six_role_names(self):
+        """Each roles item is constrained to the six role-name enum (input/output/purchased_raw_material/feedstock/product/internal)."""
         self.assertEqual(self.roles["items"]["enum"], ROLE_ENUM)
 
     def test_roles_is_not_required(self):
+        """"roles" is absent from the stream item's required set (optional/additive)."""
         # Optional-and-additive is the whole point: 0.0.9-shaped files that omit
         # roles must still validate against 0.0.10.
         self.assertNotIn("roles", self.stream_items["required"])
@@ -310,19 +329,23 @@ class TestRolesValidation(unittest.TestCase):
         }
 
     def test_minimal_v0_0_10_document_with_roles_validates(self):
+        """A minimal v0.0.10 document carrying roles → validator reports no errors."""
         self.assertEqual(list(self.validator.iter_errors(self._minimal())), [])
 
     def test_stream_without_roles_still_validates(self):
+        """Deleting roles → still validates (roles is optional)."""
         doc = self._minimal()
         del doc["streams"][0]["roles"]
         self.assertEqual(list(self.validator.iter_errors(doc)), [])
 
     def test_out_of_enum_role_is_rejected(self):
+        """roles ["catalyst"] (off-enum) → validator reports errors."""
         doc = self._minimal()
         doc["streams"][0]["roles"] = ["catalyst"]
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
 
     def test_duplicate_role_is_rejected(self):
+        """roles ["output", "output"] (duplicate) → validator reports errors (uniqueItems)."""
         doc = self._minimal()
         doc["streams"][0]["roles"] = ["output", "output"]
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
@@ -336,6 +359,7 @@ class TestSchemaVersionEnthalpy011(unittest.TestCase):
         skip_if_disabled(3)
 
     def test_schema_is_at_least_0_0_11(self):
+        """Schema "version" ≥ 0.0.11 — the optional enthalpy_flow stream property landed at 0.0.11."""
         version = tuple(int(p) for p in load_schema()["version"].split("."))
         self.assertGreaterEqual(version, (0, 0, 11))
 
@@ -354,16 +378,19 @@ class TestEnthalpyFlowShape(unittest.TestCase):
         self.registry = schema["properties"]["quantity_units_global"]
 
     def test_enthalpy_flow_is_a_number(self):
+        """stream_properties.enthalpy_flow is declared number-typed."""
         prop = self.stream_properties["properties"]["enthalpy_flow"]
         self.assertEqual(prop["type"], "number")
 
     def test_enthalpy_flow_is_not_required(self):
+        """enthalpy_flow is absent from stream_properties.required (optional/additive)."""
         # Optional-and-additive is the whole point: 0.0.10-shaped streams that
         # omit enthalpy_flow must still validate against 0.0.11.
         self.assertNotIn(
             "enthalpy_flow", self.stream_properties.get("required", []))
 
     def test_registry_declares_enthalpy_flow(self):
+        """The quantity_units_global schema declares an enthalpy_flow entry."""
         self.assertIn(
             "enthalpy_flow", self.registry["properties"])
 
@@ -407,14 +434,17 @@ class TestEnthalpyFlowValidation(unittest.TestCase):
         }
 
     def test_minimal_v0_0_11_document_with_enthalpy_flow_validates(self):
+        """A minimal v0.0.11 document carrying enthalpy_flow → validator reports no errors."""
         self.assertEqual(list(self.validator.iter_errors(self._minimal())), [])
 
     def test_stream_without_enthalpy_flow_still_validates(self):
+        """Deleting enthalpy_flow → still validates (enthalpy_flow is optional)."""
         doc = self._minimal()
         del doc["streams"][0]["stream_properties"]["enthalpy_flow"]
         self.assertEqual(list(self.validator.iter_errors(doc)), [])
 
     def test_non_numeric_enthalpy_flow_is_rejected(self):
+        """enthalpy_flow "hot" (non-number) → validator reports errors."""
         doc = self._minimal()
         doc["streams"][0]["stream_properties"]["enthalpy_flow"] = "hot"
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])

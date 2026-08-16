@@ -66,6 +66,7 @@ class TestUTIL05TempPressure(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_zero_utility_temperature_rejected(self):
+        """UTIL-05 — a heat utility with temperature 0 (not >0) → schema rejects the document."""
         doc = minimal_doc()
         doc["utilities"]["heat_utilities"] = [{
             "id": "lps", "temperature": 0, "pressure": 101325.0,

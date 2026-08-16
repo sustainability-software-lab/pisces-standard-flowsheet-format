@@ -72,16 +72,19 @@ class TestUNIT04Conversion(unittest.TestCase):
         return doc
 
     def test_conversion_in_range_accepted(self):
+        """UNIT-04 — reaction conversion 0.5 (within [0, 1]) → schema accepts the document."""
         doc = self._doc_with_reaction(
             {"reactant": "A", "conversion": 0.5, "equation": "A -> B"})
         self.assertTrue(self.v.is_valid(doc))
 
     def test_conversion_above_one_rejected(self):
+        """UNIT-04 — reaction conversion 1.5 (>1) → schema rejects the document."""
         doc = self._doc_with_reaction(
             {"reactant": "A", "conversion": 1.5, "equation": "A -> B"})
         self.assertFalse(self.v.is_valid(doc))
 
     def test_negative_conversion_rejected(self):
+        """UNIT-04 — reaction conversion -0.1 (<0) → schema rejects the document."""
         doc = self._doc_with_reaction(
             {"reactant": "A", "conversion": -0.1, "equation": "A -> B"})
         self.assertFalse(self.v.is_valid(doc))
@@ -96,16 +99,19 @@ class TestUNIT05EquationOrStoichiometry(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_equation_only_accepted(self):
+        """UNIT-05 — reaction supplying only `equation` → schema accepts the document."""
         doc = minimal_doc()
         doc["units"][0]["reactions"] = [{"reactant": "A", "equation": "A -> B"}]
         self.assertTrue(self.v.is_valid(doc))
 
     def test_stoichiometry_only_accepted(self):
+        """UNIT-05 — reaction supplying only `stoichiometry` → schema accepts the document."""
         doc = minimal_doc()
         doc["units"][0]["reactions"] = [{"reactant": "A", "stoichiometry": [-1, 1]}]
         self.assertTrue(self.v.is_valid(doc))
 
     def test_neither_rejected(self):
+        """UNIT-05 — reaction with neither `equation` nor `stoichiometry` → schema rejects the document."""
         doc = minimal_doc()
         doc["units"][0]["reactions"] = [{"reactant": "A", "conversion": 0.5}]
         self.assertFalse(self.v.is_valid(doc))

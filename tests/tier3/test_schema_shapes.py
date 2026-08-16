@@ -51,6 +51,7 @@ class TestSchemaVersionConstraints012(unittest.TestCase):
         skip_if_disabled(3)
 
     def test_schema_declares_0_0_12(self):
+        """The schema "version" field is exactly "0.0.12"."""
         self.assertEqual(load_schema()["version"], "0.0.12")
 
 
@@ -62,6 +63,7 @@ class TestSchemaVersionQuantityUnits007(unittest.TestCase):
         skip_if_disabled(3)
 
     def test_schema_is_at_least_0_0_7(self):
+        """Schema "version" ≥ 0.0.7 — the bare-number quantity-unit shape landed at 0.0.7."""
         # The bare-number quantity-unit shape this suite pins was introduced in
         # 0.0.7 and still holds; assert a floor rather than an exact version so
         # a later additive bump (e.g. 0.0.8's TEA_currency) does not break it.
@@ -78,10 +80,12 @@ class TestScalarsAreBareNumbers(unittest.TestCase):
         self.schema = load_schema()
 
     def test_stream_price_is_a_number(self):
+        """stream.price is declared type number (bare, not the legacy {value, units} pair)."""
         price = self.schema["properties"]["streams"]["items"]["properties"]["price"]
         self.assertEqual(price["type"], "number")
 
     def test_stream_properties_scalars_are_numbers(self):
+        """stream_properties scalar flows/temperature/pressure are number-typed; temperature keeps minimum 0."""
         props = (self.schema["properties"]["streams"]["items"]
                  ["properties"]["stream_properties"]["properties"])
         for key in ("total_mass_flow", "total_molar_flow",
@@ -92,6 +96,7 @@ class TestScalarsAreBareNumbers(unittest.TestCase):
         self.assertEqual(props["temperature"]["minimum"], 0)
 
     def test_stream_properties_required_is_preserved(self):
+        """The 0.0.7-era pressure/temperature/total_molar_flow remain a subset of stream_properties.required."""
         # The three 0.0.7-era members stay required; 0.0.9 additionally requires
         # `phases`, so assert the subset rather than exact equality.
         sp = (self.schema["properties"]["streams"]["items"]
@@ -101,6 +106,7 @@ class TestScalarsAreBareNumbers(unittest.TestCase):
         )
 
     def test_heat_utility_scalars_are_numbers(self):
+        """Heat-utility scalar fields (temperature/pressure/prices/temperature_limit) are number-typed."""
         props = (self.schema["properties"]["utilities"]["properties"]
                  ["heat_utilities"]["items"]["properties"])
         for key in ("temperature", "pressure", "regeneration_price",
@@ -118,6 +124,7 @@ class TestRenamedUtilityKeys(unittest.TestCase):
         self.util = load_schema()["properties"]["utilities"]["properties"]
 
     def test_heat_utility_uses_quantity_units_key(self):
+        """Heat utilities require quantity_units_for_utility_results and no longer declare the legacy units_for_utility_results."""
         items = self.util["heat_utilities"]["items"]
         self.assertIn("quantity_units_for_utility_results", items["properties"])
         self.assertNotIn("units_for_utility_results", items["properties"])
@@ -125,6 +132,7 @@ class TestRenamedUtilityKeys(unittest.TestCase):
         self.assertNotIn("units_for_utility_results", items["required"])
 
     def test_power_utility_price_is_renamed_electrical_energy_price(self):
+        """Power utilities expose electrical_energy_price (number) instead of the old `price` key."""
         items = self.util["power_utilities"]["items"]
         self.assertIn("electrical_energy_price", items["properties"])
         self.assertNotIn("price", items["properties"])
@@ -134,6 +142,7 @@ class TestRenamedUtilityKeys(unittest.TestCase):
         self.assertIn("quantity_units_for_utility_results", items["properties"])
 
     def test_other_utility_uses_quantity_units_key(self):
+        """Other utilities require quantity_units_for_utility_results and no longer declare the legacy key."""
         items = self.util["other_utilities"]["items"]
         self.assertIn("quantity_units_for_utility_results", items["properties"])
         self.assertNotIn("units_for_utility_results", items["properties"])
@@ -146,6 +155,7 @@ class TestDesignResultUnitsField(unittest.TestCase):
         skip_if_disabled(3)
 
     def test_units_declare_quantity_units_for_design_results(self):
+        """A unit's quantity_units_for_design_results is an object mapping design keys to string units."""
         unit = load_schema()["properties"]["units"]["items"]["properties"]
         field = unit["quantity_units_for_design_results"]
         self.assertEqual(field["type"], "object")
@@ -191,14 +201,17 @@ class TestOldShapeIsRejected(unittest.TestCase):
         }
 
     def test_minimal_v0_0_7_document_validates(self):
+        """A minimal-but-valid v0.0.7 (bare-number) document → validator reports no errors."""
         self.assertEqual(list(self.validator.iter_errors(self._minimal())), [])
 
     def test_inline_price_pair_is_rejected(self):
+        """A legacy inline {value, units} price → validator reports errors."""
         doc = self._minimal()
         doc["streams"][0]["price"] = {"value": 0.1, "units": "$/kg"}
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
 
     def test_legacy_utility_results_key_is_rejected(self):
+        """A heat utility using the legacy units_for_utility_results key → validator reports errors."""
         doc = self._minimal()
         doc["utilities"]["heat_utilities"] = [{
             "id": "hps", "temperature": 500.0, "pressure": 101325.0,
@@ -217,6 +230,7 @@ class TestQuantityUnitsGlobalShape(unittest.TestCase):
         self.schema = load_schema()
 
     def test_registry_is_an_optional_top_level_object(self):
+        """quantity_units_global is an optional top-level object property (not in the schema's required set)."""
         self.assertIn("quantity_units_global", self.schema["properties"])
         self.assertEqual(
             self.schema["properties"]["quantity_units_global"]["type"], "object"
@@ -225,6 +239,7 @@ class TestQuantityUnitsGlobalShape(unittest.TestCase):
         self.assertNotIn("quantity_units_global", self.schema.get("required", []))
 
     def test_entry_definition_requires_aliases_and_quantity_units(self):
+        """The quantity_unit_entry definition requires aliases (non-empty string array) + quantity_units (string)."""
         entry = self.schema["definitions"]["quantity_unit_entry"]
         self.assertEqual(entry["type"], "object")
         self.assertEqual(sorted(entry["required"]), ["aliases", "quantity_units"])
@@ -236,6 +251,7 @@ class TestQuantityUnitsGlobalShape(unittest.TestCase):
         self.assertEqual(entry["properties"]["quantity_units"]["type"], "string")
 
     def test_canonical_quantities_reference_the_entry_definition(self):
+        """Every canonical quantity property (temperature, pressure, flows, prices, …) $refs the quantity_unit_entry definition."""
         # Every widely-used scalar and price the exporter emits must be declared.
         props = self.schema["properties"]["quantity_units_global"]["properties"]
         for key in ("temperature", "pressure", "mass_flow", "molar_flow",
@@ -248,6 +264,7 @@ class TestQuantityUnitsGlobalShape(unittest.TestCase):
                 )
 
     def test_additional_quantities_also_use_the_entry_definition(self):
+        """The registry's additionalProperties also $ref the quantity_unit_entry definition (producer-declared extras)."""
         # A producer may declare quantities beyond the canonical set.
         reg = self.schema["properties"]["quantity_units_global"]
         self.assertEqual(
@@ -276,15 +293,19 @@ class TestQuantityUnitEntryValidation(unittest.TestCase):
         self.assertNotEqual(list(self.validator.iter_errors(value)), [])
 
     def test_full_entry_validates(self):
+        """A full entry (aliases + quantity_units) → validates against the quantity_unit_entry definition."""
         self.assertValid({"aliases": ["temperature", "T"], "quantity_units": "K"})
 
     def test_entry_without_aliases_is_rejected(self):
+        """An entry lacking `aliases` → rejected."""
         self.assertInvalid({"quantity_units": "K"})
 
     def test_entry_with_empty_aliases_is_rejected(self):
+        """An entry with empty `aliases` → rejected (aliases minItems 1)."""
         self.assertInvalid({"aliases": [], "quantity_units": "K"})
 
     def test_entry_without_quantity_units_is_rejected(self):
+        """An entry lacking `quantity_units` → rejected."""
         self.assertInvalid({"aliases": ["temperature"]})
 
 

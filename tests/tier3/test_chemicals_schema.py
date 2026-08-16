@@ -66,6 +66,7 @@ class TestCHEM02MolarMass(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_zero_molar_mass_rejected(self):
+        """CHEM-02 — a chemical with molar_mass 0 (not >0) → schema rejects the document."""
         doc = minimal_doc()
         doc["chemicals"] = [
             {"id": "A", "included_in_thermo": False, "molar_mass": 0}]

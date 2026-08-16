@@ -97,9 +97,11 @@ class TestMET01SemVer(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_valid_semver_accepted(self):
+        """MET-01 — sff_version matching the semver pattern → schema accepts the document."""
         self.assertTrue(self.v.is_valid(minimal_doc()))
 
     def test_non_semver_rejected(self):
+        """MET-01 — sff_version "point three" (not semver) → schema rejects the document."""
         doc = minimal_doc()
         doc["metadata"]["sff_version"] = "point three"
         self.assertFalse(self.v.is_valid(doc))
@@ -114,6 +116,7 @@ class TestMET05Currency(unittest.TestCase):
         self.v = Draft7Validator(load_schema())
 
     def test_empty_currency_rejected(self):
+        """MET-05 — TEA_currency "" (violates minLength 1) → schema rejects the document."""
         doc = minimal_doc()
         doc["metadata"]["TEA_currency"] = ""
         self.assertFalse(self.v.is_valid(doc))
@@ -142,12 +145,15 @@ class TestMET06Sha256(unittest.TestCase):
         return doc
 
     def test_valid_digest_accepted(self):
+        """MET-06 — reproducibility sha256 of 64 lowercase-hex chars → schema accepts the document."""
         self.assertTrue(self.v.is_valid(self._doc_with_repro("a" * 64)))
 
     def test_short_digest_rejected(self):
+        """MET-06 — sha256 "abc" (not 64 hex) → schema rejects the document."""
         self.assertFalse(self.v.is_valid(self._doc_with_repro("abc")))
 
     def test_uppercase_digest_rejected(self):
+        """MET-06 — 64 uppercase-hex chars (pattern is lowercase hex) → schema rejects the document."""
         self.assertFalse(self.v.is_valid(self._doc_with_repro("A" * 64)))
 
 
@@ -163,6 +169,7 @@ class TestTeaCurrencyShape(unittest.TestCase):
         self.metadata = self.schema["properties"]["metadata"]
 
     def test_schema_is_at_least_0_0_8(self):
+        """Schema "version" ≥ 0.0.8 — TEA_currency became required at 0.0.8."""
         # The required-ness pinned below is a 0.0.8 change; a floor keeps this
         # from breaking on later additive bumps while still catching a revert
         # to an older schema that had not made the field required.
@@ -170,10 +177,12 @@ class TestTeaCurrencyShape(unittest.TestCase):
         self.assertGreaterEqual(version, (0, 0, 8))
 
     def test_tea_currency_is_a_string_property(self):
+        """metadata.TEA_currency is declared type string."""
         prop = self.metadata["properties"]["TEA_currency"]
         self.assertEqual(prop["type"], "string")
 
     def test_tea_currency_is_required(self):
+        """TEA_currency appears in metadata.required."""
         self.assertIn("TEA_currency", self.metadata["required"])
 
 
@@ -214,9 +223,11 @@ class TestTeaCurrencyValidation(unittest.TestCase):
         }
 
     def test_minimal_document_with_currency_validates(self):
+        """MET-05 — a minimal v0.0.8 document carrying TEA_currency → validator reports no errors."""
         self.assertEqual(list(self.validator.iter_errors(self._minimal())), [])
 
     def test_document_missing_tea_currency_is_rejected(self):
+        """MET-05 — deleting TEA_currency → validator reports errors (it is required)."""
         doc = self._minimal()
         del doc["metadata"]["TEA_currency"]
         self.assertNotEqual(list(self.validator.iter_errors(doc)), [])
@@ -233,12 +244,15 @@ class TestReproducibilityIsOptional(unittest.TestCase):
         self.schema = load_schema()
 
     def test_block_is_declared(self):
+        """The metadata schema declares a "reproducibility" property."""
         self.assertIn("reproducibility", self.schema["properties"]["metadata"]["properties"])
 
     def test_block_is_not_required(self):
+        """"reproducibility" is absent from metadata.required (optional/additive)."""
         self.assertNotIn("reproducibility", self.schema["properties"]["metadata"]["required"])
 
     def test_block_is_an_object(self):
+        """The reproducibility subschema is declared type object."""
         # metadata declares additionalProperties: {"type": "string"}, so an
         # object-valued property is only expressible if declared explicitly.
         self.assertEqual(reproducibility_subschema(self.schema)["type"], "object")
@@ -260,25 +274,30 @@ class TestReproducibilityBlockValidation(unittest.TestCase):
         self.assertTrue(list(self.validator.iter_errors(block)))
 
     def test_minimal_block_is_valid(self):
+        """A minimal reproducibility block → validates with no errors."""
         self.assertValid(minimal_block())
 
     def test_environment_is_required(self):
+        """Deleting `environment` → reproducibility block is rejected."""
         block = minimal_block()
         del block["environment"]
         self.assertInvalid(block)
 
     def test_load_script_is_required(self):
+        """Deleting `load_script` → reproducibility block is rejected."""
         block = minimal_block()
         del block["load_script"]
         self.assertInvalid(block)
 
     def test_environment_content_is_required(self):
+        """Deleting environment.content → reproducibility block is rejected."""
         # Without the verbatim text the JSON stops being self-sufficient.
         block = minimal_block()
         del block["environment"]["content"]
         self.assertInvalid(block)
 
     def test_commit_pinned_package_is_valid(self):
+        """A package pinned by url + commit → reproducibility block validates."""
         block = minimal_block()
         block["simulator_package"] = {
             "name": "biosteam",
@@ -288,17 +307,20 @@ class TestReproducibilityBlockValidation(unittest.TestCase):
         self.assertValid(block)
 
     def test_version_pinned_package_is_valid(self):
+        """A package pinned by version → reproducibility block validates."""
         block = minimal_block()
         block["flowsheet_model_package"] = {"name": "biorefineries", "version": "2.25.0"}
         self.assertValid(block)
 
     def test_package_without_commit_or_version_is_rejected(self):
+        """A package pinning neither commit nor version → reproducibility block is rejected."""
         # A package record that pins nothing does not reproduce anything.
         block = minimal_block()
         block["simulator_package"] = {"name": "biosteam"}
         self.assertInvalid(block)
 
     def test_commit_without_url_is_rejected(self):
+        """A package pinning a commit but no url → reproducibility block is rejected."""
         # A bare SHA cannot be fetched; the repository must be named.
         block = minimal_block()
         block["simulator_package"] = {
@@ -308,11 +330,13 @@ class TestReproducibilityBlockValidation(unittest.TestCase):
         self.assertInvalid(block)
 
     def test_version_pinned_package_needs_no_url(self):
+        """A version-pinned package with no url → reproducibility block validates."""
         block = minimal_block()
         block["simulator_package"] = {"name": "biosteam", "version": "2.46.1"}
         self.assertValid(block)
 
     def test_resolved_block_is_accepted(self):
+        """A block carrying a full `resolved` runtime record → reproducibility block validates."""
         block = minimal_block()
         block["resolved"] = {
             "python_version": "3.9.25",
@@ -340,10 +364,12 @@ class TestMicroorganismsSchemaShape(unittest.TestCase):
         self.subschema = microorganisms_subschema(self.schema)
 
     def test_field_is_an_array(self):
+        """microorganisms subschema is type array (not the old scalar string)."""
         # Was `type: "string"` before this change; must now be `array`.
         self.assertEqual(self.subschema["type"], "array")
 
     def test_items_require_a_name(self):
+        """Each microorganisms item is an object requiring `name`, with `label` optional."""
         # Every host entry must carry a `name`; `label` stays optional.
         items = self.subschema["items"]
         self.assertEqual(items["type"], "object")
@@ -352,12 +378,14 @@ class TestMicroorganismsSchemaShape(unittest.TestCase):
         self.assertEqual(items["required"], ["name"])
 
     def test_requires_at_least_one_entry_when_present(self):
+        """microorganisms sets minItems 1 — present ⇒ names at least one host."""
         # minItems: 1 means an empty list is invalid, so the field either is
         # absent or names at least one host. This is what lets the exporter
         # safely omit the key when no organism is supplied.
         self.assertEqual(self.subschema.get("minItems"), 1)
 
     def test_field_is_optional_on_metadata(self):
+        """microorganisms is absent from metadata.required (optional)."""
         # microorganisms must NOT be in metadata.required: not every flowsheet
         # involves a microbial host, and existing v0.0.5 exports never emitted
         # the field. Keeping it optional preserves backward compatibility.
@@ -392,9 +420,11 @@ class TestMicroorganismsValidation(unittest.TestCase):
         )
 
     def test_single_host_validates(self):
+        """A single named host [{"name": "E. coli"}] → validates."""
         self.assertValid([{"name": "E. coli"}])
 
     def test_multi_host_co_culture_with_label_validates(self):
+        """A two-host co-culture with a label → validates."""
         # The motivating case: a co-culture with a qualifying label.
         self.assertValid(
             [
@@ -404,19 +434,23 @@ class TestMicroorganismsValidation(unittest.TestCase):
         )
 
     def test_bare_string_is_rejected(self):
+        """A bare scalar string "E. coli" (the old form) → rejected."""
         # The old scalar form must no longer validate; this is the breaking
         # change that this PR intentionally introduces.
         self.assertInvalid("E. coli")
 
     def test_empty_list_is_rejected(self):
+        """An empty list [] → rejected (minItems 1)."""
         # Guarded by minItems: 1.
         self.assertInvalid([])
 
     def test_entry_without_name_is_rejected(self):
+        """A host entry lacking `name` → rejected."""
         # `name` is required on each host entry.
         self.assertInvalid([{"label": "unnamed host"}])
 
     def test_entry_with_empty_name_is_rejected(self):
+        """A host entry with empty name "" → rejected (name minLength 1)."""
         # name has minLength: 1, so an empty string is not a valid host name.
         self.assertInvalid([{"name": ""}])
 
