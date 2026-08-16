@@ -61,11 +61,13 @@ class TestIsProductWithRealStream(RealBiosteamTestCase):
         cls.hot = cls.H1.outs[0]
 
     def test_priced_outlet_is_a_product(self):
+        """is_product(hot, products) with hot.price=1.0 on a real Stream -> True (hot is in system.products)."""
         self.hot.price = 1.0
         self.assertIn(self.hot, self.products)
         self.assertTrue(self._export.is_product(self.hot, self.products))
 
     def test_zero_priced_outlet_is_not_a_product(self):
+        """is_product(hot, products) with hot.price=0.0 on a real Stream -> False."""
         self.hot.price = 0.0
         try:
             self.assertFalse(self._export.is_product(self.hot, self.products))

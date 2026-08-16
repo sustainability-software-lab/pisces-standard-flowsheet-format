@@ -110,40 +110,48 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         cls.tmp.cleanup()
 
     def test_0_0_7_uses_bare_number_scalars(self):
+        """v0.0.7 export of a real small System -> stream temperature and price are bare int/float scalars, not inline {value, units}."""
         self.assertEqual(self.doc_007["metadata"]["sff_version"], "0.0.7")
         sp = self.doc_007["streams"][0]["stream_properties"]
         self.assertIsInstance(sp["temperature"], (int, float))
         self.assertIsInstance(self.doc_007["streams"][0]["price"], (int, float))
 
     def test_0_0_7_has_the_global_registry(self):
+        """v0.0.7 export -> document carries a top-level quantity_units_global registry."""
         self.assertIn("quantity_units_global", self.doc_007)
 
     def test_0_0_7_units_carry_design_result_quantity_units(self):
+        """v0.0.7 export -> every unit carries a quantity_units_for_design_results map."""
         self.assertTrue(
             all("quantity_units_for_design_results" in u
                 for u in self.doc_007["units"])
         )
 
     def test_0_0_7_heat_utilities_use_the_renamed_results_key(self):
+        """v0.0.7 export -> heat utilities use quantity_units_for_utility_results, not the legacy units_for_utility_results key."""
         for hu in self.doc_007["utilities"]["heat_utilities"]:
             self.assertIn("quantity_units_for_utility_results", hu)
             self.assertNotIn("units_for_utility_results", hu)
 
     def test_0_0_6_uses_inline_scalars(self):
+        """v0.0.6 export of the same real small System -> stream temperature is the legacy inline {value, units} pair shape."""
         self.assertEqual(self.doc_006["metadata"]["sff_version"], "0.0.6")
         sp = self.doc_006["streams"][0]["stream_properties"]
         self.assertIn("value", sp["temperature"])
         self.assertIn("units", sp["temperature"])
 
     def test_0_0_6_has_no_global_registry(self):
+        """v0.0.6 export -> document does NOT carry a quantity_units_global registry (0.0.7+ only)."""
         self.assertNotIn("quantity_units_global", self.doc_006)
 
     def test_0_0_6_heat_utilities_use_the_legacy_results_key(self):
+        """v0.0.6 export -> heat utilities use the legacy units_for_utility_results key, not the renamed quantity_units_for_utility_results."""
         for hu in self.doc_006["utilities"]["heat_utilities"]:
             self.assertIn("units_for_utility_results", hu)
             self.assertNotIn("quantity_units_for_utility_results", hu)
 
     def test_0_0_8_emits_tea_currency_and_flat_composition(self):
+        """v0.0.8 export -> metadata.TEA_currency is "USD" and stream_properties still uses flat "composition" (no "phases" yet, that lands at 0.0.9)."""
         # 0.0.8 predates the per-phase stream restructuring, so its export no
         # longer validates against the committed (0.0.9) schema; assert only its
         # own shape here and let the 0.0.9 tests own schema validation.
@@ -154,11 +162,13 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertNotIn("phases", sp)
 
     def test_0_0_9_validates_against_committed_schema(self):
+        """v0.0.9 export of the real small System -> validates against the committed (0.0.9-shaped) schema with no errors."""
         is_valid, errors = self.validate(str(self.path_009), str(SCHEMA_PATH))
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_009["metadata"]["sff_version"], "0.0.9")
 
     def test_0_0_9_uses_per_phase_stream_structure(self):
+        """v0.0.9 export -> stream_properties drops flat "composition" for a non-empty per-phase "phases" dict (keyed by symbol, e.g. "l"), each phase carrying its own composition without a "phase" field, while whole-stream totals are retained."""
         sp = self.doc_009["streams"][0]["stream_properties"]
         # Flat composition is gone; phases is a non-empty object keyed by symbol.
         self.assertNotIn("composition", sp)
@@ -178,17 +188,20 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertIn("total_molar_flow", sp)
 
     def test_pre_0_0_8_versions_omit_tea_currency(self):
+        """v0.0.6 and v0.0.7 exports -> metadata omits TEA_currency (required only from 0.0.8; older exporters stay byte-stable)."""
         # The field is required only from 0.0.8; older exporters must stay
         # byte-stable and therefore not emit it.
         self.assertNotIn("TEA_currency", self.doc_007["metadata"])
         self.assertNotIn("TEA_currency", self.doc_006["metadata"])
 
     def test_0_0_10_validates_against_committed_schema(self):
+        """v0.0.10 export of the real small System -> validates against the committed schema with no errors."""
         is_valid, errors = self.validate(str(self.path_010), str(SCHEMA_PATH))
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_010["metadata"]["sff_version"], "0.0.10")
 
     def test_0_0_10_emits_roles_matching_topology(self):
+        """v0.0.10 export -> every stream carries a non-empty "roles" list with exactly one base topology role (input/output/internal) that agrees with its source_unit_id/sink_unit_id."""
         for stream in self.doc_010["streams"]:
             with self.subTest(stream=stream["id"]):
                 roles = stream["roles"]
@@ -208,6 +221,7 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                     self.assertEqual(base[0], "output")
 
     def test_0_0_10_emits_designation_roles(self):
+        """v0.0.10 export -> the sole priced feed's roles are ["input", "purchased_raw_material", "feedstock"] and the priced outlet's roles are ["output", "product"], reflecting real topology and pricing."""
         # The small fixture's priced feed (Ethanol-bearing, the sole system feed)
         # is both a purchased raw material and the feedstock; its heated outlet is
         # a priced product. This pins get_stream_roles's designation branches --
@@ -223,6 +237,7 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(output_stream["roles"], ["output", "product"])
 
     def test_pre_0_0_10_versions_omit_roles(self):
+        """v0.0.9 down to v0.0.6 exports -> no stream carries a "roles" field (emitted only from 0.0.10 on; older exporters stay byte-stable)."""
         # roles is emitted only from 0.0.10; older exporters must stay
         # byte-stable and therefore not emit it.
         for doc in (self.doc_009, self.doc_008, self.doc_007, self.doc_006):
@@ -230,6 +245,7 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                 self.assertNotIn("roles", stream)
 
     def test_0_0_10_emits_authored_metadata(self):
+        """v0.0.10 export, given source_doi/process_title/flowsheet_designers/microorganisms kwargs -> metadata carries those values verbatim."""
         md = self.doc_010["metadata"]
         self.assertEqual(md["source_doi"], "10.0000/small-fixture")
         self.assertEqual(md["process_title"], "Small fixture process")
@@ -238,6 +254,7 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                          "Saccharomyces cerevisiae")
 
     def test_pre_0_0_10_versions_omit_authored_metadata(self):
+        """v0.0.9 down to v0.0.6 exports (never passed the authored-metadata kwargs) -> metadata omits source_doi/process_title/flowsheet_designers."""
         # The three authored fields are passed only to the 0.0.10 export; the
         # shared 0.0.6-0.0.9 exports never receive them (their exporters do not
         # accept them, per design D3), so they must be absent there.
@@ -247,11 +264,13 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
             self.assertNotIn("flowsheet_designers", doc["metadata"])
 
     def test_0_0_11_validates_against_committed_schema(self):
+        """v0.0.11 export of the real small System -> validates against the committed schema with no errors."""
         is_valid, errors = self.validate(str(self.path_011), str(SCHEMA_PATH))
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_011["metadata"]["sff_version"], "0.0.11")
 
     def test_0_0_11_emits_numeric_enthalpy_flow_on_every_stream(self):
+        """v0.0.11 export -> every stream's stream_properties carries a numeric "enthalpy_flow" field."""
         for stream in self.doc_011["streams"]:
             with self.subTest(stream=stream["id"]):
                 self.assertIn("enthalpy_flow", stream["stream_properties"])
@@ -259,10 +278,12 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                     stream["stream_properties"]["enthalpy_flow"], (int, float))
 
     def test_0_0_11_registry_carries_the_enthalpy_flow_entry(self):
+        """v0.0.11 export -> quantity_units_global registers an "enthalpy_flow" entry."""
         self.assertIn("enthalpy_flow",
                       self.doc_011["quantity_units_global"])
 
     def test_pre_0_0_11_versions_omit_enthalpy_flow(self):
+        """v0.0.10 down to v0.0.7 exports -> no stream's stream_properties nor quantity_units_global carries "enthalpy_flow" (emitted only from 0.0.11 on)."""
         # enthalpy_flow is emitted only from 0.0.11; older exporters must stay
         # byte-stable and therefore not emit it -- neither on the stream nor in
         # the shared quantity_units_global registry.
@@ -273,11 +294,13 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                     "enthalpy_flow", stream["stream_properties"])
 
     def test_0_0_12_validates_against_committed_schema(self):
+        """v0.0.12 export of the real small System -> validates against the committed (tightened-constraint) schema with no errors."""
         is_valid, errors = self.validate(str(self.path_012), str(SCHEMA_PATH))
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_012["metadata"]["sff_version"], "0.0.12")
 
     def test_0_0_12_is_shape_identical_to_0_0_11_except_version(self):
+        """v0.0.12 export vs v0.0.11 export, with both metadata.sff_version fields normalized -> the two documents are equal (0.0.12 only tightens schema constraints, emitting no shape change)."""
         # v0.0.12 only tightens schema constraints; the emitted document is
         # byte-identical to the 0.0.11 export apart from metadata.sff_version.
         a = copy.deepcopy(self.doc_011)
