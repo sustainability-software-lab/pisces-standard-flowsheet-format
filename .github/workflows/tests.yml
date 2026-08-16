@@ -1,0 +1,92 @@
+name: Tests
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Login shell so `conda activate` / `conda run` work the same on both
+        # OSes; setup-miniconda populates CONDA_EXE and PATH in this shell,
+        # which is what pisces_sff._harness.find_conda_exe relies on.
+        shell: bash -el {0}
+    env:
+      # Single source for the env hash and the env build (Approach A).
+      ENV_YAML: pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml
+      # Workspace-relative cache dirs: identical path shape on Ubuntu and Windows.
+      CONDA_PKGS_DIRS: ${{ github.workspace }}/.cache/conda-pkgs
+      PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: false
+          activate-environment: ""
+          # Keep the base env minimal; the real env is built from ENV_YAML below.
+          miniconda-version: latest
+
+      - name: Restore conda package cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONDA_PKGS_DIRS }}
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml') }}
+          restore-keys: |
+            conda-pkgs-${{ runner.os }}-
+
+      - name: Restore pip cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: pip-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Report conda
+        run: |
+          conda --version
+          echo "CONDA_EXE=$CONDA_EXE"
+
+      - name: Compute harness environment name
+        run: |
+          NAME=$(python - <<'PY'
+          import importlib.util, pathlib
+          harness_path = pathlib.Path("pisces_sff/_harness.py")
+          spec = importlib.util.spec_from_file_location("_sff_harness", harness_path)
+          harness = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(harness)
+          env_text = pathlib.Path(
+              "pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml"
+          ).read_text(encoding="utf-8")
+          print(harness.environment_name(env_text))
+          PY
+          )
+          echo "Computed harness env name: $NAME"
+          echo "SFF_ENV_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Create the pinned conda environment
+        env:
+          PIP_NO_DEPS: '1'
+        run: |
+          conda env create -n "$SFF_ENV_NAME" -f "$ENV_YAML"
+
+      - name: Install pytest into the environment
+        run: |
+          conda run -n "$SFF_ENV_NAME" python -m pip install pytest
+
+      - name: Run the full test suite (all six tiers)
+        run: |
+          conda run --no-capture-output -n "$SFF_ENV_NAME" python -m pytest tests -q
