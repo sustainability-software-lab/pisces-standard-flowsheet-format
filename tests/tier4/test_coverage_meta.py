@@ -29,8 +29,14 @@ class TestTier4Coverage(unittest.TestCase):
     def test_every_validator_id_has_a_tier4_test(self):
         """Every validator-enforced ID in the sff_checks.md appendix appears in
         tests/tier4/*.py → expected: empty 'missing' set."""
+        # Exclude this file itself: its own docstrings name IDs (e.g. the
+        # UNIT-04/UNIT-05 note in validator_ids), so counting them here would
+        # let the guard "cover" an ID via the meta-test rather than a genuine
+        # category test -- deleting the real test would then slip through.
+        here = Path(__file__).resolve()
         text = "\n".join(p.read_text(encoding="utf-8")
-                         for p in Path(__file__).parent.glob("test_*.py"))
+                         for p in here.parent.glob("test_*.py")
+                         if p.resolve() != here)
         missing = sorted(i for i in validator_ids() if i not in text)
         self.assertEqual(missing, [], f"validator IDs with no Tier 4 test: {missing}")
 
