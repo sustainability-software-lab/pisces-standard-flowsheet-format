@@ -83,6 +83,15 @@ jobs:
           echo "Computed harness env name: $NAME"
           echo "SFF_ENV_NAME=$NAME" >> "$GITHUB_ENV"
 
+      - name: Enable git long paths (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          # environment.yaml pip-installs Bioindustrial-Park from git, and that
+          # repo contains analysis-result files whose paths exceed Windows'
+          # 260-char MAX_PATH, so the checkout inside `conda env create` fails
+          # with "Filename too long" unless git long-path support is enabled.
+          git config --system core.longpaths true
+
       - name: Create the pinned conda environment
         env:
           PIP_NO_DEPS: '1'
@@ -92,6 +101,15 @@ jobs:
       - name: Install pytest into the environment
         run: |
           conda run -n "$SFF_ENV_NAME" python -m pip install pytest
+
+      - name: Install POSIX test dependency (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # pexpect is a POSIX-only transitive dependency (via IPython) that
+          # PIP_NO_DEPS=1 skips at env-create time; on Windows it is never
+          # needed. Without it, every test that imports real biosteam errors
+          # with ModuleNotFoundError: No module named 'pexpect'.
+          conda run -n "$SFF_ENV_NAME" python -m pip install pexpect
 
       - name: Run the full test suite (all six tiers)
         run: |
