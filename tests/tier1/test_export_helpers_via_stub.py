@@ -7,15 +7,10 @@
 import sys
 import types
 import unittest
-from pathlib import Path
 
-# Import the sibling stub by adding this directory to sys.path, so the same
-# `import _export_stub` works under both pytest (package import) and
-# `unittest discover` (top-level import).
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _export_stub  # noqa: E402
+from tests import _fakes
 
-_export = _export_stub.load_export()
+_export = _fakes.load_export()
 
 
 class TestStubKeepsBiosteamFake(unittest.TestCase):

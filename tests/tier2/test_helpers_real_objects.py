@@ -7,12 +7,9 @@
 # Gated on SFF_TEST_BIOSTEAM=1 (imports biosteam, runs a small simulation).
 
 import os
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _small_system import build_small_system_and_tea  # noqa: E402
+from tests._real_objects import build_small_system_and_tea
 
 RUN_TIER_2 = os.environ.get("SFF_TEST_BIOSTEAM") == "1"
 

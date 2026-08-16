@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 # Tier 1: load_extended_metadata reads a model's extended_metadata.yaml into a
 # dict of authored metadata, with no biosteam loaded. The real biosteam is
-# stubbed (via _export_stub) before pisces_sff is imported, because importing
+# stubbed (via tests._fakes) before pisces_sff is imported, because importing
 # the package runs pisces_sff/__init__, which imports _export.
 
 import importlib
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _export_stub  # noqa: E402
+from tests import _fakes
 
-_export_stub.install_biosteam_stubs()
+_fakes.install_biosteam_stubs()
 _runner = importlib.import_module("pisces_sff._runner")
 load_extended_metadata = _runner.load_extended_metadata
 

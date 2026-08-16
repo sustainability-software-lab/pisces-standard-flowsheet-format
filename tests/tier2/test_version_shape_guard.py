@@ -24,13 +24,11 @@
 import copy
 import json
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _small_system import build_small_system_and_tea  # noqa: E402
+from tests._real_objects import build_small_system_and_tea
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
