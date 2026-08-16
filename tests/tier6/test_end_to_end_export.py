@@ -74,9 +74,11 @@ class TestEndToEndExport(RealBiosteamTestCase):
     # ------- Every written file validates -------
 
     def test_corn_output_was_written(self):
+        """regenerate_corpus() written-file list -> includes the corn_dry_grind_ethanol.json path in the temp dir."""
         self.assertIn(self.output, self.written)
 
     def test_all_written_files_validate_against_the_schema(self):
+        """Every file regenerate_corpus() writes -> validate_json_against_schema reports is_valid True."""
         for path in self.written:
             with self.subTest(file=path.name):
                 is_valid, errors = self.validate(str(path), str(SCHEMA_PATH))
@@ -100,6 +102,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
     # ------- Ran in the pinned environment -------
 
     def test_export_ran_in_the_pinned_environment(self):
+        """Harness export's resolved biosteam version and env_key -> match the recorded baseline values."""
         resolved = self.flowsheet["metadata"]["reproducibility"]["resolved"]
         self.assertEqual(
             resolved["package_versions"]["biosteam"],
@@ -110,11 +113,13 @@ class TestEndToEndExport(RealBiosteamTestCase):
     # ------- Numeric baselines (only this tier may assert these) -------
 
     def test_graph_size_matches_the_baseline(self):
+        """Counts of units/streams/chemicals in the harness export -> match the baseline's n_units/n_streams/n_chemicals."""
         self.assertEqual(len(self.flowsheet["units"]), self.baseline["n_units"])
         self.assertEqual(len(self.flowsheet["streams"]), self.baseline["n_streams"])
         self.assertEqual(len(self.flowsheet["chemicals"]), self.baseline["n_chemicals"])
 
     def test_export_uses_the_current_schema_version(self):
+        """metadata.sff_version of the harness export -> equals read_schema_version(), guarding against drift from the schema."""
         # The corpus auto-syncs to the schema: regenerate_corpus() with no
         # explicit version resolves through export_model's DEFAULT_SFF_VERSION,
         # which is read_schema_version(). This guards against that pin drifting
@@ -125,11 +130,13 @@ class TestEndToEndExport(RealBiosteamTestCase):
         )
 
     def test_tea_year_matches_the_baseline(self):
+        """metadata.TEA_year of the harness export -> matches the baseline's TEA_year."""
         self.assertEqual(
             self.flowsheet["metadata"]["TEA_year"], self.baseline["TEA_year"]
         )
 
     def test_stream_mass_flows_match_the_baseline(self):
+        """Each baseline stream's total_mass_flow -> present in the export and close to the baseline value within RTOL."""
         flows = {s["id"]: s["stream_properties"]["total_mass_flow"]
                  for s in self.flowsheet["streams"]}
         for stream_id, expected in self.baseline["stream_mass_flows"].items():
@@ -138,6 +145,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
                 self.assertClose(flows[stream_id], expected, stream_id)
 
     def test_stream_enthalpy_flows_match_the_baseline(self):
+        """Each baseline stream's enthalpy_flow -> present (non-None) in the export and close to the baseline value within RTOL."""
         # enthalpy_flow (biosteam stream.H, kJ/hr) is a v0.0.11 addition; this is
         # the only tier whose pins actually ran, so it is the only place the
         # numeric value is asserted. Feed streams sit at the reference state
@@ -154,6 +162,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
                 self.assertClose(flows[stream_id], expected, stream_id)
 
     def test_total_installed_cost_matches_the_baseline(self):
+        """Sum of installed_costs across all units in the harness export -> close to the baseline's total_installed_cost within RTOL."""
         total = sum(sum(u["installed_costs"].values())
                     for u in self.flowsheet["units"])
         self.assertClose(total, self.baseline["total_installed_cost"],
@@ -163,18 +172,22 @@ class TestEndToEndExport(RealBiosteamTestCase):
     #         Tier-2 corn test) -------
 
     def test_feedstock_is_corn(self):
+        """metadata.feedstocks of the harness export -> includes a feedstock with stream_id 'corn'."""
         feedstocks = {f["stream_id"] for f in self.flowsheet["metadata"]["feedstocks"]}
         self.assertIn("corn", feedstocks)
 
     def test_ethanol_is_a_product(self):
+        """metadata.products of the harness export -> includes a product with stream_id 'ethanol'."""
         products = {p["stream_id"] for p in self.flowsheet["metadata"]["products"]}
         self.assertIn("ethanol", products)
 
     def test_microorganism_is_declared(self):
+        """metadata.microorganisms[0].name of the harness export -> equals 'Saccharomyces cerevisiae'."""
         hosts = self.flowsheet["metadata"]["microorganisms"]
         self.assertEqual(hosts[0]["name"], "Saccharomyces cerevisiae")
 
     def test_authored_metadata_comes_from_extended_metadata_yaml(self):
+        """metadata.source_doi/process_title/flowsheet_designers/microorganisms[0].name -> match the values authored in extended_metadata.yaml."""
         import yaml
         authored = yaml.safe_load(
             (MODEL_DIR / "extended_metadata.yaml").read_text(encoding="utf-8"))
@@ -187,11 +200,13 @@ class TestEndToEndExport(RealBiosteamTestCase):
                          authored["microorganisms"][0]["name"])
 
     def test_graph_is_non_empty(self):
+        """Harness export's units, streams, and chemicals lists -> all non-empty."""
         self.assertTrue(self.flowsheet["units"])
         self.assertTrue(self.flowsheet["streams"])
         self.assertTrue(self.flowsheet["chemicals"])
 
     def test_streams_reference_declared_units(self):
+        """Every stream's source_unit_id and sink_unit_id -> reference a declared unit id or the "None" boundary sentinel."""
         # "None" is the exporter's sentinel for a system boundary.
         unit_ids = {u["id"] for u in self.flowsheet["units"]} | {"None"}
         for stream in self.flowsheet["streams"]:
@@ -200,6 +215,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
                 self.assertIn(stream["sink_unit_id"], unit_ids)
 
     def test_quantity_units_global_is_present_and_biosteam_native(self):
+        """quantity_units_global registry -> temperature is K, mass_flow is kg/hr, price is USD/kg (biosteam-native units)."""
         reg = self.flowsheet["quantity_units_global"]
         self.assertEqual(reg["temperature"]["quantity_units"], "K")
         self.assertEqual(reg["mass_flow"]["quantity_units"], "kg/hr")
@@ -208,6 +224,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
     # ------- Reproducibility embedding (folded in) -------
 
     def test_embedded_environment_matches_the_committed_file(self):
+        """metadata.reproducibility.environment block -> sha256, content, and filename match the committed environment.yaml."""
         block = self.flowsheet["metadata"]["reproducibility"]["environment"]
         data = (MODEL_DIR / "environment.yaml").read_bytes()
         self.assertEqual(block["sha256"], hashlib.sha256(data).hexdigest())
@@ -215,6 +232,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
         self.assertEqual(block["filename"], "environment.yaml")
 
     def test_embedded_load_script_matches_the_committed_file(self):
+        """metadata.reproducibility.load_script block -> sha256, content, and entry_point match the committed load.py."""
         block = self.flowsheet["metadata"]["reproducibility"]["load_script"]
         data = (MODEL_DIR / "load.py").read_bytes()
         self.assertEqual(block["sha256"], hashlib.sha256(data).hexdigest())
@@ -222,6 +240,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
         self.assertEqual(block["entry_point"], "load")
 
     def test_embedded_extended_metadata_matches_the_committed_file(self):
+        """metadata.reproducibility.extended_metadata block -> sha256, content, filename, and format match the committed extended_metadata.yaml."""
         block = self.flowsheet["metadata"]["reproducibility"]["extended_metadata"]
         data = (MODEL_DIR / "extended_metadata.yaml").read_bytes()
         self.assertEqual(block["sha256"], hashlib.sha256(data).hexdigest())
@@ -230,6 +249,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
         self.assertEqual(block["format"], "yaml")
 
     def test_package_pins_are_recorded(self):
+        """metadata.reproducibility simulator_package and flowsheet_model_package commits -> equal the pinned Bioindustrial-Park/model commit hashes."""
         block = self.flowsheet["metadata"]["reproducibility"]
         self.assertEqual(
             block["simulator_package"]["commit"],
@@ -241,6 +261,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
         )
 
     def test_resolved_block_records_the_runtime(self):
+        """metadata.reproducibility.resolved block -> records python_version, platform, a 64-char env_key, a 'Z'-suffixed exported_at, and a biosteam package version."""
         resolved = self.flowsheet["metadata"]["reproducibility"]["resolved"]
         self.assertTrue(resolved["python_version"])
         self.assertTrue(resolved["platform"])
