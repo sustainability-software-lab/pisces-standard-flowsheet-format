@@ -276,5 +276,28 @@ class TestUNIT09(RealBiosteamTestCase):
         self.assertFalse(is_valid)
 
 
+class TestUNIT10(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def test_conformer(self):
+        """UNIT-10 -- valid_doc()'s single well-identified unit -> pass."""
+        is_valid, by_id = validate_doc(valid_doc())
+        self.assertEqual(by_id["UNIT-10"][0].status, "pass")
+        self.assertTrue(is_valid)
+
+    def test_violator(self):
+        """UNIT-10 -- a unit with an empty unit_type -> CheckResult(UNIT-10,
+        warning, fail); is_valid stays True (warnings never flip is_valid)."""
+        doc = valid_doc()
+        doc["units"][0]["unit_type"] = ""
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["UNIT-10"][0]
+        self.assertEqual((r.severity, r.status), ("warning", "fail"))
+        self.assertTrue(is_valid)
+
+
 if __name__ == "__main__":
     unittest.main()

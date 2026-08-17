@@ -327,5 +327,33 @@ class TestSTR13(RealBiosteamTestCase):
         self.assertFalse(is_valid)
 
 
+class TestSTR14(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def test_conformer(self):
+        """STR-14 -- valid_doc()'s identified streams -> pass."""
+        is_valid, by_id = validate_doc(valid_doc())
+        self.assertEqual(by_id["STR-14"][0].status, "pass")
+        self.assertTrue(is_valid)
+
+    def test_violator(self):
+        """STR-14 -- an extra doubly-isolated stream with an empty id ->
+        CheckResult(STR-14, warning, fail); is_valid stays True. (Blanking an
+        *existing* stream's id -- 'feed' or 'prod' -- would also break MET-02,
+        since metadata.feedstocks/products reference streams by that same id;
+        appending a new, empty, boundary-to-boundary stream isolates the
+        violation to STR-14 alone.)"""
+        doc = valid_doc()
+        doc["streams"].append({"id": "", "source_unit_id": "None",
+                                "sink_unit_id": "None"})
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["STR-14"][0]
+        self.assertEqual((r.severity, r.status), ("warning", "fail"))
+        self.assertTrue(is_valid)
+
+
 if __name__ == "__main__":
     unittest.main()

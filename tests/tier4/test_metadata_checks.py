@@ -94,5 +94,34 @@ class TestMET04(RealBiosteamTestCase):
         self.assertTrue(is_valid)
 
 
+class TestMET07(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def test_conformer(self):
+        """MET-07 -- valid_doc() has no reproducibility block -> skip; is_valid True."""
+        is_valid, by_id = validate_doc(valid_doc())
+        self.assertEqual(by_id["MET-07"][0].status, "skip")
+        self.assertTrue(is_valid)
+
+    def test_violator(self):
+        """MET-07 -- a reproducibility block whose content does not hash to its
+        stored sha256 -> CheckResult(MET-07, error, fail); is_valid False."""
+        doc = valid_doc()
+        doc["metadata"]["reproducibility"] = {
+            "environment": {"format": "conda-environment-yaml",
+                            "filename": "environment.yaml",
+                            "content": "name: x\n", "sha256": "0" * 64},
+            "load_script": {"format": "python", "filename": "load.py",
+                            "content": "def load():\n    pass\n",
+                            "sha256": "0" * 64}}
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["MET-07"][0]
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertFalse(is_valid)
+
+
 if __name__ == "__main__":
     unittest.main()

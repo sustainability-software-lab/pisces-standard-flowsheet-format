@@ -7,6 +7,7 @@
 # for license details.
 
 import datetime
+import hashlib
 import json
 import re
 from collections import namedtuple
@@ -305,6 +306,13 @@ def _iter_reactions(ctx):
                 yield u, r
 
 
+def _has_reactions(ctx):
+    """True if any unit declares at least one reaction (for tag skip policy)."""
+    for _u, _r in _iter_reactions(ctx):
+        return True
+    return False
+
+
 def _check_reaction_reactant_refs(ctx):  # UNIT-04 (validator part; conversion is schema)
     bad, any_reactant = [], False
     for u, r in _iter_reactions(ctx):
@@ -520,6 +528,26 @@ def _check_cost_correlation_completeness(ctx):  # UNIT-09 (validator part; schem
     return [_passed('UNIT-09', 'error', 'units')]
 
 
+def _check_units_present_identified(ctx):  # UNIT-10
+    # Never skips: an empty flowsheet is a FAIL, so a tag can deny it.
+    if not ctx.units:
+        return [_failed('UNIT-10', 'warning',
+                        'units is empty or absent', 'units')]
+    bad = []
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            bad.append(f'non-object unit entry: {u!r}')
+            continue
+        if not u.get('id'):
+            bad.append(f"unit with empty id (unit_type={u.get('unit_type')!r})")
+        if not u.get('unit_type'):
+            bad.append(f"unit '{u.get('id')}' has empty unit_type")
+    if bad:
+        return [_failed('UNIT-10', 'warning',
+                        f'units not well-identified: {bad}', 'units')]
+    return [_passed('UNIT-10', 'warning', 'units')]
+
+
 #%% Checks -- streams: referential, roles, zero-flow (sff_checks.md section 3)
 
 BOUNDARY = 'None'  # C-01 system-boundary sentinel written to source/sink_unit_id
@@ -555,6 +583,12 @@ def _stream_is_empty(stream):
     flows_zero = all(abs(v) <= ZERO_FLOW for v in _stream_flow_scalars(stream))
     comps_empty = all(len(c) == 0 for c in _stream_compositions(stream))
     return flows_zero and comps_empty
+
+
+def _all_streams_empty(ctx):
+    """True if every stream is empty (all flow scalars ~zero, all compositions
+    empty). Used by the exported-from-simulator STR-10 tolerated-skip policy."""
+    return all(_stream_is_empty(s) for s in ctx.streams if isinstance(s, dict))
 
 
 def _check_stream_id_uniqueness(ctx):  # STR-01
@@ -722,6 +756,24 @@ def _check_zero_flow_consistency(ctx):  # STR-13
                         f'stream(s) with a zero flow but nonzero other flow/'
                         f'composition: {bad}', 'streams')]
     return [_passed('STR-13', 'error', 'streams')]
+
+
+def _check_streams_present_identified(ctx):  # STR-14
+    # Never skips: an empty stream set is a FAIL. Endpoint validity is STR-02.
+    if not ctx.streams:
+        return [_failed('STR-14', 'warning',
+                        'streams is empty or absent', 'streams')]
+    bad = []
+    for s in ctx.streams:
+        if not isinstance(s, dict):
+            bad.append(f'non-object stream entry: {s!r}')
+            continue
+        if not s.get('id'):
+            bad.append(f'stream with empty id (source={s.get("source_unit_id")!r})')
+    if bad:
+        return [_failed('STR-14', 'warning',
+                        f'streams not well-identified: {bad}', 'streams')]
+    return [_passed('STR-14', 'warning', 'streams')]
 
 
 #%% Checks -- streams: material balance (sff_checks.md section 3 + 7 (i)/(ii))
@@ -1221,6 +1273,37 @@ def _check_tea_year_plausible(ctx):  # MET-04
     return [_passed('MET-04', 'warning', 'metadata')]
 
 
+def _check_reproducibility_content_digests(ctx):  # MET-07
+    # MET-06 (schema) checks each sha256 is 64-hex; MET-07 checks it is CORRECT:
+    # sha256 of the content string's UTF-8 bytes, hashed as-is (LF endings are
+    # load-bearing for agreement with a Linux/CI export).
+    repro = ctx.metadata.get('reproducibility')
+    if not isinstance(repro, dict):
+        return [_skipped('MET-07', 'error',
+                         'no reproducibility block', 'metadata')]
+    bad, any_block = [], False
+    for name in ('environment', 'load_script', 'extended_metadata'):
+        block = repro.get(name)
+        if not isinstance(block, dict):
+            continue
+        content, digest = block.get('content'), block.get('sha256')
+        if not isinstance(content, str) or not isinstance(digest, str):
+            continue
+        any_block = True
+        actual = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        if actual != digest:
+            bad.append(f"{name}: stored {digest[:12]}... != actual {actual[:12]}...")
+    if not any_block:
+        return [_skipped('MET-07', 'error',
+                         'no reproducibility block carries content+sha256',
+                         'metadata')]
+    if bad:
+        return [_failed('MET-07', 'error',
+                        f'reproducibility content/digest mismatch: {bad}',
+                        'metadata')]
+    return [_passed('MET-07', 'error', 'metadata')]
+
+
 def _check_boundary_streams_exist(ctx):  # GRAPH-01
     # Skipped when: never (sff_checks.md). An empty streams array has neither a
     # boundary input nor output, which is exactly the truncated-export case this
@@ -1320,6 +1403,7 @@ _CHECKS = [
     _check_metadata_stream_refs,             # MET-02
     _check_metadata_role_agreement,          # MET-03
     _check_tea_year_plausible,               # MET-04
+    _check_reproducibility_content_digests,  # MET-07
     # units
     _check_unit_id_uniqueness,               # UNIT-01
     _check_utility_result_refs,              # UNIT-02
@@ -1330,6 +1414,7 @@ _CHECKS = [
     _check_unit_connectivity,                # UNIT-07
     _check_cost_correlation_refs,            # UNIT-08
     _check_cost_correlation_completeness,    # UNIT-09
+    _check_units_present_identified,         # UNIT-10
     # streams: referential / roles / zero-flow
     _check_stream_id_uniqueness,             # STR-01
     _check_stream_endpoint_refs,             # STR-02
@@ -1339,6 +1424,7 @@ _CHECKS = [
     _check_stream_designation_roles,         # STR-06
     _check_composition_component_refs,       # STR-07
     _check_zero_flow_consistency,            # STR-13
+    _check_streams_present_identified,       # STR-14
     # streams: material balance
     _check_fraction_sums,                    # STR-08
     _check_phase_flow_sums,                  # STR-09
