@@ -36,6 +36,18 @@ export_biosteam_flowsheet_sff(sys, "sugarcane_ethanol.json")
 
 This produces a JSON file conforming to the [SFF schema](schema_reference.md) with all unit operations, streams, thermodynamic data, utility data, and cost estimates.
 
+## Ordering Guarantees
+
+Exports are deterministically ordered: re-exporting the same simulated system
+produces every array in the same order each time. `units` and `streams` follow
+the system's own ordering (`sys.units` / `sys.streams`), `chemicals` follows
+the thermodynamic package's `CompiledChemicals` order, each unit's `reactions`
+array follows model discovery order (the order the flowsheet author assigned
+the reaction objects to the unit, which also fixes the emitted `index` field),
+and the `heat_utilities` / `other_utilities` registries are sorted by `id`.
+Array order carries no semantic meaning in the schema — consumers should keep
+matching entries by `id` — but the stable order makes exports diffable.
+
 ## API Reference
 
 ### `export_biosteam_flowsheet_sff(sys, file_path)`

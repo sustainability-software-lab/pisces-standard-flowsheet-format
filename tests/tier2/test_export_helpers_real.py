@@ -13,8 +13,11 @@
 #
 # Gated on RUN_TIER2 (default on; imports biosteam, runs a small simulation).
 
+import json
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests._gating import RUN_TIER2
 from tests._real_objects import build_small_system_and_tea
@@ -256,6 +259,69 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         self.assertEqual(thermo['phi'], 'IdealFugacityCoefficients')
         self.assertEqual(thermo['PCF'], 'MockPoyntingCorrectionFactors')
         self.assertIn('IdealMixture', thermo['mixture'])
+
+
+@unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
+class TestUtilityEmissionSortedById(RealBiosteamTestCase):
+    """Deterministic-ordering guarantee (2026-08-16 determinism fix): the
+    utilities.heat_utilities / other_utilities arrays are emitted sorted by
+    agent id, not in process-varying accumulation-set order. Exercised on a
+    real two-unit system that consumes two distinct heat-utility agents:
+    heating 298.15 K -> 350 K draws low_pressure_steam, cooling
+    350 K -> 310 K draws chilled_water (confirmed against the real installed
+    biosteam utility-agent selection in this environment -- not
+    cooling_water, whose practical range does not reach a 310 K outlet)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
+
+        # Same pisces_sff re-import dance as TestExportHelpersAgainstRealObjects
+        # above (the export path reads module-level biosteam-bound names such
+        # as PowerUtility that a stale cached _export would hold as fakes).
+        for key in [k for k in sys.modules
+                    if k == "pisces_sff" or k.startswith("pisces_sff.")]:
+            del sys.modules[key]
+
+        from pisces_sff import _export
+
+        import biosteam as bst
+        bst.settings.set_thermo(["Water", "Ethanol"])
+        feed = bst.Stream("det_feed", Water=500, units="kg/hr", T=298.15)
+        H_heat = bst.HXutility("DET_H1", ins=feed, outs="det_hot", T=350)
+        H_cool = bst.HXutility("DET_H2", ins=H_heat-0, outs="det_cold", T=310)
+        system = bst.System("det_sys", path=(H_heat, H_cool))
+        system.simulate()
+        # Same placeholder finance args as tests/_real_objects.py -- the
+        # exporter only reads tea.duration[0].
+        tea = bst.TEA(
+            system=system, IRR=0.15, duration=(2020, 2030),
+            depreciation="MACRS7", income_tax=0.21, operating_days=330.,
+            lang_factor=3., construction_schedule=(0.4, 0.6),
+            startup_months=0., startup_FOCfrac=0., startup_VOCfrac=0.,
+            startup_salesfrac=0., WC_over_FCI=0.05, finance_interest=0.,
+            finance_years=0, finance_fraction=0.,
+        )
+        cls.tmp = tempfile.TemporaryDirectory()
+        path = Path(cls.tmp.name) / "det_sorted.json"
+        _export.export_biosteam_flowsheet(
+            system, str(path), sff_version="0.1.1", tea=tea)
+        cls.doc = json.loads(path.read_text(encoding="utf-8"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_heat_and_other_utilities_sorted_by_id(self):
+        """heat_utilities carries exactly the two agents the system consumed,
+        in sorted-id order: ['chilled_water', 'low_pressure_steam'].
+        other_utilities is asserted sorted too -- vacuously here (this system
+        has no natural_gas utility, so the array is empty), which pins the
+        shape without a second fixture."""
+        hu_ids = [h["id"] for h in self.doc["utilities"]["heat_utilities"]]
+        self.assertEqual(hu_ids, ["chilled_water", "low_pressure_steam"])
+        ou_ids = [o["id"] for o in self.doc["utilities"]["other_utilities"]]
+        self.assertEqual(ou_ids, sorted(ou_ids))
 
 
 if __name__ == "__main__":

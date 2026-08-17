@@ -423,8 +423,14 @@ def _build_sff_dict(sys, tea=None,
         chemicals.append(get_chemical_entry(c, i, c in vle_chems, stoichiometry))
         
     ## ----- Utilities ----- ##
+    # Deterministic ordering policy: utility agents form a registry, so the
+    # heat_utilities / other_utilities arrays are emitted sorted by agent ID
+    # rather than in process-dependent accumulation-set order. Two distinct
+    # agents sharing an ID cannot occur in a compiled biosteam flowsheet, so
+    # ties are not defended against. (power_utilities is a single synthetic
+    # entry; order cannot matter there.)
     heat_utilities = []
-    for hu_agent in all_hu_agents:
+    for hu_agent in sorted(all_hu_agents, key=lambda agent: agent.ID):
         hu = {
               "id": hu_agent.ID,
               "temperature": scalar(hu_agent.T, "K", inline),
@@ -448,7 +454,7 @@ def _build_sff_dict(sys, tea=None,
         power_utilities.append(pu)
 
     other_utilities = []
-    for ou_agent in all_ou_agents:
+    for ou_agent in sorted(all_ou_agents, key=lambda agent: agent.ID):
         ou = {
               "id": ou_agent.ID,
               "temperature": scalar(ou_agent.T, "K", inline),
