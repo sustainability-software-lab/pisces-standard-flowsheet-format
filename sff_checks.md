@@ -171,6 +171,20 @@ These are not checks; they define terms the checks rely on.
 - **Skipped when:** `reproducibility` block absent.
 - **Enforcement:** schema (narrowing — add `pattern`).
 
+### MET-07 — reproducibility content matches its digests
+- **Statement:** for every content block under `metadata.reproducibility` that carries both
+  `content` and `sha256` (`environment`, `load_script`, `extended_metadata`), the recomputed
+  `sha256` of the `content` string's UTF-8 bytes equals the stored `sha256`.
+- **Rationale:** the embedded digest is the integrity guarantee on the embedded recipe; a
+  mismatch means the recipe is corrupt and cannot be trusted to reproduce anything. This is
+  the necessary precondition behind the `reproducible` tag. (MET-06 already checks digest
+  *shape*; MET-07 checks the digest is *correct*.) LF endings matter: hash the `content`
+  bytes as-is, with no newline translation.
+- **Scope:** `metadata.reproducibility.{environment,load_script,extended_metadata}.content`/`.sha256`.
+- **Severity:** `error`.
+- **Skipped when:** `metadata.reproducibility` absent, or no block carries both `content` and `sha256`.
+- **Enforcement:** validator (`_check_reproducibility_content_digests`).
+
 ---
 
 ## 2. units
@@ -287,6 +301,18 @@ These are not checks; they define terms the checks rely on.
 - **Enforcement:** schema (`if`/`then`: `power_law` requires the two fields) +
   validator (`_check_cost_correlation_completeness`, which also enforces the
   `custom_function`-omits-both direction and runs on schema-invalid documents).
+
+### UNIT-10 — units present and well-identified
+- **Statement:** `units` is a non-empty array, and every unit declares a non-empty `id` and a
+  non-empty `unit_type`.
+- **Rationale:** the schema requires the *keys* `id`/`unit_type` but cannot express
+  non-emptiness or "at least one unit". This is the substantive requirement behind the
+  `extracted-from-*` tags and a completeness floor for `exported-from-simulator`.
+- **Scope:** `units`, `units[].id`, `units[].unit_type`.
+- **Severity:** `warning` (a legal-but-degenerate construction: blocks a tag but does not, alone,
+  make the file non-conforming).
+- **Skipped when:** never — absence of units is a *fail*, not a skip, so a tag can deny an empty flowsheet.
+- **Enforcement:** validator (`_check_units_present_identified`).
 
 ---
 
@@ -436,6 +462,16 @@ These are not checks; they define terms the checks rely on.
 - **Skipped when:** all present flow scalars are nonzero.
 - **Enforcement:** validator (`_check_zero_flow_consistency`). STR-03 is the doubly-isolated
   special case.
+
+### STR-14 — streams present and identified
+- **Statement:** `streams` is a non-empty array, and every stream declares a non-empty `id`.
+- **Rationale:** as UNIT-10, for streams. (Endpoint validity is already STR-02.) The
+  substantive requirement behind the `extracted-from-*` tags and a completeness floor for
+  `exported-from-simulator`.
+- **Scope:** `streams`, `streams[].id`.
+- **Severity:** `warning`.
+- **Skipped when:** never — absence of streams is a *fail*, not a skip.
+- **Enforcement:** validator (`_check_streams_present_identified`).
 
 ---
 
@@ -629,6 +665,64 @@ These are not checks; they define terms the checks rely on.
 
 ---
 
+## 8. tags
+
+A **tag** is a machine-verified assertion that a flowsheet passed a tag-associated subset of
+the checks above without any `warning`-severity findings. Tags are an *additional* layer on
+top of conformance, never a relaxation of it: every file must still pass every check without
+`error`-severity findings regardless of its tags, and `info` findings never block a tag. Tags
+are stored in the optional `metadata.tags` array; a tag present there that the file does not
+earn is a TAG-01 error.
+
+Two classes:
+
+- **Static tags** — earned by running a subset of the checks above; fast, no simulation.
+- **Harness tag** (`reproducible`) — earned by re-running the export from the embedded
+  reproducibility recipe and comparing; heavy, opt-in.
+
+### Static earning rule
+A file earns static tag `T` iff all of: (1) **conformance** — schema-valid and no
+`error`-severity *fail* among the checks other than TAG-01 (TAG-01 is excluded to avoid
+circularity); (2) **subset warning-clean** — no check in `T`'s subset produced a
+`warning`-severity *fail*; (3) **subset skip-clean** — no check in `T`'s subset produced a
+*skip*, except skips tolerated by `T`'s policy below. `info` findings and `pass` are always acceptable.
+
+| Tag | Subset | Tolerated skips |
+| --- | --- | --- |
+| `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. |
+| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) |
+| `extracted-from-image` | `{UNIT-10, STR-14}` | none |
+
+### `reproducible` (harness) earning rule
+Earned iff: (1) static conformance (as above); (2) the reproducibility recipe is present and
+complete (`environment`, `load_script`, `extended_metadata` when used) with a recorded
+`metadata.reproducibility.comparison_rtol`, and MET-07 does not fail; (3) reconstructing the
+model from the embedded recipe and re-running the export produces a document matching this
+file field-by-field within `comparison_rtol`. Steps 1–2 are the cheap static precondition
+TAG-01 enforces; step 3 is the heavy harness run performed only by
+`evaluate_sff_tags(run_harness=True)` / `verify_reproducible`. The comparison ignores
+`metadata.tags`, `metadata.reproducibility.comparison_rtol`, and the volatile
+`metadata.reproducibility.resolved.{exported_at,platform,python_version}`; everything else
+(including `resolved.env_key` and `resolved.package_versions`) must match, numeric leaves
+within `comparison_rtol` with an absolute floor near zero.
+
+### TAG-01 — declared tags are earned
+- **Statement:** every tag in `metadata.tags` is actually earned by the file. Static tags are
+  evaluated by the static rule; `reproducible` is evaluated only against its cheap precondition
+  statically (recipe present + `comparison_rtol` recorded + MET-07 not failing) — full
+  sufficiency (step 3) is confirmed only by `evaluate_sff_tags(run_harness=True)`.
+- **Rationale:** a stamped tag is a promise downstream consumers rely on; a false claim must
+  make the file non-conforming.
+- **Scope:** `metadata.tags` ↔ computed earned tags (+ the reproducibility recipe for the
+  `reproducible` precondition).
+- **Severity:** `error`.
+- **Skipped when:** `metadata.tags` absent or empty.
+- **Enforcement:** validator, computed as a post-pass aggregate (like XREF-01): not in
+  `_CHECKS`; evaluated inside `validate_flowsheet_against_SFF` from the results of the checks
+  that already ran plus the tag policies. Never runs the harness.
+
+---
+
 ## Appendix — check index
 
 | ID | Statement (short) | Severity | Enforcement |
@@ -639,6 +733,7 @@ These are not checks; they define terms the checks rely on.
 | MET-04 | `TEA_year` plausible | warning | validator |
 | MET-05 | `TEA_currency` non-empty | error | schema (narrowing) |
 | MET-06 | reproducibility digests well-formed | error | schema (narrowing) |
+| MET-07 | reproducibility content matches digests | error | validator |
 | UNIT-01 | unit `id` unique | error | validator |
 | UNIT-02 | utility-result keys → declared utilities | error | validator |
 | UNIT-03 | design results paired with quantity units | error/warning | validator |
@@ -648,6 +743,7 @@ These are not checks; they define terms the checks rely on.
 | UNIT-07 | no orphan units | warning | validator |
 | UNIT-08 | correlation keys → purchase_costs | warning | validator |
 | UNIT-09 | correlation completeness (power_law/custom_function) | error | schema + validator |
+| UNIT-10 | units present and well-identified | warning | validator |
 | STR-01 | stream `id` unique | error | validator |
 | STR-02 | source/sink resolve to unit or boundary | error | validator |
 | STR-03 | isolated streams are empty | error | validator |
@@ -661,6 +757,7 @@ These are not checks; they define terms the checks rely on.
 | STR-11 | pressure positive | error | schema (narrowing) |
 | STR-12 | `total_mass_flow` required | error | schema (required-addition, gated) |
 | STR-13 | zero-flow streams fully empty | error | validator |
+| STR-14 | streams present and identified | warning | validator |
 | CHEM-01 | chemical `id`/`index` unique | error | validator |
 | CHEM-02 | molar mass positive | warning | validator |
 | CHEM-03 | formula agrees with molar mass | warning | validator |
@@ -676,4 +773,5 @@ These are not checks; they define terms the checks rely on.
 | QU-03 | aliases globally unambiguous | error | validator |
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
+| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`) |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |
