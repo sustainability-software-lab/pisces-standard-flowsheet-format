@@ -75,6 +75,7 @@ The `units` array contains all operational nodes of the process graph (e.g., rea
 - **design_results**: Generated metrics for the operation of this unit.
 - **quantity_units_for_design_results**: Quantity units for each key in `design_results`, by the same key (from the simulator's `_units`).
 - **purchase_costs** & **installed_costs**: Itemized economic data detailing the cost of this particular unit operation.
+- **purchase_cost_correlations**: *(optional, v0.1.2+)* Per-item parametric purchase-cost correlations, keyed by the same item IDs as `purchase_costs`. Each entry records an exponential ("six-tenths rule") correlation so a consumer can re-derive equipment cost at a different design size or cost-year index. For a `power_law` item: `purchase_cost = (CE_target / reference_CE_index) × reference_cost × (size / reference_size)^exponent`, then `installed_cost = installation_factor × purchase_cost`; if `size_upper_bound` is set and exceeded, the item parallelizes into `ceil(size / size_upper_bound)` units. A `custom_function` item omits `reference_cost`/`exponent` (opaque model) — fall back to the recorded `purchase_costs` value. See `sff_checks.md` UNIT-08/UNIT-09.
 - **utility_consumption_results** & **utility_production_results**: Realized consumption and generation of power/heat per utility type (linking back to the IDs declared in `utilities`).
 
 ---

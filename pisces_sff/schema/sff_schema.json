@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -409,6 +409,84 @@
               "type": "number"
             },
             "description": "Equipment installed (purchase + installation) cost results for this unit operation. These may be for the entire unit operation or for individual unit operations (depending on the level of detail modeled)."
+          },
+          "purchase_cost_correlations": {
+            "type": "object",
+            "description": "Parametric purchase-cost correlations for this unit, keyed by the same item IDs as 'purchase_costs'/'installed_costs'. Optional and sparse -- present only for items produced by a parametric correlation (e.g. BioSTEAM @cost-decorated units). Records an exponential ('six-tenths rule') correlation so a consumer can re-derive equipment cost at a different design size or cost-year index (CEPCI): purchase_cost = (CE_target / reference_CE_index) * reference_cost * (size / reference_size)^exponent, then installed_cost = installation_factor * purchase_cost. See sff_checks.md UNIT-08/UNIT-09.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "correlation_type": {
+                  "type": "string",
+                  "enum": ["power_law", "custom_function"],
+                  "description": "Discriminator. 'power_law': re-derivable via the exponential formula above. 'custom_function': the correlation is an opaque model; reference_cost/exponent are absent and a consumer must fall back to the recorded purchase_costs value. Cites UNIT-09."
+                },
+                "basis": {
+                  "type": "string",
+                  "description": "Name of the size parameter that drives scaling; names a key in this unit's 'design_results'."
+                },
+                "basis_units": {
+                  "type": "string",
+                  "description": "Units of the basis size (e.g. 'kJ/hr'). Inline so the item is self-contained even if 'basis' is absent from 'design_results'."
+                },
+                "reference_size": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Reference size S (in basis_units) at which reference_cost applies."
+                },
+                "reference_cost": {
+                  "type": "number",
+                  "description": "Purchase cost at reference_size, in metadata.TEA_currency. Present for 'power_law'; omitted for 'custom_function'."
+                },
+                "exponent": {
+                  "type": "number",
+                  "description": "Exponential scaling factor n. Present for 'power_law'; omitted for 'custom_function'."
+                },
+                "reference_CE_index": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "description": "Chemical Engineering Plant Cost Index (CEPCI, dimensionless) of the reference year."
+                },
+                "installation_factor": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Bare-module / installation factor; installed_cost = installation_factor * purchase_cost. Legitimately 1.0 in many cases."
+                },
+                "power_rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Electricity demand rate at reference_size, in kW."
+                },
+                "size_lower_bound": {
+                  "type": "number",
+                  "description": "Lower size bound; the size is clamped up to it. Omitted when unset."
+                },
+                "size_upper_bound": {
+                  "type": "number",
+                  "description": "Upper size bound; above it the item parallelizes into ceil(size/bound) units. Omitted when unset."
+                },
+                "lifetime": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "description": "Equipment lifetime in years. Omitted when unset for this item."
+                },
+                "magnitude": {
+                  "type": "boolean",
+                  "description": "Take abs(size) before scaling. Omitted when false."
+                },
+                "conditional": {
+                  "type": "boolean",
+                  "description": "True if the item is evaluated only under a model condition and so may be inactive (and absent from purchase_costs) at this design point. Omitted when false."
+                }
+              },
+              "required": [
+                "correlation_type", "basis", "basis_units", "reference_size",
+                "reference_CE_index", "installation_factor", "power_rate"
+              ],
+              "if": { "properties": { "correlation_type": { "const": "power_law" } } },
+              "then": { "required": ["reference_cost", "exponent"] },
+              "additionalProperties": false
+            }
           },
           "utility_consumption_results": {
             "type": "object",

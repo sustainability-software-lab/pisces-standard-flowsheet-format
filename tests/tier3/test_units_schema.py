@@ -117,5 +117,70 @@ class TestUNIT05EquationOrStoichiometry(unittest.TestCase):
         self.assertFalse(self.v.is_valid(doc))
 
 
+class TestUNIT09PurchaseCostCorrelations(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, correlation):
+        doc = minimal_doc()
+        doc["units"][0]["purchase_cost_correlations"] = {"Reactor": correlation}
+        return doc
+
+    _POWER_LAW = {
+        "correlation_type": "power_law", "basis": "Duty", "basis_units": "kJ/hr",
+        "reference_size": 1.0, "reference_cost": 45000.0, "exponent": 0.6,
+        "reference_CE_index": 567.0, "installation_factor": 2.3, "power_rate": 0.0,
+    }
+    _CUSTOM = {
+        "correlation_type": "custom_function", "basis": "Duty",
+        "basis_units": "kJ/hr", "reference_size": 1.0,
+        "reference_CE_index": 567.0, "installation_factor": 1.0, "power_rate": 0.0,
+    }
+
+    def test_power_law_accepted(self):
+        """UNIT-09 — a complete power_law correlation → schema accepts."""
+        self.assertTrue(self.v.is_valid(self._doc(dict(self._POWER_LAW))))
+
+    def test_custom_function_accepted(self):
+        """UNIT-09 — a custom_function correlation without cost/exponent → accepted."""
+        self.assertTrue(self.v.is_valid(self._doc(dict(self._CUSTOM))))
+
+    def test_bad_correlation_type_rejected(self):
+        """UNIT-09 — correlation_type outside the enum → rejected."""
+        c = dict(self._POWER_LAW, correlation_type="six_tenths")
+        self.assertFalse(self.v.is_valid(self._doc(c)))
+
+    def test_power_law_missing_reference_cost_rejected(self):
+        """UNIT-09 — power_law without reference_cost → rejected by if/then."""
+        c = dict(self._POWER_LAW)
+        del c["reference_cost"]
+        self.assertFalse(self.v.is_valid(self._doc(c)))
+
+    def test_power_law_missing_exponent_rejected(self):
+        """UNIT-09 — power_law without exponent → rejected by if/then."""
+        c = dict(self._POWER_LAW)
+        del c["exponent"]
+        self.assertFalse(self.v.is_valid(self._doc(c)))
+
+    def test_nonpositive_reference_size_rejected(self):
+        """UNIT-09 — reference_size 0 (not > 0) → rejected."""
+        self.assertFalse(self.v.is_valid(
+            self._doc(dict(self._POWER_LAW, reference_size=0))))
+
+    def test_nonpositive_reference_CE_index_rejected(self):
+        """UNIT-09 — reference_CE_index 0 (not > 0) → rejected."""
+        self.assertFalse(self.v.is_valid(
+            self._doc(dict(self._POWER_LAW, reference_CE_index=0))))
+
+    def test_unknown_field_rejected(self):
+        """UNIT-09 — an undeclared field → rejected (additionalProperties false)."""
+        self.assertFalse(self.v.is_valid(
+            self._doc(dict(self._POWER_LAW, bogus=1))))
+
+
 if __name__ == "__main__":
     unittest.main()

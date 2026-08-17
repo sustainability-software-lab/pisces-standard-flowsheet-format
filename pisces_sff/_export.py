@@ -160,6 +160,12 @@ _DIMLESS_UNIT_NORM_SINCE = (0, 0, 12)
 # ratios; extend this set if other dimensionless labels surface.
 _DIMENSIONLESS_DESIGN_UNITS = frozenset({"Ratio"})
 
+#: First schema version that records per-item purchase-cost correlations
+#: (purchase_cost_correlations on each unit, from biosteam @cost cost_items),
+#: so a consumer can re-derive equipment cost at a different size/CEPCI. Gated in
+#: _build_sff_dict so 0.0.5-0.1.1 stay byte-stable. sff_checks.md UNIT-08/UNIT-09.
+_PURCHASE_COST_CORR_SINCE = (0, 1, 2)
+
 
 def _assign_stream_ids(all_streams, sff_version):
     """Map each stream object to the id the SFF document should use for it.
@@ -362,6 +368,12 @@ def _build_sff_dict(sys, tea=None,
                 qufd = {k: ("" if v in _DIMENSIONLESS_DESIGN_UNITS else v)
                         for k, v in qufd.items()}
             unit["quantity_units_for_design_results"] = qufd
+        # 0.1.2+ records the per-item purchase-cost correlation (biosteam
+        # cost_items) so a consumer can re-derive equipment cost at a different
+        # size/CEPCI. Emitted on every unit ({} for procedurally-costed units).
+        # Gated so pre-0.1.2 exporters stay byte-stable. sff_checks UNIT-08/09.
+        if version_tuple(sff_version) >= _PURCHASE_COST_CORR_SINCE:
+            unit["purchase_cost_correlations"] = get_purchase_cost_correlations(ru)
         units.append(unit)
         
     ## ------ Streams ------ ##
@@ -934,6 +946,63 @@ def export_biosteam_flowsheet_sff_0_1_1(sys, filepath, tea=None,
     this export is byte-identical to the 0.1.0 export except for
     metadata.sff_version. All version-gated behavior active at 0.1.0 remains so
     here, since 0.1.1 sorts above every gating threshold.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_1_2(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        sff_version='0.1.2', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.1.2.
+
+    Adds one optional, additive field over the v0.1.1 export: each unit gains a
+    ``purchase_cost_correlations`` object (from biosteam ``@cost`` ``cost_items``),
+    recording the parametric purchase-cost correlation behind each cost item so a
+    consumer can re-derive equipment cost at a different design size or cost-year
+    index (CEPCI). The field is present on every unit -- ``{}`` for
+    procedurally-costed units with no ``cost_items``. Every existing field is
+    byte-identical to the 0.1.1 export apart from metadata.sff_version and the new
+    key. All version-gated behavior active at 0.1.1 remains so here.
 
     Parameters
     ----------
