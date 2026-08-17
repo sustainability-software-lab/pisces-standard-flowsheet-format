@@ -201,6 +201,60 @@ class TestUnitConnectivity(unittest.TestCase):
         self.assertEqual((r.status, r.severity), ("fail", "warning"))
 
 
+class TestCostCorrelationRefs(unittest.TestCase):
+    def test_no_correlations_skips(self):
+        """No unit declares purchase_cost_correlations -> UNIT-08 skip."""
+        c = ctx(units=[{"id": "U"}])
+        self.assertEqual(V._check_cost_correlation_refs(c)[0].status, "skip")
+
+    def test_matching_purchase_costs_key_passes(self):
+        """A correlation key present in purchase_costs passes at warning severity."""
+        c = ctx(units=[{"id": "U",
+                         "purchase_cost_correlations": {"Reactor": {}},
+                         "purchase_costs": {"Reactor": 1000.0}}])
+        r = V._check_cost_correlation_refs(c)[0]
+        self.assertEqual((r.status, r.severity), ("pass", "warning"))
+
+    def test_unmatched_key_fails(self):
+        """A correlation key absent from purchase_costs fails at warning severity."""
+        c = ctx(units=[{"id": "U",
+                         "purchase_cost_correlations": {"Reactor": {}},
+                         "purchase_costs": {}}])
+        r = V._check_cost_correlation_refs(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "warning"))
+
+
+class TestCostCorrelationCompleteness(unittest.TestCase):
+    def test_no_correlations_skips(self):
+        """No unit declares purchase_cost_correlations -> UNIT-09 skip."""
+        c = ctx(units=[{"id": "U"}])
+        self.assertEqual(V._check_cost_correlation_completeness(c)[0].status, "skip")
+
+    def test_complete_power_law_passes(self):
+        """A power_law item carrying both reference_cost and exponent passes
+        at error severity."""
+        c = ctx(units=[{"id": "U", "purchase_cost_correlations": {"Reactor": {
+            "correlation_type": "power_law", "reference_cost": 1000.0,
+            "exponent": 0.6}}}])
+        r = V._check_cost_correlation_completeness(c)[0]
+        self.assertEqual((r.status, r.severity), ("pass", "error"))
+
+    def test_power_law_missing_exponent_fails(self):
+        """A power_law item missing exponent fails at error severity."""
+        c = ctx(units=[{"id": "U", "purchase_cost_correlations": {"Reactor": {
+            "correlation_type": "power_law", "reference_cost": 1000.0}}}])
+        r = V._check_cost_correlation_completeness(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "error"))
+
+    def test_custom_function_carrying_cost_fails(self):
+        """A custom_function item carrying reference_cost fails at error
+        severity."""
+        c = ctx(units=[{"id": "U", "purchase_cost_correlations": {"Reactor": {
+            "correlation_type": "custom_function", "reference_cost": 1000.0}}}])
+        r = V._check_cost_correlation_completeness(c)[0]
+        self.assertEqual((r.status, r.severity), ("fail", "error"))
+
+
 #%% ------- Streams (STR-01..10, STR-13) ------- ##
 
 def sp(**kw):

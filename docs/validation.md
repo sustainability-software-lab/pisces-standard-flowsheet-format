@@ -27,7 +27,9 @@ longer a schema constraint as of v0.1.1 — it moved to the validator as a
 `validate_flowsheet_against_SFF(json_file, schema_file=None)` runs the schema
 gate **and** the semantic checks catalogued in `sff_checks.md` — referential
 integrity, stream roles, per-stream material-balance self-consistency,
-quantity-unit pairing and parseability, TEA-year plausibility (MET-04, a
+quantity-unit pairing and parseability, purchase-cost-correlation referential
+integrity and completeness (UNIT-08, a `warning`; UNIT-09, an `error`),
+TEA-year plausibility (MET-04, a
 `warning`-severity check with a dynamic upper bound of the current calendar
 year + 1, rather than a schema constraint), and more. It returns
 `(is_valid, [CheckResult, ...])`, where each `CheckResult` has fields

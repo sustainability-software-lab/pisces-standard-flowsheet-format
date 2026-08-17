@@ -460,6 +460,66 @@ def _check_unit_connectivity(ctx):  # UNIT-07
     return [_passed('UNIT-07', 'warning', 'units')]
 
 
+def _check_cost_correlation_refs(ctx):  # UNIT-08
+    bad, any_corr = [], False
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            continue
+        corr = u.get('purchase_cost_correlations')
+        if not isinstance(corr, dict) or not corr:
+            continue
+        any_corr = True
+        costs = u.get('purchase_costs')
+        cost_keys = set(costs) if isinstance(costs, dict) else set()
+        for item_id in corr:
+            if item_id not in cost_keys:
+                bad.append(f"{u.get('id')}: '{item_id}'")
+    if not any_corr:
+        return [_skipped('UNIT-08', 'warning',
+                         'no unit declares purchase_cost_correlations', 'units')]
+    if bad:
+        return [_failed('UNIT-08', 'warning',
+                        f'purchase_cost_correlations key(s) with no matching '
+                        f'purchase_costs entry: {bad}', 'units')]
+    return [_passed('UNIT-08', 'warning', 'units')]
+
+
+def _check_cost_correlation_completeness(ctx):  # UNIT-09 (validator part; schema if/then covers power_law)
+    bad, any_corr = [], False
+    for u in ctx.units:
+        if not isinstance(u, dict):
+            continue
+        corr = u.get('purchase_cost_correlations')
+        if not isinstance(corr, dict) or not corr:
+            continue
+        any_corr = True
+        for item_id, item in corr.items():
+            if not isinstance(item, dict):
+                continue
+            ctype = item.get('correlation_type')
+            has_cost = 'reference_cost' in item
+            has_exp = 'exponent' in item
+            if ctype == 'power_law' and not (has_cost and has_exp):
+                missing = [k for k, present in
+                           (('reference_cost', has_cost), ('exponent', has_exp))
+                           if not present]
+                bad.append(f"{u.get('id')}: '{item_id}' power_law missing {missing}")
+            elif ctype == 'custom_function' and (has_cost or has_exp):
+                present = [k for k, p in
+                           (('reference_cost', has_cost), ('exponent', has_exp))
+                           if p]
+                bad.append(f"{u.get('id')}: '{item_id}' custom_function carries "
+                           f"{present}")
+    if not any_corr:
+        return [_skipped('UNIT-09', 'error',
+                         'no unit declares purchase_cost_correlations', 'units')]
+    if bad:
+        return [_failed('UNIT-09', 'error',
+                        f'purchase_cost_correlations completeness violation(s): '
+                        f'{bad}', 'units')]
+    return [_passed('UNIT-09', 'error', 'units')]
+
+
 #%% Checks -- streams: referential, roles, zero-flow (sff_checks.md section 3)
 
 BOUNDARY = 'None'  # C-01 system-boundary sentinel written to source/sink_unit_id
@@ -1268,6 +1328,8 @@ _CHECKS = [
     _check_reaction_equation_stoichiometry_consistency,  # UNIT-05
     _check_stoichiometry_wellformed,         # UNIT-06
     _check_unit_connectivity,                # UNIT-07
+    _check_cost_correlation_refs,            # UNIT-08
+    _check_cost_correlation_completeness,    # UNIT-09
     # streams: referential / roles / zero-flow
     _check_stream_id_uniqueness,             # STR-01
     _check_stream_endpoint_refs,             # STR-02

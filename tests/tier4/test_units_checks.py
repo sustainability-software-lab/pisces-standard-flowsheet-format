@@ -201,5 +201,80 @@ class TestUNIT07(RealBiosteamTestCase):
         self.assertTrue(is_valid)
 
 
+_POWER_LAW = {
+    "correlation_type": "power_law", "basis": "Duty", "basis_units": "kJ/hr",
+    "reference_size": 1.0, "reference_cost": 45000.0, "exponent": 0.6,
+    "reference_CE_index": 567.0, "installation_factor": 2.3, "power_rate": 0.0,
+}
+
+
+class TestUNIT08(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def test_conformer(self):
+        """UNIT-08 -- valid_doc() declares no purchase_cost_correlations ->
+        CheckResult(UNIT-08, warning, skip); is_valid True."""
+        is_valid, by_id = validate_doc(valid_doc())
+        self.assertEqual(by_id["UNIT-08"][0].status, "skip")
+        self.assertTrue(is_valid)
+
+    def test_violator(self):
+        """UNIT-08 -- U1 declares a correlation key 'Reactor' that its (absent)
+        purchase_costs cannot contain -> CheckResult(UNIT-08, warning, fail);
+        is_valid stays True (warnings never flip is_valid)."""
+        doc = valid_doc()
+        doc["units"][0]["purchase_cost_correlations"] = {
+            "Reactor": dict(_POWER_LAW, conditional=True)}
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["UNIT-08"][0]
+        self.assertEqual((r.severity, r.status), ("warning", "fail"))
+        self.assertTrue(is_valid)
+
+
+class TestUNIT09(RealBiosteamTestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def test_conformer(self):
+        """UNIT-09 -- valid_doc() declares no purchase_cost_correlations ->
+        CheckResult(UNIT-09, error, skip); is_valid True."""
+        is_valid, by_id = validate_doc(valid_doc())
+        self.assertEqual(by_id["UNIT-09"][0].status, "skip")
+        self.assertTrue(is_valid)
+
+    def test_custom_function_carrying_cost_is_error(self):
+        """UNIT-09 -- a custom_function item carrying reference_cost (schema-valid
+        but semantically wrong) -> CheckResult(UNIT-09, error, fail); is_valid
+        False. This is the validator-only direction the schema if/then misses."""
+        doc = valid_doc()
+        doc["units"][0]["purchase_cost_correlations"] = {"Reactor": {
+            "correlation_type": "custom_function", "basis": "Duty",
+            "basis_units": "kJ/hr", "reference_size": 1.0,
+            "reference_CE_index": 567.0, "installation_factor": 1.0,
+            "power_rate": 0.0, "reference_cost": 45000.0}}
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["UNIT-09"][0]
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertFalse(is_valid)
+
+    def test_power_law_missing_exponent_is_error(self):
+        """UNIT-09 -- a power_law item without exponent -> CheckResult(UNIT-09,
+        error, fail); is_valid False (the schema if/then also rejects it, but the
+        validator reports it too and runs on schema-invalid docs)."""
+        c = dict(_POWER_LAW)
+        del c["exponent"]
+        doc = valid_doc()
+        doc["units"][0]["purchase_cost_correlations"] = {"Reactor": c}
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["UNIT-09"][0]
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertFalse(is_valid)
+
+
 if __name__ == "__main__":
     unittest.main()
