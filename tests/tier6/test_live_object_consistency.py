@@ -312,6 +312,57 @@ class TestLiveObjectConsistency(RealBiosteamTestCase):
             "(actual and reconstructed-expected) were empty; this assertion "
             "would be vacuous")
 
+    # ------- (f) purchase-cost correlations: _export.py
+    #             get_purchase_cost_correlations vs live cost_items -------
+
+    def test_purchase_cost_correlations_match_live_units(self):
+        """Each JSON unit's purchase_cost_correlations equal values read straight
+        from the live unit's cost_items / F_BM (mirrors
+        get_purchase_cost_correlations without calling it): correlation_type from
+        item.f, basis/basis_units from item.basis/item.units, reference_size=S,
+        reference_cost=cost and exponent=n for power_law, reference_CE_index=CE,
+        installation_factor=F_BM[id], power_rate=kW -- within RTOL."""
+        compared_any = False
+        for unit in self.doc["units"]:
+            corr = unit.get("purchase_cost_correlations")
+            if not corr:
+                continue
+            live = self.live_units_by_id.get(unit["id"])
+            self.assertIsNotNone(live, f"no live unit for id {unit['id']!r}")
+            live_items = getattr(live, "cost_items", {}) or {}
+            live_fbm = getattr(live, "F_BM", {}) or {}
+            for item_id, entry in corr.items():
+                self.assertIn(item_id, live_items,
+                              f"{unit['id']}: '{item_id}' not in live cost_items")
+                item = live_items[item_id]
+                compared_any = True
+                with self.subTest(unit=unit["id"], item=item_id):
+                    is_custom = getattr(item, "f", None) is not None
+                    self.assertEqual(
+                        entry["correlation_type"],
+                        "custom_function" if is_custom else "power_law")
+                    self.assertEqual(entry["basis"], str(item.basis))
+                    self.assertEqual(entry["basis_units"], str(item.units))
+                    self.assertNumClose(entry["reference_size"], float(item.S),
+                                        f"{item_id} reference_size")
+                    self.assertNumClose(entry["reference_CE_index"], float(item.CE),
+                                        f"{item_id} reference_CE_index")
+                    self.assertNumClose(entry["installation_factor"],
+                                        float(live_fbm.get(item_id, 1.0)),
+                                        f"{item_id} installation_factor")
+                    self.assertNumClose(entry["power_rate"],
+                                        float(getattr(item, "kW", 0.0) or 0.0),
+                                        f"{item_id} power_rate")
+                    if not is_custom:
+                        self.assertNumClose(entry["reference_cost"],
+                                            float(item.cost),
+                                            f"{item_id} reference_cost")
+                        self.assertNumClose(entry["exponent"], float(item.n),
+                                            f"{item_id} exponent")
+        self.assertTrue(compared_any,
+                        "no purchase_cost_correlations were compared across any "
+                        "unit; the corn model was expected to have @cost units")
+
 
 if __name__ == "__main__":
     unittest.main()
