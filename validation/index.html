@@ -676,7 +676,9 @@ longer a schema constraint as of v0.1.1 — it moved to the validator as a
 <p><code>validate_flowsheet_against_SFF(json_file, schema_file=None)</code> runs the schema
 gate <strong>and</strong> the semantic checks catalogued in <code>sff_checks.md</code> — referential
 integrity, stream roles, per-stream material-balance self-consistency,
-quantity-unit pairing and parseability, TEA-year plausibility (MET-04, a
+quantity-unit pairing and parseability, purchase-cost-correlation referential
+integrity and completeness (UNIT-08, a <code>warning</code>; UNIT-09, an <code>error</code>),
+TEA-year plausibility (MET-04, a
 <code>warning</code>-severity check with a dynamic upper bound of the current calendar
 year + 1, rather than a schema constraint), and more. It returns
 <code>(is_valid, [CheckResult, ...])</code>, where each <code>CheckResult</code> has fields
