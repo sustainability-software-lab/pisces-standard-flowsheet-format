@@ -917,5 +917,46 @@ class TestGetPurchaseCostCorrelations(unittest.TestCase):
         self.assertIn("R", out)
 
 
+class TestStampStaticTags(unittest.TestCase):
+    """_stamp_static_tags's own logic is just "stamp iff earned": it delegates
+    entirely to pisces_sff._validate's _run_all_checks/_earned_tags. Mocking
+    those two (rather than exercising the real semantic checks against a real
+    document) keeps this test independent of the real thermosteam
+    units-of-measure registry, which the Tier-1 biosteam stub poisons for the
+    rest of the pytest process (see test_coverage_meta.py's
+    _unit_is_parseable exemption and tests/_stub_eviction.py) -- reproducing
+    that dance here would blur the fake/real tier boundary Tier 1 exists to
+    keep clean. The real end-to-end behavior (a real document genuinely
+    earning the tag) is verified against real objects in
+    tests/tier2/test_version_shape_guard.py and tests/tier6 (corn re-export)."""
+
+    def _patched(self, earned):
+        from pisces_sff import _validate as V
+        return (
+            mock.patch.object(V, "_run_all_checks", return_value=(None, [])),
+            mock.patch.object(
+                V, "_earned_tags",
+                return_value={"exported-from-simulator": {"earned": earned}}),
+        )
+
+    def test_stamps_tag_when_earned(self):
+        """_earned_tags reporting earned=True -> metadata.tags is stamped
+        ["exported-from-simulator"]."""
+        doc = {"metadata": {}}
+        p1, p2 = self._patched(True)
+        with p1, p2:
+            _export._stamp_static_tags(doc)
+        self.assertEqual(doc["metadata"]["tags"], ["exported-from-simulator"])
+
+    def test_omits_tag_when_not_earned(self):
+        """_earned_tags reporting earned=False -> metadata.tags is left
+        absent (never a stamped-but-unearned, self-contradictory claim)."""
+        doc = {"metadata": {}}
+        p1, p2 = self._patched(False)
+        with p1, p2:
+            _export._stamp_static_tags(doc)
+        self.assertNotIn("tags", doc["metadata"])
+
+
 if __name__ == "__main__":
     unittest.main()

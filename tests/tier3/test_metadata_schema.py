@@ -455,5 +455,83 @@ class TestMicroorganismsValidation(unittest.TestCase):
         self.assertInvalid([{"name": ""}])
 
 
+class TestTagsSchema(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _with_tags(self, tags):
+        doc = minimal_doc()
+        doc["metadata"]["tags"] = tags
+        return doc
+
+    def test_known_tags_accepted(self):
+        """metadata.tags with valid enum values (incl. reproducible + its
+        comparison_rtol) is accepted."""
+        doc = self._with_tags(["exported-from-simulator"])
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_unknown_tag_rejected(self):
+        """An unknown tag string is rejected by the items enum."""
+        self.assertFalse(self.v.is_valid(self._with_tags(["made-up-tag"])))
+
+    def test_non_array_rejected(self):
+        """metadata.tags must be an array."""
+        self.assertFalse(self.v.is_valid(self._with_tags("exported-from-simulator")))
+
+    def test_duplicate_tags_rejected(self):
+        """uniqueItems: a repeated tag is rejected."""
+        self.assertFalse(self.v.is_valid(
+            self._with_tags(["extracted-from-prose", "extracted-from-prose"])))
+
+
+class TestComparisonRtolSchema(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, *, tags=None, rtol="__absent__", with_recipe=True):
+        doc = minimal_doc()
+        if tags is not None:
+            doc["metadata"]["tags"] = tags
+        if with_recipe:
+            repro = {
+                "environment": {"format": "conda-environment-yaml",
+                                "filename": "environment.yaml",
+                                "sha256": "0" * 64, "content": "name: e\n"},
+                "load_script": {"format": "python", "filename": "load.py",
+                                "sha256": "0" * 64,
+                                "content": "def load():\n    pass\n"}}
+            if rtol != "__absent__":
+                repro["comparison_rtol"] = rtol
+            doc["metadata"]["reproducibility"] = repro
+        return doc
+
+    def test_reproducible_requires_comparison_rtol(self):
+        """tags contains 'reproducible' but no comparison_rtol -> rejected by the
+        metadata if/then."""
+        self.assertFalse(self.v.is_valid(self._doc(tags=["reproducible"])))
+
+    def test_reproducible_with_positive_rtol_accepted(self):
+        """tags contains 'reproducible' + positive comparison_rtol -> accepted."""
+        doc = self._doc(tags=["reproducible"], rtol=1e-4)
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_nonpositive_rtol_rejected(self):
+        """comparison_rtol 0 (not > 0) -> rejected by exclusiveMinimum."""
+        self.assertFalse(self.v.is_valid(self._doc(tags=["reproducible"], rtol=0)))
+
+    def test_comparison_rtol_optional_without_reproducible_tag(self):
+        """A file that does not claim 'reproducible' may omit comparison_rtol."""
+        doc = self._doc(tags=["exported-from-simulator"])
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+
 if __name__ == "__main__":
     unittest.main()

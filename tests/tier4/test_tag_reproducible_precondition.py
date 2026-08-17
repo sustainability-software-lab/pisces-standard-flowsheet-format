@@ -10,40 +10,37 @@
 # comparison_rtol + MET-07), end-to-end through the full validator. No harness
 # runs in this tier.
 #
-# DEVIATION from the task brief's test_claim_with_valid_recipe_passes_precondition:
-# as of this task, `metadata.tags` is not yet a schema-declared property (that
-# lands with the schema version bump in Task 5) -- see the identical DEVIATION
-# note in tests/tier4/test_tag_checks_e2e.py. Writing `metadata.tags` straight
-# into the JSON document trips the schema's `additionalProperties:
-# {"type": "string"}` on unrecognized keys, which fails the SCHEMA check and
-# (correctly, per _conformant) denies every tag via non-conformance before
-# TAG-01's earning logic is even exercised -- so the positive "reproducible
-# static precondition met -> TAG-01 pass -> is_valid True" path cannot be driven
-# through the full file-based pipeline yet. `metadata.reproducibility` (recipe +
-# comparison_rtol) IS already schema-legal (that object has no
-# additionalProperties restriction), so only the `tags` key is the confound. This
-# test therefore reproduces the future state exactly: it computes (ctx, results)
-# via the now-in-memory `_run_all_checks` core on the tag-free (schema-clean) doc,
-# then gates on those SAME results with a second _Context whose only difference
-# is a declared `metadata.tags` -- exactly what `_tag_gate` will see once the
-# schema supports the field -- and reconstructs `is_valid` from the combined
-# result set the same way `validate_flowsheet_against_SFF` does. The two negative
-# tests are unaffected by the confound (their expected outcome, `fail`/`is_valid
-# False`, holds either way -- via the schema gate today, and via TAG-01 itself
-# regardless), so they stay file-based per the brief.
+# UPDATE (schema v0.1.3): `metadata.tags` is now a schema-declared property, so
+# `test_claim_with_valid_recipe_passes_precondition` has been reverted to drive
+# the full file-based `validate_doc()` pipeline directly -- the workaround below,
+# kept only as history, is no longer needed.
+#
+# Prior DEVIATION note (schema v0.1.2 and earlier, no longer applicable): as of
+# that state, `metadata.tags` was not yet a schema-declared property -- see the
+# identical prior DEVIATION note in tests/tier4/test_tag_checks_e2e.py. Writing
+# `metadata.tags` straight into the JSON document tripped the schema's
+# `additionalProperties: {"type": "string"}` on unrecognized keys, which failed
+# the SCHEMA check and (correctly, per `_conformant`) denied every tag via
+# non-conformance before TAG-01's earning logic was even exercised -- so the
+# positive "reproducible static precondition met -> TAG-01 pass -> is_valid
+# True" path could not be driven through the full file-based pipeline.
+# `metadata.reproducibility` (recipe + comparison_rtol) was already schema-legal
+# (that object has no additionalProperties restriction), so only the `tags` key
+# was the confound. The test instead computed (ctx, results) via the in-memory
+# `_run_all_checks` core on the tag-free (schema-clean) doc, then gated on those
+# SAME results with a second `_Context` whose only difference was a declared
+# `metadata.tags` -- exactly what `_tag_gate` would see once the schema
+# supported the field -- and reconstructed `is_valid` from the combined result
+# set the same way `validate_flowsheet_against_SFF` does. That future state is
+# now the present, so the workaround is gone.
 
 import hashlib
-import json
 import unittest
 
 from tests._docs import valid_doc
 from tests._gating import skip_if_disabled
 from tests._stub_eviction import RealBiosteamTestCase
-from tests._validate_loader import V
-from tests.tier4._run import validate_doc, SCHEMA_PATH
-
-with open(SCHEMA_PATH, encoding="utf-8") as _f:
-    _SCHEMA = json.load(_f)
+from tests.tier4._run import validate_doc
 
 
 def _recipe(env="name: e\n", load="def load():\n    pass\n"):
@@ -63,19 +60,15 @@ class TestReproduciblePrecondition(RealBiosteamTestCase):
 
     def test_claim_with_valid_recipe_passes_precondition(self):
         """reproducible claim + complete recipe + matching digests + comparison_
-        rtol -> TAG-01 pass (static precondition met; harness not run here). See
-        the module DEVIATION note: this drives _run_all_checks/_tag_gate directly
-        (the schema doesn't accept metadata.tags yet) rather than round-tripping
-        through a JSON file whose `tags` key the schema would itself reject."""
+        rtol -> TAG-01 pass (static precondition met; harness not run here).
+        Driven through the full file-based validate_doc() pipeline now that
+        metadata.tags is a schema-declared property (schema v0.1.3)."""
         doc = valid_doc()
         doc["metadata"]["reproducibility"] = _recipe()
-        ctx, results = V._run_all_checks(doc, _SCHEMA)
-        tagged_ctx = V._Context(
-            {**doc, "metadata": {**doc["metadata"], "tags": ["reproducible"]}})
-        r = V._tag_gate(tagged_ctx, results)
+        doc["metadata"]["tags"] = ["reproducible"]
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "pass"))
-        is_valid = not any(x.status == "fail" and x.severity == "error"
-                           for x in results + [r])
         self.assertTrue(is_valid)
 
     def test_claim_without_comparison_rtol_is_error(self):

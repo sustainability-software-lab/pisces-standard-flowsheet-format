@@ -11,36 +11,35 @@
 # utilities/costs/reproducibility, so it does NOT earn exported-from-simulator
 # (MET-07 skips) -- which makes it a clean subject for both directions.
 #
-# DEVIATION from the task brief's test_true_extracted_claim_passes: as of this
-# task, `metadata.tags` is not yet a schema-declared property -- that lands with
-# the schema version bump in a later task. Writing `metadata.tags` straight into
-# the JSON document therefore trips the schema's own
-# `additionalProperties: {"type": "string"}` on unrecognized keys, which fails
-# the SCHEMA check and (correctly, per _conformant) denies every tag via
-# non-conformance before TAG-01's earning logic is even exercised -- so the
-# positive "declared tag earned -> TAG-01 pass -> is_valid True" path cannot be
-# driven through the full file-based pipeline yet. No `_CHECKS` entry reads
-# `metadata.tags`, so a schema-legal document that passes the same checks would
-# gate identically once that schema property exists. This test therefore
-# reproduces that future state exactly: it computes (ctx, results) via the
-# now-in-memory `_run_all_checks` core on the tag-free doc (schema-clean), then
-# gates on those SAME results with a second _Context whose only difference is a
-# declared `metadata.tags` -- exactly what `_tag_gate` will see once the schema
-# supports the field. The other four tests are unaffected: their expected
-# outcome is `fail`/`is_valid False` either way, so they exercise real
-# TAG-01 denial semantics today.
+# UPDATE (schema v0.1.3): `metadata.tags` is now a schema-declared property (an
+# enum-string array), so `test_true_extracted_claim_passes` has been reverted to
+# drive the full file-based `validate_doc()` pipeline directly -- the workaround
+# below, kept only as history, is no longer needed. The three denial tests now
+# also assert on the TAG-01 message's blocking-check content (UNIT-10, MET-07,
+# "no reproducibility recipe"), not just the pass/fail verdict, so a latent
+# earning-logic bug that flips the wrong tag's verdict can no longer pass
+# silently.
+#
+# Prior DEVIATION note (schema v0.1.2 and earlier, no longer applicable): as of
+# that state, `metadata.tags` was not yet a schema-declared property. Writing
+# `metadata.tags` straight into the JSON document therefore tripped the
+# schema's own `additionalProperties: {"type": "string"}` on unrecognized keys,
+# which failed the SCHEMA check and (correctly, per `_conformant`) denied every
+# tag via non-conformance before TAG-01's earning logic was even exercised --
+# so the positive "declared tag earned -> TAG-01 pass -> is_valid True" path
+# could not be driven through the full file-based pipeline. The test instead
+# computed (ctx, results) via the in-memory `_run_all_checks` core on the
+# tag-free doc (schema-clean), then gated on those SAME results with a second
+# `_Context` whose only difference was a declared `metadata.tags` -- exactly
+# what `_tag_gate` would see once the schema supported the field. That future
+# state is now the present, so the workaround is gone.
 
-import json
 import unittest
 
 from tests._docs import valid_doc
 from tests._gating import skip_if_disabled
 from tests._stub_eviction import RealBiosteamTestCase
-from tests._validate_loader import V
-from tests.tier4._run import validate_doc, SCHEMA_PATH
-
-with open(SCHEMA_PATH, encoding="utf-8") as _f:
-    _SCHEMA = json.load(_f)
+from tests.tier4._run import validate_doc
 
 
 class TestTAG01(RealBiosteamTestCase):
@@ -57,44 +56,58 @@ class TestTAG01(RealBiosteamTestCase):
 
     def test_true_extracted_claim_passes(self):
         """valid_doc() earns extracted-from-prose (units+streams identified) ->
-        claiming it -> TAG-01 pass. See the module-level DEVIATION note: this
-        drives _run_all_checks/_tag_gate directly (the schema doesn't accept
-        metadata.tags yet) rather than round-tripping through a JSON file whose
-        `tags` key the schema would itself reject."""
+        claiming it -> TAG-01 pass; is_valid True. Driven through the full
+        file-based validate_doc() pipeline now that metadata.tags is a
+        schema-declared property (schema v0.1.3)."""
         doc = valid_doc()
-        ctx, results = V._run_all_checks(doc, _SCHEMA)
-        tagged_ctx = V._Context(
-            {**doc, "metadata": {**doc["metadata"],
-                                 "tags": ["extracted-from-prose"]}})
-        r = V._tag_gate(tagged_ctx, results)
+        doc["metadata"]["tags"] = ["extracted-from-prose"]
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "pass"))
+        self.assertTrue(is_valid)
 
     def test_false_extracted_claim_is_error(self):
         """Empty units -> extracted-from-* denied -> claiming it -> TAG-01 error
         fail; is_valid False (UNIT-10 warning-fail alone would not flip is_valid,
-        but the false tag claim does)."""
+        but the false tag claim does). Discriminating assertion: the TAG-01
+        message names UNIT-10 as the blocking check, so a latent earning-logic
+        bug that denies the tag for the wrong reason (or a different tag
+        entirely) cannot pass silently."""
         doc = valid_doc()
         doc["units"] = []
         doc["metadata"]["tags"] = ["extracted-from-prose"]
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertIn("extracted-from-prose", r.message)
+        self.assertIn("UNIT-10", r.message)
         self.assertFalse(is_valid)
 
     def test_false_exported_from_simulator_claim_is_error(self):
         """valid_doc() lacks a reproducibility recipe -> MET-07 skips -> exported-
-        from-simulator denied -> claiming it -> TAG-01 error fail."""
+        from-simulator denied -> claiming it -> TAG-01 error fail.
+        Discriminating assertion: the TAG-01 message names MET-07 among the
+        blocking checks, pinning the denial to the actual precondition (no
+        recipe) rather than some other, coincidentally-failing check."""
         doc = valid_doc()
         doc["metadata"]["tags"] = ["exported-from-simulator"]
         is_valid, by_id = validate_doc(doc)
-        self.assertEqual(by_id["TAG-01"][0].status, "fail")
+        r = by_id["TAG-01"][0]
+        self.assertEqual(r.status, "fail")
+        self.assertIn("exported-from-simulator", r.message)
+        self.assertIn("MET-07", r.message)
         self.assertFalse(is_valid)
 
     def test_reproducible_claim_without_recipe_is_error(self):
         """Claiming reproducible with no reproducibility block -> TAG-01 error
-        (precondition unmet)."""
+        (precondition unmet). Discriminating assertion: the TAG-01 message
+        names the actual missing-recipe precondition, not just "not
+        conformant" or some other blocking reason."""
         doc = valid_doc()
         doc["metadata"]["tags"] = ["reproducible"]
         is_valid, by_id = validate_doc(doc)
-        self.assertEqual(by_id["TAG-01"][0].status, "fail")
+        r = by_id["TAG-01"][0]
+        self.assertEqual(r.status, "fail")
+        self.assertIn("reproducible", r.message)
+        self.assertIn("no reproducibility recipe", r.message)
         self.assertFalse(is_valid)

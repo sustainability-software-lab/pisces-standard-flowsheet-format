@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
-# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, and 0.1.2
-# and asserts the scalar-shape, results-key, required-metadata, stream-roles,
-# enthalpy-flow, tightened-constraint (0.0.12 shape-identical to 0.0.11),
-# milestone-bump (0.1.0 shape-identical to 0.0.12), constraint-loosening
-# (0.1.1 shape-identical to 0.1.0 -- CHEM-02's molar_mass constraint moved from
-# the schema to the validator, a validation-only change with no output effect),
-# and new-field (0.1.2 adds the optional per-unit purchase_cost_correlations
-# object, present -- possibly empty -- on every unit, otherwise shape-identical
-# to 0.1.1) differences the schema versions require. This is about
-# exporter version dispatch, not the corn model, so it needs no whole-model
-# simulation -- which is why it lives in Tier 2 rather than Tier 3.
+# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, 0.1.2, and
+# 0.1.3 and asserts the scalar-shape, results-key, required-metadata,
+# stream-roles, enthalpy-flow, tightened-constraint (0.0.12 shape-identical to
+# 0.0.11), milestone-bump (0.1.0 shape-identical to 0.0.12),
+# constraint-loosening (0.1.1 shape-identical to 0.1.0 -- CHEM-02's molar_mass
+# constraint moved from the schema to the validator, a validation-only change
+# with no output effect), new-field (0.1.2 adds the optional per-unit
+# purchase_cost_correlations object, present -- possibly empty -- on every
+# unit, otherwise shape-identical to 0.1.1), and conditional-tag-stamping
+# (0.1.3 adds the optional metadata.tags field, stamped ["exported-from-
+# simulator"] only when earned -- the recipe-less small fixture earns nothing,
+# so its 0.1.3 export is otherwise shape-identical to 0.1.2) differences the
+# schema versions require. This is about exporter version dispatch, not the
+# corn model, so it needs no whole-model simulation -- which is why it lives
+# in Tier 2 rather than Tier 3.
 #
 # All asserted shapes are verified from a real export run:
 #   0.0.9 -> per-phase stream structure (stream_properties.phases keyed by
@@ -125,6 +129,11 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_102), sff_version="0.1.2", tea=tea)
         cls.doc_102 = json.loads(cls.path_102.read_text(encoding="utf-8"))
+
+        cls.path_103 = tmp / "small_103.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_103), sff_version="0.1.3", tea=tea)
+        cls.doc_103 = json.loads(cls.path_103.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -399,6 +408,35 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                     self.doc_006):
             for unit in doc["units"]:
                 self.assertNotIn("purchase_cost_correlations", unit)
+
+    def test_0_1_3_validates_against_committed_schema(self):
+        """v0.1.3 export of the real small System -> validates against the
+        committed schema; records metadata.sff_version "0.1.3"."""
+        is_valid, errors = self.validate(str(self.path_103), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_103["metadata"]["sff_version"], "0.1.3")
+
+    def test_0_1_3_recipeless_fixture_earns_no_tags(self):
+        """v0.1.3 export of the small fixture (exported WITHOUT a reproducibility
+        recipe) -> no metadata.tags: exported-from-simulator is not earned
+        because MET-07 skips (no recipe)."""
+        self.assertNotIn("tags", self.doc_103["metadata"])
+
+    def test_0_1_3_is_shape_identical_to_0_1_2_except_version(self):
+        """With no tags stamped on the recipe-less fixture, the v0.1.3 export
+        equals the v0.1.2 export apart from metadata.sff_version."""
+        a = copy.deepcopy(self.doc_102)
+        b = copy.deepcopy(self.doc_103)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
+
+    def test_pre_0_1_3_versions_omit_tags(self):
+        """v0.1.2 down to v0.0.6 exports -> no metadata.tags (stamped only from
+        0.1.3 on; older exporters stay byte-stable)."""
+        for doc in (self.doc_102, self.doc_101, self.doc_100, self.doc_012,
+                    self.doc_011, self.doc_010, self.doc_009, self.doc_008,
+                    self.doc_007, self.doc_006):
+            self.assertNotIn("tags", doc["metadata"])
 
 
 if __name__ == "__main__":

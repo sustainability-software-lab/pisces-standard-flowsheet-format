@@ -166,6 +166,11 @@ _DIMENSIONLESS_DESIGN_UNITS = frozenset({"Ratio"})
 #: _build_sff_dict so 0.0.5-0.1.1 stay byte-stable. sff_checks.md UNIT-08/UNIT-09.
 _PURCHASE_COST_CORR_SINCE = (0, 1, 2)
 
+#: First schema version that records machine-verified provenance tags
+#: (metadata.tags). Stamped ONLY by the 0.1.3 wrapper (never in _build_sff_dict),
+#: so 0.0.5-0.1.2 stay byte-stable and never emit the key. sff_checks.md section 8.
+_TAGS_SINCE = (0, 1, 3)
+
 
 def _assign_stream_ids(all_streams, sff_version):
     """Map each stream object to the id the SFF document should use for it.
@@ -1040,6 +1045,72 @@ def export_biosteam_flowsheet_sff_0_1_2(sys, filepath, tea=None,
     _write_sff_json(flowsheet_to_export, filepath)
 
 
+def export_biosteam_flowsheet_sff_0_1_3(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        sff_version='0.1.3', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.1.3.
+
+    Adds one optional, additive field over the v0.1.2 export: ``metadata.tags``,
+    stamped **conditionally**. After assembling the document at 0.1.2 fidelity and
+    attaching any reproducibility recipe, the exporter computes the static tags the
+    document earns (via the validator's static earning rule) and stamps
+    ``["exported-from-simulator"]`` **only if the export actually earns it** -- so
+    a rich export (like corn, which carries a recipe and full results) stamps it,
+    while a sparser export simply omits the key rather than writing a false claim.
+    The exporter never stamps ``reproducible`` (that needs a second harness run to
+    prove; see regenerate_corpus's opt-in stamping pass). Every other field is
+    byte-identical to the 0.1.2 export apart from metadata.sff_version and the
+    conditionally-present metadata.tags. Because tag earning requires a digest-valid
+    reproducibility recipe (MET-07 must not skip), a direct export without one omits
+    the tag. All version-gated behavior active at 0.1.2 remains so here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
 #%% Helper functions
 
 def _max_carbon_boundary_feed(all_sys_feeds):
@@ -1283,6 +1354,22 @@ def get_purchase_cost_correlations(ru):
             # One oddly-shaped item never sinks the export; omit just this item.
             continue
     return out
+
+
+def _stamp_static_tags(doc):
+    """Stamp metadata.tags with the static tags this assembled document actually
+    earns, for the 0.1.3+ exporter. Only ``exported-from-simulator`` is stamped
+    (the provenance of a simulator export); ``reproducible`` is never stamped by
+    the exporter (it needs a second harness run to prove). Stamping only when
+    earned guarantees the exporter never writes a self-contradictory file (a
+    stamped-but-unearned tag would be a TAG-01 error)."""
+    from . import _validate
+    with open(_validate._SCHEMA_FILE, 'r', encoding='utf-8') as f:
+        schema = json.load(f)
+    ctx, results = _validate._run_all_checks(doc, schema)
+    verdict = _validate._earned_tags(ctx, results)
+    if verdict['exported-from-simulator']['earned']:
+        doc['metadata']['tags'] = ['exported-from-simulator']
 
 
 def _equipment_lifetimes(ru):
