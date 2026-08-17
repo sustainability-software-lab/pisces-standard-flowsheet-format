@@ -1269,6 +1269,10 @@ def get_purchase_cost_correlations(ru):
     cost_items = getattr(ru, 'cost_items', None)
     if not cost_items:
         return {}
+    if not isinstance(cost_items, dict):
+        # Honor the never-raises contract if cost_items is a truthy non-dict
+        # (no .items()); real biosteam always gives a dict, but degrade anyway.
+        return {}
     f_bm = getattr(ru, 'F_BM', None) or {}
     lifetimes = _equipment_lifetimes(ru)
     out = {}

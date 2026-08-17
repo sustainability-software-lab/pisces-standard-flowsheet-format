@@ -832,6 +832,12 @@ class TestGetPurchaseCostCorrelations(unittest.TestCase):
         self.assertEqual(
             _export.get_purchase_cost_correlations(self._unit({})), {})
 
+    def test_non_dict_cost_items_returns_empty(self):
+        """A truthy non-dict cost_items (no .items()) -> {} without raising
+        (honors the never-raises contract)."""
+        self.assertEqual(
+            _export.get_purchase_cost_correlations(self._unit(["not", "a", "dict"])), {})
+
     def test_power_law_item_full_shape(self):
         """A power_law item emits every required field, in the documented key
         order, reading F_BM[ID] for installation_factor."""
