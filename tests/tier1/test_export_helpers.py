@@ -743,5 +743,173 @@ class TestWriteSffJson(unittest.TestCase):
                 _export._write_sff_json({"a": {1, 2, 3}}, str(path))
 
 
+class TestEquipmentLifetimes(unittest.TestCase):
+    """Direct tests for the private _equipment_lifetimes normalizer -- named
+    here so tests/tier1/test_coverage_meta.py's helper-coverage guard sees it
+    exercised (it is not called through get_purchase_cost_correlations'
+    black-box tests alone)."""
+
+    def test_dict_equipment_lifetime_is_copied(self):
+        """A dict equipment_lifetime is returned as-is, keyed by item id."""
+        unit = types.SimpleNamespace(equipment_lifetime={"R": 20})
+        self.assertEqual(_export._equipment_lifetimes(unit), {"R": 20})
+
+    def test_int_equipment_lifetime_is_keyed_under_none_sentinel(self):
+        """An int equipment_lifetime is returned under the None sentinel key,
+        the fallback _cost_correlation_entry consults for any item id."""
+        unit = types.SimpleNamespace(equipment_lifetime=15)
+        self.assertEqual(_export._equipment_lifetimes(unit), {None: 15})
+
+    def test_missing_equipment_lifetime_returns_empty(self):
+        """A unit with no equipment_lifetime attribute -> {}."""
+        self.assertEqual(_export._equipment_lifetimes(types.SimpleNamespace()), {})
+
+    def test_bool_is_not_treated_as_int(self):
+        """A bool equipment_lifetime (a subclass of int in Python) is not
+        mistaken for a real lifetime value -> {}, not {None: True}."""
+        unit = types.SimpleNamespace(equipment_lifetime=True)
+        self.assertEqual(_export._equipment_lifetimes(unit), {})
+
+
+class TestCostCorrelationEntry(unittest.TestCase):
+    """Direct tests for the private _cost_correlation_entry builder -- named
+    here so tests/tier1/test_coverage_meta.py's helper-coverage guard sees it
+    exercised directly, in addition to the black-box coverage in
+    TestGetPurchaseCostCorrelations."""
+
+    def _item(self, **overrides):
+        base = dict(basis="Duty", units="kJ/hr", S=1.0, lb=None, ub=None,
+                    CE=567.0, cost=45000.0, n=0.6, kW=0.0, N=None, f=None,
+                    condition=None, magnitude=False)
+        base.update(overrides)
+        return types.SimpleNamespace(**base)
+
+    def test_power_law_entry_field_order_and_values(self):
+        """A power_law item builds the documented key order with correct
+        values, reading installation_factor from the supplied F_BM map."""
+        entry = _export._cost_correlation_entry("R", self._item(), {"R": 2.0}, {})
+        self.assertEqual(list(entry), [
+            "correlation_type", "basis", "basis_units", "reference_size",
+            "reference_cost", "exponent", "reference_CE_index",
+            "installation_factor", "power_rate"])
+        self.assertEqual(entry["installation_factor"], 2.0)
+
+    def test_custom_function_omits_cost_and_exponent_fields(self):
+        """f set -> correlation_type is custom_function; reference_cost and
+        exponent are never added to the entry (not merely set to None)."""
+        entry = _export._cost_correlation_entry(
+            "R", self._item(f=lambda S: S, cost=None, n=None), {}, {})
+        self.assertEqual(entry["correlation_type"], "custom_function")
+        self.assertNotIn("reference_cost", entry)
+        self.assertNotIn("exponent", entry)
+
+
+class TestGetPurchaseCostCorrelations(unittest.TestCase):
+    # get_purchase_cost_correlations is re-verified against a REAL @cost unit in
+    # tests/tier6/test_live_object_consistency.py.
+
+    def _item(self, **overrides):
+        """A fake CostItem: attribute bag matching biosteam's CostItem slots."""
+        base = dict(basis="Duty", units="kJ/hr", S=1.0, lb=None, ub=None,
+                    CE=567.0, cost=45000.0, n=0.6, kW=0.0, N=None, f=None,
+                    condition=None, magnitude=False)
+        base.update(overrides)
+        return types.SimpleNamespace(**base)
+
+    def _unit(self, cost_items, F_BM=None, equipment_lifetime=None):
+        return types.SimpleNamespace(
+            cost_items=cost_items,
+            F_BM=F_BM if F_BM is not None else {},
+            equipment_lifetime=equipment_lifetime)
+
+    def test_missing_cost_items_returns_empty(self):
+        """A unit with no cost_items attribute -> {}."""
+        self.assertEqual(
+            _export.get_purchase_cost_correlations(types.SimpleNamespace()), {})
+
+    def test_empty_cost_items_returns_empty(self):
+        """A unit whose cost_items is empty -> {}."""
+        self.assertEqual(
+            _export.get_purchase_cost_correlations(self._unit({})), {})
+
+    def test_power_law_item_full_shape(self):
+        """A power_law item emits every required field, in the documented key
+        order, reading F_BM[ID] for installation_factor."""
+        unit = self._unit({"Reactor": self._item()}, F_BM={"Reactor": 2.3})
+        out = _export.get_purchase_cost_correlations(unit)
+        self.assertEqual(list(out), ["Reactor"])
+        entry = out["Reactor"]
+        self.assertEqual(list(entry), [
+            "correlation_type", "basis", "basis_units", "reference_size",
+            "reference_cost", "exponent", "reference_CE_index",
+            "installation_factor", "power_rate"])
+        self.assertEqual(entry["correlation_type"], "power_law")
+        self.assertEqual(entry["basis"], "Duty")
+        self.assertEqual(entry["basis_units"], "kJ/hr")
+        self.assertEqual(entry["reference_size"], 1.0)
+        self.assertEqual(entry["reference_cost"], 45000.0)
+        self.assertEqual(entry["exponent"], 0.6)
+        self.assertEqual(entry["reference_CE_index"], 567.0)
+        self.assertEqual(entry["installation_factor"], 2.3)
+        self.assertEqual(entry["power_rate"], 0.0)
+
+    def test_missing_F_BM_defaults_installation_factor_to_one(self):
+        """installation_factor falls back to 1.0 when F_BM lacks the item id."""
+        out = _export.get_purchase_cost_correlations(self._unit({"R": self._item()}))
+        self.assertEqual(out["R"]["installation_factor"], 1.0)
+
+    def test_custom_function_omits_cost_and_exponent(self):
+        """A custom_function item (f set, cost/n None) carries the marker and
+        omits reference_cost/exponent entirely (never null)."""
+        item = self._item(f=lambda S: S, cost=None, n=None)
+        out = _export.get_purchase_cost_correlations(self._unit({"R": item}))
+        entry = out["R"]
+        self.assertEqual(entry["correlation_type"], "custom_function")
+        self.assertNotIn("reference_cost", entry)
+        self.assertNotIn("exponent", entry)
+
+    def test_sparse_fields_emitted_only_when_set(self):
+        """lb/ub/magnitude/condition emit size_lower_bound/size_upper_bound/
+        magnitude/conditional only when non-default."""
+        item = self._item(lb=10.0, ub=5000.0, magnitude=True,
+                          condition=lambda: True)
+        out = _export.get_purchase_cost_correlations(self._unit({"R": item}))
+        entry = out["R"]
+        self.assertEqual(entry["size_lower_bound"], 10.0)
+        self.assertEqual(entry["size_upper_bound"], 5000.0)
+        self.assertTrue(entry["magnitude"])
+        self.assertTrue(entry["conditional"])
+
+    def test_defaults_omit_sparse_fields(self):
+        """A plain item omits all optional sparse fields."""
+        out = _export.get_purchase_cost_correlations(self._unit({"R": self._item()}))
+        entry = out["R"]
+        for absent in ("size_lower_bound", "size_upper_bound", "lifetime",
+                       "magnitude", "conditional"):
+            self.assertNotIn(absent, entry)
+
+    def test_equipment_lifetime_int_applies_to_all_ids(self):
+        """An int equipment_lifetime applies to every item id."""
+        out = _export.get_purchase_cost_correlations(
+            self._unit({"R": self._item()}, equipment_lifetime=15))
+        self.assertEqual(out["R"]["lifetime"], 15)
+
+    def test_equipment_lifetime_dict_is_looked_up_per_id(self):
+        """A dict equipment_lifetime is looked up per item id; absent id omits it."""
+        unit = self._unit({"R": self._item(), "S": self._item()},
+                          equipment_lifetime={"R": 20})
+        out = _export.get_purchase_cost_correlations(unit)
+        self.assertEqual(out["R"]["lifetime"], 20)
+        self.assertNotIn("lifetime", out["S"])
+
+    def test_malformed_item_is_skipped_not_raised(self):
+        """A single malformed item (missing attrs) is dropped; well-formed
+        siblings still export."""
+        unit = self._unit({"bad": object(), "R": self._item()})
+        out = _export.get_purchase_cost_correlations(unit)
+        self.assertNotIn("bad", out)
+        self.assertIn("R", out)
+
+
 if __name__ == "__main__":
     unittest.main()

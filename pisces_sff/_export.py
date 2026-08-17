@@ -35,7 +35,8 @@ from .exceptions import (
     DesignInputSpecError,
 )
 
-__all__ = ('export_biosteam_flowsheet', 'available_sff_versions')
+__all__ = ('export_biosteam_flowsheet', 'available_sff_versions',
+           'get_purchase_cost_correlations')
 
 #%% Entry-point export function
 
@@ -1170,6 +1171,91 @@ def get_utility_results(unit):
             else:
                 u_prod[ou.ID] += ou.F_mass
     return u_cons, u_prod, hu_agents, pu_agents, ou_agents
+
+
+def get_purchase_cost_correlations(ru):
+    """Serialize a unit's parametric purchase-cost correlations.
+
+    Reads the BioSTEAM ``@cost`` machinery -- the class-level ``cost_items``
+    (``{item_ID: CostItem}``), the instance bare-module factors ``F_BM`` (which
+    honor user overrides), and ``equipment_lifetime`` -- into the SFF
+    ``purchase_cost_correlations`` shape (sff_checks.md UNIT-08/UNIT-09), keyed
+    by the same item IDs used in ``purchase_costs``. A ``custom_function`` item
+    (``CostItem.f`` is not None) omits ``reference_cost``/``exponent`` because
+    the correlation is an opaque callable.
+
+    Parameters
+    ----------
+    ru : biosteam.Unit
+        The unit to read. A unit with no ``cost_items`` returns ``{}``.
+
+    Returns
+    -------
+    dict
+        ``{item_ID: correlation_dict}``; empty when the unit carries no
+        ``cost_items``. Never raises: a missing or malformed attribute degrades
+        to omitting that field or that whole item, per the exporter's hardening
+        conventions.
+    """
+    cost_items = getattr(ru, 'cost_items', None)
+    if not cost_items:
+        return {}
+    f_bm = getattr(ru, 'F_BM', None) or {}
+    lifetimes = _equipment_lifetimes(ru)
+    out = {}
+    for item_id, item in cost_items.items():
+        try:
+            out[item_id] = _cost_correlation_entry(item_id, item, f_bm, lifetimes)
+        except Exception:
+            # One oddly-shaped item never sinks the export; omit just this item.
+            continue
+    return out
+
+
+def _equipment_lifetimes(ru):
+    """Normalize ``unit.equipment_lifetime`` to a ``{ID: years}`` lookup.
+
+    BioSTEAM stores either an ``int`` (one lifetime for every item) or a
+    ``{ID: years}`` dict. An ``int`` is returned under the sentinel key ``None``,
+    which :func:`_cost_correlation_entry` consults as a fallback for any id.
+    """
+    el = getattr(ru, 'equipment_lifetime', None)
+    if isinstance(el, dict):
+        return dict(el)
+    if isinstance(el, int) and not isinstance(el, bool):
+        return {None: el}
+    return {}
+
+
+def _cost_correlation_entry(item_id, item, f_bm, lifetimes):
+    """Build one ``purchase_cost_correlations`` entry from a BioSTEAM CostItem.
+
+    Field order is fixed for byte-stable output; sparse fields are appended only
+    when non-default (sff_checks.md UNIT-09 sparse-field rule).
+    """
+    is_custom = getattr(item, 'f', None) is not None
+    entry = {'correlation_type': 'custom_function' if is_custom else 'power_law',
+             'basis': str(item.basis),
+             'basis_units': str(item.units),
+             'reference_size': float(item.S)}
+    if not is_custom:
+        entry['reference_cost'] = float(item.cost)
+        entry['exponent'] = float(item.n)
+    entry['reference_CE_index'] = float(item.CE)
+    entry['installation_factor'] = float(f_bm.get(item_id, 1.0))
+    entry['power_rate'] = float(getattr(item, 'kW', 0.0) or 0.0)
+    if getattr(item, 'lb', None) is not None:
+        entry['size_lower_bound'] = float(item.lb)
+    if getattr(item, 'ub', None) is not None:
+        entry['size_upper_bound'] = float(item.ub)
+    lifetime = lifetimes.get(item_id, lifetimes.get(None))
+    if lifetime is not None:
+        entry['lifetime'] = int(lifetime)
+    if getattr(item, 'magnitude', False):
+        entry['magnitude'] = True
+    if getattr(item, 'condition', None) is not None:
+        entry['conditional'] = True
+    return entry
 
 
 def get_chemical_entry(chemical, index, is_vle, stoichiometry):
