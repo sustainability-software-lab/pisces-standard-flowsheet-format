@@ -257,6 +257,37 @@ These are not checks; they define terms the checks rely on.
 - **Skipped when:** never.
 - **Enforcement:** validator (`_check_unit_connectivity`).
 
+### UNIT-08 — purchase-cost-correlation keys reference cost results
+- **Statement:** each key in a unit's `purchase_cost_correlations` also appears in
+  that same unit's `purchase_costs`.
+- **Rationale:** a correlation annotates a cost the flowsheet already reports; a
+  correlation key with no matching `purchase_costs` entry is usually an export
+  artifact. The reverse (a `purchase_costs` item with no correlation) is normal —
+  procedurally-costed items carry no correlation — and is not flagged.
+- **Scope:** `units[].purchase_cost_correlations` keys → same unit's
+  `purchase_costs` keys.
+- **Severity:** `warning` — an item gated by a `condition()` (`conditional: true`)
+  may be inactive at this design point and legitimately absent from
+  `purchase_costs`.
+- **Skipped when:** no unit declares a non-empty `purchase_cost_correlations`.
+- **Enforcement:** validator (`_check_cost_correlation_refs`).
+
+### UNIT-09 — purchase-cost-correlation completeness
+- **Statement:** a `power_law` correlation carries both `reference_cost` and
+  `exponent`; a `custom_function` correlation carries **neither**.
+- **Rationale:** the power law is `purchase_cost = (CE_target / reference_CE_index)
+  · reference_cost · (size / reference_size)^exponent`; a `power_law` item missing
+  either parameter cannot be re-derived. A `custom_function` item's correlation is
+  an opaque BioSTEAM callable, so emitting a `reference_cost`/`exponent` would
+  misrepresent it — the marker exists precisely to tell a consumer to fall back to
+  the recorded `purchase_costs` value.
+- **Scope:** each `units[].purchase_cost_correlations[*]` object.
+- **Severity:** `error`.
+- **Skipped when:** no unit declares a non-empty `purchase_cost_correlations`.
+- **Enforcement:** schema (`if`/`then`: `power_law` requires the two fields) +
+  validator (`_check_cost_correlation_completeness`, which also enforces the
+  `custom_function`-omits-both direction and runs on schema-invalid documents).
+
 ---
 
 ## 3. streams
@@ -615,6 +646,8 @@ These are not checks; they define terms the checks rely on.
 | UNIT-05 | reaction has ≥1 of equation/stoichiometry, consistent | error | schema + validator |
 | UNIT-06 | stoichiometry well-formed | error | validator |
 | UNIT-07 | no orphan units | warning | validator |
+| UNIT-08 | correlation keys → purchase_costs | warning | validator |
+| UNIT-09 | correlation completeness (power_law/custom_function) | error | schema + validator |
 | STR-01 | stream `id` unique | error | validator |
 | STR-02 | source/sink resolve to unit or boundary | error | validator |
 | STR-03 | isolated streams are empty | error | validator |
