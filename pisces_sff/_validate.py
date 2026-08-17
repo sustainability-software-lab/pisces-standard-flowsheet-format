@@ -18,7 +18,7 @@ from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError
 
 __all__ = ('validate_flowsheet_against_SFF', 'validate_json_against_schema',
-           'CheckResult', 'evaluate_sff_tags')
+           'CheckResult', 'evaluate_sff_tags', 'verify_reproducible')
 
 #%%
 def validate_json_against_schema(
@@ -1567,8 +1567,165 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
         schema = json.load(f)
     ctx, results = _run_all_checks(doc, schema)
     verdict = _earned_tags(ctx, results)
-    # run_harness=True branch is added in the reproducible-engine task.
+    if run_harness:
+        matches, diffs = verify_reproducible(
+            json_file, conda_exe=conda_exe, rtol=rtol,
+            recreate_env=recreate_env, export=export)
+        verdict['reproducible']['earned'] = bool(matches)
+        verdict['reproducible']['blocking'] = [] if matches else list(diffs)
     return verdict
+
+
+#%% Reproducible tag: harness re-export + deep compare (sff_checks.md section 8)
+
+#: Default relative tolerance when neither an explicit rtol nor the file's
+#: metadata.reproducibility.comparison_rtol is available. Mirrors Tier 6's RTOL.
+_REPRO_DEFAULT_RTOL = 1e-4
+
+#: Slash-joined document paths excluded from the reproducible deep-compare,
+#: because they legitimately vary between two faithful runs or are post-hoc
+#: annotations the exporter never re-emits. See sff_checks.md section 8 and the
+#: plan's "Spec clarification" note (comparison_rtol is a post-hoc annotation, so
+#: it is ignored alongside metadata.tags).
+_REPRO_IGNORE_PATHS = frozenset({
+    'metadata/tags',
+    'metadata/reproducibility/comparison_rtol',
+    'metadata/reproducibility/resolved/exported_at',
+    'metadata/reproducibility/resolved/platform',
+    'metadata/reproducibility/resolved/python_version',
+})
+
+
+def _reconstruct_model_dir(doc, dest):
+    """Write the embedded reproducibility recipe into `dest` as a model directory:
+    environment.yaml, load.py, and extended_metadata.yaml (when present), each
+    from its `content` string written verbatim as UTF-8 bytes (LF preserved, no
+    newline translation -- a Linux/CI-identical export depends on it). Returns
+    `dest`."""
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    repro = (doc.get('metadata') or {}).get('reproducibility') or {}
+    for block_name, default_filename in (('environment', 'environment.yaml'),
+                                         ('load_script', 'load.py'),
+                                         ('extended_metadata',
+                                          'extended_metadata.yaml')):
+        block = repro.get(block_name)
+        if not isinstance(block, dict) or 'content' not in block:
+            continue
+        filename = block.get('filename') or default_filename
+        # Binary write of the UTF-8 bytes: no universal-newline translation, so
+        # LF stays LF on every platform.
+        (dest / filename).write_bytes(block['content'].encode('utf-8'))
+    return dest
+
+
+def _deep_compare_reexport(original, reexport, rtol, path=''):
+    """Recursively compare a re-export against the original document, returning a
+    list of human-readable diffs (empty ⇒ match). Structure is exact (same keys,
+    same array lengths, identical non-numeric leaves); numeric leaves compare
+    within `rtol` with an absolute floor near zero (via the module's existing
+    _rel_close); paths in _REPRO_IGNORE_PATHS are skipped."""
+    if path in _REPRO_IGNORE_PATHS:
+        return []
+    diffs = []
+    if isinstance(original, dict) and isinstance(reexport, dict):
+        keys = set(original) | set(reexport)
+        for k in sorted(keys):
+            child = f'{path}/{k}' if path else k
+            if child in _REPRO_IGNORE_PATHS:
+                continue
+            if k not in original or k not in reexport:
+                diffs.append(f'{child}: key present in only one document')
+                continue
+            diffs.extend(_deep_compare_reexport(original[k], reexport[k], rtol,
+                                                child))
+    elif isinstance(original, list) and isinstance(reexport, list):
+        if len(original) != len(reexport):
+            diffs.append(f'{path}: array length {len(original)} != '
+                         f'{len(reexport)}')
+        else:
+            for i, (a, b) in enumerate(zip(original, reexport)):
+                diffs.extend(_deep_compare_reexport(a, b, rtol, f'{path}/{i}'))
+    elif isinstance(original, bool) or isinstance(reexport, bool):
+        if original != reexport:
+            diffs.append(f'{path}: {original!r} != {reexport!r}')
+    elif isinstance(original, (int, float)) and isinstance(reexport, (int, float)):
+        # Reuses the module's existing _rel_close (identical logic to what would
+        # otherwise be a duplicate _rel_close_abs helper -- see Task 4 report).
+        if not _rel_close(float(original), float(reexport), rtol):
+            diffs.append(f'{path}: {original!r} != {reexport!r} (rtol {rtol})')
+    else:
+        if original != reexport:
+            diffs.append(f'{path}: {original!r} != {reexport!r}')
+    return diffs
+
+
+def verify_reproducible(json_file, *, conda_exe=None, rtol=None,
+                        recreate_env=False, export=None):
+    """
+    Verify the `reproducible` tag: re-export from the embedded recipe and compare.
+
+    Reconstructs a temporary model directory from ``metadata.reproducibility``'s
+    embedded bytes, re-runs the export inside the pinned conda environment, and
+    deep-compares the result to this file (ignoring ``metadata.tags``,
+    ``metadata.reproducibility.comparison_rtol``, and the volatile ``resolved.*``
+    fields). Heavy: provisions/reuses a conda environment and simulates, under the
+    harness export lock (never concurrent with another simulation).
+
+    Parameters
+    ----------
+    json_file : str or pathlib.Path
+        The SFF file to verify.
+    conda_exe : str, optional
+        Explicit conda executable; forwarded to the harness.
+    rtol : float, optional
+        Relative tolerance override. When None, resolves from the file's
+        ``metadata.reproducibility.comparison_rtol``; falling back to 1e-4 when the
+        file records none. The tag's *meaning* is always the recorded value.
+    recreate_env : bool, optional
+        Rebuild the conda environment even if one matches.
+    export : callable, optional
+        ``export(model_dir, output_path, sff_version=..., recreate_env=...,
+        conda_exe=...)`` used to re-export. Defaults to
+        :func:`pisces_sff._harness.export_model` (the full harness), imported
+        lazily so the static path never pulls in biosteam. Tests inject a fake.
+
+    Returns
+    -------
+    (matches, diffs)
+        matches : bool
+            True iff the re-export matches within the resolved tolerance.
+        diffs : list of str
+            Human-readable differences (empty when matches is True), or a single
+            reason when the recipe is missing/incomplete.
+    """
+    import tempfile
+
+    with Path(json_file).open('r', encoding='utf-8') as f:
+        original = json.load(f)
+    metadata = original.get('metadata') or {}
+    repro = metadata.get('reproducibility')
+    if not isinstance(repro, dict) or not isinstance(repro.get('environment'), dict) \
+            or not isinstance(repro.get('load_script'), dict):
+        return False, ['no reproducibility recipe (environment + load_script)']
+    if rtol is None:
+        recorded = repro.get('comparison_rtol')
+        rtol = float(recorded) if isinstance(recorded, (int, float)) \
+            else _REPRO_DEFAULT_RTOL
+    sff_version = metadata.get('sff_version')
+
+    if export is None:
+        from ._harness import export_model as export
+
+    with tempfile.TemporaryDirectory() as tmp:
+        model_dir = _reconstruct_model_dir(original, Path(tmp) / 'model')
+        output_path = Path(tmp) / 'reexport.json'
+        export(model_dir, output_path, sff_version=sff_version,
+               recreate_env=recreate_env, conda_exe=conda_exe)
+        with output_path.open('r', encoding='utf-8') as f:
+            reexport = json.load(f)
+    diffs = _deep_compare_reexport(original, reexport, rtol)
+    return (not diffs), diffs
 
 
 # Ordered registry of check(ctx) -> list[CheckResult], in sff_checks.md order.
