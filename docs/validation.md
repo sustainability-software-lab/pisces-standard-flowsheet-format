@@ -158,11 +158,17 @@ near-zero values).
 
 - **`evaluate_sff_tags(file, *, run_harness=False, rtol=None, conda_exe=None, recreate_env=False, export=None)`**
   — computes the tag verdict for an SFF file. Returns a dict
-  `{tag: {"earned": bool | None, "declared": bool, "blocking": list}}` for each
-  of the four tags. With the default `run_harness=False`, the three static tags
-  are fully evaluated and `reproducible["earned"]` is `None` ("not evaluated")
-  — fast, no simulation. With `run_harness=True`, it additionally calls
-  `verify_reproducible` so `reproducible["earned"]` becomes a real `bool`; this
+  `{tag: {"earned": bool | None, "declared": bool, "blocking": list[str]}}` for
+  each of the four tags. `blocking` is uniformly a list of strings: for the
+  three static-subset tags it holds the failing/untolerated-skip checks'
+  `check_id`s; for `reproducible` it holds precondition-problem or deep-compare
+  diff reason strings. With the default `run_harness=False`, the three static
+  tags are fully evaluated and `reproducible["earned"]` is `None` ("not
+  evaluated") — fast, no simulation. With `run_harness=True`, it additionally
+  calls `verify_reproducible` so `reproducible["earned"]` becomes a real
+  `bool` — but only when the static reproducible precondition already holds
+  (its `blocking` is empty); when the precondition fails, `earned` is set to
+  `False` directly and the heavy harness re-export is skipped entirely. This
   path is heavy (see below).
 - **`verify_reproducible(file, *, conda_exe=None, rtol=None, recreate_env=False, export=None) -> (matches, diffs)`**
   — the only path that confirms `reproducible` step 3. Reconstructs the

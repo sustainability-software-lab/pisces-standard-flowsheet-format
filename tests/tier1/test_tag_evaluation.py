@@ -106,8 +106,7 @@ class TestEarnedTags(unittest.TestCase):
                    _R("MET-07", "error", "skip")]  # not tolerated
         v = self._verdict(results)
         self.assertFalse(v["exported-from-simulator"]["earned"])
-        self.assertIn("MET-07", {r.check_id for r in
-                                 v["exported-from-simulator"]["blocking"]})
+        self.assertIn("MET-07", v["exported-from-simulator"]["blocking"])
 
     def test_exported_from_simulator_blocked_by_warning_fail(self):
         results = [_R("SCHEMA", "error", "pass"),

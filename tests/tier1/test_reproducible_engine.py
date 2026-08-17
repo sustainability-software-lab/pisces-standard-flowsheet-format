@@ -61,6 +61,19 @@ class TestDeepCompare(unittest.TestCase):
         reexport = {"metadata": {"reproducibility": {"resolved": {"env_key": "b"}}}}
         self.assertTrue(V._deep_compare_reexport(original, reexport, 1e-4))
 
+    def test_bool_vs_int_one_is_flagged(self):
+        """bool is an int subclass, so a bare `!=` would coerce True == 1 and
+        False == 0/0.0 as equal. Exactly one side being bool must be flagged as
+        a diff regardless of numeric equality."""
+        self.assertTrue(V._deep_compare_reexport({"x": True}, {"x": 1}, 1e-4))
+        self.assertTrue(V._deep_compare_reexport({"x": False}, {"x": 0}, 1e-4))
+
+    def test_bool_vs_bool_equal_matches(self):
+        self.assertEqual(V._deep_compare_reexport({"x": True}, {"x": True}, 1e-4), [])
+
+    def test_bool_vs_bool_unequal_is_flagged(self):
+        self.assertTrue(V._deep_compare_reexport({"x": True}, {"x": False}, 1e-4))
+
     def test_recipe_path_present_only_in_original_is_ignored(self):
         """A repo-relative `path` on environment/load_script/extended_metadata
         (recorded by _runner.py._file_record only when the ORIGINAL model
@@ -183,3 +196,52 @@ class TestVerifyReproducibleStubbed(unittest.TestCase):
             self._write(doc), export=fake_export)  # uses recorded 1e-12
         self.assertTrue(matches_loose)
         self.assertFalse(matches_tight)
+
+
+class TestEvaluateSffTagsRunHarnessShortCircuit(unittest.TestCase):
+    """evaluate_sff_tags(run_harness=True) must short-circuit the heavy harness
+    re-export when the static `reproducible` precondition already fails --
+    calling verify_reproducible in that case would waste a real simulation on a
+    doomed comparison. Uses a raising `export` stub to prove the harness path
+    was never entered."""
+
+    SCHEMA_PATH = (
+        Path(__file__).resolve().parents[2] / "pisces_sff" / "schema" /
+        "sff_schema.json")
+
+    def _write(self, doc):
+        d = tempfile.mkdtemp()
+        p = Path(d) / "doc.json"
+        p.write_text(json.dumps(doc), encoding="utf-8")
+        return str(p)
+
+    def test_precondition_failure_skips_harness_and_export_is_never_called(self):
+        # Recipe present (environment + load_script) but NO comparison_rtol ->
+        # the static reproducible precondition fails regardless of overall
+        # conformance/declared tags, per _reproducible_precondition. Omitting
+        # `metadata.tags` entirely keeps this doc schema-clean (the precondition
+        # check itself does not require tags to be declared).
+        doc = {"metadata": {"reproducibility": {
+                   "environment": {"filename": "environment.yaml",
+                                   "content": "name: e\n"},
+                   "load_script": {"filename": "load.py",
+                                   "content": "def load():\n    pass\n"}}},
+               "units": [{"id": "U1", "unit_type": "Mixer"}]}
+
+        # Sanity-check the precondition actually fails before exercising the
+        # short-circuit, so this test would fail loudly if the doc stopped
+        # triggering the intended branch.
+        static_verdict = V.evaluate_sff_tags(
+            self._write(doc), str(self.SCHEMA_PATH))
+        self.assertTrue(static_verdict["reproducible"]["blocking"])
+
+        def raising_export(*args, **kwargs):
+            raise AssertionError(
+                "verify_reproducible/export must not run when the static "
+                "reproducible precondition already fails")
+
+        verdict = V.evaluate_sff_tags(
+            self._write(doc), str(self.SCHEMA_PATH),
+            run_harness=True, export=raising_export)
+        self.assertFalse(verdict["reproducible"]["earned"])
+        self.assertTrue(verdict["reproducible"]["blocking"])

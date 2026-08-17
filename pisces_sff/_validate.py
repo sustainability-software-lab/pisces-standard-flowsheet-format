@@ -1439,7 +1439,12 @@ def _earned_tags(ctx, results):
     """Apply the static earning rules (sff_checks.md section 8) to produce a
     per-tag verdict dict. reproducible.earned is None here (static path); its
     blocking holds the precondition problems. Used by evaluate_sff_tags and the
-    TAG-01 aggregate."""
+    TAG-01 aggregate.
+
+    `blocking` is uniformly a ``list[str]`` across all four tags: for the three
+    static-subset tags it holds the failing/untolerated-skip checks' `check_id`
+    strings; for `reproducible` it holds the precondition-problem reason
+    strings (unchanged)."""
     declared = set(ctx.metadata.get('tags') or [])
     conformant = _conformant(results)
     verdict = {}
@@ -1451,9 +1456,9 @@ def _earned_tags(ctx, results):
             if subset is not None and r.check_id not in subset:
                 continue
             if r.status == 'fail' and r.severity in ('warning', 'error'):
-                blocking.append(r)
+                blocking.append(r.check_id)
             elif r.status == 'skip' and not _skip_tolerated(r.check_id, ctx):
-                blocking.append(r)
+                blocking.append(r.check_id)
         verdict[tag] = {'earned': conformant and not blocking,
                         'declared': tag in declared, 'blocking': blocking}
     precondition = _reproducible_precondition(ctx, results)
@@ -1481,7 +1486,7 @@ def _tag_gate(ctx, results):  # TAG-01
                 violations.append(f"'reproducible' precondition unmet: "
                                   f"{info['blocking']}")
         elif not info['earned']:
-            ids = [r.check_id for r in info['blocking']]
+            ids = list(info['blocking'])
             violations.append(f"'{tag}' not earned (blocking: {ids})")
     if violations:
         return _failed('TAG-01', 'error',
@@ -1556,8 +1561,10 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
     Returns
     -------
     dict
-        ``{tag: {"earned": bool | None, "declared": bool, "blocking": list}}`` for
-        each of the four tags.
+        ``{tag: {"earned": bool | None, "declared": bool, "blocking": list[str]}}``
+        for each of the four tags. ``blocking`` is uniformly a list of strings:
+        failing/untolerated-skip check IDs for the three static-subset tags,
+        and precondition/diff reason strings for ``reproducible``.
     """
     if schema_file is None:
         schema_file = _SCHEMA_FILE
@@ -1568,11 +1575,19 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
     ctx, results = _run_all_checks(doc, schema)
     verdict = _earned_tags(ctx, results)
     if run_harness:
-        matches, diffs = verify_reproducible(
-            json_file, conda_exe=conda_exe, rtol=rtol,
-            recreate_env=recreate_env, export=export)
-        verdict['reproducible']['earned'] = bool(matches)
-        verdict['reproducible']['blocking'] = [] if matches else list(diffs)
+        if verdict['reproducible']['blocking']:
+            # Static reproducible precondition already fails (not conformant,
+            # missing recipe/comparison_rtol, or a MET-07 digest mismatch) --
+            # the harness re-export could never earn the tag, so skip the heavy
+            # simulation entirely and leave the precondition `blocking` in
+            # place as the reason.
+            verdict['reproducible']['earned'] = False
+        else:
+            matches, diffs = verify_reproducible(
+                json_file, conda_exe=conda_exe, rtol=rtol,
+                recreate_env=recreate_env, export=export)
+            verdict['reproducible']['earned'] = bool(matches)
+            verdict['reproducible']['blocking'] = [] if matches else list(diffs)
     return verdict
 
 
@@ -1660,7 +1675,12 @@ def _deep_compare_reexport(original, reexport, rtol, path=''):
             for i, (a, b) in enumerate(zip(original, reexport)):
                 diffs.extend(_deep_compare_reexport(a, b, rtol, f'{path}/{i}'))
     elif isinstance(original, bool) or isinstance(reexport, bool):
-        if original != reexport:
+        # bool is an int subclass, so a bare `!=` would coerce True == 1 and
+        # False == 0/0.0 as equal. Flag a diff unless BOTH sides are bool and
+        # equal -- a bool compared against a non-bool number (or the other way
+        # round) is always a type-shape diff, never a numeric near-match.
+        both_bool = isinstance(original, bool) and isinstance(reexport, bool)
+        if not (both_bool and original == reexport):
             diffs.append(f'{path}: {original!r} != {reexport!r}')
     elif isinstance(original, (int, float)) and isinstance(reexport, (int, float)):
         # Reuses the module's existing _rel_close (identical logic to what would
