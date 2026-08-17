@@ -324,5 +324,57 @@ class TestUtilityEmissionSortedById(RealBiosteamTestCase):
         self.assertEqual(ou_ids, sorted(ou_ids))
 
 
+@unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
+class TestGetReactionsOrderRealObjects(RealBiosteamTestCase):
+    """Re-verify Tier 1's get_reactions discovery-order guarantee against
+    REAL thermosteam Reaction/ParallelReaction objects assigned to a real
+    biosteam unit (2026-08-16 determinism fix). Reactions are atomically
+    balanced over the registered chemicals so thermosteam accepts them;
+    distinct X values make the emission order observable."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
+
+        # Same pisces_sff re-import dance as TestExportHelpersAgainstRealObjects
+        # above (get_reactions reads the module-level Reaction/ReactionSet/
+        # SeriesReaction/ParallelReaction names bound at _export import time).
+        for key in [k for k in sys.modules
+                    if k == "pisces_sff" or k.startswith("pisces_sff.")]:
+            del sys.modules[key]
+
+        from pisces_sff import _export
+
+        cls._export = _export
+
+        import biosteam as bst
+        import thermosteam as tmo
+        bst.settings.set_thermo(["Water", "Ethanol", "Glucose", "CO2", "O2"])
+        r_first = tmo.Reaction("Glucose -> 2 Ethanol + 2 CO2", "Glucose", 0.11)
+        r_sub1 = tmo.Reaction("Glucose + 6 O2 -> 6 CO2 + 6 Water", "Glucose", 0.22)
+        r_sub2 = tmo.Reaction("Ethanol + 3 O2 -> 2 CO2 + 3 Water", "Ethanol", 0.33)
+        r_last = tmo.Reaction("Glucose -> 2 Ethanol + 2 CO2", "Glucose", 0.44)
+        # get_reactions reads unit.__dict__, so a real (unsimulated) unit is
+        # the right fixture; attribute assignment order IS the discovery order.
+        unit = bst.Mixer("DET_RXN_ORDER_M1")
+        unit.first_rxn = r_first
+        unit.rxn_group = tmo.ParallelReaction([r_sub1, r_sub2])
+        unit.last_rxn = r_last
+        cls.unit = unit
+
+    def test_reactions_emitted_in_assignment_order(self):
+        """Expected emission: first_rxn, then rxn_group's two subreactions in
+        their own order (sharing index 1 -- parallel subreactions share an
+        index, which then increments), then last_rxn. Conversions
+        [0.11, 0.22, 0.33, 0.44] prove the order; indices are [0, 1, 1, 2];
+        reactants match each reaction's declared reactant."""
+        reactions = self._export.get_reactions(self.unit, stoichiometry="dict")
+        self.assertEqual([round(r["conversion"], 9) for r in reactions],
+                         [0.11, 0.22, 0.33, 0.44])
+        self.assertEqual([r["index"] for r in reactions], [0, 1, 1, 2])
+        self.assertEqual([r["reactant"] for r in reactions],
+                         ["Glucose", "Glucose", "Ethanol", "Glucose"])
+
+
 if __name__ == "__main__":
     unittest.main()
