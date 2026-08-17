@@ -1302,17 +1302,39 @@ def get_phase_properties(stream, inline):
     return phases
 
 
-def get_reactions(unit, stoichiometry): # !!! update -- fix order of reactions (potentially using settrace)
+def get_reactions(unit, stoichiometry):
     u = unit
     rxntypes = (Reaction, ReactionSet)
-    all_reactions = {rxn for rxn in u.__dict__.values() if isinstance(rxn, rxntypes)}
-    reactions = []
-    for rxn in tuple(all_reactions):
+    # Deterministic ordering policy: emit reactions in discovery order -- the
+    # insertion order of unit.__dict__, i.e., the order the model author
+    # assigned them. That order is deterministic across processes and
+    # engineering-meaningful, unlike iteration over a set of id()-hashed
+    # objects (the previous behavior, which scrambled the emitted `index`
+    # field differently on every run). Dedup and the parent filter below use
+    # object identity, not equality: Reaction objects are not reliably
+    # hashable-by-value, and the same object bound to two attribute names
+    # must be emitted once.
+    collected = []
+    seen = set()
+    for rxn in u.__dict__.values():
+        if isinstance(rxn, rxntypes) and id(rxn) not in seen:
+            seen.add(id(rxn))
+            collected.append(rxn)
+    # Drop a child reaction whose parent ReactionSet was also collected (the
+    # parent's own iteration emits it). Membership is tested against the full
+    # collected id-set; order is preserved by filtering the list.
+    collected_ids = {id(rxn) for rxn in collected}
+    all_reactions = []
+    for rxn in collected:
         if hasattr(rxn, '_parent'):
-            if rxn._parent in all_reactions: all_reactions.discard(rxn)
+            if id(rxn._parent) in collected_ids:
+                continue
         elif hasattr(rxn, '_parent_index'):
-            parent, index = rxn._parent_index
-            if parent in all_reactions: all_reactions.discard(rxn)
+            parent, _index = rxn._parent_index
+            if id(parent) in collected_ids:
+                continue
+        all_reactions.append(rxn)
+    reactions = []
     
     i = 0
     for rxn in all_reactions:

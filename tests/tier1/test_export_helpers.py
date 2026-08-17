@@ -459,6 +459,71 @@ class TestGetReactions(unittest.TestCase):
         self.assertNotIn("stoichiometry", reactions[0])
 
 
+class TestGetReactionsOrder(unittest.TestCase):
+    """Deterministic-ordering guarantee (2026-08-16 determinism fix):
+    get_reactions emits reactions in unit.__dict__ insertion order -- the
+    order the model author assigned them -- not in process-varying
+    set-iteration order. Re-verified against real thermosteam objects in
+    tests/tier2/test_export_helpers_real.py."""
+
+    def _rxn(self, reactant, X):
+        rxn = _export.Reaction()
+        rxn.reactant = reactant
+        rxn.X = X
+        rxn.stoichiometry = [-1.0, 1.0]
+        rxn.chemicals = []
+        rxn.phases = "l"
+        return rxn
+
+    def test_plain_reactions_emitted_in_assignment_order(self):
+        """Eight plain reactions assigned to a fake unit in a known order come
+        back in exactly that order, with sequential indices 0..7. (The pre-fix
+        set-comprehension collection made this order id()-hash dependent.)"""
+        class FakeUnit:
+            pass
+        unit = FakeUnit()
+        conversions = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+        for n, X in enumerate(conversions):
+            setattr(unit, "rxn_%d" % n, self._rxn("C%d" % n, X))
+
+        with mock.patch.object(_export, "get_stoichiometric_string",
+                               return_value="eq"):
+            reactions = _export.get_reactions(unit, stoichiometry=None)
+
+        self.assertEqual([r["conversion"] for r in reactions], conversions)
+        self.assertEqual([r["reactant"] for r in reactions],
+                         ["C%d" % n for n in range(8)])
+        self.assertEqual([r["index"] for r in reactions], list(range(8)))
+
+    def test_parent_filter_preserves_order_and_drops_the_child(self):
+        """A ParallelReaction assigned between two plain reactions: emission
+        order is pre, then the parallel's subreactions in their own iteration
+        order (sharing one index, which then increments), then post -- and a
+        child reaction whose _parent is the collected ParallelReaction is
+        dropped entirely, without disturbing its neighbors' order."""
+        class FakeUnit:
+            pass
+        unit = FakeUnit()
+        unit.pre = self._rxn("A", 0.11)
+        sub1 = self._rxn("B", 0.22)
+        sub2 = self._rxn("C", 0.33)
+        unit.par = _export.ParallelReaction([sub1, sub2])
+        child = self._rxn("X", 0.99)
+        child._parent = unit.par
+        unit.child = child
+        unit.post = self._rxn("D", 0.44)
+
+        with mock.patch.object(_export, "get_stoichiometric_string",
+                               return_value="eq"):
+            reactions = _export.get_reactions(unit, stoichiometry=None)
+
+        self.assertEqual([r["conversion"] for r in reactions],
+                         [0.11, 0.22, 0.33, 0.44])
+        self.assertEqual([r["reactant"] for r in reactions],
+                         ["A", "B", "C", "D"])
+        self.assertEqual([r["index"] for r in reactions], [0, 1, 1, 2])
+
+
 class TestGetRxnsSortedByOrderOfCalls(unittest.TestCase):
     def test_always_returns_an_empty_list(self):
         """get_rxns_sorted_by_order_of_calls builds rxns_sorted but never

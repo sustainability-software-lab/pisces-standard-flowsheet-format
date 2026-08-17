@@ -34,9 +34,29 @@ def install_biosteam_stubs():
     thermosteam = types.ModuleType("thermosteam")
 
     class Reaction: ...
+
     class ReactionSet: ...
-    class SeriesReaction: ...
-    class ParallelReaction: ...
+
+    # Real thermosteam hierarchy: SeriesReaction and ParallelReaction ARE
+    # ReactionSet subclasses, and get_reactions depends on both facts -- it
+    # collects on isinstance((Reaction, ReactionSet)) and then iterates
+    # Series/Parallel instances to emit their subreactions. The fakes mirror
+    # the subclassing and the iterability so Tier 1 can exercise the
+    # discovery-order + parent-filter paths.
+    class SeriesReaction(ReactionSet):
+        def __init__(self, subreactions=()):
+            self._subreactions = list(subreactions)
+
+        def __iter__(self):
+            return iter(self._subreactions)
+
+    class ParallelReaction(ReactionSet):
+        def __init__(self, subreactions=()):
+            self._subreactions = list(subreactions)
+
+        def __iter__(self):
+            return iter(self._subreactions)
+
     class Chemical: ...
 
     thermosteam.Reaction = Reaction
