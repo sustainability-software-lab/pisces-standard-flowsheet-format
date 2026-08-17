@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
-# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, and 0.1.1 and
-# asserts the scalar-shape, results-key, required-metadata, stream-roles,
+# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, and 0.1.2
+# and asserts the scalar-shape, results-key, required-metadata, stream-roles,
 # enthalpy-flow, tightened-constraint (0.0.12 shape-identical to 0.0.11),
-# milestone-bump (0.1.0 shape-identical to 0.0.12), and constraint-loosening
+# milestone-bump (0.1.0 shape-identical to 0.0.12), constraint-loosening
 # (0.1.1 shape-identical to 0.1.0 -- CHEM-02's molar_mass constraint moved from
-# the schema to the validator, a validation-only change with no output effect)
-# differences the schema versions require. This is about
+# the schema to the validator, a validation-only change with no output effect),
+# and new-field (0.1.2 adds the optional per-unit purchase_cost_correlations
+# object, present -- possibly empty -- on every unit, otherwise shape-identical
+# to 0.1.1) differences the schema versions require. This is about
 # exporter version dispatch, not the corn model, so it needs no whole-model
 # simulation -- which is why it lives in Tier 2 rather than Tier 3.
 #
@@ -118,6 +120,11 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_101), sff_version="0.1.1", tea=tea)
         cls.doc_101 = json.loads(cls.path_101.read_text(encoding="utf-8"))
+
+        cls.path_102 = tmp / "small_102.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_102), sff_version="0.1.2", tea=tea)
+        cls.doc_102 = json.loads(cls.path_102.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -354,6 +361,44 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         b = copy.deepcopy(self.doc_101)
         a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
         self.assertEqual(a, b)
+
+    def test_0_1_2_validates_against_committed_schema(self):
+        """v0.1.2 export of the real small System -> validates against the
+        committed schema with no errors, and records metadata.sff_version
+        "0.1.2"."""
+        is_valid, errors = self.validate(str(self.path_102), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_102["metadata"]["sff_version"], "0.1.2")
+
+    def test_0_1_2_emits_purchase_cost_correlations_on_every_unit(self):
+        """v0.1.2 export -> every unit carries a purchase_cost_correlations dict
+        (empty for the procedurally-costed HXutility fixture unit; the key's
+        presence is what the gate guarantees)."""
+        for unit in self.doc_102["units"]:
+            with self.subTest(unit=unit["id"]):
+                self.assertIn("purchase_cost_correlations", unit)
+                self.assertIsInstance(unit["purchase_cost_correlations"], dict)
+
+    def test_0_1_2_is_shape_identical_to_0_1_1_except_correlations_and_version(self):
+        """v0.1.2 export with purchase_cost_correlations stripped from every unit
+        and metadata.sff_version normalized -> equals the v0.1.1 export (0.1.2
+        adds only that one optional field)."""
+        a = copy.deepcopy(self.doc_101)
+        b = copy.deepcopy(self.doc_102)
+        for unit in b["units"]:
+            unit.pop("purchase_cost_correlations", None)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
+
+    def test_pre_0_1_2_versions_omit_purchase_cost_correlations(self):
+        """v0.1.1 down to v0.0.6 exports -> no unit carries a
+        purchase_cost_correlations field (emitted only from 0.1.2 on; older
+        exporters stay byte-stable)."""
+        for doc in (self.doc_101, self.doc_100, self.doc_012, self.doc_011,
+                    self.doc_010, self.doc_009, self.doc_008, self.doc_007,
+                    self.doc_006):
+            for unit in doc["units"]:
+                self.assertNotIn("purchase_cost_correlations", unit)
 
 
 if __name__ == "__main__":
