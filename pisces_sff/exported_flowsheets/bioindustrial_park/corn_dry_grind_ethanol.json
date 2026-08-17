@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "sff_version": "0.0.12",
+        "sff_version": "0.1.2",
         "TEA_currency": "USD",
         "TEA_year": 2018,
         "process_simulator": {
@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-15T07:30:22Z",
+                "exported_at": "2026-08-17T10:44:55Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -120,6 +120,19 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Grain handling": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 46350.72,
+                    "reference_cost": 45904.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 4.0,
+                    "power_rate": 97.0
+                }
             }
         },
         {
@@ -152,7 +165,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "MH103",
@@ -179,6 +193,20 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Cleaning system": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 45350.0,
+                    "reference_cost": 60300.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 4.0,
+                    "power_rate": 0.0,
+                    "size_upper_bound": 720000.0
+                }
             }
         },
         {
@@ -208,6 +236,20 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Hammer mill": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 46211.33,
+                    "reference_cost": 37316.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 4.0,
+                    "power_rate": 314.237,
+                    "size_upper_bound": 720000.0
+                }
             }
         },
         {
@@ -240,7 +282,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "W106",
@@ -272,7 +315,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V107",
@@ -304,7 +348,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V319",
@@ -336,7 +381,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P320",
@@ -381,7 +427,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V303",
@@ -413,7 +460,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P304",
@@ -458,7 +506,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V403",
@@ -492,7 +541,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P404",
@@ -537,7 +587,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V305",
@@ -569,7 +620,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V317",
@@ -601,7 +653,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P318",
@@ -646,7 +699,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V301",
@@ -678,7 +732,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P302",
@@ -723,7 +778,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V307",
@@ -757,7 +813,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P311",
@@ -802,7 +859,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "E312",
@@ -839,7 +897,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "E313",
@@ -868,6 +927,19 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Jet cooker": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 150347.0,
+                    "reference_cost": 14000.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 4.0,
+                    "power_rate": 0.0
+                }
             }
         },
         {
@@ -900,7 +972,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P308",
@@ -945,7 +1018,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "HX101",
@@ -987,7 +1061,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V310",
@@ -1033,7 +1108,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "E316",
@@ -1070,7 +1146,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V321",
@@ -1104,7 +1181,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P322",
@@ -1149,7 +1227,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "E401",
@@ -1186,7 +1265,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "E402",
@@ -1228,7 +1308,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V405",
@@ -1250,16 +1331,6 @@
             "reactions": [
                 {
                     "index": 0,
-                    "equation": "Glucose -> Yeast",
-                    "reactant": "Glucose",
-                    "conversion": 1.0,
-                    "stoichiometry": {
-                        "Glucose": -1.0,
-                        "Yeast": 1.0
-                    }
-                },
-                {
-                    "index": 1,
                     "equation": "Glucose -> 2 Ethanol + 2 CO2",
                     "reactant": "Glucose",
                     "conversion": 0.95,
@@ -1267,6 +1338,16 @@
                         "Ethanol": 2.0,
                         "Glucose": -1.0,
                         "CO2": 2.0
+                    }
+                },
+                {
+                    "index": 1,
+                    "equation": "Glucose -> Yeast",
+                    "reactant": "Glucose",
+                    "conversion": 1.0,
+                    "stoichiometry": {
+                        "Glucose": -1.0,
+                        "Yeast": 1.0
                     }
                 }
             ],
@@ -1305,6 +1386,64 @@
                 "Number of reactors": "",
                 "Recirculation flow rate": "m3/hr",
                 "Reactor duty": "kJ/hr"
+            },
+            "purchase_cost_correlations": {
+                "Heat exchangers": {
+                    "correlation_type": "power_law",
+                    "basis": "Reactor duty",
+                    "basis_units": "kJ/hr",
+                    "reference_size": 20920000.0,
+                    "reference_cost": 23900.0,
+                    "exponent": 0.7,
+                    "reference_CE_index": 522.0,
+                    "installation_factor": 2.2,
+                    "power_rate": 0.0,
+                    "magnitude": true
+                },
+                "Reactors": {
+                    "correlation_type": "power_law",
+                    "basis": "Reactor volume",
+                    "basis_units": "m3",
+                    "reference_size": 3785.0,
+                    "reference_cost": 844000.0,
+                    "exponent": 0.5,
+                    "reference_CE_index": 521.9,
+                    "installation_factor": 1.5,
+                    "power_rate": 0.0
+                },
+                "Agitators": {
+                    "correlation_type": "power_law",
+                    "basis": "Reactor volume",
+                    "basis_units": "m3",
+                    "reference_size": 3785.0,
+                    "reference_cost": 52500.0,
+                    "exponent": 0.5,
+                    "reference_CE_index": 521.9,
+                    "installation_factor": 1.5,
+                    "power_rate": 22.371
+                },
+                "Cleaning in place": {
+                    "correlation_type": "power_law",
+                    "basis": "Reactor volume",
+                    "basis_units": "m3",
+                    "reference_size": 3785.0,
+                    "reference_cost": 421000.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 521.9,
+                    "installation_factor": 1.8,
+                    "power_rate": 0.0
+                },
+                "Recirculation pumps": {
+                    "correlation_type": "power_law",
+                    "basis": "Recirculation flow rate",
+                    "basis_units": "m3/hr",
+                    "reference_size": 77.22216,
+                    "reference_cost": 47200.0,
+                    "exponent": 0.8,
+                    "reference_CE_index": 522.0,
+                    "installation_factor": 2.3,
+                    "power_rate": 30.0
+                }
             }
         },
         {
@@ -1350,7 +1489,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "MX",
@@ -1369,7 +1509,8 @@
             "purchase_costs": {},
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P407",
@@ -1414,7 +1555,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V412",
@@ -1446,7 +1588,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "PX",
@@ -1491,7 +1634,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P301",
@@ -1536,7 +1680,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "E413",
@@ -1573,7 +1718,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "T501",
@@ -1646,7 +1792,8 @@
                 "Diameter": "ft",
                 "Wall thickness": "in",
                 "Weight": "lb"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P502",
@@ -1691,7 +1838,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V601",
@@ -1725,7 +1873,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P602",
@@ -1770,7 +1919,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "C603",
@@ -1799,6 +1949,20 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "L/min"
+            },
+            "purchase_cost_correlations": {
+                "3-Phase decanter centrifuge": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "L/min",
+                    "reference_size": 1725.61,
+                    "reference_cost": 849000.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 2.03,
+                    "power_rate": 0.07,
+                    "size_upper_bound": 2000.0
+                }
             }
         },
         {
@@ -1818,7 +1982,8 @@
             "purchase_costs": {},
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V605",
@@ -1852,7 +2017,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P606",
@@ -1897,7 +2063,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "Ev607",
@@ -1944,7 +2111,8 @@
             "quantity_units_for_design_results": {
                 "Area": "m^2",
                 "Volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "C603_2",
@@ -1973,6 +2141,20 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "m^3/hr"
+            },
+            "purchase_cost_correlations": {
+                "Liquids centrifuge": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "m^3/hr",
+                    "reference_size": 1.0,
+                    "reference_cost": 28100.0,
+                    "exponent": 0.574,
+                    "reference_CE_index": 525.4,
+                    "installation_factor": 2.03,
+                    "power_rate": 1.4,
+                    "size_upper_bound": 100.0
+                }
             }
         },
         {
@@ -2002,6 +2184,19 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Wet ddgsconveyor": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 24158.0,
+                    "reference_cost": 55700.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 4.0,
+                    "power_rate": 13.1
+                }
             }
         },
         {
@@ -2021,7 +2216,8 @@
             "purchase_costs": {},
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "D610",
@@ -2062,6 +2258,20 @@
                 "Diameter": "m",
                 "Length": "",
                 "Peripheral drum area": "m2"
+            },
+            "purchase_cost_correlations": {
+                "Drum dryer": {
+                    "correlation_type": "power_law",
+                    "basis": "Peripheral drum area",
+                    "basis_units": "m2",
+                    "reference_size": 1235.35,
+                    "reference_cost": 1179360.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 2.06,
+                    "power_rate": 938.866,
+                    "size_upper_bound": 7854.0
+                }
             }
         },
         {
@@ -2091,6 +2301,19 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "DDGSHandling": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 15303.5346,
+                    "reference_cost": 122800.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 525.0,
+                    "installation_factor": 4.0,
+                    "power_rate": 37.3
+                }
             }
         },
         {
@@ -2127,7 +2350,8 @@
                 "Number of vessels": "",
                 "Vessel volume": "",
                 "Total volume": ""
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "MX3",
@@ -2146,7 +2370,8 @@
             "purchase_costs": {},
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "T503_T507",
@@ -2235,7 +2460,8 @@
                 "Stripper wall thickness": "in",
                 "Rectifier weight": "lb",
                 "Stripper weight": "lb"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "HX500",
@@ -2277,7 +2503,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "X504",
@@ -2308,6 +2535,19 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Column": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 22687.0,
+                    "reference_cost": 2601000.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 521.9,
+                    "installation_factor": 1.8,
+                    "power_rate": 151.0
+                }
             }
         },
         {
@@ -2350,7 +2590,8 @@
                 "Fouling correction factor": "",
                 "Operating pressure": "psi",
                 "Total tube length": "ft"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V511",
@@ -2382,7 +2623,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P512",
@@ -2427,7 +2669,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V509",
@@ -2459,7 +2702,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P510",
@@ -2504,7 +2748,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "MX4",
@@ -2523,7 +2768,8 @@
             "purchase_costs": {},
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V513",
@@ -2555,7 +2801,8 @@
             "quantity_units_for_design_results": {
                 "Residence time": "hr",
                 "Total volume": "m^3"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "P508",
@@ -2600,7 +2847,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "V409",
@@ -2627,6 +2875,19 @@
             "utility_production_results": {},
             "quantity_units_for_design_results": {
                 "Flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Vent scrubber": {
+                    "correlation_type": "power_law",
+                    "basis": "Flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 22608.0,
+                    "reference_cost": 215000.0,
+                    "exponent": 0.6,
+                    "reference_CE_index": 522.0,
+                    "installation_factor": 2.4,
+                    "power_rate": 0.0
+                }
             }
         },
         {
@@ -2672,7 +2933,8 @@
                 "Power": "hp",
                 "Head": "ft",
                 "Motor size": "hp"
-            }
+            },
+            "purchase_cost_correlations": {}
         },
         {
             "id": "MX5",
@@ -2691,7 +2953,8 @@
             "purchase_costs": {},
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "other_facilities",
@@ -2714,7 +2977,8 @@
             },
             "utility_consumption_results": {},
             "utility_production_results": {},
-            "quantity_units_for_design_results": {}
+            "quantity_units_for_design_results": {},
+            "purchase_cost_correlations": {}
         },
         {
             "id": "T608",
@@ -2749,6 +3013,41 @@
             "quantity_units_for_design_results": {
                 "Process water flow rate": "kg/hr",
                 "Makeup water flow rate": "kg/hr"
+            },
+            "purchase_cost_correlations": {
+                "Tank": {
+                    "correlation_type": "power_law",
+                    "basis": "Process water flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 451555.0,
+                    "reference_cost": 250000.0,
+                    "exponent": 0.7,
+                    "reference_CE_index": 522.0,
+                    "installation_factor": 1.7,
+                    "power_rate": 0.0
+                },
+                "Process water pump": {
+                    "correlation_type": "power_law",
+                    "basis": "Process water flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 518924.0,
+                    "reference_cost": 15292.0,
+                    "exponent": 0.8,
+                    "reference_CE_index": 551.0,
+                    "installation_factor": 3.1,
+                    "power_rate": 55.9275
+                },
+                "Makeup water pump": {
+                    "correlation_type": "power_law",
+                    "basis": "Makeup water flow rate",
+                    "basis_units": "kg/hr",
+                    "reference_size": 155564.0,
+                    "reference_cost": 6864.0,
+                    "exponent": 0.8,
+                    "reference_CE_index": 551.0,
+                    "installation_factor": 3.1,
+                    "power_rate": 14.914000000000001
+                }
             }
         }
     ],
@@ -8608,23 +8907,6 @@
     "utilities": {
         "heat_utilities": [
             {
-                "id": "low_pressure_steam",
-                "temperature": 425.15,
-                "pressure": 502246.10509656294,
-                "regeneration_price": 0.23167650080000002,
-                "heat_transfer_price": 0.0,
-                "heat_transfer_efficiency": 1.0,
-                "composition": [
-                    {
-                        "phase": "g",
-                        "component_name": "Water",
-                        "mol_fraction": 1.0,
-                        "mass_fraction": 1.0
-                    }
-                ],
-                "quantity_units_for_utility_results": "kJ/hr"
-            },
-            {
                 "id": "cooling_water",
                 "temperature": 298.15,
                 "pressure": 101325.0,
@@ -8634,6 +8916,23 @@
                 "composition": [
                     {
                         "phase": "l",
+                        "component_name": "Water",
+                        "mol_fraction": 1.0,
+                        "mass_fraction": 1.0
+                    }
+                ],
+                "quantity_units_for_utility_results": "kJ/hr"
+            },
+            {
+                "id": "low_pressure_steam",
+                "temperature": 425.15,
+                "pressure": 502246.10509656294,
+                "regeneration_price": 0.23167650080000002,
+                "heat_transfer_price": 0.0,
+                "heat_transfer_efficiency": 1.0,
+                "composition": [
+                    {
+                        "phase": "g",
                         "component_name": "Water",
                         "mol_fraction": 1.0,
                         "mass_fraction": 1.0
