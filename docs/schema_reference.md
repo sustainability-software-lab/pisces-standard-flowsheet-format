@@ -2,7 +2,7 @@
 
 The Standard Flowsheet Format (SFF) is a JSON document strictly adhering to our JSON schema structure. This page breaks down the core sections of the SFF schema in human-readable terms to help developers quickly understand its structure.
 
-> **Current version: v0.1.1.** This release loosens one constraint: the `exclusiveMinimum: 0` on `chemicals[].molar_mass` (CHEM-02) is dropped from the schema and re-homed in the validator as a `warning`. It is a backwards-compatible widening — every valid v0.1.0 document remains a valid v0.1.1 document — and it does not change export output shape. The predecessor v0.1.0 was a milestone release carrying no shape or constraint changes over v0.0.12. The `vX.Y.Z` annotations throughout this page record the version at which each field or constraint was **introduced** (or, for CHEM-02, changed), and remain the definitive history.
+> **Current version: v0.1.3.** This release adds one optional, additive field: `metadata.tags`, a machine-verified array of provenance/quality tags, plus its companion `metadata.reproducibility.comparison_rtol`. Its predecessor v0.1.2 added the per-unit `purchase_cost_correlations` object; v0.1.1 loosened one constraint — the `exclusiveMinimum: 0` on `chemicals[].molar_mass` (CHEM-02) is dropped from the schema and re-homed in the validator as a `warning`. It is a backwards-compatible widening — every valid v0.1.0 document remains a valid v0.1.1 document — and it does not change export output shape. The predecessor v0.1.0 was a milestone release carrying no shape or constraint changes over v0.0.12. The `vX.Y.Z` annotations throughout this page record the version at which each field or constraint was **introduced** (or, for CHEM-02, changed), and remain the definitive history.
 
 ## Core Properties
 
@@ -31,6 +31,8 @@ The `metadata` object provides high-level information about the process flowshee
 - **microorganisms**: Microbial hosts used for bioproduction, if applicable. Represented as a list (not a single string) so that co-cultures and multi-host processes can each be a distinct entry; every entry has a required `name` and an optional `label`.
 - **flowsheet_designers**: Authors who designed the simulation.
 - **reproducibility**: Everything needed to rebuild the environment and re-run the model that produced this flowsheet: the full text and SHA-256 of the environment specification (`environment`) and load script (`load_script`), the pinned `simulator_package` and `flowsheet_model_package` (each identified by a VCS `commit` + `url`, or by a released `version`), and a `resolved` block recording the Python version, platform, environment key, timestamp, and installed package versions observed at export time. Optional — flowsheets exported without a recipe omit it.
+- **tags**: *(optional, v0.1.3+)* Machine-verified provenance/quality tags, a string array over `["exported-from-simulator", "extracted-from-prose", "extracted-from-image", "reproducible"]` (`uniqueItems`). Each value asserts the file passed that tag's associated subset of SFF checks without `warning`-severity findings (see `sff_checks.md` section 8). A declared tag the file does not earn is a **TAG-01** error. A file may claim the tags it earns, fewer, or none.
+- **reproducibility.comparison_rtol**: *(optional, v0.1.3+)* Relative tolerance at which the file asserts the `reproducible` tag holds. **Required** (by a `metadata` `if`/`then`) when `tags` contains `reproducible`. Re-running the embedded recipe must reproduce every numeric field within this bound.
 
 ---
 
