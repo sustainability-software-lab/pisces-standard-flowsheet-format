@@ -701,10 +701,14 @@ model from the embedded recipe and re-running the export produces a document mat
 file field-by-field within `comparison_rtol`. Steps 1–2 are the cheap static precondition
 TAG-01 enforces; step 3 is the heavy harness run performed only by
 `evaluate_sff_tags(run_harness=True)` / `verify_reproducible`. The comparison ignores
-`metadata.tags`, `metadata.reproducibility.comparison_rtol`, and the volatile
-`metadata.reproducibility.resolved.{exported_at,platform,python_version}`; everything else
-(including `resolved.env_key` and `resolved.package_versions`) must match, numeric leaves
-within `comparison_rtol` with an absolute floor near zero.
+`metadata.tags`, `metadata.reproducibility.comparison_rtol`, the volatile
+`metadata.reproducibility.resolved.{exported_at,platform,python_version}`, and the
+`.path` field under each of `environment`/`load_script`/`extended_metadata` (present only
+when the *original* recipe's model directory lived under the repo; the reconstructed
+directory used to re-run the export for verification is always a tempdir outside the repo,
+so a re-export can never carry this field); everything else (including `resolved.env_key`
+and `resolved.package_versions`) must match, numeric leaves within `comparison_rtol` with an
+absolute floor near zero.
 
 ### TAG-01 — declared tags are earned
 - **Statement:** every tag in `metadata.tags` is actually earned by the file. Static tags are

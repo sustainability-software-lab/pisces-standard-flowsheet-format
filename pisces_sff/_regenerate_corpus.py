@@ -55,7 +55,8 @@ def iter_model_dirs(models_root=MODELS_ROOT):
 
 
 def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
-                      sff_version=None):
+                      sff_version=None, stamp_reproducible=False,
+                      comparison_rtol=1e-4, verify=None):
     """
     Export every discovered model into `output_dir` and return the written paths.
 
@@ -76,6 +77,19 @@ def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
         the harness that default is the schema's current ``"version"``
         (:func:`pisces_sff._version.read_schema_version`), so the committed
         corpus auto-syncs to the current schema without a manual pin.
+    stamp_reproducible : bool, optional
+        When True, after exporting each model run verify_reproducible on the
+        written file at `comparison_rtol`; on success, record
+        metadata.reproducibility.comparison_rtol and append "reproducible" to
+        metadata.tags, then rewrite the file. Off by default so ordinary regen
+        stays single-simulation -- this pass costs a SECOND full simulation per
+        model and is run deliberately for a tag rollout.
+    comparison_rtol : float, optional
+        Tolerance recorded and used by the stamping pass. Default 1e-4.
+    verify : callable, optional
+        ``verify(path, rtol=...) -> (matches, diffs)`` used by the stamping pass.
+        Defaults to :func:`pisces_sff.verify_reproducible`, imported lazily. Tests
+        inject a fake.
 
     Returns
     -------
@@ -91,8 +105,47 @@ def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
     for model_dir in iter_model_dirs(models_root):
         output_path = output_dir / f'{model_dir.name}.json'
         export(model_dir, output_path, sff_version=sff_version)
+        if stamp_reproducible:
+            _stamp_reproducible(output_path, comparison_rtol, verify)
         written.append(output_path)
     return written
+
+
+def _stamp_reproducible(output_path, comparison_rtol, verify):
+    """Verify a just-exported file reproduces, and on success stamp it as
+    reproducible: record comparison_rtol and append the tag. Rewrites the file
+    in place. A verification failure raises -- a corpus file must not carry a
+    false reproducible claim."""
+    import json
+    if verify is None:
+        from . import verify_reproducible as verify
+    matches, diffs = verify(str(output_path), rtol=comparison_rtol)
+    if not matches:
+        raise RuntimeError(
+            f'{output_path} did not reproduce within rtol={comparison_rtol}; '
+            f'refusing to stamp reproducible. First diffs: {diffs[:5]}')
+    with open(output_path, 'r', encoding='utf-8') as f:
+        doc = json.load(f)
+    repro = doc['metadata'].setdefault('reproducibility', {})
+    repro['comparison_rtol'] = comparison_rtol
+    tags = doc['metadata'].setdefault('tags', [])
+    if 'reproducible' not in tags:
+        tags.append('reproducible')
+    _write_json(output_path, doc)
+
+
+def _write_json(output_path, doc):
+    """Write `doc` as JSON matching _export.py's _write_sff_json BYTE FOR BYTE
+    (same open()/json.dump() call shape: default text-mode encoding, indent=4,
+    default ensure_ascii=True, no trailing newline) so a stamped corpus file
+    stays diff-clean against a freshly harness-exported one -- only the two
+    stamped keys (metadata.tags, metadata.reproducibility.comparison_rtol)
+    should differ. Deliberately does NOT add encoding=, newline=, or a trailing
+    '\\n' -- _write_sff_json has none of those, confirmed against the committed
+    corn file's raw bytes (no non-ASCII bytes, no trailing newline)."""
+    import json
+    with open(output_path, 'w') as f:
+        json.dump(doc, f, indent=4)
 
 
 def main(argv=None):

@@ -101,6 +101,96 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
         self.assertTrue(received)
         self.assertTrue(all(v is None for v in received))
 
+    def test_stamp_reproducible_appends_tag_and_rtol(self):
+        """regenerate_corpus(stamp_reproducible=True) with a passing verify ->
+        each written file gains reproducible tag + comparison_rtol."""
+        import json
+
+        def fake_export(model_dir, output_path, sff_version=None, **kw):
+            doc = {"metadata": {"sff_version": "0.1.3",
+                                "tags": ["exported-from-simulator"],
+                                "reproducibility": {"environment": {},
+                                                    "load_script": {}}}}
+            Path(output_path).write_text(json.dumps(doc), encoding="utf-8")
+            return Path(output_path)
+
+        with tempfile.TemporaryDirectory() as d:
+            written = self.m.regenerate_corpus(
+                d, export=fake_export, stamp_reproducible=True,
+                comparison_rtol=1e-4, verify=lambda p, rtol=None: (True, []))
+            for path in written:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+                self.assertIn("reproducible", doc["metadata"]["tags"])
+                self.assertEqual(
+                    doc["metadata"]["reproducibility"]["comparison_rtol"], 1e-4)
+
+    def test_stamp_reproducible_raises_and_does_not_write_on_failed_verify(self):
+        """regenerate_corpus(stamp_reproducible=True) with a FAILING verify ->
+        raises RuntimeError rather than stamping a false reproducible claim, and
+        leaves the file's tags/comparison_rtol untouched."""
+        import json
+
+        def fake_export(model_dir, output_path, sff_version=None, **kw):
+            doc = {"metadata": {"sff_version": "0.1.3",
+                                "tags": ["exported-from-simulator"]}}
+            Path(output_path).write_text(json.dumps(doc), encoding="utf-8")
+            return Path(output_path)
+
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(RuntimeError):
+                self.m.regenerate_corpus(
+                    d, export=fake_export, stamp_reproducible=True,
+                    comparison_rtol=1e-4,
+                    verify=lambda p, rtol=None: (False, ["some/path: 1 != 2"]))
+            # Whichever file was mid-stamp when the first failure raised must
+            # not have gained the tag or comparison_rtol.
+            for path in Path(d).glob("*.json"):
+                doc = json.loads(path.read_text(encoding="utf-8"))
+                self.assertNotIn("reproducible", doc["metadata"].get("tags", []))
+                self.assertNotIn(
+                    "comparison_rtol", doc["metadata"].get("reproducibility", {}))
+
+
+class TestWriteJson(unittest.TestCase):
+    """_write_json must match _export.py's _write_sff_json byte-for-byte (same
+    json.dump call shape: indent=4, default ensure_ascii, no explicit encoding/
+    newline handling, no trailing newline) -- see pisces_sff/_export.py's
+    _write_sff_json (`json.dump(doc, f, indent=4)` inside `open(path, "w")`).
+    A stamped corpus file must stay diff-clean against a freshly
+    harness-exported one apart from the two stamped keys."""
+
+    def setUp(self):
+        self.m = load_module()
+
+    def test_matches_write_sff_json_formatting(self):
+        import json as _json
+
+        doc = {"metadata": {"sff_version": "0.1.3", "tags": ["reproducible"]},
+              "unicode_check": "→"}  # non-ASCII to probe ensure_ascii
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "out.json"
+            self.m._write_json(out, doc)
+            raw = out.read_bytes()
+
+            expected_path = Path(d) / "expected.json"
+            with open(expected_path, "w") as f:  # mirrors _write_sff_json exactly
+                _json.dump(doc, f, indent=4)
+            expected = expected_path.read_bytes()
+
+        self.assertEqual(raw, expected)
+        self.assertFalse(raw.endswith(b"\n"))          # no trailing newline
+        self.assertNotIn(b"\xe2\x86\x92", raw)          # ensure_ascii escapes it
+        self.assertIn(b"\\u2192", raw)                  # escaped as →
+
+    def test_round_trips_the_document(self):
+        import json as _json
+
+        doc = {"a": 1, "b": [1, 2, 3], "metadata": {"tags": ["x"]}}
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "out.json"
+            self.m._write_json(out, doc)
+            self.assertEqual(_json.loads(out.read_text(encoding="utf-8")), doc)
+
 
 if __name__ == "__main__":
     unittest.main()

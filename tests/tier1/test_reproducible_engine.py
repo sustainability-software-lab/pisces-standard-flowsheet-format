@@ -61,6 +61,31 @@ class TestDeepCompare(unittest.TestCase):
         reexport = {"metadata": {"reproducibility": {"resolved": {"env_key": "b"}}}}
         self.assertTrue(V._deep_compare_reexport(original, reexport, 1e-4))
 
+    def test_recipe_path_present_only_in_original_is_ignored(self):
+        """A repo-relative `path` on environment/load_script/extended_metadata
+        (recorded by _runner.py._file_record only when the ORIGINAL model
+        directory lived under REPO_ROOT) is ignored, because
+        _reconstruct_model_dir always writes the reconstruction to a tempdir
+        OUTSIDE the repo -- so a re-export can never carry this key. Without
+        this ignore, no in-repo model could ever earn `reproducible` (the key
+        would always show as "present in only one document")."""
+        original = {"metadata": {"reproducibility": {
+            "environment": {"filename": "environment.yaml", "content": "x",
+                            "path": "pisces_sff/models/foo/environment.yaml"},
+            "load_script": {"filename": "load.py", "content": "y",
+                            "path": "pisces_sff/models/foo/load.py"},
+            "extended_metadata": {"filename": "extended_metadata.yaml",
+                                  "content": "z",
+                                  "path": "pisces_sff/models/foo/extended_metadata.yaml"},
+        }}}
+        reexport = {"metadata": {"reproducibility": {
+            "environment": {"filename": "environment.yaml", "content": "x"},
+            "load_script": {"filename": "load.py", "content": "y"},
+            "extended_metadata": {"filename": "extended_metadata.yaml",
+                                  "content": "z"},
+        }}}
+        self.assertEqual(V._deep_compare_reexport(original, reexport, 1e-4), [])
+
 
 class TestReconstructModelDir(unittest.TestCase):
     def _doc(self):

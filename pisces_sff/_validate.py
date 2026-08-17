@@ -1587,12 +1587,25 @@ _REPRO_DEFAULT_RTOL = 1e-4
 #: annotations the exporter never re-emits. See sff_checks.md section 8 and the
 #: plan's "Spec clarification" note (comparison_rtol is a post-hoc annotation, so
 #: it is ignored alongside metadata.tags).
+#:
+#: The three `.../path` entries cover _runner.py's _file_record: it records a
+#: repo-relative `path` only when the original model directory lives under
+#: REPO_ROOT (true for every model under pisces_sff/models/), via
+#: `path.relative_to(REPO_ROOT)`. _reconstruct_model_dir() below always writes
+#: the reconstructed recipe into a tempdir OUTSIDE the repo (by design, for
+#: verification isolation), so a re-export's `path` key is always absent
+#: regardless of whether the original had one -- an unavoidable, deterministic
+#: artifact of how verification itself is performed, not a sign of drift.
+#: Without this, no in-repo model could ever earn `reproducible`.
 _REPRO_IGNORE_PATHS = frozenset({
     'metadata/tags',
     'metadata/reproducibility/comparison_rtol',
     'metadata/reproducibility/resolved/exported_at',
     'metadata/reproducibility/resolved/platform',
     'metadata/reproducibility/resolved/python_version',
+    'metadata/reproducibility/environment/path',
+    'metadata/reproducibility/load_script/path',
+    'metadata/reproducibility/extended_metadata/path',
 })
 
 
