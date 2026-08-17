@@ -294,6 +294,28 @@ class TestGetUtilityResults(unittest.TestCase):
         self.assertEqual(pu_agents, {_export.PowerUtility})
         self.assertEqual(ou_agents, set())
 
+    def test_natural_gas_none_is_skipped_without_raising(self):
+        """A unit whose natural_gas attribute is present but None (no gas
+        stream attached) contributes no other-utility agent and does not raise
+        AttributeError while reading ou.F_mass."""
+        unit = types.SimpleNamespace(natural_gas=None)
+        u_cons, u_prod, hu_agents, pu_agents, ou_agents = \
+            _export.get_utility_results(unit)
+        self.assertEqual(ou_agents, set())
+        self.assertEqual(u_cons, {})
+        self.assertEqual(u_prod, {})
+
+    def test_power_utility_none_is_skipped_without_raising(self):
+        """A unit whose power_utility attribute is present but None contributes
+        no power consumption/production and does not raise AttributeError while
+        reading pu.consumption."""
+        unit = types.SimpleNamespace(power_utility=None)
+        u_cons, u_prod, hu_agents, pu_agents, ou_agents = \
+            _export.get_utility_results(unit)
+        self.assertEqual(u_cons, {})
+        self.assertEqual(u_prod, {})
+        self.assertEqual(pu_agents, {_export.PowerUtility})
+
 
 class _FakePhaseStream:
     """Stand-in for `stream[phase]`: only the attributes get_composition /
@@ -517,6 +539,108 @@ class TestIsFeedstockDirect(unittest.TestCase):
         carbon flow."""
         internal_feed = self._feed("weird", types.SimpleNamespace(), 500.0)
         self.assertFalse(_export.is_feedstock(internal_feed, [internal_feed]))
+
+    def _counting_feed(self, ID, source, carbon_flow, counter):
+        def get_atomic_flow(el):
+            if el == "C":
+                counter[0] += 1
+                return carbon_flow
+            return 0.0
+        return types.SimpleNamespace(ID=ID, source=source,
+                                     get_atomic_flow=get_atomic_flow)
+
+    def test_atomic_flow_is_read_once_per_feed(self):
+        """is_feedstock reads get_atomic_flow('C') exactly once per boundary
+        feed (not twice for the running maximum) when computing the max-carbon
+        feed internally."""
+        counter = [0]
+        corn = self._counting_feed("corn", None, 100.0, counter)
+        water = self._counting_feed("water", None, 0.0, counter)
+        _export.is_feedstock(corn, [corn, water])
+        self.assertEqual(counter[0], 2)
+
+    def test_precomputed_max_feed_avoids_recomputation(self):
+        """When the max-carbon feed is supplied, is_feedstock does not scan the
+        feeds again -- it reads no atomic flows at all."""
+        counter = [0]
+        corn = self._counting_feed("corn", None, 100.0, counter)
+        water = self._counting_feed("water", None, 0.0, counter)
+        best = _export._max_carbon_boundary_feed([corn, water])
+        counter[0] = 0
+        self.assertTrue(_export.is_feedstock(corn, [corn, water], best))
+        self.assertEqual(counter[0], 0)
+
+
+class TestMaxCarbonBoundaryFeed(unittest.TestCase):
+    def _feed(self, ID, source, carbon_flow):
+        return types.SimpleNamespace(
+            ID=ID, source=source,
+            get_atomic_flow=lambda el: carbon_flow if el == "C" else 0.0)
+
+    def test_picks_the_highest_carbon_boundary_feed(self):
+        """_max_carbon_boundary_feed returns the boundary feed with the highest
+        carbon atomic flow."""
+        corn = self._feed("corn", None, 100.0)
+        water = self._feed("water", None, 0.0)
+        self.assertIs(_export._max_carbon_boundary_feed([corn, water]), corn)
+
+    def test_excludes_non_boundary_feeds(self):
+        """A feed with a source is not a boundary feed and cannot be selected."""
+        internal = self._feed("internal", types.SimpleNamespace(), 500.0)
+        self.assertIsNone(_export._max_carbon_boundary_feed([internal]))
+
+    def test_no_carbon_feed_yields_none(self):
+        """When no boundary feed carries carbon, the result is None."""
+        water = self._feed("water", None, 0.0)
+        self.assertIsNone(_export._max_carbon_boundary_feed([water]))
+
+
+class TestGetChemicalEntry(unittest.TestCase):
+    def _chem(self, ID, CAS=None, formula=None, MW=0.0):
+        return types.SimpleNamespace(ID=ID, CAS=CAS, formula=formula, MW=MW)
+
+    def test_vle_chemical_records_cas_as_registry_id(self):
+        """A VLE chemical is marked included_in_thermo and records its CAS as
+        registry_id, with keys in the byte-stable order."""
+        c = self._chem("Water", CAS="7732-18-5", formula="H2O", MW=18.015)
+        entry = _export.get_chemical_entry(c, 0, True, "dict")
+        self.assertEqual(list(entry.keys()),
+                         ["id", "included_in_thermo", "index", "formula",
+                          "registry_id", "molar_mass"])
+        self.assertEqual(entry, {
+            "id": "Water", "included_in_thermo": True, "index": 0,
+            "formula": "H2O", "registry_id": "7732-18-5",
+            "molar_mass": 18.015})
+
+    def test_non_vle_chemical_omits_registry_id(self):
+        """A non-VLE chemical carries molar_mass and no registry_id."""
+        c = self._chem("Ash", CAS=None, formula=None, MW=1.0)
+        entry = _export.get_chemical_entry(c, 3, False, "dict")
+        self.assertNotIn("registry_id", entry)
+        self.assertNotIn("formula", entry)
+        self.assertEqual(entry["included_in_thermo"], False)
+        self.assertEqual(entry["molar_mass"], 1.0)
+
+    def test_falsy_stoichiometry_omits_index(self):
+        """index is emitted only when stoichiometry is truthy."""
+        c = self._chem("Ash", MW=1.0)
+        entry = _export.get_chemical_entry(c, 3, False, None)
+        self.assertNotIn("index", entry)
+
+    def test_vle_chemical_without_cas_raises(self):
+        """A VLE chemical with no CAS cannot get a valid registry_id, so the
+        exporter fails loudly with an SFFExportError naming the chemical rather
+        than emitting registry_id: null (which fails schema validation)."""
+        c = self._chem("Weird", CAS=None, MW=100.0)
+        with self.assertRaises(_export.SFFExportError) as caught:
+            _export.get_chemical_entry(c, 0, True, "dict")
+        self.assertIn("Weird", str(caught.exception))
+
+    def test_vle_chemical_with_empty_cas_raises(self):
+        """An empty-string CAS is also rejected (falsy)."""
+        c = self._chem("Weird", CAS="", MW=100.0)
+        with self.assertRaises(_export.SFFExportError):
+            _export.get_chemical_entry(c, 0, True, "dict")
 
 
 class TestGetStreamRoles(unittest.TestCase):

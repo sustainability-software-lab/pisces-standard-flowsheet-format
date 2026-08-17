@@ -30,6 +30,7 @@ from ._quantity_units import (
     quantity_units_for_design_results,
 )
 from .exceptions import (
+    SFFExportError,
     FlowsheetWriteError,
     DesignInputSpecError,
 )
@@ -247,6 +248,10 @@ def _build_sff_dict(sys, tea=None,
     stream_ids = _assign_stream_ids(all_streams, sff_version)
     all_sys_feeds = list(sys.feeds)
     all_sys_products = list(sys.products)
+    # The highest-carbon boundary feed is invariant across the whole export, so
+    # compute it once here and thread it into is_feedstock / get_stream_roles
+    # rather than have each call re-scan every feed.
+    max_carbon_feed = _max_carbon_boundary_feed(all_sys_feeds)
     if tea is None:
         tea = sys.TEA
     # Pre-0.0.7 emits inline {"value","units"} scalars and the legacy field
@@ -271,7 +276,7 @@ def _build_sff_dict(sys, tea=None,
     metadata['process_simulator'] = {'name': 'BioSTEAM',
                                      'version': bst.__version__}
     metadata['feedstocks'] = [{"display_name": format_name(stream_ids[stream]), "stream_id": stream_ids[stream]}
-                              for stream in all_streams if is_feedstock(stream, all_sys_feeds)]
+                              for stream in all_streams if is_feedstock(stream, all_sys_feeds, max_carbon_feed)]
     metadata['products'] = [{"display_name": format_name(stream_ids[stream]), "stream_id": stream_ids[stream]}
                             for stream in all_streams if is_product(stream, all_sys_products)]
 
@@ -405,7 +410,8 @@ def _build_sff_dict(sys, tea=None,
         # 0.0.10+ declares each stream's roles (base topology role plus any
         # designation roles). Gated so pre-0.0.10 stream shape stays byte-stable.
         if version_tuple(sff_version) >= _ROLES_SINCE:
-            stream["roles"] = get_stream_roles(rs, all_sys_feeds, all_sys_products)
+            stream["roles"] = get_stream_roles(rs, all_sys_feeds, all_sys_products,
+                                               max_carbon_feed)
         streams.append(stream)
     
     ## ------ Chemicals ------ ##
@@ -414,19 +420,7 @@ def _build_sff_dict(sys, tea=None,
     chems = repr_stream.chemicals
     vle_chems = repr_stream.vle_chemicals
     for i, c in zip(range(len(chems)), chems):
-        is_vle = c in vle_chems
-        chemical = {"id": c.ID,
-                    }
-        chemical["included_in_thermo"] = is_vle
-        if stoichiometry: 
-            chemical["index"] = i
-        if c.formula is not None:
-            chemical["formula"] = c.formula
-        if is_vle:
-            chemical["registry_id"] = c.CAS
-        chemical["molar_mass"] = c.MW
-            
-        chemicals.append(chemical)
+        chemicals.append(get_chemical_entry(c, i, c in vle_chems, stoichiometry))
         
     ## ----- Utilities ----- ##
     heat_utilities = []
@@ -972,22 +966,43 @@ def export_biosteam_flowsheet_sff_0_1_1(sys, filepath, tea=None,
 
 #%% Helper functions
 
-def is_feedstock(stream, all_sys_feeds):
+def _max_carbon_boundary_feed(all_sys_feeds):
+    """Return the boundary feed (``source`` is None) with the highest carbon
+    atomic flow, or ``None`` when no boundary feed carries carbon.
+
+    ``get_atomic_flow('C')`` is read once per feed. Ties resolve to the first
+    feed reaching the maximum (strict ``<`` update), matching the historical
+    selection so exporter output stays byte-stable.
+    """
+    max_C_atomic_flow = 0.0
+    max_C_atomic_flow_stream = None
+    for si in all_sys_feeds:
+        if si.source:
+            continue
+        c_flow = si.get_atomic_flow('C')
+        if max_C_atomic_flow < c_flow:
+            max_C_atomic_flow = c_flow
+            max_C_atomic_flow_stream = si
+    return max_C_atomic_flow_stream
+
+
+def is_feedstock(stream, all_sys_feeds, max_carbon_feed=None):
+    """Return whether `stream` is the system's feedstock.
+
+    A stream qualifies when it is a named boundary feed and is the highest-carbon
+    boundary feed of the system. `max_carbon_feed` may be supplied (e.g. by
+    :func:`_build_sff_dict`, which computes it once for the whole export) to skip
+    the per-call feed scan; when omitted it is computed from `all_sys_feeds`.
+    """
     if stream.ID == "":
         return False
     if not stream in all_sys_feeds:
         return False
     # if not stream.price
     #     return False
-    max_C_atomic_flow = 0.0
-    max_C_atomic_flow_stream = None
-    for si in list(all_sys_feeds):
-        if (not si.source) and max_C_atomic_flow < si.get_atomic_flow('C'):
-            max_C_atomic_flow = si.get_atomic_flow('C')
-            max_C_atomic_flow_stream = si
-    if stream == max_C_atomic_flow_stream:
-        return True
-    return False
+    if max_carbon_feed is None:
+        max_carbon_feed = _max_carbon_boundary_feed(all_sys_feeds)
+    return stream == max_carbon_feed
 
 
 def is_product(stream, all_sys_products):
@@ -998,7 +1013,7 @@ def is_product(stream, all_sys_products):
     return True
 
 
-def get_stream_roles(stream, all_sys_feeds, all_sys_products):
+def get_stream_roles(stream, all_sys_feeds, all_sys_products, max_carbon_feed=None):
     """Return the roles a stream plays (see design doc section 1).
 
     Exactly one base topology role is derived from the real source/sink objects
@@ -1041,7 +1056,7 @@ def get_stream_roles(stream, all_sys_feeds, all_sys_products):
         roles.append("input")
         if stream.price and stream.price > 0:
             roles.append("purchased_raw_material")
-        if is_feedstock(stream, all_sys_feeds):
+        if is_feedstock(stream, all_sys_feeds, max_carbon_feed):
             roles.append("feedstock")
     elif has_source:                     # output: has source, no sink
         roles.append("output")
@@ -1101,9 +1116,14 @@ def get_thermo(unit):
 
 
 def get_utility_results(unit):
-    hus = unit.heat_utilities if hasattr(unit, 'heat_utilities') else {}
-    pus = [unit.power_utility] if hasattr(unit, 'power_utility') else {}
-    ous = [unit.natural_gas] if hasattr(unit, 'natural_gas') else {}
+    hus = unit.heat_utilities if hasattr(unit, 'heat_utilities') else []
+    # power_utility / natural_gas may be present but None (attribute defined, no
+    # utility attached); treat that like an absent attribute rather than
+    # dereferencing None (pu.consumption / ou.F_mass) and aborting the export.
+    power_utility = getattr(unit, 'power_utility', None)
+    natural_gas = getattr(unit, 'natural_gas', None)
+    pus = [power_utility] if power_utility is not None else []
+    ous = [natural_gas] if natural_gas is not None else []
     
     u_cons = {}
     u_prod = {}
@@ -1146,7 +1166,59 @@ def get_utility_results(unit):
     return u_cons, u_prod, hu_agents, pu_agents, ou_agents
 
 
-def get_composition(stream, 
+def get_chemical_entry(chemical, index, is_vle, stoichiometry):
+    """Build one SFF ``chemicals[]`` entry from a thermosteam ``Chemical``.
+
+    Parameters
+    ----------
+    chemical : thermosteam.Chemical
+        The chemical to serialize.
+    index : int
+        Position of this chemical in the thermo package; emitted as ``index``
+        only when `stoichiometry` is truthy (index-based reaction stoichiometry
+        references it -- see CHEM-04).
+    is_vle : bool
+        Whether the chemical participates in vapor-liquid equilibrium (is in the
+        stream's ``vle_chemicals``); recorded as ``included_in_thermo``.
+    stoichiometry : str or None
+        Reaction-stoichiometry mode; when truthy, ``index`` is emitted.
+
+    Returns
+    -------
+    dict
+        A ``chemicals[]`` entry. Key order (``id``, ``included_in_thermo``,
+        ``index``?, ``formula``?, ``registry_id``?, ``molar_mass``) is preserved
+        for byte-stable output.
+
+    Raises
+    ------
+    SFFExportError
+        If the chemical is VLE (``included_in_thermo`` true) but exposes no CAS.
+        The schema requires ``registry_id`` for such chemicals, so a missing CAS
+        would otherwise emit ``registry_id: null`` and produce a document that
+        fails validation. Fail loudly here, naming the chemical, rather than
+        writing an invalid file.
+    """
+    c = chemical
+    entry = {"id": c.ID}
+    entry["included_in_thermo"] = is_vle
+    if stoichiometry:
+        entry["index"] = index
+    if c.formula is not None:
+        entry["formula"] = c.formula
+    if is_vle:
+        if not c.CAS:
+            raise SFFExportError(
+                f"chemical {c.ID!r} is included in thermo (VLE) but exposes no "
+                "CAS registry id; SFF requires registry_id for such chemicals. "
+                "Provide a CAS on the chemical or exclude it from thermo."
+            )
+        entry["registry_id"] = c.CAS
+    entry["molar_mass"] = c.MW
+    return entry
+
+
+def get_composition(stream,
                     units='both', # 'mol%', 'mass%', or 'both'
                     ):
     s = stream
@@ -1388,7 +1460,7 @@ def get_design_input_specs(unit): # !!! update
     for p in param_names:
         if hasattr(unit, p):
             try:
-                exec(f'dis[p] = unit.{p}')
+                dis[p] = getattr(unit, p)
             except Exception as e:
                 raise DesignInputSpecError(
                     f"could not read design input spec {p!r} for unit "
