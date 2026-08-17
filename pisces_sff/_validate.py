@@ -18,7 +18,7 @@ from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError
 
 __all__ = ('validate_flowsheet_against_SFF', 'validate_json_against_schema',
-           'CheckResult')
+           'CheckResult', 'evaluate_sff_tags')
 
 #%%
 def validate_json_against_schema(
@@ -1340,6 +1340,155 @@ _REFERENTIAL_IDS = {
 }
 
 
+def _schema_gate(doc, schema):
+    """Run the JSON-Schema gate on an in-memory document, returning one
+    CheckResult (id 'SCHEMA'). In-memory so both the file-based validator and the
+    exporter's tag self-check share one gate without a temp file."""
+    try:
+        validator = Draft7Validator(schema)
+    except SchemaError as e:
+        return CheckResult('SCHEMA', 'error', 'fail',
+                           f'Invalid schema: {e.message}', '<root>')
+    errors = sorted(validator.iter_errors(doc), key=lambda e: list(e.path))
+    if not errors:
+        return CheckResult('SCHEMA', 'error', 'pass', '', '<root>')
+    msgs = ['{}: {}'.format('.'.join(str(p) for p in e.path) or '<root>', e.message)
+            for e in errors]
+    return CheckResult('SCHEMA', 'error', 'fail', '; '.join(msgs), '<root>')
+
+
+def _run_all_checks(doc, schema):
+    """Run the schema gate and every registered check over one document, returning
+    (ctx, results). results is schema-gate first, then _CHECKS, then the XREF-01
+    aggregate. TAG-01 is NOT included here -- callers append it (or not) via
+    _tag_gate. Shared by validate_flowsheet_against_SFF, evaluate_sff_tags, and
+    the exporter's static-tag self-check."""
+    results = [_schema_gate(doc, schema)]
+    ctx = _Context(doc)
+    for check in _CHECKS:
+        try:
+            results.extend(check(ctx))
+        except Exception as exc:  # a broken check must not sink the whole run
+            results.append(_failed(
+                getattr(check, 'check_id', check.__name__), 'error',
+                f'check raised {type(exc).__name__}: {exc}'))
+    results.append(_xref_gate(results))
+    return ctx, results
+
+
+#%% Tags (sff_checks.md section 8)
+
+# The four tag names, also enforced by the schema enum on metadata.tags.
+_TAG_NAMES = ('exported-from-simulator', 'extracted-from-prose',
+              'extracted-from-image', 'reproducible')
+
+# Static subsets. exported-from-simulator uses ALL checks (sentinel None means
+# "every check id that ran"); the extracted tags use exactly {UNIT-10, STR-14}.
+_STATIC_TAG_SUBSETS = {
+    'exported-from-simulator': None,
+    'extracted-from-prose': frozenset({'UNIT-10', 'STR-14'}),
+    'extracted-from-image': frozenset({'UNIT-10', 'STR-14'}),
+}
+
+# Result ids never part of any subset: the schema gate and the two aggregates.
+_NON_SUBSET_IDS = frozenset({'SCHEMA', 'XREF-01', 'TAG-01'})
+
+# Skips always tolerated by exported-from-simulator (legitimate absences).
+_ALWAYS_TOLERATED_SKIPS = frozenset({'STR-03', 'STR-13', 'CHEM-04'})
+
+
+def _skip_tolerated(check_id, ctx):
+    """True if a `skip` from `check_id` is a legitimate absence-of-construct for
+    the exported-from-simulator tag (sff_checks.md section 8 tolerated-skip
+    table). Predicates read only the read-only _Context."""
+    if check_id in _ALWAYS_TOLERATED_SKIPS:
+        return True
+    if check_id == 'STR-10':
+        return _all_streams_empty(ctx)
+    if check_id in ('UNIT-04', 'UNIT-05', 'UNIT-06'):
+        return not _has_reactions(ctx)
+    return False
+
+
+def _conformant(results):
+    """True if the file is schema-valid and has no error-severity *fail* among the
+    semantic checks OTHER than TAG-01 (excluded to avoid circularity). This is the
+    tag earning precondition."""
+    return not any(r.status == 'fail' and r.severity == 'error'
+                   and r.check_id != 'TAG-01' for r in results)
+
+
+def _reproducible_precondition(ctx, results):
+    """Return a list of static-precondition problems for the `reproducible` tag
+    (empty ⇒ precondition holds): recipe present + comparison_rtol recorded +
+    MET-07 not failing. Never runs the harness."""
+    problems = []
+    repro = ctx.metadata.get('reproducibility')
+    if not isinstance(repro, dict) or not isinstance(repro.get('environment'), dict) \
+            or not isinstance(repro.get('load_script'), dict):
+        problems.append('no reproducibility recipe (environment + load_script)')
+        return problems
+    if not isinstance(repro.get('comparison_rtol'), (int, float)):
+        problems.append('metadata.reproducibility.comparison_rtol not recorded')
+    if any(r.check_id == 'MET-07' and r.status == 'fail' for r in results):
+        problems.append('MET-07 digest mismatch')
+    return problems
+
+
+def _earned_tags(ctx, results):
+    """Apply the static earning rules (sff_checks.md section 8) to produce a
+    per-tag verdict dict. reproducible.earned is None here (static path); its
+    blocking holds the precondition problems. Used by evaluate_sff_tags and the
+    TAG-01 aggregate."""
+    declared = set(ctx.metadata.get('tags') or [])
+    conformant = _conformant(results)
+    verdict = {}
+    for tag, subset in _STATIC_TAG_SUBSETS.items():
+        blocking = []
+        for r in results:
+            if r.check_id in _NON_SUBSET_IDS or r.severity == 'info':
+                continue
+            if subset is not None and r.check_id not in subset:
+                continue
+            if r.status == 'fail' and r.severity in ('warning', 'error'):
+                blocking.append(r)
+            elif r.status == 'skip' and not _skip_tolerated(r.check_id, ctx):
+                blocking.append(r)
+        verdict[tag] = {'earned': conformant and not blocking,
+                        'declared': tag in declared, 'blocking': blocking}
+    precondition = _reproducible_precondition(ctx, results)
+    verdict['reproducible'] = {
+        'earned': None, 'declared': 'reproducible' in declared,
+        'blocking': ([] if conformant else ['not conformant']) + precondition}
+    return verdict
+
+
+def _tag_gate(ctx, results):  # TAG-01
+    """Post-pass aggregate (like XREF-01, NOT in _CHECKS): every tag in
+    metadata.tags is earned. Static tags evaluated fully; `reproducible` against
+    its cheap precondition only. Never runs the harness."""
+    declared = ctx.metadata.get('tags')
+    if not declared:
+        return _skipped('TAG-01', 'error', 'no metadata.tags declared', 'metadata')
+    verdict = _earned_tags(ctx, results)
+    violations = []
+    for tag in declared:
+        info = verdict.get(tag)
+        if info is None:
+            continue  # unknown tag name -- the schema enum already rejects it
+        if tag == 'reproducible':
+            if info['blocking']:
+                violations.append(f"'reproducible' precondition unmet: "
+                                  f"{info['blocking']}")
+        elif not info['earned']:
+            ids = [r.check_id for r in info['blocking']]
+            violations.append(f"'{tag}' not earned (blocking: {ids})")
+    if violations:
+        return _failed('TAG-01', 'error',
+                       f'declared tag(s) not earned: {violations}', 'metadata')
+    return _passed('TAG-01', 'error', 'metadata')
+
+
 def validate_flowsheet_against_SFF(json_file, schema_file=None):
     """
     Validate an SFF flowsheet file against the full SFF contract.
@@ -1371,28 +1520,55 @@ def validate_flowsheet_against_SFF(json_file, schema_file=None):
 
     with Path(json_file).open('r', encoding='utf-8') as f:
         doc = json.load(f)
+    with Path(schema_file).open('r', encoding='utf-8') as f:
+        schema = json.load(f)
 
-    results = []
-    schema_valid, schema_errors = validate_json_against_schema(json_file, schema_file)
-    results.append(CheckResult(
-        'SCHEMA', 'error', 'pass' if schema_valid else 'fail',
-        '' if schema_valid else '; '.join(schema_errors), '<root>'))
-
-    ctx = _Context(doc)
-    for check in _CHECKS:
-        try:
-            results.extend(check(ctx))
-        except Exception as exc:  # a broken check must not sink the whole run
-            results.append(_failed(
-                getattr(check, 'check_id', check.__name__), 'error',
-                f'check raised {type(exc).__name__}: {exc}'))
-
-    # XREF-01: referential-integrity gate, aggregated from the checks just run.
-    results.append(_xref_gate(results))
+    ctx, results = _run_all_checks(doc, schema)
+    # TAG-01: declared-tags-earned aggregate, computed from the results above
+    # plus the tag policies (like XREF-01). Never runs the harness.
+    results.append(_tag_gate(ctx, results))
 
     is_valid = not any(r.status == 'fail' and r.severity == 'error'
                        for r in results)
     return is_valid, results
+
+
+def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
+                      conda_exe=None, rtol=None, recreate_env=False, export=None):
+    """
+    Compute the tag verdict for an SFF file.
+
+    Parameters
+    ----------
+    json_file : str or pathlib.Path
+        Path to the SFF JSON file.
+    schema_file : str or pathlib.Path, optional
+        Path to the SFF JSON Schema. Defaults to the schema shipped with this
+        package.
+    run_harness : bool, optional
+        When False (default), the three static tags are fully evaluated and
+        ``reproducible.earned`` is ``None`` ("not evaluated"); fast, no
+        simulation. When True, additionally calls :func:`verify_reproducible` to
+        set ``reproducible.earned`` to a real bool (heavy; obeys the export lock).
+    conda_exe, rtol, recreate_env, export
+        Forwarded to :func:`verify_reproducible` when ``run_harness`` is True.
+
+    Returns
+    -------
+    dict
+        ``{tag: {"earned": bool | None, "declared": bool, "blocking": list}}`` for
+        each of the four tags.
+    """
+    if schema_file is None:
+        schema_file = _SCHEMA_FILE
+    with Path(json_file).open('r', encoding='utf-8') as f:
+        doc = json.load(f)
+    with Path(schema_file).open('r', encoding='utf-8') as f:
+        schema = json.load(f)
+    ctx, results = _run_all_checks(doc, schema)
+    verdict = _earned_tags(ctx, results)
+    # run_harness=True branch is added in the reproducible-engine task.
+    return verdict
 
 
 # Ordered registry of check(ctx) -> list[CheckResult], in sff_checks.md order.

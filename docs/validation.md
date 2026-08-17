@@ -45,6 +45,13 @@ year + 1, rather than a schema constraint), and more. It returns
 Every check cites the `sff_checks.md` ID it implements. See that catalogue for
 the authoritative statement, rationale, and tolerance of each check.
 
+The validator also computes the **TAG-01** aggregate (declared `metadata.tags`
+are actually earned) and exposes `evaluate_sff_tags(file)` to report, per tag,
+whether it is earned and declared. The four tags —
+`exported-from-simulator`, `extracted-from-prose`, `extracted-from-image`,
+`reproducible` — and MET-07 (reproducibility digest correctness) are
+documented in full below.
+
 > Scope of physical checking: balance checking is limited to **local, per-stream
 > self-consistency** (fraction sums, phase-to-total flow agreement, and
 > mass ↔ molar-flow agreement). Cross-unit and system-wide mass closure,
