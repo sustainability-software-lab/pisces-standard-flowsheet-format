@@ -524,19 +524,6 @@ class TestGetReactionsOrder(unittest.TestCase):
         self.assertEqual([r["index"] for r in reactions], [0, 1, 1, 2])
 
 
-class TestGetRxnsSortedByOrderOfCalls(unittest.TestCase):
-    def test_always_returns_an_empty_list(self):
-        """get_rxns_sorted_by_order_of_calls builds rxns_sorted but never
-        appends to it before returning -- documented (dead-code) behavior:
-        the result is always []."""
-        def dummy():
-            pass
-        unit = types.SimpleNamespace(simulate=dummy)
-        rxns = [types.SimpleNamespace(_reaction=dummy)]
-        self.assertEqual(
-            _export.get_rxns_sorted_by_order_of_calls(unit, rxns), [])
-
-
 class TestTraceFunctionCalls(unittest.TestCase):
     def test_records_only_targeted_functions_in_call_order(self):
         """trace_function_calls(A, F) returns the subset of F that A() calls,

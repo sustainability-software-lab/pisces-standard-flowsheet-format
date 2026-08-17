@@ -1388,13 +1388,6 @@ def get_reactions(unit, stoichiometry):
     return reactions
 
 
-def get_rxns_sorted_by_order_of_calls(unit, rxns):
-    rxns_sorted = []
-    rxn_funcs = [i._reaction for i in rxns]
-    rxn_funcs_sorted = trace_function_calls(unit.simulate, rxn_funcs)
-    return rxns_sorted
-
-
 def trace_function_calls(A, F):
     """
     Traces the order of function calls when A is called and returns 
