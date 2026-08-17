@@ -500,6 +500,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ordering-guarantees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ordering Guarantees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -737,6 +748,16 @@
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">export_biosteam_flowsheet_sff</span><span class="p">(</span><span class="n">sys</span><span class="p">,</span> <span class="s2">&quot;sugarcane_ethanol.json&quot;</span><span class="p">)</span>
 </span></code></pre></div>
 <p>This produces a JSON file conforming to the <a href="../schema_reference/">SFF schema</a> with all unit operations, streams, thermodynamic data, utility data, and cost estimates.</p>
+<h2 id="ordering-guarantees">Ordering Guarantees</h2>
+<p>Exports are deterministically ordered: re-exporting the same simulated system
+produces every array in the same order each time. <code>units</code> and <code>streams</code> follow
+the system's own ordering (<code>sys.units</code> / <code>sys.streams</code>), <code>chemicals</code> follows
+the thermodynamic package's <code>CompiledChemicals</code> order, each unit's <code>reactions</code>
+array follows model discovery order (the order the flowsheet author assigned
+the reaction objects to the unit, which also fixes the emitted <code>index</code> field),
+and the <code>heat_utilities</code> / <code>other_utilities</code> registries are sorted by <code>id</code>.
+Array order carries no semantic meaning in the schema — consumers should keep
+matching entries by <code>id</code> — but the stable order makes exports diffable.</p>
 <h2 id="api-reference">API Reference</h2>
 <h3 id="export_biosteam_flowsheet_sffsys-file_path"><code>export_biosteam_flowsheet_sff(sys, file_path)</code></h3>
 <p>Serialize a simulated BioSTEAM <code>System</code> object to an SFF JSON file.</p>
