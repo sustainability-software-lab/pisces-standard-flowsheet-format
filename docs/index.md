@@ -33,3 +33,12 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 getting_started/installation
 getting_started/quickstart
 ```
+
+```{toctree}
+:hidden:
+:caption: The Format
+:maxdepth: 1
+
+the_format/graph_model
+the_format/quantity_units
+```
