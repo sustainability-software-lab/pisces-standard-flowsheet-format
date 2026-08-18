@@ -38,6 +38,17 @@ def corn_registry():
     }
 
 
+def _make_model_stubs(models_root, registry):
+    """Create a load.py stub for each registry entry's model_dir under
+    models_root, so regenerate_corpus's unregistered-dir scan sees exactly
+    the registered recipes (isolates the test from the real pisces_sff/models/
+    tree)."""
+    for entry in registry.values():
+        d = Path(models_root) / entry["model_dir"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "load.py").write_text("# stub\n", encoding="utf-8")
+
+
 class TestIterModelDirs(unittest.TestCase):
     def setUp(self):
         self.m = load_module()
@@ -69,15 +80,18 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             Path(output_path).write_text("{}", encoding="utf-8")
             return Path(output_path)
 
-        with tempfile.TemporaryDirectory() as tmp:
-            written = self.m.regenerate_corpus(tmp, export=fake_export,
-                                               registry=corn_registry())
+        reg = corn_registry()
+        with tempfile.TemporaryDirectory() as tmp, \
+             tempfile.TemporaryDirectory() as mroot:
+            _make_model_stubs(mroot, reg)
+            written = self.m.regenerate_corpus(tmp, models_root=mroot,
+                                               export=fake_export, registry=reg)
             self.assertEqual([p.name for p in written], ["SF_BST_01.json"])
             self.assertEqual(len(calls), 1)
             model_dir, out = calls[0]
             self.assertEqual(
                 model_dir,
-                self.m.MODELS_ROOT / "biosteam_models" / "M_BST_01")
+                Path(mroot) / "biosteam_models" / "M_BST_01")
             self.assertEqual(out.parent, Path(tmp))
             self.assertTrue(out.is_file())
 
@@ -138,9 +152,12 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             Path(output_path).write_text("{}", encoding="utf-8")
             return Path(output_path)
 
-        with tempfile.TemporaryDirectory() as tmp:
-            self.m.regenerate_corpus(tmp, export=fake_export, sff_version="0.0.7",
-                                     registry=corn_registry())
+        reg = corn_registry()
+        with tempfile.TemporaryDirectory() as tmp, \
+             tempfile.TemporaryDirectory() as mroot:
+            _make_model_stubs(mroot, reg)
+            self.m.regenerate_corpus(tmp, models_root=mroot, export=fake_export,
+                                     sff_version="0.0.7", registry=reg)
 
         self.assertTrue(received)
         self.assertTrue(all(v == "0.0.7" for v in received))
@@ -158,9 +175,12 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             Path(output_path).write_text("{}", encoding="utf-8")
             return Path(output_path)
 
-        with tempfile.TemporaryDirectory() as tmp:
-            self.m.regenerate_corpus(tmp, export=fake_export,
-                                     registry=corn_registry())
+        reg = corn_registry()
+        with tempfile.TemporaryDirectory() as tmp, \
+             tempfile.TemporaryDirectory() as mroot:
+            _make_model_stubs(mroot, reg)
+            self.m.regenerate_corpus(tmp, models_root=mroot, export=fake_export,
+                                     registry=reg)
 
         self.assertTrue(received)
         self.assertTrue(all(v is None for v in received))
@@ -178,11 +198,14 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             Path(output_path).write_text(json.dumps(doc), encoding="utf-8")
             return Path(output_path)
 
-        with tempfile.TemporaryDirectory() as d:
+        reg = corn_registry()
+        with tempfile.TemporaryDirectory() as d, \
+             tempfile.TemporaryDirectory() as mroot:
+            _make_model_stubs(mroot, reg)
             written = self.m.regenerate_corpus(
-                d, export=fake_export, stamp_reproducible=True,
+                d, models_root=mroot, export=fake_export, stamp_reproducible=True,
                 comparison_rtol=1e-4, verify=lambda p, rtol=None: (True, []),
-                registry=corn_registry())
+                registry=reg)
             for path in written:
                 doc = json.loads(path.read_text(encoding="utf-8"))
                 self.assertIn("reproducible", doc["metadata"]["tags"])
@@ -201,13 +224,16 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             Path(output_path).write_text(json.dumps(doc), encoding="utf-8")
             return Path(output_path)
 
-        with tempfile.TemporaryDirectory() as d:
+        reg = corn_registry()
+        with tempfile.TemporaryDirectory() as d, \
+             tempfile.TemporaryDirectory() as mroot:
+            _make_model_stubs(mroot, reg)
             with self.assertRaises(RuntimeError):
                 self.m.regenerate_corpus(
-                    d, export=fake_export, stamp_reproducible=True,
-                    comparison_rtol=1e-4,
+                    d, models_root=mroot, export=fake_export,
+                    stamp_reproducible=True, comparison_rtol=1e-4,
                     verify=lambda p, rtol=None: (False, ["some/path: 1 != 2"]),
-                    registry=corn_registry())
+                    registry=reg)
             # Whichever file was mid-stamp when the first failure raised must
             # not have gained the tag or comparison_rtol.
             for path in Path(d).glob("*.json"):
