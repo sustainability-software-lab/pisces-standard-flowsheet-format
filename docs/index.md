@@ -39,6 +39,7 @@ getting_started/quickstart
 :caption: Tutorials
 :maxdepth: 1
 
+tutorials/export_biosteam_to_sff
 tutorials/validate_an_sff_file
 tutorials/read_and_traverse
 tutorials/tags_and_reproducibility
