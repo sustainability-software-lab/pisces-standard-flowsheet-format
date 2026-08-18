@@ -12,9 +12,12 @@ recipe under ``pisces_sff/models/``.
 
 Two entry points share one loop:
 
-* :func:`regenerate_corpus` -- exports each discovered model into a
-  caller-chosen directory. The Tier 3 test calls it with a temporary directory,
-  so running the test never touches the committed corpus.
+* :func:`regenerate_corpus` -- iterates registry entries (from
+  ``pisces_sff/models/all_models.yaml``) and exports each into a caller-chosen
+  directory, naming each output by its flowsheet ID. It refuses to run --
+  raising before exporting anything -- if a ``load.py`` directory exists on
+  disk but is not registered. The Tier 3 test calls it with a temporary
+  directory, so running the test never touches the committed corpus.
 * ``python -m pisces_sff._regenerate_corpus`` -- the one deliberate command that
   writes the committed corpus files in
   ``pisces_sff/exported_flowsheets/bioindustrial_park/``. Regenerating the
@@ -56,16 +59,18 @@ def iter_model_dirs(models_root=MODELS_ROOT):
 
 def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
                       sff_version=None, stamp_reproducible=False,
-                      comparison_rtol=1e-4, verify=None):
+                      comparison_rtol=1e-4, verify=None, registry=None):
     """
-    Export every discovered model into `output_dir` and return the written paths.
+    Export every registered model into `output_dir` and return the written paths.
 
     Parameters
     ----------
     output_dir : str or Path
-        Directory to write ``<model_name>.json`` files into; created if absent.
+        Directory to write ``<flowsheet_id>.json`` files into (flat); created
+        if absent.
     models_root : str or Path, optional
-        Root to discover model recipes under.
+        Root the registry entries' ``model_dir`` paths resolve against, and
+        the root scanned for unregistered recipe directories.
     export : callable, optional
         ``export(model_dir, output_path, sff_version=...)`` used to export one
         model. Defaults to :func:`pisces_sff.export_model` (the full harness),
@@ -90,20 +95,53 @@ def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
         ``verify(path, rtol=...) -> (matches, diffs)`` used by the stamping pass.
         Defaults to :func:`pisces_sff.verify_reproducible`, imported lazily. Tests
         inject a fake.
+    registry : dict, optional
+        A registry mapping as returned by
+        :func:`pisces_sff.load_model_registry`; loaded lazily from the
+        committed ``all_models.yaml`` when omitted. Tests inject a fake.
 
     Returns
     -------
     list of Path
-        The written output files, one per discovered model, in discovery order.
+        The written output files, one per registry entry, in sorted-model-id
+        order.
+
+    Raises
+    ------
+    ValueError
+        If a directory holding a ``load.py`` exists under `models_root` but is
+        not present in the registry: a new recipe must be registered in
+        ``pisces_sff/models/all_models.yaml`` before the corpus can be
+        regenerated. (Dangling registry entries -- registered paths missing on
+        disk -- are already rejected by ``load_model_registry``.)
     """
+    if registry is None:
+        # Lazy relative import: Tier 1 loads this module by file path (no
+        # parent package) and always injects `registry`, so this branch only
+        # runs under a real package import.
+        from ._registry import load_model_registry
+        registry = load_model_registry()
     if export is None:
         from ._harness import export_model
         export = export_model
+    models_root = Path(models_root)
+    registered = {(models_root / entry['model_dir']).resolve()
+                  for entry in registry.values()}
+    unregistered = [d for d in iter_model_dirs(models_root)
+                    if d.resolve() not in registered]
+    if unregistered:
+        listing = ', '.join(str(d) for d in unregistered)
+        raise ValueError(
+            f'model dir(s) on disk but not in the registry: {listing}. '
+            f'Register new recipes in pisces_sff/models/all_models.yaml '
+            f'before regenerating the corpus.')
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     written = []
-    for model_dir in iter_model_dirs(models_root):
-        output_path = output_dir / f'{model_dir.name}.json'
+    for model_id in sorted(registry):
+        entry = registry[model_id]
+        model_dir = models_root / entry['model_dir']
+        output_path = output_dir / f"{entry['flowsheet']}.json"
         export(model_dir, output_path, sff_version=sff_version)
         if stamp_reproducible:
             _stamp_reproducible(output_path, comparison_rtol, verify)
@@ -148,13 +186,15 @@ def _write_json(output_path, doc):
         json.dump(doc, f, indent=4)
 
 
-def main(argv=None):
+def main(argv=None, _regenerate=None):
     """
     Regenerate the committed corpus in-place. See the module docstring.
 
     Parameters
     ----------
     argv : list of str, optional
+    _regenerate : callable, optional
+        Test seam; defaults to :func:`regenerate_corpus`.
 
     Returns
     -------
@@ -169,8 +209,20 @@ def main(argv=None):
         '--sff-version', default=None,
         help='SFF schema version to export against; defaults to the schema\'s '
              'current "version", so the corpus tracks the schema automatically.')
+    parser.add_argument(
+        '--stamp-reproducible', action='store_true',
+        help='after each export, run verify_reproducible and on success stamp '
+             'the file (comparison_rtol + "reproducible" tag). Costs a SECOND '
+             'full simulation per model.')
+    parser.add_argument(
+        '--comparison-rtol', type=float, default=1e-4,
+        help='tolerance recorded and used by --stamp-reproducible '
+             '(default 1e-4).')
     args = parser.parse_args(argv)
-    written = regenerate_corpus(CORPUS_DIR, sff_version=args.sff_version)
+    regenerate = _regenerate if _regenerate is not None else regenerate_corpus
+    written = regenerate(CORPUS_DIR, sff_version=args.sff_version,
+                         stamp_reproducible=args.stamp_reproducible,
+                         comparison_rtol=args.comparison_rtol)
     for path in written:
         print(f'wrote {path}')
     return 0

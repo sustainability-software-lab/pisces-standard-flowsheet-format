@@ -25,6 +25,19 @@ def load_module():
     return module
 
 
+def corn_registry():
+    """Minimal fake registry matching the committed corn recipe. Only the two
+    fields regenerate_corpus reads (model_dir, flowsheet) are required --
+    full-field validation is load_model_registry's job, tested in
+    test_registry.py."""
+    return {
+        "M_BST_01": {
+            "flowsheet": "SF_BST_01",
+            "model_dir": "biosteam_models/M_BST_01",
+        },
+    }
+
+
 class TestIterModelDirs(unittest.TestCase):
     def setUp(self):
         self.m = load_module()
@@ -45,8 +58,10 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
     def setUp(self):
         self.m = load_module()
 
-    def test_calls_export_once_per_model_and_names_outputs(self):
-        """regenerate_corpus calls the injected export once per discovered model and writes one .json per model named by its stem."""
+    def test_calls_export_once_per_entry_and_names_outputs_by_flowsheet_id(self):
+        """regenerate_corpus calls the injected export once per registry entry,
+        resolving the model dir from entry.model_dir and naming the output
+        <flowsheet>.json (SF_BST_01.json for corn) flat in output_dir."""
         calls = []
 
         def fake_export(model_dir, output_path, sff_version=None):
@@ -54,15 +69,62 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             Path(output_path).write_text("{}", encoding="utf-8")
             return Path(output_path)
 
-        model_names = {d.name for d in self.m.iter_model_dirs()}
         with tempfile.TemporaryDirectory() as tmp:
-            written = self.m.regenerate_corpus(tmp, export=fake_export)
-            self.assertEqual(len(written), len(model_names))
-            self.assertEqual(len(calls), len(model_names))
-            for path in written:
-                self.assertEqual(path.suffix, ".json")
-                self.assertIn(path.stem, model_names)
-                self.assertTrue(path.is_file())
+            written = self.m.regenerate_corpus(tmp, export=fake_export,
+                                               registry=corn_registry())
+            self.assertEqual([p.name for p in written], ["SF_BST_01.json"])
+            self.assertEqual(len(calls), 1)
+            model_dir, out = calls[0]
+            self.assertEqual(
+                model_dir,
+                self.m.MODELS_ROOT / "biosteam_models" / "M_BST_01")
+            self.assertEqual(out.parent, Path(tmp))
+            self.assertTrue(out.is_file())
+
+    def test_unregistered_model_dir_raises_before_exporting(self):
+        """A load.py directory on disk that is absent from the registry ->
+        ValueError naming the dir; the injected export is never called."""
+        calls = []
+
+        def fake_export(model_dir, output_path, sff_version=None):
+            calls.append(model_dir)
+
+        with tempfile.TemporaryDirectory() as models_root, \
+             tempfile.TemporaryDirectory() as out:
+            rogue = Path(models_root) / "biosteam_models" / "M_BST_99"
+            rogue.mkdir(parents=True)
+            (rogue / "load.py").write_text("# stub\n", encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                self.m.regenerate_corpus(out, models_root=models_root,
+                                         export=fake_export, registry={})
+            self.assertIn("M_BST_99", str(ctx.exception))
+            self.assertEqual(calls, [])
+
+    def test_entries_export_in_sorted_model_id_order(self):
+        """Two registered fake models -> exports run in sorted-model-id order
+        and outputs are named by each entry's flowsheet id."""
+        order = []
+
+        def fake_export(model_dir, output_path, sff_version=None):
+            order.append(Path(output_path).name)
+            Path(output_path).write_text("{}", encoding="utf-8")
+            return Path(output_path)
+
+        registry = {
+            "M_BST_02": {"flowsheet": "SF_BST_02",
+                         "model_dir": "biosteam_models/M_BST_02"},
+            "M_BST_01": {"flowsheet": "SF_BST_01",
+                         "model_dir": "biosteam_models/M_BST_01"},
+        }
+        with tempfile.TemporaryDirectory() as models_root, \
+             tempfile.TemporaryDirectory() as out:
+            for entry in registry.values():
+                d = Path(models_root) / entry["model_dir"]
+                d.mkdir(parents=True)
+                (d / "load.py").write_text("# stub\n", encoding="utf-8")
+            self.m.regenerate_corpus(out, models_root=models_root,
+                                     export=fake_export, registry=registry)
+        self.assertEqual(order, ["SF_BST_01.json", "SF_BST_02.json"])
 
     def test_threads_explicit_sff_version_to_export(self):
         """regenerate_corpus(sff_version="0.0.7") passes that exact version to every export call."""
@@ -77,7 +139,8 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             return Path(output_path)
 
         with tempfile.TemporaryDirectory() as tmp:
-            self.m.regenerate_corpus(tmp, export=fake_export, sff_version="0.0.7")
+            self.m.regenerate_corpus(tmp, export=fake_export, sff_version="0.0.7",
+                                     registry=corn_registry())
 
         self.assertTrue(received)
         self.assertTrue(all(v == "0.0.7" for v in received))
@@ -96,7 +159,8 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
             return Path(output_path)
 
         with tempfile.TemporaryDirectory() as tmp:
-            self.m.regenerate_corpus(tmp, export=fake_export)
+            self.m.regenerate_corpus(tmp, export=fake_export,
+                                     registry=corn_registry())
 
         self.assertTrue(received)
         self.assertTrue(all(v is None for v in received))
@@ -117,7 +181,8 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             written = self.m.regenerate_corpus(
                 d, export=fake_export, stamp_reproducible=True,
-                comparison_rtol=1e-4, verify=lambda p, rtol=None: (True, []))
+                comparison_rtol=1e-4, verify=lambda p, rtol=None: (True, []),
+                registry=corn_registry())
             for path in written:
                 doc = json.loads(path.read_text(encoding="utf-8"))
                 self.assertIn("reproducible", doc["metadata"]["tags"])
@@ -141,7 +206,8 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
                 self.m.regenerate_corpus(
                     d, export=fake_export, stamp_reproducible=True,
                     comparison_rtol=1e-4,
-                    verify=lambda p, rtol=None: (False, ["some/path: 1 != 2"]))
+                    verify=lambda p, rtol=None: (False, ["some/path: 1 != 2"]),
+                    registry=corn_registry())
             # Whichever file was mid-stamp when the first failure raised must
             # not have gained the tag or comparison_rtol.
             for path in Path(d).glob("*.json"):
@@ -190,6 +256,47 @@ class TestWriteJson(unittest.TestCase):
             out = Path(d) / "out.json"
             self.m._write_json(out, doc)
             self.assertEqual(_json.loads(out.read_text(encoding="utf-8")), doc)
+
+
+class TestMainCli(unittest.TestCase):
+    def setUp(self):
+        self.m = load_module()
+
+    def test_cli_defaults_leave_stamping_off(self):
+        """main([]) -> regenerate called with stamp_reproducible=False and
+        comparison_rtol=1e-4 (ordinary regen stays single-simulation)."""
+        received = {}
+
+        def fake_regenerate(output_dir, sff_version=None,
+                            stamp_reproducible=False, comparison_rtol=1e-4):
+            received.update(stamp_reproducible=stamp_reproducible,
+                            comparison_rtol=comparison_rtol)
+            return []
+
+        rc = self.m.main([], _regenerate=fake_regenerate)
+        self.assertEqual(rc, 0)
+        self.assertFalse(received["stamp_reproducible"])
+        self.assertEqual(received["comparison_rtol"], 1e-4)
+
+    def test_cli_threads_stamp_flags(self):
+        """main(['--stamp-reproducible', '--comparison-rtol', '1e-05']) ->
+        regenerate called with stamp_reproducible=True, comparison_rtol=1e-5,
+        output_dir=CORPUS_DIR."""
+        received = {}
+
+        def fake_regenerate(output_dir, sff_version=None,
+                            stamp_reproducible=False, comparison_rtol=1e-4):
+            received.update(output_dir=Path(output_dir),
+                            stamp_reproducible=stamp_reproducible,
+                            comparison_rtol=comparison_rtol)
+            return []
+
+        rc = self.m.main(["--stamp-reproducible", "--comparison-rtol", "1e-05"],
+                         _regenerate=fake_regenerate)
+        self.assertEqual(rc, 0)
+        self.assertTrue(received["stamp_reproducible"])
+        self.assertEqual(received["comparison_rtol"], 1e-5)
+        self.assertEqual(received["output_dir"], self.m.CORPUS_DIR)
 
 
 if __name__ == "__main__":
