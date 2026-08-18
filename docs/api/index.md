@@ -20,6 +20,7 @@ signatures and docstrings without a simulation.
    verify_reproducible
    CheckResult
    read_schema_version
+   load_model_registry
 ```
 
 ## Exceptions

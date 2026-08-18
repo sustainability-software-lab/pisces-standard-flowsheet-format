@@ -12,7 +12,7 @@ from pisces_sff import validate_json_against_schema, validate_flowsheet_against_
 pkg = os.path.dirname(pisces_sff.__file__)
 schema = os.path.join(pkg, "schema", "sff_schema.json")
 sff = os.path.join(pkg, "exported_flowsheets", "bioindustrial_park",
-                   "corn_dry_grind_ethanol.json")
+                   "SF_BST_01.json")
 
 # Layer 1: structural JSON-Schema gate
 is_valid, errors = validate_json_against_schema(sff, schema)
@@ -26,5 +26,5 @@ for r in results:
         print(r.check_id, r.severity, r.status, r.path)
 ```
 
-`corn_dry_grind_ethanol.json` is the one corpus file in the current 0.1.3 shape;
+`SF_BST_01.json` (corn dry-grind ethanol) is the one corpus file in the current 0.1.3 shape;
 it validates clean (benign `info`/`skip` findings only).
