@@ -2,6 +2,7 @@
 # Sphinx configuration for the Standard Flowsheet Format (SFF) documentation.
 import json
 import os
+import shutil
 import sys
 
 # Put the repo root on sys.path so `import pisces_sff` works without packaging
@@ -17,6 +18,15 @@ _schema_path = os.path.join(
 with open(_schema_path, "r", encoding="utf-8") as _f:
     release = str(json.load(_f)["version"])
 version = release
+
+# --- "Visualize Schema" page: ship the exact committed spec -----------------
+# Copy the schema next to the pre-built jsoncrack bundle so the page's JS can
+# fetch() it at view time. The copy is .gitignore'd (a build product); the
+# committed schema file stays the single source of truth -- nobody ever
+# hand-updates the visualized JSON. Same discipline as __version__ above.
+_viz_static_dir = os.path.join(os.path.dirname(__file__), "_static", "jsoncrack")
+os.makedirs(_viz_static_dir, exist_ok=True)
+shutil.copyfile(_schema_path, os.path.join(_viz_static_dir, "sff_schema.json"))
 
 project = "Standard Flowsheet Format (SFF)"
 author = "Sarang S. Bhagwat and the Project PISCES contributors"
@@ -46,6 +56,7 @@ exclude_patterns = [
     "Thumbs.db",
     ".DS_Store",
     "superpowers/**",
+    "_viz_src/**",  # bundle build recipe, not a docs source (see its README)
 ]
 
 # --- MyST / notebooks ---
