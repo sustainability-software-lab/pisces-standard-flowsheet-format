@@ -27,6 +27,9 @@ from ._harness import *
 from . import _validate
 from ._validate import *
 
+from . import _registry
+from ._registry import *
+
 
 __all__ = (
      *_version.__all__,
@@ -34,4 +37,5 @@ __all__ = (
      *_export.__all__,
      *_harness.__all__,
      *_validate.__all__,
+     *_registry.__all__,
     )

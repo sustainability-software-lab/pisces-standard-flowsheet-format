@@ -31,7 +31,8 @@ SRC = REPO / "pisces_sff"
 TIER1 = Path(__file__).resolve().parent
 
 MODULES = ["_export.py", "_validate.py", "_quantity_units.py", "_harness.py",
-           "_runner.py", "_version.py", "_regenerate_corpus.py", "exceptions.py"]
+           "_runner.py", "_version.py", "_regenerate_corpus.py",
+           "_registry.py", "exceptions.py"]
 
 # name -> reason it needs no dedicated Tier 1 test.
 _EXEMPT = {
@@ -70,7 +71,7 @@ _EXEMPT = {
     # task's brief resolution, no test_runner_helpers.py is created; these two
     # are exempted rather than faked.
     "run_model_export": "real-only; calls module.load() and simulates a real System, covered in Tier 6",
-    "main": "real-only CLI entry point (both _runner.py's and _regenerate_corpus.py's -- _EXEMPT is keyed by name only) delegating to a real export/harness call, covered in Tier 6",
+    "main": "CLI entry points, keyed by name only (_runner.py, _regenerate_corpus.py, _registry.py): each delegates to a helper tested in its own right (Tier 6 for the export/harness paths; write_registry_readmes in tier1/test_registry.py)",
 
     # -- _validate.py: QU-02 and UTIL-03's *substantive* parseable/unparseable
     # assertions, and _unit_is_parseable itself, need the REAL
