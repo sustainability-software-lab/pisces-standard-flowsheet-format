@@ -18,8 +18,8 @@ registry entry declares.
 
 Because different units can report design results in different units, each
 unit also carries its own `quantity_units_for_design_results` map. This map
-resolves the unit string for that particular unit's design-result fields,
-alongside (and layered on top of) the global registry.
+is self-contained: it resolves the unit string for that particular unit's
+design-result fields directly, on its own.
 
 ## The legacy inline shape
 
