@@ -1,0 +1,18 @@
+/* Project PISCES palette mapped onto pydata-sphinx-theme tokens.
+   Blue #0080c0 is lightened on dark backgrounds for contrast. */
+html[data-theme="light"] {
+  --pst-color-primary: #0080c0;
+  --pst-color-secondary: #f59e0b;
+  --pst-color-link: #0080c0;
+  --pst-color-link-hover: #f59e0b;
+  --pst-color-accent: #f59e0b;
+  --pst-color-success: #22c55e;
+}
+html[data-theme="dark"] {
+  --pst-color-primary: #4db8e5;
+  --pst-color-secondary: #f59e0b;
+  --pst-color-link: #4db8e5;
+  --pst-color-link-hover: #fbbf24;
+  --pst-color-accent: #f59e0b;
+  --pst-color-success: #22c55e;
+}

@@ -1,0 +1,8 @@
+sphinx>=7,<9
+pydata-sphinx-theme>=0.15
+myst-nb>=1.1
+sphinx-jsonschema>=1.19
+numpydoc>=1.6
+numpy>=1.26,<2
+jsonschema>=4.20
+pyyaml>=6

@@ -1,83 +1,31 @@
 # Standard Flowsheet Format (SFF)
 
-Welcome to the **Standard Flowsheet Format (SFF)** documentation. SFF is intended to be a universally interoperable file format for process flowsheets, representing them as a relational graph with rich, multi-level data for units, streams, utilities, chemicals, TEA assumptions, and other metadata.
+The **Standard Flowsheet Format (SFF)** is a JSON-based standard for representing
+chemical and bioprocess flowsheets so that designs are portable across process
+simulators. A flowsheet is modeled as a **directed graph**: `units` are nodes,
+`streams` are edges, with `chemicals` and `utilities` as shared registries
+referenced by ID, plus `metadata` for provenance. The format and its reference
+corpus are consumed by [Project PISCES](https://projectpisces.org/).
 
-<div style="text-align: center; margin: 2rem 0;">
-  <a href="schema_reference/" class="md-button md-button--primary" style="margin-right: 1rem;">View Schema Reference</a>
-  <a href="full_schema/" class="md-button" style="margin-right: 1rem;">View Full JSON Schema</a>
-</div>
-
-![Simplified visual representation of the SFF schema](images/SFF_visual_representation.png)
-
-## What is SFF?
-
-SFF is designed to export process flowsheets for interoperability among different process simulators and tools. Currently, SFF exports from **BioSTEAM** are supported out-of-the-box, but the schema is built to be simulator-agnostic. 
-
-With SFF, you can serialize a full chemical or biological process design—including all unit operations, streams, thermodynamics, utility data, and cost estimates—into a clear, human-readable, and machine-readable JSON structure. This ensures that front-end tools, databases, and visualization suites can easily interpret and analyze process data without needing to run complex simulations natively.
-
-## Why use SFF?
-
-- **Interoperability**: Read and write flowsheets across different simulation software.
-- **Data Exchange**: Store process configurations, TEA (Techno-Economic Analysis) data, and LCA (Life Cycle Assessment) boundaries in a standard way.
-- **Web-Friendly**: Because it's based on JSON Schema, it can be easily ingested into web frontends, databases, or parsed in Python, JavaScript, and other languages.
-- **Reproducibility**: Clear definition of design specs, simulation methods, and final cost/utility results helps to reproduce TEA metrics independently.
-
-## Getting Started
-
-To get started using SFF in your applications, check out the [Schema Reference](schema_reference.md) to understand the structure of an SFF JSON document. You can also view the full raw schema on the [Full JSON Schema](full_schema.md) page.
-
-If you prefer to programmatically pull the most recent schema, you can fetch it directly via our GitHub pages deployment URL: `https://sustainability-software-lab.github.io/pisces-standard-flowsheet-format-new/schema.json`
-
-All versions of the SFF schema are available under the `schema/` directory, for example: <a href="schema/schema_v_0.0.2.json" download="schema_v_0.0.2.json">schema/schema_v_0.0.2.json</a>.
-
----
-
-## Example Usage
-
-An SFF document is a simple JSON file that adheres to our strict schema. An exported SFF JSON file provides all the information needed to visualize the process:
-
-```json
-{
-  "metadata": { ... },
-  "chemicals": [ ... ],
-  "utilities": { ... },
-  "units": [ ... ],
-  "streams": [ ... ]
-}
+```{image} images/SFF_visual_representation.png
+:alt: Simplified visual representation of the SFF schema
+:align: center
 ```
 
-Check out our [GitHub repository](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format-new) for full examples from different bioindustrial models.
+## Why SFF?
 
----
+- **Interoperability** — read and write flowsheets across simulators; the schema is simulator-agnostic (BioSTEAM export ships in-box).
+- **Machine- and human-readable** — plain JSON validated by a public JSON Schema (draft-07).
+- **Provenance & reproducibility** — records simulator, DOI, feedstocks/products, TEA year, and machine-verified provenance tags.
 
-## Repository Structure
+## What this repo provides
 
+- **The spec** — `pisces_sff/schema/sff_schema.json` (current version **0.1.3**).
+- **A reference exporter** — serializes a simulated BioSTEAM `System` to conforming SFF JSON.
+- **A two-layer validator** — a `jsonschema` structural gate plus a semantic-check engine.
+- **A corpus** — 18 pre-exported bioindustrial flowsheets.
+
+```{toctree}
+:hidden:
+:maxdepth: 2
 ```
-pisces-standard-flowsheet-format/
-├── pisces_sff/                          # Python package
-│   ├── __init__.py                      # public API
-│   ├── base.py                          # SFFExporter and SFFImporter Protocols
-│   ├── core/                            # shared utilities
-│   │   ├── validate.py                  # validate_sff(data, schema_version)
-│   │   └── io.py                        # write_sff(...), read_sff(...)
-│   └── biosteam/                        # BioSTEAM export adapter
-│       ├── __init__.py
-│       └── export.py
-├── examples/                            # Usage examples
-│   └── biosteam_export.py
-├── schema/                              # JSON schema definitions
-│   ├── schema_v_0.0.1.json
-│   └── schema_v_0.0.2.json              # Latest version
-├── exported_flowsheets/                 # Sample SFF data (11 flowsheets)
-│   └── bioindustrial_park/
-├── docs/                                # This documentation site
-│   ├── index.md
-│   ├── biosteam_export.md
-│   ├── extending.md
-│   ├── schema_reference.md
-│   └── full_schema.md
-├── pyproject.toml
-└── mkdocs.yml
-```
-
-For details on exporting BioSTEAM flowsheets, see the [BioSTEAM Export](biosteam_export.md) page. To add support for a new simulator, see [Extending](extending.md).
