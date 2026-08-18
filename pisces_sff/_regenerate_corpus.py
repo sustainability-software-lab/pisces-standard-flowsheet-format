@@ -7,8 +7,8 @@
 # for license details.
 
 """
-Regenerate the committed reference corpus by exporting every model that has a
-recipe under ``pisces_sff/models/``.
+Regenerate the committed reference corpus by exporting every model registered
+in ``pisces_sff/models/all_models.yaml``.
 
 Two entry points share one loop:
 
@@ -16,7 +16,7 @@ Two entry points share one loop:
   ``pisces_sff/models/all_models.yaml``) and exports each into a caller-chosen
   directory, naming each output by its flowsheet ID. It refuses to run --
   raising before exporting anything -- if a ``load.py`` directory exists on
-  disk but is not registered. The Tier 3 test calls it with a temporary
+  disk but is not registered. The Tier 6 test calls it with a temporary
   directory, so running the test never touches the committed corpus.
 * ``python -m pisces_sff._regenerate_corpus`` -- the one deliberate command that
   writes the committed corpus files in

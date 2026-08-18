@@ -184,14 +184,37 @@ it once per clone:
 """
 
 
+def _table_cell(value):
+    """
+    Sanitize one value for a generated-Markdown table cell.
+
+    Collapses all whitespace runs (including newlines from YAML block
+    scalars) to single spaces and escapes literal ``|`` as ``\\|``, so no
+    registry value can silently add rows or columns to the rendered table.
+
+    Parameters
+    ----------
+    value : object
+        The raw registry field value.
+
+    Returns
+    -------
+    str
+        The cell text, single-line, with pipes escaped.
+    """
+    return ' '.join(str(value).split()).replace('|', '\\|')
+
+
 def render_registry_readme(registry):
     """
     Render the registry README content.
 
-    Deterministic: rows are emitted in sorted-model-id order and multi-line
-    descriptions are collapsed to single spaces, so rendering twice always
-    produces identical text (which is what lets the pre-commit hook run
-    unconditionally and the sync test compare bytes).
+    Deterministic: rows are emitted in sorted-model-id order and every cell
+    is sanitized by :func:`_table_cell` (whitespace collapsed to single
+    spaces, pipes escaped), so rendering twice always produces identical
+    text (which is what lets the pre-commit hook run unconditionally and
+    the sync test compare bytes) and no registry value can corrupt the
+    table shape.
 
     Parameters
     ----------
@@ -206,11 +229,12 @@ def render_registry_readme(registry):
     rows = []
     for model_id in sorted(registry):
         entry = registry[model_id]
-        description = ' '.join(str(entry['description']).split())
         rows.append(
-            f"| {model_id} | {entry['flowsheet']} | {entry['title']} "
-            f"| {description} | {entry['simulator']} "
-            f"| {entry['source_corpus']} |")
+            f"| {_table_cell(model_id)} | {_table_cell(entry['flowsheet'])} "
+            f"| {_table_cell(entry['title'])} "
+            f"| {_table_cell(entry['description'])} "
+            f"| {_table_cell(entry['simulator'])} "
+            f"| {_table_cell(entry['source_corpus'])} |")
     return _README_TEMPLATE.format(table='\n'.join(rows))
 
 

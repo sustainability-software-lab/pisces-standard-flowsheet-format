@@ -257,6 +257,35 @@ class TestReadmeGeneration(unittest.TestCase):
                     f"{path} is stale -- regenerate with: "
                     f"python -m pisces_sff._registry")
 
+    def test_table_cells_survive_pipes_and_newlines(self):
+        """A registry entry whose title carries a literal '|' and a YAML
+        block-scalar newline, and whose description carries a '|', renders as
+        exactly ONE single-line table row with exactly 7 column-boundary
+        pipes (6 cells) -- the hostile characters are escaped/collapsed, not
+        allowed to silently add columns or rows. render_registry_readme only
+        reads the six displayed fields, so a hand-built entry suffices."""
+        registry = {
+            "M_BST_98": {
+                "flowsheet": "SF_BST_98",
+                "simulator": "biosteam",
+                "model_dir": "biosteam_models/M_BST_98",
+                "flowsheet_file": "bioindustrial_park/SF_BST_98.json",
+                "title": "Corn | maize\nethanol",
+                "description": "Uses a 60|40 split.",
+                "source_corpus": "Bioindustrial-Park",
+            },
+        }
+        text = self.m.render_registry_readme(registry)
+        rows = [line for line in text.splitlines() if "M_BST_98" in line]
+        self.assertEqual(len(rows), 1, "hostile cells must not add rows")
+        row = rows[0]
+        boundary_pipes = row.count("|") - row.count("\\|")
+        self.assertEqual(
+            boundary_pipes, 7,
+            f"hostile cells must not add columns: {row!r}")
+        self.assertIn("Corn \\| maize ethanol", row)
+        self.assertIn("60\\|40", row)
+
 
 if __name__ == "__main__":
     unittest.main()
