@@ -55,11 +55,14 @@ function enumerateCollapsiblePaths(value, path = [], out = []) {
 }
 
 // Initial view: everything collapsed except the root (never in the set: []
-// is a prefix of every path and would blank the graph) and "properties", so
-// the top-level SFF section nodes are visible-but-collapsed on load.
+// is a prefix of every path and would blank the graph), "properties", and each
+// of properties' direct children -- so every top-level SFF section renders as
+// its own node on load, each with its contents collapsed. Anything deeper than
+// a section (length > 2 under "properties") stays collapsed so the graph does
+// not explode.
 function initialCollapsedPaths(schema) {
   return enumerateCollapsiblePaths(schema)
-    .filter((p) => !(p.length === 1 && p[0] === "properties"))
+    .filter((p) => !(p[0] === "properties" && p.length <= 2))
     .map(pathKey);
 }
 
