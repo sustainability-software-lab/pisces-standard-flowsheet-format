@@ -1,0 +1,31 @@
+#!/bin/sh
+# Regenerate the registry-derived READMEs and stage them. Committed hook;
+# activate once per clone with:
+#     git config core.hooksPath .githooks
+#     git config sff.python <path-to-a-python-with-pyyaml>   # only if python3/python don't resolve
+#
+# Runs the generator as a script (pisces_sff/_registry.py), NOT as
+# `python -m pisces_sff._registry`: -m imports pisces_sff/__init__.py, which
+# pulls in the heavy biosteam stack; the script form needs only pyyaml.
+# Git runs hooks from the repository root, so relative paths below are safe.
+
+PY="$(git config --get sff.python)"
+if [ -z "$PY" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+        PY=python3
+    elif command -v python >/dev/null 2>&1; then
+        PY=python
+    else
+        echo "pre-commit: no Python found. Set one with:" >&2
+        echo "    git config sff.python <path-to-a-python-with-pyyaml>" >&2
+        exit 1
+    fi
+fi
+
+if ! "$PY" pisces_sff/_registry.py; then
+    echo "pre-commit: README generation failed ($PY pisces_sff/_registry.py)." >&2
+    echo "pre-commit: fix pisces_sff/models/all_models.yaml (or sff.python) and retry." >&2
+    exit 1
+fi
+
+git add pisces_sff/models/README.md pisces_sff/exported_flowsheets/README.md
