@@ -83,7 +83,14 @@ html_theme_options = {
     "github_url": "https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format",
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
     "show_prev_next": False,
-    "logo": {"text": "Standard Flowsheet Format"},
+    # Navbar brand: light/dark logo images (paths relative to html_static_path).
+    # The theme swaps them with the theme-switcher; alt_text replaces the text
+    # brand for screen readers.
+    "logo": {
+        "image_light": "_static/SFF_Logo_light.png",
+        "image_dark": "_static/SFF_Logo_dark.png",
+        "alt_text": "Standard Flowsheet Format",
+    },
     # First five sections stay visible in the navbar; the rest (Validation &
     # Checks, API Reference, Extending SFF, Contributions) collapse into the
     # theme's "More" dropdown.

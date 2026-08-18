@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="images/SFF_Logo_light.png#gh-light-mode-only" alt="Standard Flowsheet Format (SFF)" width="360">
+  <img src="images/SFF_Logo_dark.png#gh-dark-mode-only" alt="Standard Flowsheet Format (SFF)" width="360">
+</p>
+
 # Standard Flowsheet Format (SFF)
 
 The [Standard Flowsheet Format (SFF)](https://pisces-standard-flowsheet-format.readthedocs.io/) is a JSON-based standard to represent chemical process flowsheets for interoperability across process simulators. Currently supports direct export from BioSTEAM and SuperPro Designer.
