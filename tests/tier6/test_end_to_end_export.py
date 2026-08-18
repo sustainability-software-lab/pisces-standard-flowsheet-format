@@ -8,7 +8,7 @@
 # scratch on a cache miss (tens of minutes) and then simulates. Run it with:
 #
 #     $env:SFF_TEST_TIER6 = "1"
-#     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier6/test_end_to_end_export.py -q
+#     python -m pytest tests/tier6/test_end_to_end_export.py -q
 #
 # This is the ONLY tier in which the recipe's pins are what actually ran -- the
 # export happens inside the environment environment.yaml describes -- and

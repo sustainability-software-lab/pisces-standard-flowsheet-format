@@ -64,14 +64,14 @@ dependencies:
       - chaospy==4.3.15
       # Declared by Bioindustrial-Park (SALib and seaborn are deliberately
       # excluded: BIP declares them, but neither is installed in the reference
-      # HP_2024 environment that exports this model today, so neither is
+      # environment that exports this model today, so neither is
       # required to load and simulate it.)
       - scikit-learn==1.6.1
       # Transitive dependencies. Because dependency resolution is off
       # (PIP_NO_DEPS=1), every transitive requirement of the packages above must
       # be listed explicitly. These were discovered empirically -- the
       # environment was built and the model loaded and simulated repeatedly,
-      # each missing import added here at its HP_2024 version -- until every
+      # each missing import added here at its pinned version -- until every
       # import resolved. Grouped by the direct dependency that pulls them in.
       - colorama==0.4.6      # colorpalette
       - ansicolors==1.1.8    # colorpalette (imports as `colors`)

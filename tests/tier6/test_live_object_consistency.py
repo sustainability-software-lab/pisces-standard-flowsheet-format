@@ -25,7 +25,7 @@
 # biorefinery simulation in this process. Run it with:
 #
 #     $env:SFF_TEST_TIER6 = "1"
-#     & "C:\Users\saran\anaconda3\envs\HP_2024\python.exe" -m pytest tests/tier6/test_live_object_consistency.py -q
+#     python -m pytest tests/tier6/test_live_object_consistency.py -q
 #
 # Must not run concurrently with any other simulating test (shared numba
 # cache); the sibling Tier 6 file documents the same constraint.

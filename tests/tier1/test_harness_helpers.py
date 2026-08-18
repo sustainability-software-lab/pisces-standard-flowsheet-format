@@ -556,7 +556,7 @@ class TestExportModelInvocation(unittest.TestCase):
 
         with mock.patch.dict(
             os.environ,
-            {"CONDA_PREFIX": "C:\\envs\\HP_2024", "CONDA_DEFAULT_ENV": "HP_2024"},
+            {"CONDA_PREFIX": "/path/to/envs/some-env", "CONDA_DEFAULT_ENV": "some-env"},
         ):
             self.harness.export_model(
                 self.model_dir, self.output, conda_exe=self.conda_exe, run=self.fake_run
