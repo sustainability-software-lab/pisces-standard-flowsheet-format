@@ -48,7 +48,6 @@ exclude_patterns = [
     # exclusion for its page when it lands the rewritten content.
     "contributions.md",
     "extending.md",
-    "validation.md",
 ]
 
 # --- MyST / notebooks ---
