@@ -3,8 +3,14 @@
 This page renders the current SFF JSON Schema
 (`pisces_sff/schema/sff_schema.json`) as an interactive node graph, powered by
 [JSON Crack](https://github.com/AykutSarac/jsoncrack.com). Drag to pan, scroll
-or use the on-canvas controls to zoom. The graph is generated from the exact
-committed schema file at docs-build time, so it can never drift from the spec.
+or use the on-canvas controls to zoom. The graph starts
+collapsed: the schema root and its top-level sections are shown, and clicking
+a row's chevron expands that container by exactly one level (newly revealed
+containers start collapsed). Hover a node to see the schema `description` of
+the field it represents; use the **Expand all** and **Reset view** buttons to
+jump between the full graph and the initial view. The graph is generated from
+the exact committed schema file at docs-build time, so it can never drift from
+the spec.
 
 ```{raw} html
 <style>

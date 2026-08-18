@@ -1,7 +1,7 @@
 // Entry point for the docs "Visualize Schema" page bundle.
 // Built locally with esbuild (see package.json in this directory); the outputs
-// docs/_static/jsoncrack/sff-viz.{js,css} are COMMITTED. Rebuild only when
-// bumping jsoncrack-react -- see README.md alongside this file.
+// docs/_static/jsoncrack/sff-viz.{js,css} are COMMITTED. Rebuild whenever this
+// file changes or a dependency pin bumps -- see README.md alongside this file.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { JSONCrack } from "jsoncrack-react";

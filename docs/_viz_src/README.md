@@ -3,7 +3,8 @@
 Source for the committed pre-built bundle behind the docs **Visualize Schema**
 page: `docs/_static/jsoncrack/sff-viz.js` + `sff-viz.css`.
 
-Rebuild **only** when bumping `jsoncrack-react` (or the react/esbuild pins):
+Rebuild whenever **`entry.jsx` changes**, and when bumping `jsoncrack-react`
+(or the react/esbuild pins):
 
     cd docs/_viz_src
     npm install
