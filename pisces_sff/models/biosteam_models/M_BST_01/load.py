@@ -32,7 +32,7 @@ FLOWSHEET_MODEL_PACKAGE = 'biorefineries'
 # a branch is not a pin, and is recorded so a reader can locate the commit.
 PACKAGE_BRANCHES = {'biorefineries': 'master'}
 
-MODEL_NAME = 'corn_dry_grind_ethanol'
+MODEL_NAME = 'M_BST_01'
 
 # Export-behavior flags forwarded to the exporter. Authored descriptive
 # metadata (source_doi, process_title, flowsheet_designers, microorganisms)

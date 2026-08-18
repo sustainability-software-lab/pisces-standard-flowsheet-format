@@ -33,7 +33,7 @@ CORN_ENV = (
     / "pisces_sff"
     / "models"
     / "biosteam_models"
-    / "corn_dry_grind_ethanol"
+    / "M_BST_01"
     / "environment.yaml"
 )
 

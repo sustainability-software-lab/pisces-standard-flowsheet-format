@@ -42,7 +42,7 @@ from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = (REPO_ROOT / "pisces_sff" / "models" / "biosteam_models"
-             / "corn_dry_grind_ethanol")
+             / "M_BST_01")
 
 #: Self-consistency tolerance: the export and these assertions read the same
 #: live objects in the same process moments apart, so values should be

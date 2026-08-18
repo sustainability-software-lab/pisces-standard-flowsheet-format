@@ -61,9 +61,9 @@ class TestModelsTreeExists(unittest.TestCase):
         self.assertTrue(model_dirs(), f"no model directories found under {MODELS_ROOT}")
 
     def test_corn_model_is_present(self):
-        """"corn_dry_grind_ethanol" is among the discovered model directory names."""
+        """"M_BST_01" (the corn dry-grind ethanol recipe) is among the discovered model directory names."""
         names = {d.name for d in model_dirs()}
-        self.assertIn("corn_dry_grind_ethanol", names)
+        self.assertIn("M_BST_01", names)
 
     def test_biosteam_models_are_grouped(self):
         """A "biosteam_models" directory exists under MODELS_ROOT."""
@@ -122,10 +122,10 @@ class TestCornExtendedMetadata(unittest.TestCase):
     # convention. (Missing files are allowed in general -- see load_extended_
     # metadata -- so this pins only corn, not every model.)
     def setUp(self):
-        self.corn = (MODELS_ROOT / "biosteam_models" / "corn_dry_grind_ethanol")
+        self.corn = (MODELS_ROOT / "biosteam_models" / "M_BST_01")
 
     def test_corn_ships_extended_metadata(self):
-        """The corn_dry_grind_ethanol model directory contains an extended_metadata.yaml file."""
+        """The M_BST_01 (corn dry-grind ethanol) model directory contains an extended_metadata.yaml file."""
         self.assertTrue((self.corn / "extended_metadata.yaml").is_file())
 
     def test_corn_export_kwargs_no_longer_carries_microorganisms(self):

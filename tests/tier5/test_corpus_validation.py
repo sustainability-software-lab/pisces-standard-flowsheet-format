@@ -28,12 +28,13 @@ CORPUS_DIR = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
               / "bioindustrial_park")
 
 # Recorded outcomes (see canonical validation ss1 in CLAUDE.md): only
-# corn_dry_grind_ethanol.json has been re-exported to the current schema
-# shape and validates cleanly; the other 17 are now named SF_BST_02..18.json
-# (renamed 2026-08-18, contents untouched), remain old-shape and fail the
-# schema gate. This is the known, intended state -- not a regression.
+# SF_BST_01.json (corn dry-grind ethanol) has been re-exported to the current
+# schema shape and validates cleanly; the other 17 are now named
+# SF_BST_02..18.json (renamed 2026-08-18, contents untouched), remain
+# old-shape and fail the schema gate. This is the known, intended state --
+# not a regression.
 EXPECTED = {
-    "corn_dry_grind_ethanol.json": True,
+    "SF_BST_01.json": True,
     "SF_BST_02.json": False,
     "SF_BST_03.json": False,
     "SF_BST_04.json": False,

@@ -20,7 +20,7 @@ from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORN = (REPO_ROOT / "pisces_sff" / "exported_flowsheets" / "bioindustrial_park"
-        / "corn_dry_grind_ethanol.json")
+        / "SF_BST_01.json")
 
 
 @unittest.skipUnless(RUN_TIER6, "set SFF_TEST_TIER6=1 (default on) to run; builds/uses the pinned env")

@@ -835,7 +835,7 @@ class TestXrefGate(unittest.TestCase):
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
 CORN_PATH = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
-             / "bioindustrial_park" / "corn_dry_grind_ethanol.json")
+             / "bioindustrial_park" / "SF_BST_01.json")
 
 
 def minimal_doc():
@@ -1245,7 +1245,7 @@ class TestStreamIsEmptyHelper(unittest.TestCase):
 class TestValidateJsonAgainstSchemaHelper(unittest.TestCase):
     def test_the_current_shape_corpus_file_is_schema_valid(self):
         """validate_json_against_schema reports the current-shape reference
-        corpus file (corn_dry_grind_ethanol.json) as schema-valid, no errors."""
+        corpus file (SF_BST_01.json, corn dry-grind ethanol) as schema-valid, no errors."""
         is_valid, errors = V.validate_json_against_schema(str(CORN_PATH), str(SCHEMA_PATH))
         self.assertTrue(is_valid)
         self.assertEqual(errors, [])

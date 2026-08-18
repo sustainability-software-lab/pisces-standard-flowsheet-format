@@ -30,10 +30,10 @@ from tests._stub_eviction import RealBiosteamTestCase
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = (
     REPO_ROOT / "pisces_sff" / "models" / "biosteam_models"
-    / "corn_dry_grind_ethanol"
+    / "M_BST_01"
 )
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
-BASELINE_PATH = REPO_ROOT / "tests" / "baselines" / "corn_dry_grind_ethanol.json"
+BASELINE_PATH = REPO_ROOT / "tests" / "baselines" / "SF_BST_01.json"
 
 #: Relative tolerance for numeric baselines. Loose enough to absorb BLAS/LAPACK
 #: and platform differences between machines running identical pins, tight
@@ -55,7 +55,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         # Same code path as the committed-corpus command, but to a temp dir.
         cls.written = regenerate_corpus(cls.tmp.name)
-        cls.output = Path(cls.tmp.name) / "corn_dry_grind_ethanol.json"
+        cls.output = Path(cls.tmp.name) / "SF_BST_01.json"
         with cls.output.open("r", encoding="utf-8") as f:
             cls.flowsheet = json.load(f)
         with BASELINE_PATH.open("r", encoding="utf-8") as f:
@@ -74,7 +74,7 @@ class TestEndToEndExport(RealBiosteamTestCase):
     # ------- Every written file validates -------
 
     def test_corn_output_was_written(self):
-        """regenerate_corpus() written-file list -> includes the corn_dry_grind_ethanol.json path in the temp dir."""
+        """regenerate_corpus() written-file list -> includes the SF_BST_01.json path in the temp dir."""
         self.assertIn(self.output, self.written)
 
     def test_all_written_files_validate_against_the_schema(self):

@@ -23,7 +23,7 @@ jobs:
         shell: bash -el {0}
     env:
       # Single source for the env hash and the env build (Approach A).
-      ENV_YAML: pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml
+      ENV_YAML: pisces_sff/models/biosteam_models/M_BST_01/environment.yaml
       # Workspace-relative cache dirs: identical path shape on Ubuntu and Windows.
       CONDA_PKGS_DIRS: ${{ github.workspace }}/.cache/conda-pkgs
       PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CONDA_PKGS_DIRS }}
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml') }}
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/M_BST_01/environment.yaml') }}
           restore-keys: |
             conda-pkgs-${{ runner.os }}-
 
@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.PIP_CACHE_DIR }}
-          key: pip-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml') }}
+          key: pip-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/M_BST_01/environment.yaml') }}
           restore-keys: |
             pip-${{ runner.os }}-
 
@@ -75,7 +75,7 @@ jobs:
           harness = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(harness)
           env_text = pathlib.Path(
-              "pisces_sff/models/biosteam_models/corn_dry_grind_ethanol/environment.yaml"
+              "pisces_sff/models/biosteam_models/M_BST_01/environment.yaml"
           ).read_text(encoding="utf-8")
           print(harness.environment_name(env_text))
           PY

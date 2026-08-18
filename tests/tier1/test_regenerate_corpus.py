@@ -30,9 +30,9 @@ class TestIterModelDirs(unittest.TestCase):
         self.m = load_module()
 
     def test_finds_the_corn_model(self):
-        """iter_model_dirs() discovers a directory named "corn_dry_grind_ethanol"."""
+        """iter_model_dirs() discovers a directory named "M_BST_01" (corn dry-grind ethanol)."""
         names = {d.name for d in self.m.iter_model_dirs()}
-        self.assertIn("corn_dry_grind_ethanol", names)
+        self.assertIn("M_BST_01", names)
 
     def test_every_discovered_dir_has_a_load_script(self):
         """Every directory returned by iter_model_dirs() contains a load.py file."""
