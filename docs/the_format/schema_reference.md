@@ -14,13 +14,13 @@ instead (see the note in each).
 ## `metadata`
 Provenance for the flowsheet: version, currency, DOI, feedstocks/products, TEA year, tags.
 
-```{jsonschema} ../pisces_sff/schema/sff_schema.json#/properties/metadata
+```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/metadata
 ```
 
 ## `units`
 The unit operations (graph nodes).
 
-```{jsonschema} ../pisces_sff/schema/sff_schema.json#/properties/units
+```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/units
 ```
 
 ## `streams`
@@ -79,13 +79,13 @@ Each `composition` entry:
 ## `chemicals`
 The shared chemical registry.
 
-```{jsonschema} ../pisces_sff/schema/sff_schema.json#/properties/chemicals
+```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/chemicals
 ```
 
 ## `utilities`
 The shared utility registry.
 
-```{jsonschema} ../pisces_sff/schema/sff_schema.json#/properties/utilities
+```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/utilities
 ```
 
 ## `quantity_units_global`

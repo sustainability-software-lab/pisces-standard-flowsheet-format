@@ -17,13 +17,13 @@ The SFF and associated export capabilities are used by [Project PISCES](https://
 
 ## Simplified overview of the SFF schema
 
-<a href="https://pisces-standard-flowsheet-format.readthedocs.io/en/latest/visualize_schema.html" target="_blank" rel="noopener">
+<a href="https://pisces-standard-flowsheet-format.readthedocs.io/en/latest/the_format/visualize_schema.html" target="_blank" rel="noopener">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="images/schema_viz_dark.png">
     <img src="images/schema_viz_light.png" alt="Interactive visualization of the SFF schema" width="100%">
   </picture>
 </a>
 
-_Click the graph to open the interactive [schema visualization](https://pisces-standard-flowsheet-format.readthedocs.io/en/latest/visualize_schema.html)._
+_Click the graph to open the interactive [schema visualization](https://pisces-standard-flowsheet-format.readthedocs.io/en/latest/the_format/visualize_schema.html)._
 
 

@@ -66,7 +66,7 @@ the spec.
     pointer-events: none;
   }
 </style>
-<link rel="stylesheet" href="_static/jsoncrack/sff-viz.css" />
+<link rel="stylesheet" href="../_static/jsoncrack/sff-viz.css" />
 <div id="sff-schema-viz">
   <p class="sff-viz-loading">Loading schema&hellip;</p>
 </div>
@@ -75,7 +75,7 @@ the spec.
   available
   <a href="https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/pisces_sff/schema/sff_schema.json">on GitHub</a>.</p>
 </noscript>
-<script defer src="_static/jsoncrack/sff-viz.js"></script>
+<script defer src="../_static/jsoncrack/sff-viz.js"></script>
 ```
 
 Looking for the raw schema file, or a previous version? See

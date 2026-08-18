@@ -11,14 +11,14 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 :alt: Interactive visualization of the SFF schema
 :class: only-light
 :align: center
-:target: visualize_schema.html
+:target: the_format/visualize_schema.html
 ```
 
 ```{image} images/schema_viz_dark.png
 :alt: Interactive visualization of the SFF schema
 :class: only-dark
 :align: center
-:target: visualize_schema.html
+:target: the_format/visualize_schema.html
 ```
 
 ## Why SFF?
@@ -41,9 +41,6 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 getting_started/index
 tutorials/index
 the_format/index
-visualize_schema
-schema_reference
-full_schema
 validation
 api/index
 extending

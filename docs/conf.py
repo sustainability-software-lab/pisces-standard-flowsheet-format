@@ -91,8 +91,7 @@ html_theme_options = {
         "image_dark": "_static/SFF_Logo_dark.png",
         "alt_text": "Standard Flowsheet Format",
     },
-    # First five sections stay visible in the navbar; the rest (Validation &
-    # Checks, API Reference, Extending SFF, Contributions) collapse into the
-    # theme's "More" dropdown.
+    # First five sections stay visible in the navbar; the rest (Extending SFF,
+    # Contributions) collapse into the theme's "More" dropdown.
     "header_links_before_dropdown": 5,
 }

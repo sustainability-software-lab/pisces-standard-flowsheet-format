@@ -8,4 +8,7 @@ graph, and how physical quantities and their units are represented.
 
 graph_model
 quantity_units
+visualize_schema
+schema_reference
+full_schema
 ```
