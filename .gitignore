@@ -24,3 +24,8 @@ public/
 docs/_build/
 docs/generated/
 docs/**/generated/
+
+# Visualize Schema docs asset (see docs/_viz_src/README.md):
+# npm install tree, and the build-time schema copy made by docs/conf.py
+docs/_viz_src/node_modules/
+docs/_static/jsoncrack/sff_schema.json

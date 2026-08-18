@@ -1,0 +1,17 @@
+{
+  "name": "sff-schema-viz",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Build recipe for the committed docs/_static/jsoncrack bundle (Visualize Schema page). NOT packaging metadata for pisces_sff, which deliberately has none.",
+  "scripts": {
+    "build": "esbuild entry.jsx --bundle --minify --format=iife --target=es2019 --jsx=automatic --define:process.env.NODE_ENV=\\\"production\\\" --outfile=../_static/jsoncrack/sff-viz.js"
+  },
+  "dependencies": {
+    "jsoncrack-react": "1.0.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
