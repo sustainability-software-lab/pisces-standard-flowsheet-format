@@ -1,9 +1,6 @@
 # Quickstart
 
-Read one of the 18 corpus files and validate it against the schema. This
-snippet runs in the reference environment where `pisces_sff` is importable
-(the `HP_2024` conda env), since `import pisces_sff` loads the biosteam/
-thermosteam stack:
+Read one of the 18 corpus files and validate it against the schema.
 
 ```python
 import os, pisces_sff
