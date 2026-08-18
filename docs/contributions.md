@@ -6,7 +6,7 @@
 
 The PISCES-SFF package (which includes the Standard Flowsheet Format, validator, and BioSTEAM exporter) is consumed by [Project PISCES](https://projectpisces.org/) (Process Integration & Synthesis using Chemical Engineering Standards).
 
-Here is a growing list of core contributers who have committed significant
+Here is a growing list of core contributors who have committed significant
 resources, expertise, and other impactful efforts:
 
 * [Sarang Bhagwat](https://sarangbhagwat.com/) (lead developer and maintainer)
