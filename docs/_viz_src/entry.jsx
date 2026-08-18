@@ -85,19 +85,29 @@ function App({ json, initialCollapsed }) {
     );
   }, []);
   return (
-    <JSONCrack
-      json={json}
-      theme={theme}
-      collapsedPaths={collapsedPaths}
-      onToggleCollapse={handleToggleCollapse}
-      onParse={(graph) =>
-        // Verification hook: the schema must stay under the default
-        // maxRenderableNodes (1500) or the canvas renders a fallback instead.
-        console.log(
-          `SFF schema graph: ${graph.nodes.length} nodes (render cap 1500)`
-        )
-      }
-    />
+    <>
+      <div className="sff-viz-controls">
+        <button type="button" onClick={() => setCollapsedPaths([])}>
+          Expand all
+        </button>
+        <button type="button" onClick={() => setCollapsedPaths(initialCollapsed)}>
+          Reset view
+        </button>
+      </div>
+      <JSONCrack
+        json={json}
+        theme={theme}
+        collapsedPaths={collapsedPaths}
+        onToggleCollapse={handleToggleCollapse}
+        onParse={(graph) =>
+          // Verification hook: the schema must stay under the default
+          // maxRenderableNodes (1500) or the canvas renders a fallback instead.
+          console.log(
+            `SFF schema graph: ${graph.nodes.length} nodes (render cap 1500)`
+          )
+        }
+      />
+    </>
   );
 }
 

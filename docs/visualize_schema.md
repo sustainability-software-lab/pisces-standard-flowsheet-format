@@ -9,6 +9,7 @@ committed schema file at docs-build time, so it can never drift from the spec.
 ```{raw} html
 <style>
   #sff-schema-viz {
+    position: relative;
     height: 70vh;
     min-height: 480px;
     width: 100%;
@@ -20,6 +21,28 @@ committed schema file at docs-build time, so it can never drift from the spec.
   .sff-viz-error {
     padding: 1rem;
     color: var(--pst-color-text-muted);
+  }
+  /* Overlay controls: top-right, opposite the library's bottom-left zoom
+     controls (z-index 100). Pydata CSS variables follow the theme switcher. */
+  .sff-viz-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 101;
+    display: flex;
+    gap: 0.375rem;
+  }
+  .sff-viz-controls button {
+    padding: 0.25rem 0.625rem;
+    font-size: 0.8125rem;
+    border: 1px solid var(--pst-color-border);
+    border-radius: 0.25rem;
+    background: var(--pst-color-background);
+    color: var(--pst-color-text-base);
+    cursor: pointer;
+  }
+  .sff-viz-controls button:hover {
+    background: var(--pst-color-surface);
   }
 </style>
 <link rel="stylesheet" href="_static/jsoncrack/sff-viz.css" />
