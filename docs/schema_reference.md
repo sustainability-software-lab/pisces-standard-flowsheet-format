@@ -45,7 +45,7 @@ Each entry in the `streams` array:
 | `stream_description` | string | | A qualitative description of the stream from the perspective of either the source (e.g., 'Centrifugate') or sink unit operation (e.g., 'Make-up solvent'). |
 | `price` | number | | Price per unit mass of the stream material. Quantity units are declared in the top-level `quantity_units_global` under `price` (default `USD/kg`). |
 | `roles` | array of string, enum `[input, output, purchased_raw_material, feedstock, product, internal]`, unique items | | The roles this stream plays in the flowsheet. A stream always carries exactly one base topology role (`input` \| `output` \| `internal`) and may additionally carry designation roles (`purchased_raw_material`, `feedstock`, `product`). Emitted from schema v0.0.10 on; optional, so files written against earlier versions remain valid. |
-| `stream_properties` | object, see below | yes | Structured object specifying the properties of the stream. |
+| `stream_properties` | object, see below | | Structured object specifying the properties of the stream. |
 
 `stream_properties` fields:
 
