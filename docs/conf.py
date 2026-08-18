@@ -34,7 +34,12 @@ extensions = [
                           # only the hyphenated name is importable/documented.
 ]
 
-source_suffix = {".md": "myst-nb", ".ipynb": "myst-nb"}
+# NOTE: `.rst` must map to the built-in RST parser so autosummary's generated
+# stub pages (docs/generated/*.rst) render as reStructuredText. Without a
+# `.rst` entry, autosummary emits its RST-templated stubs under the `.md`
+# suffix, and the MyST parser then renders the `.. autoclass::`/`.. rubric::`
+# directives as literal text instead of expanded docstrings.
+source_suffix = {".rst": "restructuredtext", ".md": "myst-nb", ".ipynb": "myst-nb"}
 
 exclude_patterns = [
     "_build",
