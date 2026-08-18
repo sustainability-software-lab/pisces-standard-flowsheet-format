@@ -1,10 +1,10 @@
 # Standard Flowsheet Format (SFF)
 
-The [Standard Flowsheet Format (SFF)](https://pisces-sff.readthedocs.io/) is a JSON-based standard to represent chemical process flowsheets for interoperability across process simulators. Currently supports direct export from BioSTEAM and SuperPro Designer.
+The [Standard Flowsheet Format (SFF)](https://pisces-standard-flowsheet-format.readthedocs.io/) is a JSON-based standard to represent chemical process flowsheets for interoperability across process simulators. Currently supports direct export from BioSTEAM and SuperPro Designer.
 
 This format captures unit operations (including design and cost results, utility demands and production, reactions, and design input specifications), streams (material flows, phases, temperature, pressure, and source and sink unit operation ports), utilities (heating, cooling, power, combustion, and others), chemicals (registry IDs and user-defined properties), and metadata for source publication, flowsheet designers, TEA parameters, and process description.
 
-The [documentation](https://pisces-sff.readthedocs.io/) includes installation instructions, tutorials for export and extending, and the full schema reference.
+The [documentation](https://pisces-standard-flowsheet-format.readthedocs.io/) includes installation instructions, tutorials for export and extending, and the full schema reference.
 
 ## Project PISCES
 
