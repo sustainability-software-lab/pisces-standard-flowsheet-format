@@ -29,27 +29,28 @@ CORPUS_DIR = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
 
 # Recorded outcomes (see canonical validation ss1 in CLAUDE.md): only
 # corn_dry_grind_ethanol.json has been re-exported to the current schema
-# shape and validates cleanly; the other 17 remain old-shape and fail the
+# shape and validates cleanly; the other 17 are now named SF_BST_02..18.json
+# (renamed 2026-08-18, contents untouched), remain old-shape and fail the
 # schema gate. This is the known, intended state -- not a regression.
 EXPECTED = {
-    "corn_3HP_acrylic.json": False,
-    "corn_TAL.json": False,
-    "corn_TAL_KS.json": False,
     "corn_dry_grind_ethanol.json": True,
-    "corn_succinic.json": False,
-    "cornstover_3HP_acrylic.json": False,
-    "cornstover_TAL.json": False,
-    "cornstover_TAL_KS.json": False,
-    "cornstover_succinic.json": False,
-    "dextrose_3HP_acrylic.json": False,
-    "dextrose_TAL.json": False,
-    "dextrose_TAL_KS.json": False,
-    "dextrose_succinic.json": False,
-    "sugarcane_3HP_acrylic.json": False,
-    "sugarcane_TAL.json": False,
-    "sugarcane_TAL_KS.json": False,
-    "sugarcane_ethanol.json": False,
-    "sugarcane_succinic.json": False,
+    "SF_BST_02.json": False,
+    "SF_BST_03.json": False,
+    "SF_BST_04.json": False,
+    "SF_BST_05.json": False,
+    "SF_BST_06.json": False,
+    "SF_BST_07.json": False,
+    "SF_BST_08.json": False,
+    "SF_BST_09.json": False,
+    "SF_BST_10.json": False,
+    "SF_BST_11.json": False,
+    "SF_BST_12.json": False,
+    "SF_BST_13.json": False,
+    "SF_BST_14.json": False,
+    "SF_BST_15.json": False,
+    "SF_BST_16.json": False,
+    "SF_BST_17.json": False,
+    "SF_BST_18.json": False,
 }
 
 
