@@ -36,6 +36,16 @@ getting_started/quickstart
 
 ```{toctree}
 :hidden:
+:caption: Tutorials
+:maxdepth: 1
+
+tutorials/validate_an_sff_file
+tutorials/read_and_traverse
+tutorials/tags_and_reproducibility
+```
+
+```{toctree}
+:hidden:
 :caption: The Format
 :maxdepth: 1
 
