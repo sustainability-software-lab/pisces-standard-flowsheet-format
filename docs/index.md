@@ -52,3 +52,11 @@ schema_reference
 full_schema
 validation
 ```
+
+```{toctree}
+:hidden:
+:caption: API
+:maxdepth: 1
+
+api_reference
+```
