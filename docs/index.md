@@ -27,5 +27,9 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 
 ```{toctree}
 :hidden:
-:maxdepth: 2
+:caption: Getting Started
+:maxdepth: 1
+
+getting_started/installation
+getting_started/quickstart
 ```
