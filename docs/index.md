@@ -32,7 +32,10 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 getting_started/index
 tutorials/index
 the_format/index
-reference/index
+schema_reference
+full_schema
+validation
 api/index
-project/index
+extending
+contributions
 ```
