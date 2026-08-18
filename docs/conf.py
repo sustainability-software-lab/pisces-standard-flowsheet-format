@@ -73,4 +73,8 @@ html_theme_options = {
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
     "show_prev_next": False,
     "logo": {"text": "Standard Flowsheet Format"},
+    # First five sections stay visible in the navbar; the rest (Validation &
+    # Checks, API Reference, Extending SFF, Contributions) collapse into the
+    # theme's "More" dropdown.
+    "header_links_before_dropdown": 5,
 }

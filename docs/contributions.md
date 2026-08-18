@@ -1,4 +1,4 @@
-# Contributing
+# Contributions
 
 ## Authors & Acknowledgements
 
