@@ -7,9 +7,18 @@ simulators. A flowsheet is modeled as a **directed graph**: `units` are nodes,
 referenced by ID, plus `metadata` for provenance. The format and its reference
 corpus are consumed by [Project PISCES](https://projectpisces.org/).
 
-```{image} images/SFF_visual_representation.png
-:alt: Simplified visual representation of the SFF schema
+```{image} images/schema_viz_light.png
+:alt: Interactive visualization of the SFF schema
+:class: only-light
 :align: center
+:target: visualize_schema.html
+```
+
+```{image} images/schema_viz_dark.png
+:alt: Interactive visualization of the SFF schema
+:class: only-dark
+:align: center
+:target: visualize_schema.html
 ```
 
 ## Why SFF?
