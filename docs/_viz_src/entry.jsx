@@ -75,6 +75,28 @@ function resolveSchemaPath(schema, path) {
   return value;
 }
 
+// Map a hovered element to its node id (the "node-<id>" suffix). jsoncrack
+// renders each node as a <g> holding a <rect> (the visible box,
+// pointer-events:auto) and a SIBLING <foreignObject data-id="node-<id>">
+// whose content is pointer-events:none. So a real pointer hover lands on the
+// <rect>, never inside the foreignObject, and closest("foreignObject[...]")
+// from the real target is always null -- that is why hovering showed nothing.
+// Resolve robustly: (1) the direct case (target already inside the labelled
+// foreignObject, e.g. a synthetically dispatched event), then (2) walk up to
+// the node group and read its child foreignObject's id. Elements with no such
+// node ancestor (empty canvas, the SVG/container itself) return null, so
+// hovering off a node correctly shows no tooltip.
+function nodeIdForTarget(target) {
+  if (!target) return null;
+  const inside = target.closest('foreignObject[data-id^="node-"]');
+  if (inside) return inside.getAttribute("data-id").slice("node-".length);
+  for (let el = target; el && el.nodeType === 1; el = el.parentElement) {
+    const fo = el.querySelector(':scope > foreignObject[data-id^="node-"]');
+    if (fo) return fo.getAttribute("data-id").slice("node-".length);
+  }
+  return null;
+}
+
 function App({ json, initialCollapsed }) {
   const [theme, setTheme] = useState(currentTheme);
   const [collapsedPaths, setCollapsedPaths] = useState(initialCollapsed);
@@ -102,12 +124,8 @@ function App({ json, initialCollapsed }) {
     const hide = () => tooltip.setAttribute("hidden", "");
     const onMouseOver = (event) => {
       const target = event.target instanceof Element ? event.target : null;
-      // Each rendered node is a <foreignObject data-id="node-<id>">; closest()
-      // walks from the HTML rows up through the SVG ancestors.
-      const nodeEl =
-        target && target.closest('foreignObject[data-id^="node-"]');
-      if (!nodeEl) return hide();
-      const id = nodeEl.getAttribute("data-id").slice("node-".length);
+      const id = nodeIdForTarget(target);
+      if (!id) return hide();
       const path = nodePathsRef.current.get(id);
       if (!path) return hide();
       const value = resolveSchemaPath(json, path);
