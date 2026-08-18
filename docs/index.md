@@ -27,56 +27,12 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 
 ```{toctree}
 :hidden:
-:caption: Getting Started
-:maxdepth: 1
+:maxdepth: 2
 
-getting_started/installation
-getting_started/quickstart
-```
-
-```{toctree}
-:hidden:
-:caption: Tutorials
-:maxdepth: 1
-
-tutorials/export_biosteam_to_sff
-tutorials/validate_an_sff_file
-tutorials/read_and_traverse
-tutorials/tags_and_reproducibility
-```
-
-```{toctree}
-:hidden:
-:caption: The Format
-:maxdepth: 1
-
-the_format/graph_model
-the_format/quantity_units
-```
-
-```{toctree}
-:hidden:
-:caption: Reference
-:maxdepth: 1
-
-schema_reference
-full_schema
-validation
-```
-
-```{toctree}
-:hidden:
-:caption: API
-:maxdepth: 1
-
-api_reference
-```
-
-```{toctree}
-:hidden:
-:caption: Project
-:maxdepth: 1
-
-extending
-contributions
+getting_started/index
+tutorials/index
+the_format/index
+reference/index
+api/index
+project/index
 ```
