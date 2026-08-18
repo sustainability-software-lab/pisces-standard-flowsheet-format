@@ -1,13 +1,12 @@
 # The Format
 
-The concepts behind an SFF document: how a flowsheet is modeled as a directed
-graph, and how physical quantities and their units are represented.
+The concepts behind an SFF document, starting with how a flowsheet is modeled
+as a directed graph, plus the schema reference and an interactive view of it.
 
 ```{toctree}
 :maxdepth: 2
 
 graph_model
-quantity_units
 visualize_schema
 schema_reference
 full_schema
