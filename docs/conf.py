@@ -41,13 +41,6 @@ exclude_patterns = [
     "Thumbs.db",
     ".DS_Store",
     "superpowers/**",
-    # Legacy MkDocs-era pages awaiting their Sphinx/MyST rewrite in Tasks 2-9
-    # (each has an in-place successor coming; unlike biosteam_export.md they
-    # are not deleted here). Excluded so the -W scaffold build in Task 1 stays
-    # green without a premature toctree entry; a later task removes the
-    # exclusion for its page when it lands the rewritten content.
-    "contributions.md",
-    "extending.md",
 ]
 
 # --- MyST / notebooks ---

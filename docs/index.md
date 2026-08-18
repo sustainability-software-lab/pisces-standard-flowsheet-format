@@ -60,3 +60,12 @@ validation
 
 api_reference
 ```
+
+```{toctree}
+:hidden:
+:caption: Project
+:maxdepth: 1
+
+extending
+contributions
+```
