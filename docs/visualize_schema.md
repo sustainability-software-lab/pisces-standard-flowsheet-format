@@ -44,6 +44,21 @@ committed schema file at docs-build time, so it can never drift from the spec.
   .sff-viz-controls button:hover {
     background: var(--pst-color-surface);
   }
+  /* Hover tooltip (appended to <body> by the bundle; fixed + clamped). */
+  .sff-viz-tooltip {
+    position: fixed;
+    z-index: 102;
+    max-width: 28rem;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    border: 1px solid var(--pst-color-border);
+    border-radius: 0.25rem;
+    background: var(--pst-color-background);
+    color: var(--pst-color-text-base);
+    box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.25);
+    pointer-events: none;
+  }
 </style>
 <link rel="stylesheet" href="_static/jsoncrack/sff-viz.css" />
 <div id="sff-schema-viz">

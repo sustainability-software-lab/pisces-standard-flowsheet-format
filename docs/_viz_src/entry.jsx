@@ -2,7 +2,7 @@
 // Built locally with esbuild (see package.json in this directory); the outputs
 // docs/_static/jsoncrack/sff-viz.{js,css} are COMMITTED. Rebuild only when
 // bumping jsoncrack-react -- see README.md alongside this file.
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { JSONCrack } from "jsoncrack-react";
 import "jsoncrack-react/style.css";
@@ -63,9 +63,23 @@ function initialCollapsedPaths(schema) {
     .map(pathKey);
 }
 
+// ---- Hover descriptions ---------------------------------------------------
+// Resolve a JSONPath (array of keys/indices) inside the fetched schema.
+// Returns undefined if the path walks off the object.
+function resolveSchemaPath(schema, path) {
+  let value = schema;
+  for (const seg of path) {
+    if (value === null || typeof value !== "object") return undefined;
+    value = value[seg];
+  }
+  return value;
+}
+
 function App({ json, initialCollapsed }) {
   const [theme, setTheme] = useState(currentTheme);
   const [collapsedPaths, setCollapsedPaths] = useState(initialCollapsed);
+  // node.id -> JSONPath, rebuilt on every parse; read by the hover handler.
+  const nodePathsRef = useRef(new Map());
   useEffect(() => {
     // Follow the navbar theme switcher live.
     const observer = new MutationObserver(() => setTheme(currentTheme()));
@@ -75,6 +89,63 @@ function App({ json, initialCollapsed }) {
     });
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    const container = document.getElementById("sff-schema-viz");
+    if (!container) return;
+    // Single reusable tooltip, appended to <body> so the container's
+    // overflow:hidden can never clip it. pointer-events:none in its CSS keeps
+    // it from stealing the next mouseover.
+    const tooltip = document.createElement("div");
+    tooltip.className = "sff-viz-tooltip";
+    tooltip.setAttribute("hidden", "");
+    document.body.appendChild(tooltip);
+    const hide = () => tooltip.setAttribute("hidden", "");
+    const onMouseOver = (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      // Each rendered node is a <foreignObject data-id="node-<id>">; closest()
+      // walks from the HTML rows up through the SVG ancestors.
+      const nodeEl =
+        target && target.closest('foreignObject[data-id^="node-"]');
+      if (!nodeEl) return hide();
+      const id = nodeEl.getAttribute("data-id").slice("node-".length);
+      const path = nodePathsRef.current.get(id);
+      if (!path) return hide();
+      const value = resolveSchemaPath(json, path);
+      const description =
+        value !== null &&
+        typeof value === "object" &&
+        typeof value.description === "string"
+          ? value.description
+          : null;
+      if (!description) return hide();
+      tooltip.textContent = description;
+      tooltip.removeAttribute("hidden"); // unhide before measuring
+      const margin = 12;
+      const rect = tooltip.getBoundingClientRect();
+      const x = Math.min(
+        event.clientX + margin,
+        window.innerWidth - rect.width - margin
+      );
+      const y = Math.min(
+        event.clientY + margin,
+        window.innerHeight - rect.height - margin
+      );
+      tooltip.style.left = Math.max(margin, x) + "px";
+      tooltip.style.top = Math.max(margin, y) + "px";
+    };
+    const onMouseOut = (event) => {
+      const related =
+        event.relatedTarget instanceof Element ? event.relatedTarget : null;
+      if (!related || !container.contains(related)) hide();
+    };
+    container.addEventListener("mouseover", onMouseOver);
+    container.addEventListener("mouseout", onMouseOut);
+    return () => {
+      container.removeEventListener("mouseover", onMouseOver);
+      container.removeEventListener("mouseout", onMouseOut);
+      tooltip.remove();
+    };
+  }, [json]);
   // One chevron click toggles exactly that path. Every not-yet-visited
   // container is already in the set, so expanding a node reveals children
   // that are themselves collapsed -- iterative deepening for free.
@@ -99,13 +170,16 @@ function App({ json, initialCollapsed }) {
         theme={theme}
         collapsedPaths={collapsedPaths}
         onToggleCollapse={handleToggleCollapse}
-        onParse={(graph) =>
+        onParse={(graph) => {
+          nodePathsRef.current = new Map(
+            graph.nodes.map((n) => [n.id, n.path ?? []])
+          );
           // Verification hook: the schema must stay under the default
           // maxRenderableNodes (1500) or the canvas renders a fallback instead.
           console.log(
             `SFF schema graph: ${graph.nodes.length} nodes (render cap 1500)`
-          )
-        }
+          );
+        }}
       />
     </>
   );
