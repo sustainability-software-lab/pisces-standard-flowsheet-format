@@ -42,3 +42,12 @@ getting_started/quickstart
 the_format/graph_model
 the_format/quantity_units
 ```
+
+```{toctree}
+:hidden:
+:caption: Reference
+:maxdepth: 1
+
+schema_reference
+full_schema
+```

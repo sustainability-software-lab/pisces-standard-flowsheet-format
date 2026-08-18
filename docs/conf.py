@@ -48,8 +48,6 @@ exclude_patterns = [
     # exclusion for its page when it lands the rewritten content.
     "contributions.md",
     "extending.md",
-    "full_schema.md",
-    "schema_reference.md",
     "validation.md",
 ]
 
