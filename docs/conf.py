@@ -77,12 +77,4 @@ html_theme_options = {
     # Checks, API Reference, Extending SFF, Contributions) collapse into the
     # theme's "More" dropdown.
     "header_links_before_dropdown": 5,
-    # Schema Reference's sphinx-jsonschema tables are intrinsically wide
-    # (nested-property columns); drop the right "On this page" sidebar on that
-    # page so the article column can absorb them without horizontal scroll.
-    # Other pages keep the theme's default secondary sidebar.
-    "secondary_sidebar_items": {
-        "**": ["page-toc", "edit-this-page", "sourcelink"],
-        "schema_reference": [],
-    },
 }
