@@ -41,7 +41,7 @@ corpus are consumed by [Project PISCES](https://projectpisces.org/).
 getting_started/index
 tutorials/index
 the_format/index
-validation
+validation/index
 api/index
 extending
 contributions
