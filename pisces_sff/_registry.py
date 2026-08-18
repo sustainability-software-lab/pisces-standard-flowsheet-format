@@ -26,7 +26,8 @@ import argparse
 import re
 from pathlib import Path
 
-__all__ = ('load_model_registry',)
+__all__ = ('load_model_registry', 'render_registry_readme',
+           'write_registry_readmes')
 
 _PKG_ROOT = Path(__file__).resolve().parent
 
@@ -134,3 +135,142 @@ def load_model_registry(path=None, models_root=None, flowsheets_root=None):
                 f'{model_id}: flowsheet_file {entry["flowsheet_file"]!r} '
                 f'not found under {flowsheets_root}')
     return models
+
+
+_README_TEMPLATE = """\
+<!-- AUTO-GENERATED FILE -- DO NOT EDIT BY HAND.
+     Generated from pisces_sff/models/all_models.yaml by pisces_sff/_registry.py.
+     Regenerate with: python -m pisces_sff._registry
+     (or activate the committed pre-commit hook -- see below). -->
+
+# SFF model recipes and exported flowsheets
+
+This file indexes the model recipes under `pisces_sff/models/` and the
+reference SFF exports under `pisces_sff/exported_flowsheets/`. It is generated
+from `pisces_sff/models/all_models.yaml` -- the single source of truth for
+model <-> flowsheet pairing. Edit that file, not this one. Only items with
+both a model recipe and an exported flowsheet are registered.
+
+## Naming convention
+
+- Exported flowsheets are named `SF_<SIMULATOR>_<NN>` (`SF` = standard
+  flowsheet); model recipes are named `M_<SIMULATOR>_<NN>` (`M` = model).
+  `BST` = BioSTEAM; future simulators get their own uppercase code.
+- Numbers are opaque, permanent IDs assigned in registration order: a new
+  item takes the next free number when added; numbers are never reused and
+  never re-sorted to restore any ordering property. They are zero-padded to
+  two digits, and to three digits from 100 on (`SF_BST_100`). IDs are
+  identifiers, not sort keys.
+- A paired model and flowsheet usually share a number (`M_BST_01` <->
+  `SF_BST_01`), but the authoritative pairing is the registry entry in
+  `all_models.yaml`, not the string convention. Code must resolve pairing
+  through the registry only.
+- Items were renamed from earlier descriptive filenames with `git mv`; trace
+  any file's history across the rename with `git log --follow <path>`.
+
+## Keeping this file in sync
+
+A committed pre-commit hook regenerates this README on every commit. Activate
+it once per clone:
+
+    git config core.hooksPath .githooks
+    git config sff.python <path-to-a-python-with-pyyaml>   # only if python3/python don't resolve
+
+## Registered models
+
+| Model ID | Flowsheet ID | Title | Description | Simulator | Source corpus |
+| --- | --- | --- | --- | --- | --- |
+{table}
+"""
+
+
+def render_registry_readme(registry):
+    """
+    Render the registry README content.
+
+    Deterministic: rows are emitted in sorted-model-id order and multi-line
+    descriptions are collapsed to single spaces, so rendering twice always
+    produces identical text (which is what lets the pre-commit hook run
+    unconditionally and the sync test compare bytes).
+
+    Parameters
+    ----------
+    registry : dict
+        A mapping as returned by :func:`load_model_registry`.
+
+    Returns
+    -------
+    str
+        The README content, LF-separated, with a trailing newline.
+    """
+    rows = []
+    for model_id in sorted(registry):
+        entry = registry[model_id]
+        description = ' '.join(str(entry['description']).split())
+        rows.append(
+            f"| {model_id} | {entry['flowsheet']} | {entry['title']} "
+            f"| {description} | {entry['simulator']} "
+            f"| {entry['source_corpus']} |")
+    return _README_TEMPLATE.format(table='\n'.join(rows))
+
+
+def write_registry_readmes(registry=None, paths=None):
+    """
+    Write the generated README to every destination and return the paths.
+
+    Parameters
+    ----------
+    registry : dict, optional
+        Defaults to :func:`load_model_registry` on the committed file.
+    paths : iterable of str or Path, optional
+        Defaults to the two committed destinations (``pisces_sff/models/`` and
+        ``pisces_sff/exported_flowsheets/``). Tests pass temp paths.
+
+    Returns
+    -------
+    list of Path
+        The written files, byte-identical, LF-terminated (``newline='\\n'``,
+        consistent with the repo's ``.gitattributes`` LF pin).
+    """
+    if registry is None:
+        registry = load_model_registry()
+    if paths is None:
+        paths = README_PATHS
+    text = render_registry_readme(registry)
+    written = []
+    for path in paths:
+        path = Path(path)
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+        written.append(path)
+    return written
+
+
+def main(argv=None):
+    """
+    Regenerate the two committed registry READMEs in place.
+
+    Parameters
+    ----------
+    argv : list of str, optional
+
+    Returns
+    -------
+    int
+        Process exit code.
+    """
+    parser = argparse.ArgumentParser(
+        prog='python -m pisces_sff._registry',
+        description='Regenerate pisces_sff/models/README.md and '
+                    'pisces_sff/exported_flowsheets/README.md from '
+                    'all_models.yaml.',
+    )
+    parser.parse_args(argv)
+    for path in write_registry_readmes():
+        print(f'wrote {path}')
+    return 0
+
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main())

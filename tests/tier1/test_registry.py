@@ -213,5 +213,50 @@ class TestCommittedRegistry(unittest.TestCase):
             f"register them in pisces_sff/models/all_models.yaml")
 
 
+class TestReadmeGeneration(unittest.TestCase):
+    def setUp(self):
+        self.m = load_module()
+
+    def test_render_is_deterministic_and_complete(self):
+        """render_registry_readme twice on the committed registry -> identical
+        strings containing the AUTO-GENERATED banner, the regeneration command,
+        the hook activation lines, the git-log traceability note, and one table
+        row per registry entry."""
+        registry = self.m.load_model_registry()
+        text = self.m.render_registry_readme(registry)
+        self.assertEqual(text, self.m.render_registry_readme(registry))
+        self.assertIn("AUTO-GENERATED", text)
+        self.assertIn("python -m pisces_sff._registry", text)
+        self.assertIn("git config core.hooksPath .githooks", text)
+        self.assertIn("git log --follow", text)
+        for model_id, entry in registry.items():
+            self.assertIn(f"| {model_id} | {entry['flowsheet']} |", text)
+
+    def test_write_writes_lf_identical_files(self):
+        """write_registry_readmes to two temp paths -> both files byte-identical,
+        LF-only line endings, trailing newline."""
+        registry = self.m.load_model_registry()
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = (Path(tmp) / "a.md", Path(tmp) / "b.md")
+            written = self.m.write_registry_readmes(registry, paths=paths)
+            self.assertEqual([Path(p) for p in written], list(paths))
+            blobs = [p.read_bytes() for p in paths]
+            self.assertEqual(blobs[0], blobs[1])
+            self.assertNotIn(b"\r", blobs[0])
+            self.assertTrue(blobs[0].endswith(b"\n"))
+
+    def test_committed_readmes_are_in_sync(self):
+        """Both committed READMEs byte-match a fresh render of the committed
+        registry -> if this fails, run: python -m pisces_sff._registry"""
+        expected = self.m.render_registry_readme(
+            self.m.load_model_registry()).encode("utf-8")
+        for path in self.m.README_PATHS:
+            with self.subTest(readme=path.name, parent=path.parent.name):
+                self.assertEqual(
+                    path.read_bytes(), expected,
+                    f"{path} is stale -- regenerate with: "
+                    f"python -m pisces_sff._registry")
+
+
 if __name__ == "__main__":
     unittest.main()
