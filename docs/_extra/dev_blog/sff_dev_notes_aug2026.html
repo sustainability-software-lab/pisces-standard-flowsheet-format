@@ -130,6 +130,26 @@
     border-radius: 4px;
     padding: 0.05em 0.5em;
   }
+  .doc-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 0.9rem;
+    margin-top: 1.1rem;
+    font-size: 0.92rem;
+  }
+  .doc-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3em 0.7em;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    color: var(--accent);
+    text-decoration: none;
+    background: var(--surface);
+  }
+  .doc-links a:hover { border-color: var(--accent); }
+  .doc-links svg { width: 1em; height: 1em; fill: currentColor; }
   header.doc { padding-bottom: 2rem; border-bottom: 1px solid var(--hairline); }
   .lede { font-size: 1.08rem; margin-top: 1.4rem; }
 
@@ -524,6 +544,16 @@
     <span>August 1 – 18, 2026</span>
     <span class="arc">v0.0.5 → v0.1.3</span>
     <span>by Sarang S. Bhagwat</span>
+  </div>
+  <div class="doc-links">
+    <a href="https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub repository
+    </a>
+    <a href="https://pisces-standard-flowsheet-format.readthedocs.io/" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1h6l3 3v11H4a1 1 0 01-1-1V2a1 1 0 011-1zm5.5 1.25V4.5H12L9.5 2.25zM5.5 7h5v1h-5V7zm0 2.5h5v1h-5v-1zm0 2.5h3v1h-3v-1z"/></svg>
+      Documentation website
+    </a>
   </div>
   <p class="lede">
     The past few weeks were busy ones for the Standard Flowsheet Format, its validator, and the
