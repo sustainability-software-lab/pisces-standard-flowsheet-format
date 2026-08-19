@@ -273,6 +273,55 @@
   .viz-edge--dashed { stroke-dasharray: 4 4; }
   .viz-head { fill: var(--muted); }
   .viz-head--accent { fill: var(--accent); }
+  /* Highlights: repo structure & flow diagram. Adapted from
+     images/repo_structure_and_flow.svg — its role-coding palette (teal / purple /
+     coral / gray) is preserved, but the source SVG's own <style> and :root
+     variables are lifted out here and scoped to .repo-flow so they can't clobber
+     the page palette, and its prefers-color-scheme-only theming is rewired to the
+     page's three-layer pattern so the diagram follows the Auto/Light/Dark toggle. */
+  svg.repo-flow {
+    --rf-arr: #5F5E5A; --rf-leader: #888780; --rf-legend: #5F5E5A;
+    --rf-teal-fill: #E1F5EE; --rf-teal-stroke: #0F6E56; --rf-teal-title: #085041; --rf-teal-sub: #0F6E56;
+    --rf-purple-fill: #EEEDFE; --rf-purple-stroke: #534AB7; --rf-purple-title: #3C3489; --rf-purple-sub: #534AB7;
+    --rf-coral-fill: #FAECE7; --rf-coral-stroke: #993C1D; --rf-coral-title: #712B13; --rf-coral-sub: #993C1D;
+    --rf-gray-fill: #F1EFE8; --rf-gray-stroke: #5F5E5A; --rf-gray-title: #444441; --rf-gray-sub: #5F5E5A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) svg.repo-flow {
+      --rf-arr: #B4B2A9; --rf-leader: #888780; --rf-legend: #B4B2A9;
+      --rf-teal-fill: #085041; --rf-teal-stroke: #5DCAA5; --rf-teal-title: #9FE1CB; --rf-teal-sub: #5DCAA5;
+      --rf-purple-fill: #3C3489; --rf-purple-stroke: #AFA9EC; --rf-purple-title: #CECBF6; --rf-purple-sub: #AFA9EC;
+      --rf-coral-fill: #712B13; --rf-coral-stroke: #F0997B; --rf-coral-title: #F5C4B3; --rf-coral-sub: #F0997B;
+      --rf-gray-fill: #444441; --rf-gray-stroke: #B4B2A9; --rf-gray-title: #D3D1C7; --rf-gray-sub: #B4B2A9;
+    }
+  }
+  :root[data-theme="dark"] svg.repo-flow {
+    --rf-arr: #B4B2A9; --rf-leader: #888780; --rf-legend: #B4B2A9;
+    --rf-teal-fill: #085041; --rf-teal-stroke: #5DCAA5; --rf-teal-title: #9FE1CB; --rf-teal-sub: #5DCAA5;
+    --rf-purple-fill: #3C3489; --rf-purple-stroke: #AFA9EC; --rf-purple-title: #CECBF6; --rf-purple-sub: #AFA9EC;
+    --rf-coral-fill: #712B13; --rf-coral-stroke: #F0997B; --rf-coral-title: #F5C4B3; --rf-coral-sub: #F0997B;
+    --rf-gray-fill: #444441; --rf-gray-stroke: #B4B2A9; --rf-gray-title: #D3D1C7; --rf-gray-sub: #B4B2A9;
+  }
+  .repo-flow text.th { font-size: 14px; font-weight: 500; }
+  .repo-flow text.ts { font-size: 12px; font-weight: 400; }
+  .repo-flow .n rect { stroke-width: 0.5; }
+  .repo-flow .n-teal rect { fill: var(--rf-teal-fill); stroke: var(--rf-teal-stroke); }
+  .repo-flow .n-teal text.th { fill: var(--rf-teal-title); }
+  .repo-flow .n-teal text.ts { fill: var(--rf-teal-sub); }
+  .repo-flow .n-purple rect { fill: var(--rf-purple-fill); stroke: var(--rf-purple-stroke); }
+  .repo-flow .n-purple text.th { fill: var(--rf-purple-title); }
+  .repo-flow .n-purple text.ts { fill: var(--rf-purple-sub); }
+  .repo-flow .n-coral rect { fill: var(--rf-coral-fill); stroke: var(--rf-coral-stroke); }
+  .repo-flow .n-coral text.th { fill: var(--rf-coral-title); }
+  .repo-flow .n-coral text.ts { fill: var(--rf-coral-sub); }
+  .repo-flow .n-gray rect { fill: var(--rf-gray-fill); stroke: var(--rf-gray-stroke); }
+  .repo-flow .n-gray text.th { fill: var(--rf-gray-title); }
+  .repo-flow .n-gray text.ts { fill: var(--rf-gray-sub); }
+  .repo-flow .arr { stroke: var(--rf-arr); stroke-width: 1.5; fill: none; }
+  .repo-flow .leader { stroke: var(--rf-leader); stroke-width: 1; stroke-dasharray: 3 3; fill: none; }
+  .repo-flow .legend { fill: var(--rf-legend); }
+  .repo-flow .legend-solid { stroke: var(--rf-arr); stroke-width: 1.5; }
+  .repo-flow .legend-dash { stroke: var(--rf-leader); stroke-width: 1; stroke-dasharray: 3 3; }
   /* Section 1: validation pipeline + family bar */
   .viz-bar {
     display: grid;
@@ -496,6 +545,82 @@
   <li><strong>A model↔flowsheet registry.</strong> Model recipes and corpus flowsheets carry permanent registry IDs (<code>M_BST_01</code> ↔ <code>SF_BST_01</code>, …), paired in one source-of-truth file, <code>all_models.yaml</code>, which drives corpus regeneration and generates the index READMEs — kept from drifting by a pre-commit hook and a sync test.</li>
   <li><strong>Documentation, rebuilt — and now on Read the Docs.</strong> Getting Started, the graph model, a Schema Reference generated from the schema itself, Validation &amp; Checks citing the catalogue IDs, an API reference, four runnable tutorial notebooks — and an interactive, explorable visualization of the whole schema.</li>
 </ul>
+
+<figure class="viz-fig viz-fig--wide">
+  <svg class="repo-flow" viewBox="0 0 680 460" role="img" aria-labelledby="rf-title rf-desc">
+    <title id="rf-title">Structure and flow of the SFF repository</title>
+    <desc id="rf-desc">The model registry all_models.yaml pairs each model recipe with its exported flowsheet. Model recipes feed the BioSTEAM exporter, which produces exported SFF flowsheets. The SFF schema is the central contract governing both the exporter and the validator. The validator applies the schema gate plus the checks catalogue to a flowsheet and earns verified tags.</desc>
+    <defs>
+      <marker id="rf-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M2 1L8 5L2 9" fill="none" stroke="var(--rf-arr)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <g class="n n-gray">
+      <rect x="250" y="44" width="180" height="52" rx="8"/>
+      <text class="th" x="340" y="63" text-anchor="middle" dominant-baseline="central">Model registry</text>
+      <text class="ts" x="340" y="81" text-anchor="middle" dominant-baseline="central">all_models.yaml</text>
+    </g>
+
+    <path d="M310 96 L310 118 L127 118 L127 140" class="leader" marker-end="url(#rf-arrow)"/>
+    <path d="M370 96 L370 118 L552 118 L552 140" class="leader" marker-end="url(#rf-arrow)"/>
+
+    <g class="n n-teal">
+      <rect x="40" y="140" width="175" height="56" rx="8"/>
+      <text class="th" x="127" y="161" text-anchor="middle" dominant-baseline="central">Model recipes</text>
+      <text class="ts" x="127" y="179" text-anchor="middle" dominant-baseline="central">code, env, metadata</text>
+    </g>
+    <g class="n n-teal">
+      <rect x="252" y="140" width="176" height="56" rx="8"/>
+      <text class="th" x="340" y="161" text-anchor="middle" dominant-baseline="central">BioSTEAM exporter</text>
+      <text class="ts" x="340" y="179" text-anchor="middle" dominant-baseline="central">_export.py + harness</text>
+    </g>
+    <g class="n n-teal">
+      <rect x="465" y="140" width="175" height="56" rx="8"/>
+      <text class="th" x="552" y="161" text-anchor="middle" dominant-baseline="central">Exported flowsheets</text>
+      <text class="ts" x="552" y="179" text-anchor="middle" dominant-baseline="central">SFF JSON corpus</text>
+    </g>
+
+    <line x1="215" y1="168" x2="252" y2="168" class="arr" marker-end="url(#rf-arrow)"/>
+    <line x1="428" y1="168" x2="465" y2="168" class="arr" marker-end="url(#rf-arrow)"/>
+
+    <line x1="340" y1="200" x2="340" y2="229" class="leader" marker-start="url(#rf-arrow)"/>
+    <line x1="340" y1="301" x2="340" y2="346" class="leader" marker-end="url(#rf-arrow)"/>
+
+    <g class="n n-purple">
+      <rect x="250" y="233" width="180" height="64" rx="8"/>
+      <text class="th" x="340" y="257" text-anchor="middle" dominant-baseline="central">SFF schema</text>
+      <text class="ts" x="340" y="277" text-anchor="middle" dominant-baseline="central">sff_schema.json</text>
+    </g>
+
+    <path d="M552 196 L552 322 L400 322 L400 350" class="arr" marker-end="url(#rf-arrow)"/>
+
+    <g class="n n-coral">
+      <rect x="40" y="350" width="175" height="56" rx="8"/>
+      <text class="th" x="127" y="371" text-anchor="middle" dominant-baseline="central">Checks catalogue</text>
+      <text class="ts" x="127" y="389" text-anchor="middle" dominant-baseline="central">sff_checks.md</text>
+    </g>
+    <g class="n n-coral">
+      <rect x="252" y="350" width="176" height="56" rx="8"/>
+      <text class="th" x="340" y="371" text-anchor="middle" dominant-baseline="central">Validator</text>
+      <text class="ts" x="340" y="389" text-anchor="middle" dominant-baseline="central">schema gate + checks</text>
+    </g>
+    <g class="n n-coral">
+      <rect x="465" y="350" width="175" height="56" rx="8"/>
+      <text class="th" x="552" y="371" text-anchor="middle" dominant-baseline="central">Tags</text>
+      <text class="ts" x="552" y="389" text-anchor="middle" dominant-baseline="central">verified quality labels</text>
+    </g>
+
+    <line x1="215" y1="378" x2="252" y2="378" class="arr" marker-end="url(#rf-arrow)"/>
+    <line x1="428" y1="378" x2="465" y2="378" class="arr" marker-end="url(#rf-arrow)"/>
+
+    <line x1="40" y1="434" x2="66" y2="434" class="legend-solid"/>
+    <text class="ts legend" x="72" y="434" dominant-baseline="central">data flow</text>
+    <line x1="180" y1="434" x2="206" y2="434" class="legend-dash"/>
+    <text class="ts legend" x="212" y="434" dominant-baseline="central">governs / pairs</text>
+  </svg>
+  <div class="viz-caption">How the highlighted pieces fit together: the <span class="viz-mono">all_models.yaml</span> registry pairs each model recipe with its exported flowsheet; recipes feed the BioSTEAM exporter; the schema is the contract governing both exporter and validator; and the validator applies the schema gate plus the checks catalogue, earning verified tags.</div>
+</figure>
 
 <h2>Validation: two layers, graded findings</h2>
 <p>
