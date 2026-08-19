@@ -1,11 +1,10 @@
-# Standard Flowsheet Format (SFF)
+# The Standard Flowsheet Format (SFF)
 
 The **Standard Flowsheet Format (SFF)** is a JSON-based standard for representing
 chemical and bioprocess flowsheets so that designs are portable across process
 simulators. A flowsheet is modeled as a **directed graph**: `units` are nodes,
 `streams` are edges, with `chemicals` and `utilities` as shared registries
-referenced by ID, plus `metadata` for provenance. The format and its reference
-corpus are consumed by [Project PISCES](https://projectpisces.org/).
+referenced by ID, plus `metadata` for provenance. The format, BioSTEAM exporter, validator, and its reference corpus of flowsheets are consumed by [Project PISCES](https://projectpisces.org/).
 
 ```{image} images/schema_viz_light.png
 :alt: Interactive visualization of the SFF schema

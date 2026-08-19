@@ -5,11 +5,16 @@
 
 # Standard Flowsheet Format (SFF)
 
-The [Standard Flowsheet Format (SFF)](https://pisces-standard-flowsheet-format.readthedocs.io/) is a JSON-based standard to represent chemical process flowsheets for interoperability across process simulators. Currently supports direct export from BioSTEAM and SuperPro Designer.
+The **Standard Flowsheet Format (SFF)** is a JSON-based standard for representing
+chemical and bioprocess flowsheets so that designs are portable across process
+simulators. A flowsheet is modeled as a **directed graph**: `units` are nodes, `streams` are edges, with `chemicals` and `utilities` as shared registries
+referenced by ID, plus `metadata` for provenance. A full BioSTEAM exporter is included out-of-box in this package. The format, BioSTEAM exporter, validator, and its reference corpus of flowsheets are consumed by [Project PISCES](https://projectpisces.org/).
 
 This format captures unit operations (including design and cost results, utility demands and production, reactions, and design input specifications), streams (material flows, phases, temperature, pressure, and source and sink unit operation ports), utilities (heating, cooling, power, combustion, and others), chemicals (registry IDs and user-defined properties), and metadata for source publication, flowsheet designers, TEA parameters, and process description.
 
-The [documentation](https://pisces-standard-flowsheet-format.readthedocs.io/) includes installation instructions, tutorials for export and extending, and the full schema reference.
+## Documentation
+
+The [full documentation](https://pisces-standard-flowsheet-format.readthedocs.io/) includes installation instructions, tutorials for export and extending, and the full schema reference.
 
 ## Project PISCES
 
@@ -25,5 +30,3 @@ The SFF and associated export capabilities are used by [Project PISCES](https://
 </a>
 
 _Click the graph to open the interactive [schema visualization](https://pisces-standard-flowsheet-format.readthedocs.io/en/latest/the_format/visualize_schema.html)._
-
-
