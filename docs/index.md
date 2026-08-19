@@ -33,6 +33,11 @@ referenced by ID, plus `metadata` for provenance. The format, BioSTEAM exporter,
 - **A two-layer validator** — a `jsonschema` structural gate plus a semantic-check engine.
 - **A corpus** — 18 pre-exported bioindustrial flowsheets.
 
+```{image} images/repo_structure_and_flow.svg
+:alt: Structure and flow of the SFF repository — the model registry pairs each model recipe with its exported flowsheet; recipes feed the BioSTEAM exporter; the schema governs both exporter and validator; the validator applies the schema gate plus checks catalogue and earns verified tags.
+:align: center
+```
+
 ```{toctree}
 :hidden:
 :maxdepth: 2

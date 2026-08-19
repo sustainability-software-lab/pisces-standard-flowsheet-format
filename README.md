@@ -12,6 +12,10 @@ referenced by ID, plus `metadata` for provenance. A full BioSTEAM exporter is in
 
 This format captures unit operations (including design and cost results, utility demands and production, reactions, and design input specifications), streams (material flows, phases, temperature, pressure, and source and sink unit operation ports), utilities (heating, cooling, power, combustion, and others), chemicals (registry IDs and user-defined properties), and metadata for source publication, flowsheet designers, TEA parameters, and process description.
 
+<p align="center">
+  <img src="images/repo_structure_and_flow.svg" alt="Structure and flow of the SFF repository — the model registry pairs each model recipe with its exported flowsheet; recipes feed the BioSTEAM exporter; the schema governs both exporter and validator; the validator applies the schema gate plus checks catalogue and earns verified tags." width="680">
+</p>
+
 ## Documentation
 
 The [full documentation](https://pisces-standard-flowsheet-format.readthedocs.io/) includes installation instructions, tutorials for export and extending, and the full schema reference.

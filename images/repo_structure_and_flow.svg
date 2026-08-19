@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="460" viewBox="0 0 680 460" role="img">
+<title>Structure and flow of the SFF repository</title>
+<desc>The model registry all_models.yaml pairs each model recipe with its exported flowsheet. Model recipes feed the BioSTEAM exporter, which produces exported SFF flowsheets. The SFF schema is the central contract governing both the exporter and the validator. The validator applies the schema gate plus the checks catalogue to a flowsheet and earns verified tags.</desc>
+<style>
+  svg { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  text.th { font-size: 14px; font-weight: 500; }
+  text.ts { font-size: 12px; font-weight: 400; }
+  :root {
+    --muted: #5F5E5A; --arr: #5F5E5A; --leader: #888780;
+    --teal-fill: #E1F5EE; --teal-stroke: #0F6E56; --teal-title: #085041; --teal-sub: #0F6E56;
+    --purple-fill: #EEEDFE; --purple-stroke: #534AB7; --purple-title: #3C3489; --purple-sub: #534AB7;
+    --coral-fill: #FAECE7; --coral-stroke: #993C1D; --coral-title: #712B13; --coral-sub: #993C1D;
+    --gray-fill: #F1EFE8; --gray-stroke: #5F5E5A; --gray-title: #444441; --gray-sub: #5F5E5A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --muted: #B4B2A9; --arr: #B4B2A9; --leader: #888780;
+      --teal-fill: #085041; --teal-stroke: #5DCAA5; --teal-title: #9FE1CB; --teal-sub: #5DCAA5;
+      --purple-fill: #3C3489; --purple-stroke: #AFA9EC; --purple-title: #CECBF6; --purple-sub: #AFA9EC;
+      --coral-fill: #712B13; --coral-stroke: #F0997B; --coral-title: #F5C4B3; --coral-sub: #F0997B;
+      --gray-fill: #444441; --gray-stroke: #B4B2A9; --gray-title: #D3D1C7; --gray-sub: #B4B2A9;
+    }
+  }
+  .n rect { stroke-width: 0.5; }
+  .n-teal rect { fill: var(--teal-fill); stroke: var(--teal-stroke); }
+  .n-teal text.th { fill: var(--teal-title); } .n-teal text.ts { fill: var(--teal-sub); }
+  .n-purple rect { fill: var(--purple-fill); stroke: var(--purple-stroke); }
+  .n-purple text.th { fill: var(--purple-title); } .n-purple text.ts { fill: var(--purple-sub); }
+  .n-coral rect { fill: var(--coral-fill); stroke: var(--coral-stroke); }
+  .n-coral text.th { fill: var(--coral-title); } .n-coral text.ts { fill: var(--coral-sub); }
+  .n-gray rect { fill: var(--gray-fill); stroke: var(--gray-stroke); }
+  .n-gray text.th { fill: var(--gray-title); } .n-gray text.ts { fill: var(--gray-sub); }
+  .arr { stroke: var(--arr); stroke-width: 1.5; fill: none; }
+  .leader { stroke: var(--leader); stroke-width: 1; stroke-dasharray: 3 3; fill: none; }
+  .legend { fill: var(--muted); }
+  .legend-solid { stroke: var(--arr); stroke-width: 1.5; }
+  .legend-dash { stroke: var(--leader); stroke-width: 1; stroke-dasharray: 3 3; }
+</style>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="var(--arr)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<g class="n n-gray">
+  <rect x="250" y="44" width="180" height="52" rx="8"/>
+  <text class="th" x="340" y="63" text-anchor="middle" dominant-baseline="central">Model registry</text>
+  <text class="ts" x="340" y="81" text-anchor="middle" dominant-baseline="central">all_models.yaml</text>
+</g>
+
+<path d="M310 96 L310 118 L127 118 L127 140" class="leader"/>
+<path d="M370 96 L370 118 L552 118 L552 140" class="leader"/>
+
+<g class="n n-teal">
+  <rect x="40" y="140" width="175" height="56" rx="8"/>
+  <text class="th" x="127" y="161" text-anchor="middle" dominant-baseline="central">Model recipes</text>
+  <text class="ts" x="127" y="179" text-anchor="middle" dominant-baseline="central">code, env, metadata</text>
+</g>
+<g class="n n-teal">
+  <rect x="252" y="140" width="176" height="56" rx="8"/>
+  <text class="th" x="340" y="161" text-anchor="middle" dominant-baseline="central">BioSTEAM exporter</text>
+  <text class="ts" x="340" y="179" text-anchor="middle" dominant-baseline="central">_export.py + harness</text>
+</g>
+<g class="n n-teal">
+  <rect x="465" y="140" width="175" height="56" rx="8"/>
+  <text class="th" x="552" y="161" text-anchor="middle" dominant-baseline="central">Exported flowsheets</text>
+  <text class="ts" x="552" y="179" text-anchor="middle" dominant-baseline="central">SFF JSON corpus</text>
+</g>
+
+<line x1="215" y1="168" x2="252" y2="168" class="arr" marker-end="url(#arrow)"/>
+<line x1="428" y1="168" x2="465" y2="168" class="arr" marker-end="url(#arrow)"/>
+
+<line x1="340" y1="200" x2="340" y2="229" class="leader"/>
+<line x1="340" y1="301" x2="340" y2="346" class="leader"/>
+
+<g class="n n-purple">
+  <rect x="250" y="233" width="180" height="64" rx="8"/>
+  <text class="th" x="340" y="257" text-anchor="middle" dominant-baseline="central">SFF schema</text>
+  <text class="ts" x="340" y="277" text-anchor="middle" dominant-baseline="central">sff_schema.json</text>
+</g>
+
+<path d="M552 196 L552 322 L400 322 L400 350" class="arr" marker-end="url(#arrow)"/>
+
+<g class="n n-coral">
+  <rect x="40" y="350" width="175" height="56" rx="8"/>
+  <text class="th" x="127" y="371" text-anchor="middle" dominant-baseline="central">Checks catalogue</text>
+  <text class="ts" x="127" y="389" text-anchor="middle" dominant-baseline="central">sff_checks.md</text>
+</g>
+<g class="n n-coral">
+  <rect x="252" y="350" width="176" height="56" rx="8"/>
+  <text class="th" x="340" y="371" text-anchor="middle" dominant-baseline="central">Validator</text>
+  <text class="ts" x="340" y="389" text-anchor="middle" dominant-baseline="central">schema gate + checks</text>
+</g>
+<g class="n n-coral">
+  <rect x="465" y="350" width="175" height="56" rx="8"/>
+  <text class="th" x="552" y="371" text-anchor="middle" dominant-baseline="central">Tags</text>
+  <text class="ts" x="552" y="389" text-anchor="middle" dominant-baseline="central">verified quality labels</text>
+</g>
+
+<line x1="215" y1="378" x2="252" y2="378" class="arr" marker-end="url(#arrow)"/>
+<line x1="428" y1="378" x2="465" y2="378" class="arr" marker-end="url(#arrow)"/>
+
+<line x1="40" y1="434" x2="66" y2="434" class="legend-solid"/>
+<text class="ts legend" x="72" y="434" dominant-baseline="central">data flow</text>
+<line x1="180" y1="434" x2="206" y2="434" class="legend-dash"/>
+<text class="ts legend" x="212" y="434" dominant-baseline="central">governs / pairs</text>
+</svg>
