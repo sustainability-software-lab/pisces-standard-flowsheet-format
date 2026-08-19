@@ -48,8 +48,8 @@
   <text class="ts" x="340" y="81" text-anchor="middle" dominant-baseline="central">all_models.yaml</text>
 </g>
 
-<path d="M310 96 L310 118 L127 118 L127 140" class="leader"/>
-<path d="M370 96 L370 118 L552 118 L552 140" class="leader"/>
+<path d="M310 96 L310 118 L127 118 L127 140" class="leader" marker-end="url(#arrow)"/>
+<path d="M370 96 L370 118 L552 118 L552 140" class="leader" marker-end="url(#arrow)"/>
 
 <g class="n n-teal">
   <rect x="40" y="140" width="175" height="56" rx="8"/>
@@ -70,8 +70,8 @@
 <line x1="215" y1="168" x2="252" y2="168" class="arr" marker-end="url(#arrow)"/>
 <line x1="428" y1="168" x2="465" y2="168" class="arr" marker-end="url(#arrow)"/>
 
-<line x1="340" y1="200" x2="340" y2="229" class="leader"/>
-<line x1="340" y1="301" x2="340" y2="346" class="leader"/>
+<line x1="340" y1="200" x2="340" y2="229" class="leader" marker-start="url(#arrow)"/>
+<line x1="340" y1="301" x2="340" y2="346" class="leader" marker-end="url(#arrow)"/>
 
 <g class="n n-purple">
   <rect x="250" y="233" width="180" height="64" rx="8"/>
