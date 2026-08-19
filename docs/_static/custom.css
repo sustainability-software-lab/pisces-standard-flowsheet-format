@@ -16,3 +16,12 @@ html[data-theme="dark"] {
   --pst-color-accent: #f59e0b;
   --pst-color-success: #22c55e;
 }
+
+/* Navbar logo: the theme leaves the brand image well short of the header
+   height (~48px in a 64px navbar), which reads as too small. Grow it to use
+   the available headroom. 3.75rem (60px) stays under the 64px header, so the
+   navbar height is unchanged. This selector outranks the theme's
+   `.navbar-brand img { height: 100% }`, so no !important is needed. */
+.navbar-brand img.logo__image {
+  height: 3.75rem;
+}
