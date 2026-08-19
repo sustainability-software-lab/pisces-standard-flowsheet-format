@@ -36,6 +36,7 @@ referenced by ID, plus `metadata` for provenance. The format, BioSTEAM exporter,
 ```{image} images/repo_structure_and_flow.svg
 :alt: Structure and flow of the SFF repository — the model registry pairs each model recipe with its exported flowsheet; recipes feed the BioSTEAM exporter; the schema governs both exporter and validator; the validator applies the schema gate plus checks catalogue and earns verified tags.
 :align: center
+:class: dark-light
 ```
 
 ```{toctree}
