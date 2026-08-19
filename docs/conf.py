@@ -77,6 +77,11 @@ intersphinx_mapping = {
 # --- HTML theme (pydata, biosteam-style three-column) ---
 html_theme = "pydata_sphinx_theme"
 html_title = "Standard Flowsheet Format"
+# Verbatim assets copied to the build root untouched by Sphinx. The Development
+# Blog posts live here: each is a self-contained HTML page with its own design
+# and theme system, deliberately outside the pydata theme, so Sphinx must serve
+# it as-is rather than parse it. `_extra/dev_blog/foo.html` -> `/dev_blog/foo.html`.
+html_extra_path = ["_extra"]
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_theme_options = {

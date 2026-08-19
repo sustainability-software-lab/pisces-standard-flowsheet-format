@@ -25,3 +25,22 @@ html[data-theme="dark"] {
 .navbar-brand img.logo__image {
   height: 3.75rem;
 }
+
+/* Development Blog index: post list. Each entry is a title link, a muted date,
+   and a summary. Kill the list bullets and give entries breathing room. */
+ul.sff-blog-index {
+  list-style: none;
+  padding-left: 0;
+}
+ul.sff-blog-index > li {
+  margin-bottom: 1.5rem;
+}
+ul.sff-blog-index .sff-blog-date {
+  margin-left: 0.5rem;
+  color: var(--pst-color-text-muted);
+  font-size: 0.875rem;
+}
+ul.sff-blog-index p {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}

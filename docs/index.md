@@ -44,4 +44,5 @@ validation/index
 api/index
 extending
 contributions
+dev_blog/index
 ```
