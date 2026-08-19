@@ -20,7 +20,7 @@ The [full documentation](https://pisces-standard-flowsheet-format.readthedocs.io
 
 The SFF and associated export capabilities are used by [Project PISCES](https://projectpisces.org/) to generate a growing database of flowsheets and to train an LLM-based pipeline to extract flowsheets (as SFFs) from literature (as PDFs).
 
-## Simplified overview of the SFF schema
+## Simplified overview of the SFF schema (click to interact)
 
 <a href="https://pisces-standard-flowsheet-format.readthedocs.io/en/latest/the_format/visualize_schema.html" target="_blank" rel="noopener">
   <picture>
