@@ -83,7 +83,7 @@ html_title = "Standard Flowsheet Format"
 # it as-is rather than parse it. `_extra/dev_blog/foo.html` -> `/dev_blog/foo.html`.
 html_extra_path = ["_extra"]
 html_static_path = ["_static"]
-html_css_files = ["custom.css"]
+html_css_files = ["custom.css", "sff-figures.css"]
 html_theme_options = {
     "github_url": "https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format",
     "navbar_end": ["theme-switcher", "navbar-icon-links"],

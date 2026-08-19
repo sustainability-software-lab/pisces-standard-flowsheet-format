@@ -61,6 +61,47 @@ convention. Registration there is mandatory, not advisory:
 absent from the registry, and a Tier 1 consistency test fails for the same
 reason, so an unregistered recipe cannot slip into the corpus silently.
 
+```{raw} html
+<figure class="viz-fig viz-fig--wide">
+  <svg viewBox="0 0 760 340" role="img" aria-labelledby="viz-reg-t">
+    <title id="viz-reg-t">all_models.yaml is the single source of truth pairing each model recipe with its exported flowsheet; corpus regeneration and the two generated READMEs are derived from it and guarded by a pre-commit hook and a sync test.</title>
+    <rect class="viz-node--ghost" x="56" y="76" width="150" height="54" rx="8"/>
+    <rect class="viz-node--ghost" x="48" y="68" width="150" height="54" rx="8"/>
+    <rect class="viz-node" x="40" y="60" width="150" height="54" rx="8"/>
+    <text class="t-mono" x="115" y="83" text-anchor="middle" font-weight="600">M_BST_01</text>
+    <text class="t-muted t-small" x="115" y="102" text-anchor="middle">model recipe</text>
+    <text class="t-muted t-small" x="123" y="150" text-anchor="middle">M_BST_02 …</text>
+    <rect class="viz-node--ghost" x="586" y="76" width="150" height="54" rx="8"/>
+    <rect class="viz-node--ghost" x="578" y="68" width="150" height="54" rx="8"/>
+    <rect class="viz-node" x="570" y="60" width="150" height="54" rx="8"/>
+    <text class="t-mono" x="645" y="83" text-anchor="middle" font-weight="600">SF_BST_01</text>
+    <text class="t-muted t-small" x="645" y="102" text-anchor="middle">exported flowsheet</text>
+    <text class="t-muted t-small" x="653" y="150" text-anchor="middle">SF_BST_02 …</text>
+    <rect class="viz-node--em" x="280" y="52" width="200" height="70" rx="8"/>
+    <text class="t-mono" x="380" y="80" text-anchor="middle" font-weight="600">all_models.yaml</text>
+    <text class="t-small" x="380" y="100" text-anchor="middle">the registry — single source of truth</text>
+    <line class="viz-edge viz-edge--accent" x1="190" y1="87" x2="280" y2="87"/>
+    <line class="viz-edge viz-edge--accent" x1="480" y1="87" x2="570" y2="87"/>
+    <text class="t-muted t-small" x="380" y="42" text-anchor="middle">pairs model ↔ flowsheet</text>
+    <line class="viz-edge" x1="330" y1="122" x2="240" y2="196"/>
+    <path class="viz-head" d="M 236 190 l 2 12 l 9 -8 z"/>
+    <line class="viz-edge" x1="430" y1="122" x2="520" y2="196"/>
+    <path class="viz-head" d="M 513 200 l 11 4 l -2 -12 z"/>
+    <rect class="viz-node" x="80" y="206" width="250" height="76" rx="8"/>
+    <text class="t-mono t-small" x="205" y="230" text-anchor="middle" font-weight="600">regenerate_corpus</text>
+    <text class="t-muted t-small" x="205" y="250" text-anchor="middle">unregistered recipe on disk →</text>
+    <text class="t-muted t-small" x="205" y="266" text-anchor="middle">hard error before export</text>
+    <rect class="viz-node" x="410" y="206" width="270" height="76" rx="8"/>
+    <text class="t-small" x="545" y="228" text-anchor="middle" font-weight="600">generated READMEs</text>
+    <text class="t-muted t-small" x="545" y="246" text-anchor="middle">models/ + exported_flowsheets/ — byte-identical</text>
+    <rect class="viz-node--em" x="448" y="256" width="194" height="20" rx="4"/>
+    <text class="t-small t-accent" x="545" y="270" text-anchor="middle">guarded: pre-commit hook + sync test</text>
+    <text class="t-muted t-small" x="380" y="322" text-anchor="middle">old names traceable via <tspan class="t-mono">git log --follow</tspan></text>
+  </svg>
+  <figcaption class="viz-caption"><span class="viz-mono">all_models.yaml</span> pairs each model recipe with its flowsheet; corpus regeneration and the two generated READMEs derive from it.</figcaption>
+</figure>
+```
+
 The registry validates that everything an entry references actually exists,
 including the exported flowsheet file — so a brand-new model is exported once
 before it is registered. `export_model(model_dir, output_path)` from

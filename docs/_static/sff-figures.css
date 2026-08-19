@@ -1,0 +1,124 @@
+/* Explanatory figures ported from the SFF v0.1.3 development-notes blog
+   (docs/_extra/dev_blog/sff_dev_notes_aug2026.html). The blog is a
+   self-contained page with its own palette; here the figures' color roles are
+   remapped onto pydata-sphinx-theme tokens so they follow the site's light/dark
+   theme switcher automatically. Only the classes used by the ported figures are
+   included. */
+
+html[data-theme="light"] {
+  --viz-bg: var(--pst-color-background);
+  --viz-surface: var(--pst-color-surface);
+  --viz-ink: var(--pst-color-text-base);
+  --viz-muted: var(--pst-color-text-muted);
+  --viz-accent: var(--pst-color-primary);
+  --viz-accent-soft: #e4f0f7;
+  --viz-copper: var(--pst-color-secondary);
+  --viz-copper-soft: #fdf1dd;
+  --viz-hairline: var(--pst-color-border);
+  --viz-code-bg: var(--pst-color-surface);
+}
+html[data-theme="dark"] {
+  --viz-bg: var(--pst-color-background);
+  --viz-surface: var(--pst-color-surface);
+  --viz-ink: var(--pst-color-text-base);
+  --viz-muted: var(--pst-color-text-muted);
+  --viz-accent: var(--pst-color-primary);
+  --viz-accent-soft: #12303d;
+  --viz-copper: var(--pst-color-secondary);
+  --viz-copper-soft: #3a2b12;
+  --viz-hairline: var(--pst-color-border);
+  --viz-code-bg: var(--pst-color-surface);
+}
+
+/* ---- Figure frame + captions ---- */
+.viz-fig { margin: 1.6rem 0; }
+.viz-fig svg { display: block; width: 100%; max-width: 100%; height: auto; }
+.viz-caption { color: var(--viz-muted); font-size: 0.85rem; margin-top: 0.5rem; }
+.viz-fig--wide { overflow-x: auto; }
+.viz-fig--wide svg { min-width: 34rem; }
+.viz-mono { font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; font-size: 0.88em; }
+
+.viz-chip {
+  display: inline-block;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border-radius: 3px; padding: 0.1em 0.45em;
+  color: var(--viz-accent); background: var(--viz-accent-soft);
+}
+.viz-chip--copper { color: var(--viz-copper); background: var(--viz-copper-soft); }
+.viz-chip--muted { color: var(--viz-muted); background: var(--viz-code-bg); }
+
+/* ---- SVG primitives (nodes, edges, arrowheads, labels) ---- */
+.viz-fig svg text {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px; fill: var(--viz-ink);
+}
+.viz-fig svg text.t-mono { font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; }
+.viz-fig svg text.t-small { font-size: 10.5px; }
+.viz-fig svg text.t-muted { fill: var(--viz-muted); }
+.viz-fig svg text.t-accent { fill: var(--viz-accent); }
+.viz-fig svg text.t-copper { fill: var(--viz-copper); }
+.viz-node { fill: var(--viz-surface); stroke: var(--viz-hairline); stroke-width: 1; }
+.viz-node--em { fill: var(--viz-accent-soft); stroke: var(--viz-accent); stroke-width: 1; }
+.viz-node--heavy { fill: var(--viz-copper-soft); stroke: var(--viz-copper); stroke-width: 1; }
+.viz-node--ghost { fill: var(--viz-surface); stroke: var(--viz-hairline); stroke-width: 1; opacity: 0.55; }
+.viz-edge { stroke: var(--viz-muted); stroke-width: 1.5; fill: none; }
+.viz-edge--accent { stroke: var(--viz-accent); }
+.viz-edge--dashed { stroke-dasharray: 4 4; }
+.viz-head { fill: var(--viz-muted); }
+.viz-head--accent { fill: var(--viz-accent); }
+
+/* ---- Validation: check-family proportional bar + legend ---- */
+.viz-bar {
+  display: grid;
+  grid-template-columns: 7fr 10fr 14fr 5fr 5fr 4fr 3fr;
+  gap: 1px; margin: 0.4rem 0 0.2rem;
+  border-radius: 4px; overflow: hidden;
+}
+.viz-bar > span {
+  padding: 0.32rem 0.1rem; text-align: center;
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 0.72rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden;
+  color: var(--viz-ink); background: var(--viz-accent-soft);
+}
+.viz-bar > span:nth-child(odd) { background: var(--viz-accent); color: var(--viz-bg); }
+.viz-fams { display: grid; gap: 0.45rem; margin: 0.8rem 0 1rem; font-size: 0.93rem; }
+.viz-fam { display: grid; grid-template-columns: 5.4rem 1.6rem 1fr; gap: 0.6rem; align-items: baseline; }
+.viz-fam .c { font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; font-size: 0.85rem; font-weight: 600; color: var(--viz-accent); }
+.viz-fam .n { font-variant-numeric: tabular-nums; color: var(--viz-muted); text-align: right; }
+@media (max-width: 560px) {
+  .viz-fam { grid-template-columns: 5.4rem 1.6rem; }
+  .viz-fam .d { grid-column: 1 / -1; }
+}
+
+/* ---- Tags: two-lane verification diagram ---- */
+.viz-tags { display: grid; grid-template-columns: minmax(0, 1fr) 2.6rem minmax(0, 1fr); gap: 0.6rem 0; margin: 1.2rem 0 0; }
+.viz-tag {
+  background: var(--viz-accent-soft); border: 1px solid var(--viz-hairline); border-radius: 8px;
+  padding: 0.55rem 0.8rem; font-size: 0.88rem;
+}
+.viz-tag code { background: transparent; padding: 0; font-weight: 600; }
+.viz-tag .m { display: block; color: var(--viz-muted); font-size: 0.84rem; margin-top: 0.15rem; }
+.viz-tag-link { display: flex; align-items: center; justify-content: center; }
+.viz-lane {
+  background: var(--viz-surface); border: 1px solid var(--viz-hairline); border-radius: 8px;
+  padding: 0.7rem 0.9rem; font-size: 0.88rem;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.viz-lane h4 { margin: 0 0 0.25rem; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+.viz-lane--static { grid-column: 3; grid-row: 1 / span 3; border-left: 3px solid var(--viz-accent); }
+.viz-lane--static h4 { color: var(--viz-accent); }
+.viz-lane--harness { grid-column: 3; grid-row: 4; border-left: 3px solid var(--viz-copper); background: var(--viz-copper-soft); }
+.viz-lane--harness h4 { color: var(--viz-copper); }
+.viz-outcomes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 0.8rem 0 1.2rem; }
+.viz-outcome { border: 1px solid var(--viz-hairline); border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.88rem; }
+.viz-outcome--earned { background: var(--viz-accent-soft); border-color: var(--viz-accent); }
+.viz-outcome--unearned { background: var(--viz-copper-soft); border-color: var(--viz-copper); }
+@media (max-width: 560px) {
+  .viz-tags { grid-template-columns: 1fr; }
+  .viz-tag-link { display: none; }
+  .viz-lane--static, .viz-lane--harness { grid-column: auto; grid-row: auto; }
+  .viz-outcomes { grid-template-columns: 1fr; }
+}
