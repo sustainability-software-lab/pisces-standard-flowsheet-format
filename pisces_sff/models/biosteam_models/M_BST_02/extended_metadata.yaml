@@ -1,0 +1,29 @@
+# extended_metadata.yaml -- human-authored descriptive metadata for this
+# flowsheet. Read by pisces_sff._runner.load_extended_metadata and written into
+# the exported SFF metadata block. Top-level keys map one-to-one onto exporter
+# keyword arguments.
+#
+# Tan, S.-I.; Bhagwat, S. S.; Martin, T. A.; Suthers, P. F.; Tran, V. G.;
+# Tang, W.; Fatma, Z.; Maranas, C. D.; Guest, J. S.; Zhao, H. High yield
+# production of 3-hydroxypropionic acid using Issatchenkia orientalis.
+# Nature Communications 2026, 17, 899.
+source_doi: "https://doi.org/10.1038/s41467-025-67621-8"
+#
+# The corn-fed scenario of that article: an on-site corn dry-grind front end
+# supplies glucose to low-pH 3-hydroxypropionic acid (3-HP) fermentation, and
+# the recovered 3-HP is catalytically dehydrated to acrylic acid. Fermentation
+# performance is the article's baseline ("DASbox") case.
+process_title: "Corn → 3-Hydroxypropionic acid → Acrylic acid"
+#
+# Per the article's author contributions, S.S.B. "performed biomanufacturing
+# facility design, modeling, techno-economic analysis, and life cycle
+# assessment".
+flowsheet_designers: "Sarang S. Bhagwat"
+#
+# A BioSTEAM System carries no explicit host identity, so the fermenting
+# organism must be declared. The article engineers the acid-tolerant yeast
+# Issatchenkia orientalis (strain SD108 lineage) to produce 3-HP via the
+# beta-alanine pathway at pH 4 -- one host.
+microorganisms:
+  - name: "Issatchenkia orientalis"
+    label: "3-hydroxypropionic acid producer"

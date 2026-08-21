@@ -166,10 +166,18 @@ class TestUNIT09PurchaseCostCorrelations(unittest.TestCase):
         del c["exponent"]
         self.assertFalse(self.v.is_valid(self._doc(c)))
 
-    def test_nonpositive_reference_size_rejected(self):
-        """UNIT-09 — reference_size 0 (not > 0) → rejected."""
+    def test_zero_reference_size_rejected(self):
+        """UNIT-09 — reference_size 0 → rejected (the power law divides by it)."""
         self.assertFalse(self.v.is_valid(
             self._doc(dict(self._POWER_LAW, reference_size=0))))
+
+    def test_negative_reference_size_accepted(self):
+        """UNIT-09 — a negative reference_size → accepted (cooling-duty sign convention)."""
+        # BioSTEAM's ChilledWaterPackage costs on a cooling Duty with
+        # S = -58 576 000 kJ/hr; size / reference_size scales correctly with
+        # both negative, so the schema must not require reference_size > 0.
+        self.assertTrue(self.v.is_valid(
+            self._doc(dict(self._POWER_LAW, reference_size=-58576000.0))))
 
     def test_nonpositive_reference_CE_index_rejected(self):
         """UNIT-09 — reference_CE_index 0 (not > 0) → rejected."""

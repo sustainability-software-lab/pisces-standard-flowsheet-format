@@ -82,6 +82,7 @@ is implemented.
 | `TOL_FLOW` | relative `1e-3` | mass ↔ molar-flow agreement; phase-sum ↔ total-flow agreement |
 | `TOL_MOLAR_MASS` | relative `1e-3` | formula-derived vs declared molar mass |
 | `ZERO_FLOW` | absolute `1e-12` | treating a flow as exactly zero (empty-stream logic) |
+| `TOL_STOICH_SIGFIGS` | `3` significant figures | equation coefficient vs (scaled) stoichiometric coefficient (UNIT-05) |
 
 ---
 
@@ -237,10 +238,17 @@ These are not checks; they define terms the checks rely on.
 - **Statement:** each reaction provides **at least one** of `equation` or `stoichiometry`.
   When **both** are provided, the `equation` and the `stoichiometry` describe the **same**
   reaction (identical per-component stoichiometric coefficients, up to a common positive
-  scale factor).
+  scale factor). An equation coefficient is compared to the scaled stoichiometric
+  coefficient **rounded to `TOL_STOICH_SIGFIGS` (3) significant figures** of the equation
+  value — the scale taken from a component the equation writes with a unit coefficient
+  (the normalized reactant) when there is one.
 - **Rationale:** A reaction with neither representation cannot be applied at all. When both
   are given they are two encodings of one fact and must not contradict each other, or a
-  consumer gets a different reaction depending on which field it reads.
+  consumer gets a different reaction depending on which field it reads. The rounding
+  tolerance exists because exporters print equation coefficients rounded (BioSTEAM writes
+  `Xylose -> 1.67 HP` for a stoichiometric 1.6667) while `stoichiometry` carries full
+  precision; those are the same fact, not a contradiction. (Until 2026-08-21 the check
+  demanded agreement to 1e-6, which no rounded equation could meet.)
 - **Scope:** `units[].reactions[].equation`, `units[].reactions[].stoichiometry`, resolved
   against `chemicals[].id` / `chemicals[].index`.
 - **Severity:** `error`.
@@ -294,7 +302,12 @@ These are not checks; they define terms the checks rely on.
   either parameter cannot be re-derived. A `custom_function` item's correlation is
   an opaque BioSTEAM callable, so emitting a `reference_cost`/`exponent` would
   misrepresent it — the marker exists precisely to tell a consumer to fall back to
-  the recorded `purchase_costs` value.
+  the recorded `purchase_costs` value. `reference_size` must be **non-zero**
+  (the law divides by it) but may be **negative**: a basis with a sign
+  convention — BioSTEAM's chilled-water packages cost on a cooling `Duty`,
+  negative by convention, with a negative reference duty — scales correctly
+  as `size / reference_size`. (Until 2026-08-21 the schema required
+  `reference_size > 0`, which no cooling-duty-costed unit could satisfy.)
 - **Scope:** each `units[].purchase_cost_correlations[*]` object.
 - **Severity:** `error`.
 - **Skipped when:** no unit declares a non-empty `purchase_cost_correlations`.
@@ -451,17 +464,26 @@ These are not checks; they define terms the checks rely on.
   `stream_properties.required`; **gated**, breaking).
 
 ### STR-13 — zero-flow streams are fully empty
-- **Statement:** empty streams are allowed, but if **any** present flow scalar of a stream is
-  zero (within `ZERO_FLOW`), then **all** of its flow scalars are zero and all of its
-  composition arrays are empty.
+- **Statement:** empty streams (and empty phases) are allowed, but the rule is evaluated
+  **per scope**: if **any** stream-level flow scalar is zero (within `ZERO_FLOW`), then
+  **all** stream-level flow scalars, all per-phase flow scalars, and all composition arrays
+  are zero/empty; and within **each phase**, if any of that phase's flow scalars is zero,
+  then all of that phase's flow scalars are zero and its composition is empty.
 - **Rationale:** A stream with, say, zero mass flow but a nonzero molar flow or a populated
   composition is internally contradictory — there is no material, yet material is described.
-- **Scope:** `stream_properties.total_{mass,molar,volumetric}_flow` and
-  `phases[].composition` (and per-phase flows analogously).
+  An empty phase beside a populated one (a liquid `MultiStream` whose `g` phase carries
+  nothing) is **not** a contradiction, so phases are judged against themselves, never
+  pooled with the stream totals or each other. (Until 2026-08-21 all scalars were pooled,
+  which failed every multiphase stream with one empty phase.)
+- **Scope:** `stream_properties.total_{mass,molar,volumetric}_flow` against the whole
+  stream; `phases[].total_{mass,molar,volumetric}_flow` and `phases[].composition` within
+  each phase.
 - **Severity:** `error`.
 - **Skipped when:** all present flow scalars are nonzero.
 - **Enforcement:** validator (`_check_zero_flow_consistency`). STR-03 is the doubly-isolated
-  special case.
+  special case. The reference exporter honours the same threshold: a stream or phase whose
+  molar flow is `<= ZERO_FLOW` is serialized with an empty composition (`_export.ZERO_FLOW`),
+  so a vanishing numerical residue left by a converged simulation is not written as material.
 
 ### STR-14 — streams present and identified
 - **Statement:** `streams` is a non-empty array, and every stream declares a non-empty `id`.

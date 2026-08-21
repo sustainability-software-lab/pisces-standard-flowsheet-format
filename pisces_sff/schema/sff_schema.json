@@ -458,8 +458,8 @@
                 },
                 "reference_size": {
                   "type": "number",
-                  "exclusiveMinimum": 0,
-                  "description": "Reference size S (in basis_units) at which reference_cost applies."
+                  "not": { "const": 0 },
+                  "description": "Reference size S (in basis_units) at which reference_cost applies. Any non-zero number: the power law scales by size / reference_size, and a basis with a sign convention (e.g. a cooling duty, negative in BioSTEAM) has a negative reference size. Zero is rejected (UNIT-09)."
                 },
                 "reference_cost": {
                   "type": "number",

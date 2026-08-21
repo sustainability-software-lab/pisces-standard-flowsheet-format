@@ -1152,6 +1152,33 @@ class TestReferencedChemicalIdsHelper(unittest.TestCase):
         self.assertEqual(V._referenced_chemical_ids(c), {"W", "E"})
 
 
+class TestRoundedToSigfigsHelper(unittest.TestCase):
+    def test_reference_rounding_to_the_value_agrees(self):
+        """1.67 is 1.6667 rounded to 3 significant figures -> agree; so is
+        0.416 for 0.4165 (half-unit boundary) and 1.98 for 1.9825."""
+        self.assertTrue(V._rounded_to_sigfigs(1.67, 1.6666666667))
+        self.assertTrue(V._rounded_to_sigfigs(0.416, 0.4165))
+        self.assertTrue(V._rounded_to_sigfigs(1.98, 1.9825249505))
+
+    def test_beyond_half_a_unit_in_the_last_place_disagrees(self):
+        """1.67 vs 1.676 (would print 1.68) -> disagree; 1.67 vs 1.7 -> disagree."""
+        self.assertFalse(V._rounded_to_sigfigs(1.67, 1.676))
+        self.assertFalse(V._rounded_to_sigfigs(1.67, 1.7))
+
+    def test_exact_values_and_zero(self):
+        """Exact equality agrees at any magnitude; a zero value agrees only
+        with a ~zero reference."""
+        self.assertTrue(V._rounded_to_sigfigs(1.0, 1.0))
+        self.assertTrue(V._rounded_to_sigfigs(-2.0, -2.0))
+        self.assertTrue(V._rounded_to_sigfigs(0.0, 0.0))
+        self.assertFalse(V._rounded_to_sigfigs(0.0, 0.1))
+
+    def test_sigfigs_parameter_overrides_the_module_default(self):
+        """With sigfigs=2, 1.7 matches 1.6667; with the default 3 it does not."""
+        self.assertTrue(V._rounded_to_sigfigs(1.7, 1.6667, sigfigs=2))
+        self.assertFalse(V._rounded_to_sigfigs(1.7, 1.6667))
+
+
 class TestSameReactionUpToScaleHelper(unittest.TestCase):
     def test_agreeing_up_to_a_positive_scale_factor(self):
         """Two coefficient maps describing the same reaction at different
@@ -1163,6 +1190,26 @@ class TestSameReactionUpToScaleHelper(unittest.TestCase):
         """Coefficient maps whose ratios differ do not agree."""
         self.assertFalse(V._same_reaction_up_to_scale(
             {"A": -1.0, "B": 1.0}, {"A": -1.0, "B": 2.0}))
+
+    def test_equation_rounded_to_three_significant_figures_agrees(self):
+        """An equation printed to 3 significant figures ('Xylose -> 1.67 HP',
+        '1.67 CO2 + Xylose -> 0.416 O2 + 1.67 SuccinicAcid') agrees with its
+        full-precision stoichiometry (TOL_STOICH_SIGFIGS); the unit-coefficient
+        reactant anchors the scale."""
+        self.assertTrue(V._same_reaction_up_to_scale(
+            {"Xylose": -1.0, "HP": 1.67},
+            {"Xylose": -1.0, "HP": 1.6666666666666667}))
+        self.assertTrue(V._same_reaction_up_to_scale(
+            {"CO2": -1.67, "Xylose": -1.0, "O2": 0.416, "SuccinicAcid": 1.67},
+            {"O2": 0.4165, "CO2": -1.667, "Xylose": -1.0, "SuccinicAcid": 1.667}))
+
+    def test_rounding_tolerance_does_not_hide_a_real_disagreement(self):
+        """1.67 vs a stoichiometric 1.7 (which would print as 1.7) disagrees;
+        so does an opposite sign."""
+        self.assertFalse(V._same_reaction_up_to_scale(
+            {"Xylose": -1.0, "HP": 1.67}, {"Xylose": -1.0, "HP": 1.7}))
+        self.assertFalse(V._same_reaction_up_to_scale(
+            {"A": -1.0, "B": 1.0}, {"A": 1.0, "B": -1.0}))
 
     def test_different_component_sets_disagree(self):
         """Coefficient maps over different component sets can never agree."""
@@ -1213,6 +1260,46 @@ class TestStreamCompositionsHelper(unittest.TestCase):
     def test_non_dict_stream_yields_nothing(self):
         """A non-dict stream (defensive branch) yields no compositions."""
         self.assertEqual(list(V._stream_compositions("not a stream")), [])
+
+
+class TestFlowScalarsOfHelper(unittest.TestCase):
+    def test_yields_numeric_flow_fields_of_one_block(self):
+        """_flow_scalars_of yields the three flow totals present on one block
+        (stream_properties or a phase) and nothing else."""
+        block = {"total_mass_flow": 1.0, "total_molar_flow": 2, "temperature": 300.0,
+                 "total_volumetric_flow": None}
+        self.assertEqual(sorted(V._flow_scalars_of(block)), [1.0, 2])
+
+    def test_non_dict_yields_nothing(self):
+        self.assertEqual(list(V._flow_scalars_of(None)), [])
+        self.assertEqual(list(V._flow_scalars_of("x")), [])
+
+
+class TestStreamPhasesHelper(unittest.TestCase):
+    def test_yields_phase_blocks_in_declaration_order(self):
+        """_stream_phases yields each dict-valued phase block in order, skipping
+        malformed (non-dict) entries."""
+        stream = {"stream_properties": {"phases": {
+            "g": {"total_mass_flow": 0.0}, "l": {"total_mass_flow": 1.0}, "s": "bad"}}}
+        self.assertEqual([p["total_mass_flow"] for p in V._stream_phases(stream)],
+                         [0.0, 1.0])
+
+    def test_missing_phases_yields_nothing(self):
+        self.assertEqual(list(V._stream_phases({"stream_properties": {}})), [])
+        self.assertEqual(list(V._stream_phases("not a stream")), [])
+
+
+class TestZeroFlowInconsistentHelper(unittest.TestCase):
+    def test_no_zero_scalar_is_not_applicable(self):
+        """No zero flow scalar in scope -> None (the rule does not apply)."""
+        self.assertIsNone(V._zero_flow_inconsistent([1.0, 2.0], [[{"component_name": "A"}]]))
+
+    def test_all_zero_and_empty_is_consistent(self):
+        self.assertFalse(V._zero_flow_inconsistent([0.0, 0], [[]]))
+
+    def test_zero_beside_nonzero_or_populated_composition_is_inconsistent(self):
+        self.assertTrue(V._zero_flow_inconsistent([0.0, 1.0], [[]]))
+        self.assertTrue(V._zero_flow_inconsistent([0.0], [[{"component_name": "A"}]]))
 
 
 class TestStreamFlowScalarsHelper(unittest.TestCase):

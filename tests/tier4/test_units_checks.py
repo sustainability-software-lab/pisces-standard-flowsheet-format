@@ -149,6 +149,41 @@ class TestUNIT05(RealBiosteamTestCase):
         self.assertEqual((r.severity, r.status), ("error", "fail"))
         self.assertFalse(is_valid)
 
+    def _doc_with_two_chemicals(self):
+        doc = valid_doc()
+        doc["chemicals"].append({"id": "Water", "included_in_thermo": False,
+                                 "index": len(doc["chemicals"]), "molar_mass": 18.015})
+        return doc
+
+    def test_equation_rounded_to_three_significant_figures_conforms(self):
+        """UNIT-05 -- equation 'Ethanol -> 1.67 Water' (BioSTEAM prints
+        coefficients to 3 significant figures) against the full-precision
+        dict stoichiometry {Ethanol: -1, Water: 1.6667} -> the two agree within
+        TOL_STOICH_SIGFIGS -> CheckResult(UNIT-05, error, pass); is_valid
+        True."""
+        doc = self._doc_with_two_chemicals()
+        doc["units"][0]["reactions"] = [
+            {"equation": "Ethanol -> 1.67 Water",
+             "stoichiometry": {"Ethanol": -1.0, "Water": 1.6666666666666667}}]
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["UNIT-05"][0]
+        self.assertEqual((r.severity, r.status), ("error", "pass"), r.message)
+        self.assertTrue(is_valid)
+
+    def test_equation_differing_beyond_rounding_violates(self):
+        """UNIT-05 -- equation 'Ethanol -> 1.67 Water' against stoichiometry
+        {Ethanol: -1, Water: 1.7} (would print as 1.7, not 1.67) -> a real
+        disagreement, not rounding -> CheckResult(UNIT-05, error, fail);
+        is_valid False."""
+        doc = self._doc_with_two_chemicals()
+        doc["units"][0]["reactions"] = [
+            {"equation": "Ethanol -> 1.67 Water",
+             "stoichiometry": {"Ethanol": -1.0, "Water": 1.7}}]
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["UNIT-05"][0]
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertFalse(is_valid)
+
 
 class TestUNIT06(RealBiosteamTestCase):
     @classmethod

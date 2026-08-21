@@ -193,6 +193,32 @@ class TestPipRequirementParsing(unittest.TestCase):
         self.assertEqual(record["name"], "biorefineries")
         self.assertNotIn("#", record["url"])
 
+    def test_editable_vcs_pin_parses_like_a_pep508_reference(self):
+        """"-e git+<url>@<sha>#egg=<name>" parses to the same {name, url, commit} record as the PEP 508 form."""
+        # An editable VCS install is how a model whose repository's setup.py
+        # does not ship its subpackage (Bioindustrial-Park's HP, for one) gets
+        # installed at a pinned commit: pip clones the whole tree into
+        # <env>/src, the pip-native equivalent of "clone + PYTHONPATH".
+        url = "https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park"
+        sha = "eafc1704106aba4f2910eb5fad7e8b4856e8dc74"
+        for prefix in ("-e ", "--editable ", "-e=", "--editable="):
+            with self.subTest(prefix=prefix):
+                record = self.harness.parse_pip_requirement(
+                    f"{prefix}git+{url}@{sha}#egg=biorefineries"
+                )
+                self.assertEqual(record,
+                                 {"name": "biorefineries", "url": url, "commit": sha})
+
+    def test_editable_vcs_pin_without_a_commit_is_unparseable(self):
+        """"-e git+<url>" with no pinned commit parses to None, like the non-editable forms."""
+        self.assertIsNone(self.harness.parse_pip_requirement(
+            "-e git+https://github.com/org/repo#egg=pkg"))
+
+    def test_editable_local_path_is_not_a_pin(self):
+        """"-e ." / "-e ./path" (a local editable install) parses to None -- it pins nothing."""
+        self.assertIsNone(self.harness.parse_pip_requirement("-e ."))
+        self.assertIsNone(self.harness.parse_pip_requirement("--editable ./pkg"))
+
     def test_directives_are_ignored(self):
         """pip CLI flags ("--no-deps", "--index-url ...") parse to None, not a package record."""
         self.assertIsNone(self.harness.parse_pip_requirement("--no-deps"))
@@ -349,6 +375,9 @@ class FakeConda:
     def __call__(self, cmd, **kwargs):
         self.calls.append(list(cmd))
         self.kwargs.append(dict(kwargs))
+        if cmd[1:3] == ["info", "--json"]:
+            payload = json.dumps({"envs_dirs": [self.root], "root_prefix": self.root})
+            return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr="")
         if cmd[1:4] == ["env", "list", "--json"]:
             payload = json.dumps(
                 {"envs": [os.path.join(self.root, name) for name in self.existing]}
@@ -437,6 +466,25 @@ class TestEnsureEnvironment(unittest.TestCase):
         for cmd, kwargs in zip(conda.calls, conda.kwargs):
             if cmd[1:3] == ["env", "create"]:
                 self.assertEqual((kwargs.get("env") or {}).get("PIP_NO_DEPS"), "1")
+                break
+        else:
+            self.fail("conda env create was never invoked")
+
+    def test_create_sends_editable_checkouts_into_the_environment_prefix(self):
+        """conda env create runs with PIP_SRC=<envs dir>/<name>/src, so a "-e git+..." checkout lands inside the environment."""
+        # pip's default --src outside a virtualenv is ./src of its working
+        # directory -- the recipe directory during `conda env create` -- which
+        # would drop a full Bioindustrial-Park clone into the repository.
+        conda = FakeConda()
+        self.harness.ensure_environment(
+            self.env_yaml, conda_exe=self.conda_exe, run=conda
+        )
+        for cmd, kwargs in zip(conda.calls, conda.kwargs):
+            if cmd[1:3] == ["env", "create"]:
+                self.assertEqual(
+                    (kwargs.get("env") or {}).get("PIP_SRC"),
+                    os.path.join(_FAKE_ENV_ROOT, self.name, "src"),
+                )
                 break
         else:
             self.fail("conda env create was never invoked")
@@ -736,6 +784,29 @@ class TestEnvironmentPrefixHelper(unittest.TestCase):
         conda = FakeConda(existing=["other-env"])
         self.assertIsNone(
             self.harness._environment_prefix("conda.exe", "sff-abc123", conda))
+
+
+class TestEditableSourceDirHelper(unittest.TestCase):
+    def setUp(self):
+        self.harness = load_harness()
+
+    def test_uses_the_first_envs_dir(self):
+        """_editable_source_dir -> <envs_dirs[0]>/<name>/src, the prefix conda
+        will create for `-n <name>`, so an editable checkout lives (and dies)
+        with its environment."""
+        conda = FakeConda(root=_FAKE_ENV_ROOT)
+        self.assertEqual(
+            self.harness._editable_source_dir("conda.exe", "sff-abc123", conda),
+            os.path.join(_FAKE_ENV_ROOT, "sff-abc123", "src"))
+
+    def test_falls_back_to_root_prefix_when_no_envs_dirs(self):
+        """No envs_dirs in `conda info` -> <root_prefix>/envs/<name>/src."""
+        def run(cmd, **kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=json.dumps({"root_prefix": _FAKE_ENV_ROOT}), stderr="")
+        self.assertEqual(
+            self.harness._editable_source_dir("conda.exe", "sff-abc123", run),
+            os.path.join(_FAKE_ENV_ROOT, "envs", "sff-abc123", "src"))
 
 
 class TestSchemaVersionHelper(unittest.TestCase):

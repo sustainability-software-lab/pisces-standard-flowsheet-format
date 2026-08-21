@@ -171,8 +171,9 @@ def parse_pip_requirement(entry):
     Parameters
     ----------
     entry : str
-        A pip requirement, e.g. ``'numpy==1.26.4'`` or
-        ``'biorefineries @ git+https://host/org/repo@<sha>'``.
+        A pip requirement, e.g. ``'numpy==1.26.4'``,
+        ``'biorefineries @ git+https://host/org/repo@<sha>'``, or an editable
+        VCS pin ``'-e git+https://host/org/repo@<sha>#egg=biorefineries'``.
 
     Returns
     -------
@@ -182,6 +183,18 @@ def parse_pip_requirement(entry):
         requirement this parser does not recognize.
     """
     entry = (entry or '').strip()
+    # An editable VCS install ("-e git+<url>@<sha>#egg=<name>") is the pip-native
+    # form of "clone the repository at this commit and put it on PYTHONPATH" --
+    # the setup some models' own reproduction instructions prescribe, and the
+    # only way to install a subpackage that the repository's setup.py does not
+    # ship (pip clones the whole tree into <env>/src). It is as much a pin as
+    # the "name @ git+..." form, so it parses to the same record.
+    for flag in ('--editable', '-e'):
+        if entry.startswith(flag + ' ') or entry.startswith(flag + '='):
+            reference = entry[len(flag) + 1:].strip()
+            if reference.startswith('git+'):
+                return _vcs_record(None, reference)
+            return None
     if not entry or entry.startswith('-'):
         return None
     if ' @ ' in entry:
@@ -345,6 +358,30 @@ def _environment_prefix(conda, name, run):
     return None
 
 
+def _editable_source_dir(conda, name, run):
+    """
+    Return the directory pip should check editable VCS requirements out into
+    for the environment called `name`.
+
+    pip's default ``--src`` outside a virtualenv is ``./src`` of its working
+    directory, which during ``conda env create`` is the directory holding the
+    environment file -- i.e. the model recipe inside this repository. The
+    checkout belongs with the environment instead, so it is removed with it
+    and never pollutes the repository: ``<envs dir>/<name>/src``, the prefix
+    conda will create for ``-n <name>``. Falls back to a ``src`` directory
+    beside the conda root when ``conda info`` reports no environment
+    directories.
+    """
+    result = run([conda, 'info', '--json'],
+                 capture_output=True, text=True, check=True)
+    info = json.loads(result.stdout or '{}')
+    envs_dirs = info.get('envs_dirs') or ()
+    if envs_dirs:
+        return str(Path(envs_dirs[0]) / name / 'src')
+    root = info.get('root_prefix') or str(Path(conda).resolve().parents[1])
+    return str(Path(root) / 'envs' / name / 'src')
+
+
 def ensure_environment(env_yaml_path, recreate=False, conda_exe=None, run=None):
     """
     Return the prefix of the conda environment described by an environment file,
@@ -384,7 +421,11 @@ def ensure_environment(env_yaml_path, recreate=False, conda_exe=None, run=None):
         # fiction. It cannot be expressed as `--no-deps` inside the pip: block:
         # conda writes that block verbatim into a requirements file, and pip's
         # requirements-file parser rejects --no-deps as an unknown option.
-        env = dict(os.environ, PIP_NO_DEPS='1')
+        # PIP_SRC sends editable VCS checkouts ("-e git+...") into the
+        # environment prefix rather than pip's default ./src of its working
+        # directory (the recipe directory) -- see _editable_source_dir.
+        env = dict(os.environ, PIP_NO_DEPS='1',
+                   PIP_SRC=_editable_source_dir(conda, name, run))
         try:
             run([conda, 'env', 'create', '-n', name, '-f', str(env_yaml_path)],
                 check=True, env=env)

@@ -171,6 +171,26 @@ _PURCHASE_COST_CORR_SINCE = (0, 1, 2)
 #: so 0.0.5-0.1.2 stay byte-stable and never emit the key. sff_checks.md section 8.
 _TAGS_SINCE = (0, 1, 3)
 
+#: First schema version whose `chemicals` registry is the UNION of every
+#: chemicals set the document references -- every stream's, every reaction's,
+#: and every utility agent's -- rather than the representative stream's alone.
+#: A BioSTEAM system may mix thermo packages (a wastewater-treatment area or a
+#: cooling-tower/chilled-water facility with its own CompiledChemicals), and a
+#: registry built from one stream then leaves those sections' component names
+#: dangling (sff_checks.md STR-07, UTIL-04, UNIT-04, UNIT-06). Gated so older
+#: exporters stay byte-stable; for a single-thermo system the union adds nothing.
+_CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
+
+#: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
+#: serialized as EMPTY -- empty composition -- mirroring the validator's
+#: ZERO_FLOW (sff_checks.md "Default tolerances", STR-13). A converged
+#: simulation can leave vanishing residues (1e-85 kg/hr of water in an unused
+#: cooling-tower makeup line); listing a composition for material the
+#: validator rightly treats as absent is the STR-13 contradiction. Not
+#: version-gated: it only ever changes output for flows already below the
+#: zero threshold, where the previous output was non-conforming.
+ZERO_FLOW = 1e-12
+
 
 def _assign_stream_ids(all_streams, sff_version):
     """Map each stream object to the id the SFF document should use for it.
@@ -434,11 +454,18 @@ def _build_sff_dict(sys, tea=None,
     
     ## ------ Chemicals ------ ##
     chemicals = []
-    repr_stream = all_streams[0] # !!! future: add support for multiple CompiledChemicals object (i.e., multiple sets of chemicals) within a single system
+    repr_stream = all_streams[0]
     chems = repr_stream.chemicals
     vle_chems = repr_stream.vle_chemicals
     for i, c in zip(range(len(chems)), chems):
         chemicals.append(get_chemical_entry(c, i, c in vle_chems, stoichiometry))
+    # 0.1.3+: complete the registry with every chemical from any OTHER chemicals
+    # set the document references (multi-thermo systems), appended after the
+    # representative stream's set so the single-thermo output is byte-identical.
+    if version_tuple(sff_version) >= _CHEMICAL_REGISTRY_UNION_SINCE:
+        chemicals.extend(get_additional_chemical_entries(
+            chems, all_streams, list(u),
+            list(all_hu_agents) + list(all_ou_agents), stoichiometry))
         
     ## ----- Utilities ----- ##
     # Deterministic ordering policy: utility agents form a registry, so the
@@ -1481,6 +1508,8 @@ def get_composition(stream,
     comp = []
     for p in phases:
         sp = s[p]
+        if sp.F_mol <= ZERO_FLOW:
+            continue  # empty phase (STR-13): no components listed
         for c in chem_IDs:
             if sp.imol[c]>0:
                 comp.append({'phase':p, 'component_name':c})
@@ -1542,7 +1571,9 @@ def get_phase_properties(stream, inline):
                     stacklevel=2,
                 )
         composition = []
-        for c in chem_IDs:
+        # An empty phase (STR-13) lists no components, even if a vanishing
+        # numerical residue is present.
+        for c in (chem_IDs if sp.F_mol > ZERO_FLOW else ()):
             if sp.imol[c] > 0:
                 composition.append({
                     "component_name": c,
@@ -1554,7 +1585,13 @@ def get_phase_properties(stream, inline):
     return phases
 
 
-def get_reactions(unit, stoichiometry):
+def get_reaction_objects(unit):
+    """
+    Return the Reaction/ReactionSet objects attached to a unit, in the order
+    :func:`get_reactions` emits them (discovery order, children of a collected
+    parent dropped). Shared by :func:`get_reactions` and the chemical-registry
+    union, so the two cannot disagree about which reactions a unit carries.
+    """
     u = unit
     rxntypes = (Reaction, ReactionSet)
     # Deterministic ordering policy: emit reactions in discovery order -- the
@@ -1586,6 +1623,69 @@ def get_reactions(unit, stoichiometry):
             if id(parent) in collected_ids:
                 continue
         all_reactions.append(rxn)
+    return all_reactions
+
+
+def get_additional_chemical_entries(base_chemicals, streams, units, agents,
+                                    stoichiometry):
+    """
+    Build ``chemicals[]`` entries for every chemical referenced by the document
+    that is NOT in `base_chemicals` (the representative stream's set).
+
+    Walks, in order, every stream's chemicals set, every unit's reactions'
+    chemicals sets, and every utility agent's chemicals set; a chemicals set
+    already visited (by identity) is skipped, and within a new set only IDs not
+    yet registered are appended. Registry ``index`` values continue from
+    ``len(base_chemicals)``; ``is_vle`` comes from the owning set's VLE index
+    (sff_checks.md STR-07 / UTIL-04 / UNIT-04 / UNIT-06 -- every referenced
+    component name resolves to a registry entry).
+
+    Parameters
+    ----------
+    base_chemicals : thermosteam.CompiledChemicals
+        The set already serialized.
+    streams, units, agents : iterable
+        Objects whose ``.chemicals`` (or, for units, reactions' ``.chemicals``)
+        sets are unioned in.
+    stoichiometry : str or None
+        Forwarded to :func:`get_chemical_entry`.
+
+    Returns
+    -------
+    list of dict
+        Entries in discovery order; empty for a single-thermo system.
+    """
+    registered = {c.ID for c in base_chemicals}
+    visited = {id(base_chemicals)}
+    entries = []
+    index = len(base_chemicals)
+
+    def sets():
+        for obj in streams:
+            yield getattr(obj, 'chemicals', None)
+        for unit in units:
+            for rxn in get_reaction_objects(unit):
+                yield getattr(rxn, 'chemicals', None)
+        for agent in agents:
+            yield getattr(agent, 'chemicals', None)
+
+    for chem_set in sets():
+        if chem_set is None or id(chem_set) in visited:
+            continue
+        visited.add(id(chem_set))
+        vle_index = set(getattr(chem_set, '_vle_index', ()))
+        for i, c in enumerate(chem_set):
+            if c.ID in registered:
+                continue
+            registered.add(c.ID)
+            entries.append(get_chemical_entry(c, index, i in vle_index,
+                                              stoichiometry))
+            index += 1
+    return entries
+
+
+def get_reactions(unit, stoichiometry):
+    all_reactions = get_reaction_objects(unit)
     reactions = []
     
     i = 0

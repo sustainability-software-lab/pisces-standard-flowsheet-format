@@ -326,6 +326,48 @@ class TestSTR13(RealBiosteamTestCase):
         self.assertEqual((r.severity, r.status), ("error", "fail"))
         self.assertFalse(is_valid)
 
+    def test_empty_phase_beside_a_populated_phase_conforms(self):
+        """STR-13 -- streams/0 gains an all-zero, empty-composition 'g' phase
+        beside its populated 'l' phase (a liquid MultiStream's vapor phase).
+        Phases are judged per scope, so this is NOT a contradiction ->
+        CheckResult(STR-13, error, pass); is_valid True."""
+        doc = valid_doc()
+        phases = doc["streams"][0]["stream_properties"]["phases"]
+        phases["g"] = {"total_mass_flow": 0.0, "total_molar_flow": 0,
+                       "composition": []}
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["STR-13"][0]
+        self.assertEqual((r.severity, r.status), ("error", "pass"), r.message)
+        self.assertTrue(is_valid)
+
+    def test_phase_with_zero_flow_but_populated_composition_violates(self):
+        """STR-13 -- a phase whose own total_mass_flow is 0 while its
+        composition is non-empty is contradictory within that phase ->
+        CheckResult(STR-13, error, fail); is_valid False."""
+        doc = valid_doc()
+        phases = doc["streams"][0]["stream_properties"]["phases"]
+        phases["g"] = {"total_mass_flow": 0.0, "total_molar_flow": 0,
+                       "composition": [{"component_name": "Ethanol",
+                                        "mol_fraction": 1.0, "mass_fraction": 1.0}]}
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["STR-13"][0]
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertFalse(is_valid)
+
+    def test_zero_stream_total_with_a_populated_phase_violates(self):
+        """STR-13 -- the stream's own totals are all 0 but a phase still
+        carries flow and composition -> the stream scope is contradictory ->
+        CheckResult(STR-13, error, fail); is_valid False."""
+        doc = valid_doc()
+        sp = doc["streams"][0]["stream_properties"]
+        for name in ("total_mass_flow", "total_molar_flow", "total_volumetric_flow"):
+            if name in sp:
+                sp[name] = 0
+        is_valid, by_id = validate_doc(doc)
+        r = by_id["STR-13"][0]
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertFalse(is_valid)
+
 
 class TestSTR14(RealBiosteamTestCase):
     @classmethod

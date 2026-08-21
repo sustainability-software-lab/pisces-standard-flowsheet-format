@@ -356,6 +356,15 @@ class TestGetComposition(unittest.TestCase):
         self.assertEqual(comp, [{"phase": "l", "component_name": "Water",
                                  "mol_fraction": 1.0, "mass_fraction": 1.0}])
 
+    def test_vanishing_phase_lists_no_components(self):
+        """A phase whose molar flow is at or below ZERO_FLOW (1e-12 kmol/hr)
+        -- a numerical residue, e.g. 1e-85 kg/hr of water in an unused
+        cooling-tower line -- lists no components: it is empty (STR-13)."""
+        residue = _FakePhaseStream(imol={"Water": 3e-86}, imass={"Water": 6e-85},
+                                   F_mol=3e-86, F_mass=6e-85)
+        stream = _FakeMultiPhaseStream(["l"], ["Water"], {"l": residue})
+        self.assertEqual(_export.get_composition(stream), [])
+
     def test_mol_percent_reports_only_mol_fraction(self):
         """units='mol%' includes mol_fraction only, no mass_fraction key."""
         liquid = _FakePhaseStream(imol={"Water": 1.0}, imass={"Water": 18.0},
@@ -380,6 +389,17 @@ class TestGetPhaseProperties(unittest.TestCase):
         self.assertEqual(phases["l"]["total_volumetric_flow"], 0.036)
         self.assertEqual(phases["l"]["composition"], [
             {"component_name": "Water", "mol_fraction": 1.0, "mass_fraction": 1.0}])
+
+    def test_vanishing_phase_has_empty_composition(self):
+        """A phase with F_mol <= ZERO_FLOW keeps its (vanishing) totals but
+        reports composition [] -- consistent with the validator treating the
+        flow as zero (STR-13)."""
+        residue = _FakePhaseStream(imol={"Water": 3e-86}, imass={"Water": 6e-85},
+                                   F_mol=3e-86, F_mass=6e-85, F_vol=6e-88)
+        stream = _FakeMultiPhaseStream(["l"], ["Water"], {"l": residue})
+        phases = _export.get_phase_properties(stream, inline=False)
+        self.assertEqual(phases["l"]["composition"], [])
+        self.assertEqual(phases["l"]["total_mass_flow"], 6e-85)
 
     def test_inline_shape_wraps_totals_in_value_units_pairs(self):
         """inline=True wraps each scalar total in the pre-0.0.7
@@ -457,6 +477,133 @@ class TestGetReactions(unittest.TestCase):
             reactions = _export.get_reactions(unit, stoichiometry=None)
 
         self.assertNotIn("stoichiometry", reactions[0])
+
+
+class TestGetReactionObjects(unittest.TestCase):
+    """get_reaction_objects is the discovery step get_reactions and the
+    chemical-registry union share: unit.__dict__ insertion order, identity
+    dedup, children of a collected parent dropped."""
+
+    def _rxn(self):
+        rxn = _export.Reaction()
+        rxn.reactant = "A"
+        rxn.X = 0.5
+        rxn.stoichiometry = [-1.0, 1.0]
+        rxn.chemicals = [types.SimpleNamespace(ID="A"), types.SimpleNamespace(ID="B")]
+        rxn.phases = "l"
+        return rxn
+
+    def test_discovery_order_and_identity_dedup(self):
+        """Two attribute names bound to one Reaction object yield it once, in
+        first-binding order relative to other reactions."""
+        class FakeUnit:
+            pass
+        unit = FakeUnit()
+        r1, r2 = self._rxn(), self._rxn()
+        unit.second = r2
+        unit.first = r1
+        unit.alias = r2
+        self.assertEqual([id(r) for r in _export.get_reaction_objects(unit)],
+                         [id(r2), id(r1)])
+
+    def test_child_of_a_collected_parent_is_dropped(self):
+        """A child reaction whose _parent ReactionSet is also on the unit is
+        not returned separately (the parent's iteration emits it)."""
+        class FakeUnit:
+            pass
+        unit = FakeUnit()
+        child = self._rxn()
+        parent = _export.ReactionSet()
+        child._parent = parent
+        unit.parent = parent
+        unit.child = child
+        self.assertEqual([id(r) for r in _export.get_reaction_objects(unit)],
+                         [id(parent)])
+
+    def test_non_reaction_attributes_are_ignored(self):
+        """Plain attributes (ints, strings, streams) are not reactions."""
+        class FakeUnit:
+            pass
+        unit = FakeUnit()
+        unit.ID = "U1"
+        unit.n = 3
+        self.assertEqual(_export.get_reaction_objects(unit), [])
+
+
+class TestGetAdditionalChemicalEntries(unittest.TestCase):
+    """The chemical-registry union (0.1.3+, _CHEMICAL_REGISTRY_UNION_SINCE):
+    every chemicals set a stream, reaction, or utility agent references is
+    folded into the registry after the representative stream's set. Re-verified
+    on real thermosteam objects in tests/tier2/test_export_helpers_real.py."""
+
+    def _chem(self, ID):
+        # A CAS is carried so a VLE-flagged chemical can be serialized
+        # (get_chemical_entry requires a registry_id for VLE chemicals).
+        return types.SimpleNamespace(ID=ID, CAS=f"CAS-{ID}", formula=None, MW=1.0)
+
+    def _set(self, *ids, vle=()):
+        """A stand-in for thermosteam.CompiledChemicals: iterable of chemicals
+        with a _vle_index listing the VLE-capable positions."""
+        class ChemSet(list):
+            pass
+        out = ChemSet(self._chem(i) for i in ids)
+        out._vle_index = list(vle)
+        return out
+
+    def test_single_thermo_system_adds_nothing(self):
+        """Streams, reactions, and agents all sharing the base set (by
+        identity) -> no additional entries: the single-thermo export is
+        byte-identical to before the union existed."""
+        base = self._set("H2O", "Ethanol")
+        stream = types.SimpleNamespace(chemicals=base)
+        rxn = _export.Reaction(); rxn.chemicals = base
+        class FakeUnit:
+            pass
+        unit = FakeUnit(); unit.rxn = rxn
+        agent = types.SimpleNamespace(chemicals=base)
+        self.assertEqual(_export.get_additional_chemical_entries(
+            base, [stream], [unit], [agent], "dict"), [])
+
+    def test_other_sets_contribute_only_unregistered_ids_with_continuing_index(self):
+        """A second set {H2O, Water, CitricAcid} (a WWT/facility thermo)
+        contributes Water and CitricAcid only -- H2O is already registered --
+        with index continuing from len(base) and is_vle taken from that set's
+        own _vle_index; a third set re-listing CitricAcid adds nothing."""
+        base = self._set("H2O", "Ethanol")
+        other = self._set("H2O", "Water", "CitricAcid", vle=[0, 1])
+        third = self._set("CitricAcid", "NaOCl")
+        stream = types.SimpleNamespace(chemicals=other)
+        rxn = _export.Reaction(); rxn.chemicals = third
+        class FakeUnit:
+            pass
+        unit = FakeUnit(); unit.rxn = rxn
+        entries = _export.get_additional_chemical_entries(
+            base, [stream], [unit], [], "dict")
+        self.assertEqual([(e["id"], e["index"], e["included_in_thermo"]) for e in entries],
+                         [("Water", 2, True), ("CitricAcid", 3, False), ("NaOCl", 4, False)])
+
+    def test_discovery_order_is_streams_then_reactions_then_agents(self):
+        """Sets are visited streams -> unit reactions -> utility agents, so the
+        registry order (and therefore index) is deterministic."""
+        base = self._set("H2O")
+        s_set = self._set("S"); r_set = self._set("R"); a_set = self._set("A")
+        rxn = _export.Reaction(); rxn.chemicals = r_set
+        class FakeUnit:
+            pass
+        unit = FakeUnit(); unit.rxn = rxn
+        entries = _export.get_additional_chemical_entries(
+            base, [types.SimpleNamespace(chemicals=s_set)], [unit],
+            [types.SimpleNamespace(chemicals=a_set)], None)
+        self.assertEqual([e["id"] for e in entries], ["S", "R", "A"])
+
+    def test_objects_without_chemicals_are_skipped(self):
+        """An object with no .chemicals attribute (or None) contributes nothing
+        and does not raise."""
+        base = self._set("H2O")
+        entries = _export.get_additional_chemical_entries(
+            base, [types.SimpleNamespace(), types.SimpleNamespace(chemicals=None)],
+            [], [], None)
+        self.assertEqual(entries, [])
 
 
 class TestGetReactionsOrder(unittest.TestCase):

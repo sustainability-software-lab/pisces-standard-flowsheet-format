@@ -9,6 +9,7 @@
 import datetime
 import hashlib
 import json
+import math
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -89,6 +90,7 @@ TOL_FRACTION = 1e-6      # absolute: fraction sums that should equal 1
 TOL_FLOW = 1e-3          # relative: mass<->molar, phase-sum<->total
 TOL_MOLAR_MASS = 1e-3    # relative: formula-derived vs declared molar mass
 ZERO_FLOW = 1e-12        # absolute: treat a flow as exactly zero
+TOL_STOICH_SIGFIGS = 3   # significant figures an equation coefficient is rounded to
 
 _UTILITY_GROUPS = ('heat_utilities', 'power_utilities', 'other_utilities')
 
@@ -387,23 +389,37 @@ def _parse_equation(equation, ctx):
     return {k: v for k, v in coeffs.items() if v}
 
 
-def _same_reaction_up_to_scale(a, b):
-    """True if coeff maps a and b describe one reaction up to a common positive
-    scale factor (same component set, equal positive ratios)."""
+def _rounded_to_sigfigs(value, reference, sigfigs=None):
+    """True if `value` equals `reference` rounded to `sigfigs` significant
+    figures of `value` -- i.e. |value - reference| is within half a unit in the
+    last significant figure of `value` (plus a floating-point epsilon)."""
+    if sigfigs is None:
+        sigfigs = TOL_STOICH_SIGFIGS
+    if value == 0:
+        return abs(reference) <= ZERO_FLOW
+    last_place = math.floor(math.log10(abs(value))) - (sigfigs - 1)
+    return abs(value - reference) <= 0.5 * 10 ** last_place + 1e-9 * abs(value)
+
+
+def _same_reaction_up_to_scale(equation, stoichiometry):
+    """True if the coefficient maps of an equation string and a stoichiometry
+    describe one reaction up to a common positive scale factor: same component
+    set, same signs, and each equation coefficient equal to the scaled
+    stoichiometric coefficient rounded to TOL_STOICH_SIGFIGS significant
+    figures. The scale is taken from a component the equation writes with a
+    unit coefficient (the normalized reactant, which carries no rounding) when
+    there is one, else from the first component. The rounding tolerance exists
+    because exporters print equation coefficients rounded (BioSTEAM: three
+    significant figures, 'Xylose -> 1.67 HP' for 1.6667) while the
+    stoichiometry carries full precision."""
+    a, b = equation, stoichiometry
     if set(a) != set(b):
         return False
-    ratio = None
-    for k in a:
-        if b[k] == 0:
-            return False
-        r = a[k] / b[k]
-        if r <= 0:
-            return False
-        if ratio is None:
-            ratio = r
-        elif abs(r - ratio) > 1e-6 * abs(ratio):
-            return False
-    return True
+    if any(b[k] == 0 or a[k] * b[k] <= 0 for k in a):
+        return False
+    anchor = next((k for k in a if abs(abs(a[k]) - 1.0) <= 1e-12), next(iter(a)))
+    ratio = a[anchor] / b[anchor]
+    return all(_rounded_to_sigfigs(a[k], b[k] * ratio) for k in a)
 
 
 def _check_reaction_equation_stoichiometry_consistency(ctx):  # UNIT-05 (validator part)
@@ -555,19 +571,35 @@ TOPOLOGY_ROLES = ('input', 'output', 'internal')
 DESIGNATION_ROLES = ('purchased_raw_material', 'feedstock', 'product')
 
 
+_FLOW_SCALAR_NAMES = ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow')
+
+
+def _flow_scalars_of(block):
+    """Yield the present numeric flow scalars of one properties block (a
+    stream's `stream_properties` or one of its `phases[]` entries)."""
+    if not isinstance(block, dict):
+        return
+    for name in _FLOW_SCALAR_NAMES:
+        v = block.get(name)
+        if isinstance(v, (int, float)):
+            yield v
+
+
+def _stream_phases(stream):
+    """Yield each phase block of a stream, in declaration order."""
+    sp = (stream.get('stream_properties') or {}) if isinstance(stream, dict) else {}
+    for phase in (sp.get('phases') or {}).values():
+        if isinstance(phase, dict):
+            yield phase
+
+
 def _stream_flow_scalars(stream):
     """Yield every present numeric flow scalar of a stream: stream-level totals
     and each phase's totals. Non-flow scalars (T, P) are excluded."""
     sp = (stream.get('stream_properties') or {}) if isinstance(stream, dict) else {}
-    for name in ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow'):
-        v = sp.get(name)
-        if isinstance(v, (int, float)):
-            yield v
-    for phase in (sp.get('phases') or {}).values():
-        for name in ('total_mass_flow', 'total_molar_flow', 'total_volumetric_flow'):
-            v = phase.get(name) if isinstance(phase, dict) else None
-            if isinstance(v, (int, float)):
-                yield v
+    yield from _flow_scalars_of(sp)
+    for phase in _stream_phases(stream):
+        yield from _flow_scalars_of(phase)
 
 
 def _stream_compositions(stream):
@@ -737,16 +769,48 @@ def _check_composition_component_refs(ctx):  # STR-07
     return [_passed('STR-07', 'error', 'streams')]
 
 
+def _zero_flow_inconsistent(scalars, compositions):
+    """The STR-13 predicate for one scope (a whole stream, or one phase):
+    (None) when no flow scalar is zero -- not applicable; True when some
+    flow scalar is zero but another is not, or a composition is non-empty."""
+    scalars = list(scalars)
+    if not any(abs(v) <= ZERO_FLOW for v in scalars):
+        return None
+    return (not all(abs(v) <= ZERO_FLOW for v in scalars)
+            or any(len(c) for c in compositions))
+
+
 def _check_zero_flow_consistency(ctx):  # STR-13
+    # Evaluated per scope: the stream's own totals against the whole stream
+    # (all phases), and each phase against itself only. An empty phase beside
+    # a populated one -- e.g. the all-zero 'g' phase of a liquid MultiStream --
+    # is not a contradiction and must not fail the stream.
     bad, any_zero = [], False
     for s in ctx.streams:
         if not isinstance(s, dict):
             continue
-        scalars = list(_stream_flow_scalars(s))
-        if not any(abs(v) <= ZERO_FLOW for v in scalars):
+        sp = s.get('stream_properties') or {}
+        phases = list(_stream_phases(s))
+        # Stream scope: the stream's own totals, judged against everything the
+        # stream carries (its totals, every phase's flows, every composition).
+        stream_scalars = list(_flow_scalars_of(sp))
+        stream_verdict = _zero_flow_inconsistent(
+            stream_scalars
+            + [v for phase in phases for v in _flow_scalars_of(phase)],
+            [phase.get('composition') for phase in phases
+             if isinstance(phase.get('composition'), list)])
+        if not any(abs(v) <= ZERO_FLOW for v in stream_scalars):
+            stream_verdict = None  # only a zero STREAM total triggers this scope
+        verdicts = [stream_verdict]
+        for phase in phases:
+            comp = phase.get('composition')
+            verdicts.append(_zero_flow_inconsistent(
+                _flow_scalars_of(phase),
+                [comp] if isinstance(comp, list) else []))
+        if all(v is None for v in verdicts):
             continue  # no zero flow present -> not applicable to this stream
         any_zero = True
-        if not _stream_is_empty(s):
+        if any(v for v in verdicts):
             bad.append(s.get('id'))
     if not any_zero:
         return [_skipped('STR-13', 'error',

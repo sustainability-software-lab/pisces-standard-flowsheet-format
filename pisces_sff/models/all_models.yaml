@@ -13,3 +13,15 @@ models:
       Dry-grind corn-to-ethanol biorefinery from the Bioindustrial-Park
       corn biorefinery (BioSTEAM).
     source_corpus: Bioindustrial-Park
+  M_BST_02:
+    flowsheet: SF_BST_02
+    simulator: biosteam
+    model_dir: biosteam_models/M_BST_02
+    flowsheet_file: bioindustrial_park/SF_BST_02.json
+    title: Corn to 3-hydroxypropionic acid to acrylic acid
+    description: >-
+      Corn-fed 3-hydroxypropionic acid (Issatchenkia orientalis, low-pH
+      fermentation) catalytically upgraded to acrylic acid, from the
+      Bioindustrial-Park HP biorefinery (BioSTEAM, HP_2025_no_FGI branch);
+      the corn scenario of Tan et al., Nat. Commun. 2026.
+    source_corpus: Bioindustrial-Park
