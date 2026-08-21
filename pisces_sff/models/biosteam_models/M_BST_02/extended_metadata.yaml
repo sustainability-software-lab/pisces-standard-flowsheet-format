@@ -1,0 +1,28 @@
+# extended_metadata.yaml -- human-authored descriptive metadata for this
+# flowsheet. Read by pisces_sff._runner.load_extended_metadata and written into
+# the exported SFF metadata block. Top-level keys map one-to-one onto exporter
+# keyword arguments.
+#
+# Bhagwat, S. S.; Rao, C. V.; Zhao, H.; Singh, V.; Guest, J. S. A unifying
+# equation for fermentation sustainability across the titer-rate-yield
+# landscape. Nature Communications 2026, 17, 8655.
+source_doi: "https://doi.org/10.1038/s41467-026-75285-1"
+#
+# One of the 32 biomanufacturing-facility configurations evaluated in the source
+# publication: corn feedstock, 3-hydroxypropionic acid (3-HP) fermentation under
+# the low-pH regime (no in-situ neutralization), separation process A, and
+# catalytic upgrading (dehydration) of 3-HP to acrylic acid. Loaded at baseline
+# from the Bioindustrial-Park `biorefineries.HP` module with the `300L_FGI`
+# parameter distributions the publication's scripts use.
+#
+process_title: "Corn → 3-Hydroxypropionic acid → Acrylic acid (low-pH fermentation, separation process A)"
+#
+flowsheet_designers: "Sarang S. Bhagwat"
+#
+# A BioSTEAM System carries no explicit host identity, so the fermenting organism
+# cannot be inferred and must be declared. The source publication ferments corn
+# sugars to 3-HP with Issatchenkia orientalis (biorefineries.HP.units
+# CoFermentation, R302) -- one host.
+microorganisms:
+  - name: "Issatchenkia orientalis"
+    label: "3-hydroxypropionic acid producer"
