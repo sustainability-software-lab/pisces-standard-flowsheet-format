@@ -325,6 +325,97 @@ class TestUtilityEmissionSortedById(RealBiosteamTestCase):
 
 
 @unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
+class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
+    """Re-verify Tier 1's pump dP_design spec enrichment against a REAL
+    biosteam Pump, and pin the 0.1.3 version gate end-to-end. A real Pump
+    defaults to P=None (its _run gates on truthiness, so the outlet keeps the
+    inlet's pressure and _design falls back to dP_design); the 0.1.3+ export
+    therefore records dP_design as its own key next to the kept null P, while
+    a pump with an explicit outlet-pressure spec does not gain it, and the
+    0.1.2 exporter stays byte-stable (no dP_design key ever)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
+
+        # Same pisces_sff re-import dance as TestExportHelpersAgainstRealObjects
+        # above (the export path reads module-level biosteam-bound names that a
+        # stale cached _export would hold as fakes).
+        for key in [k for k in sys.modules
+                    if k == "pisces_sff" or k.startswith("pisces_sff.")]:
+            del sys.modules[key]
+
+        from pisces_sff import _export
+
+        cls._export = _export
+
+        import biosteam as bst
+        bst.settings.set_thermo(["Water", "Ethanol"])
+        feed = bst.Stream("pump_feed", Water=500, units="kg/hr", T=298.15)
+        cls.pump_no_P = bst.units.Pump("PUMP1", ins=feed, outs="pumped_1")
+        cls.pump_with_P = bst.units.Pump("PUMP2", ins=cls.pump_no_P-0,
+                                         outs="pumped_2", P=2e5)
+        system = bst.System("pump_sys", path=(cls.pump_no_P, cls.pump_with_P))
+        system.simulate()
+        # Same placeholder finance args as tests/_real_objects.py -- the
+        # exporter only reads tea.duration[0].
+        tea = bst.TEA(
+            system=system, IRR=0.15, duration=(2020, 2030),
+            depreciation="MACRS7", income_tax=0.21, operating_days=330.,
+            lang_factor=3., construction_schedule=(0.4, 0.6),
+            startup_months=0., startup_FOCfrac=0., startup_VOCfrac=0.,
+            startup_salesfrac=0., WC_over_FCI=0.05, finance_interest=0.,
+            finance_years=0, finance_fraction=0.,
+        )
+        cls.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmp.name)
+        cls.docs = {}
+        for version in ("0.1.2", "0.1.3"):
+            path = tmp / f"pump_{version.replace('.', '_')}.json"
+            _export.export_biosteam_flowsheet(
+                system, str(path), sff_version=version, tea=tea)
+            cls.docs[version] = json.loads(path.read_text(encoding="utf-8"))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _specs(self, version, unit_id):
+        unit, = [u for u in self.docs[version]["units"]
+                 if u["id"] == unit_id]
+        return unit["design_input_specs"]
+
+    def test_helper_records_dP_design_for_real_default_pump(self):
+        """get_design_input_specs on a real P=None Pump with the 0.1.3+ flag
+        -> {'P': None, 'dP_design': 101325} (the real biosteam default)."""
+        self.assertEqual(
+            self._export.get_design_input_specs(
+                self.pump_no_P, include_pump_dP_design=True),
+            {"P": None, "dP_design": 101325})
+
+    def test_helper_default_stays_byte_stable_for_real_pump(self):
+        """The flag defaults off, so the pre-0.1.3 helper call on the same
+        real Pump keeps the bare {'P': None} spec."""
+        self.assertEqual(
+            self._export.get_design_input_specs(self.pump_no_P),
+            {"P": None})
+
+    def test_0_1_3_export_records_dP_design_only_for_unspecified_P(self):
+        """In the 0.1.3 export, the P=None pump's specs gain dP_design while
+        the P=2e5 pump's specs do not (biosteam only falls back to dP_design
+        when P is unset)."""
+        self.assertEqual(self._specs("0.1.3", "PUMP1"),
+                         {"P": None, "dP_design": 101325})
+        self.assertEqual(self._specs("0.1.3", "PUMP2"), {"P": 2e5})
+
+    def test_0_1_2_export_stays_byte_stable(self):
+        """The 0.1.2 exporter never emits dP_design -- both pumps keep their
+        plain P spec, so pre-0.1.3 output is unchanged by this feature."""
+        self.assertEqual(self._specs("0.1.2", "PUMP1"), {"P": None})
+        self.assertEqual(self._specs("0.1.2", "PUMP2"), {"P": 2e5})
+
+
+@unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
 class TestGetReactionsOrderRealObjects(RealBiosteamTestCase):
     """Re-verify Tier 1's get_reactions discovery-order guarantee against
     REAL thermosteam Reaction/ParallelReaction objects assigned to a real
