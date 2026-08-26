@@ -325,14 +325,18 @@ class TestUtilityEmissionSortedById(RealBiosteamTestCase):
 
 
 @unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
-class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
-    """Re-verify Tier 1's pump dP_design spec substitution against a REAL
-    biosteam Pump, and pin the 0.1.3 version gate end-to-end. A real Pump
-    defaults to P=None (its _run gates on truthiness, so the outlet keeps the
-    inlet's pressure and _design falls back to dP_design); the 0.1.3+ export
-    therefore substitutes the dP_design value under the existing "P" key (no
-    new SFF key), while a pump with an explicit outlet-pressure spec keeps it,
-    and the 0.1.2 exporter stays byte-stable (null P, never substituted)."""
+class TestOutletPSpecSubstitutionRealObjects(RealBiosteamTestCase):
+    """Re-verify Tier 1's outlet-P spec substitution against a REAL biosteam
+    Pump and MolecularSieve, and pin the 0.1.3 version gate end-to-end. Both
+    classes default to P=None, in which case the simulated outlets keep the
+    inlet's pressure (MolecularSieve even hardcodes self.P = None at _init);
+    the 0.1.3+ export therefore writes the actual outs[0].P under the
+    existing "P" key (no new SFF key, no dP_design), while a pump with an
+    explicit outlet-pressure spec keeps it, and the 0.1.2 exporter stays
+    byte-stable (null P, never substituted). The feed enters at a
+    deliberately NON-atmospheric 1.5e5 Pa so the substituted value (150000)
+    can never be confused with biosteam's 101325 dP_design/atmospheric
+    defaults."""
 
     @classmethod
     def setUpClass(cls):
@@ -351,11 +355,16 @@ class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
 
         import biosteam as bst
         bst.settings.set_thermo(["Water", "Ethanol"])
-        feed = bst.Stream("pump_feed", Water=500, units="kg/hr", T=298.15)
+        feed = bst.Stream("pump_feed", Water=400, Ethanol=100, units="kg/hr",
+                          T=298.15, P=1.5e5)
         cls.pump_no_P = bst.units.Pump("PUMP1", ins=feed, outs="pumped_1")
         cls.pump_with_P = bst.units.Pump("PUMP2", ins=cls.pump_no_P-0,
                                          outs="pumped_2", P=2e5)
-        system = bst.System("pump_sys", path=(cls.pump_no_P, cls.pump_with_P))
+        cls.sieve = bst.units.MolecularSieve(
+            "MS1", ins=cls.pump_with_P-0, outs=("ms_top", "ms_bot"),
+            split=dict(Water=0.16, Ethanol=0.925))
+        system = bst.System("pump_sys",
+                            path=(cls.pump_no_P, cls.pump_with_P, cls.sieve))
         system.simulate()
         # Same placeholder finance args as tests/_real_objects.py -- the
         # exporter only reads tea.duration[0].
@@ -385,14 +394,27 @@ class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
                  if u["id"] == unit_id]
         return unit["design_input_specs"]
 
-    def test_helper_substitutes_dP_design_for_real_default_pump(self):
+    def test_helper_substitutes_outlet_P_for_real_default_pump(self):
         """get_design_input_specs on a real P=None Pump with the 0.1.3+ flag
-        -> {'P': 101325} (the real biosteam dP_design default, exported under
-        the existing 'P' key; no separate dP_design key)."""
+        -> {'P': 1.5e5}: the pass-through outlet pressure (the 1.5e5 Pa feed),
+        NOT the 101325 dP_design default, exported under the existing 'P'
+        key."""
+        self.assertEqual(self.pump_no_P.outs[0].P, 1.5e5)
         self.assertEqual(
             self._export.get_design_input_specs(
-                self.pump_no_P, substitute_pump_dP_design=True),
-            {"P": 101325})
+                self.pump_no_P, substitute_outlet_P=True),
+            {"P": 1.5e5})
+
+    def test_helper_substitutes_outlet_P_for_real_molecular_sieve(self):
+        """get_design_input_specs on a real MolecularSieve (self.P hardcoded
+        None at _init) with the 0.1.3+ flag -> {'P': 2e5}: its outlets keep
+        the feed's pressure, here PUMP2's 2e5 Pa outlet."""
+        self.assertIsNone(self.sieve.P)
+        self.assertEqual(self.sieve.outs[0].P, 2e5)
+        self.assertEqual(
+            self._export.get_design_input_specs(
+                self.sieve, substitute_outlet_P=True),
+            {"P": 2e5})
 
     def test_helper_default_stays_byte_stable_for_real_pump(self):
         """The flag defaults off, so the pre-0.1.3 helper call on the same
@@ -402,17 +424,20 @@ class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
             {"P": None})
 
     def test_0_1_3_export_substitutes_only_for_unspecified_P(self):
-        """In the 0.1.3 export, the P=None pump's P spec carries the dP_design
-        value while the P=2e5 pump keeps its explicit spec (biosteam only
-        falls back to dP_design when P is unset)."""
-        self.assertEqual(self._specs("0.1.3", "PUMP1"), {"P": 101325})
+        """In the 0.1.3 export, the P=None pump's and the sieve's P specs
+        carry their real outlet pressures while the P=2e5 pump keeps its
+        explicit spec."""
+        self.assertEqual(self._specs("0.1.3", "PUMP1"), {"P": 1.5e5})
         self.assertEqual(self._specs("0.1.3", "PUMP2"), {"P": 2e5})
+        self.assertEqual(self._specs("0.1.3", "MS1"), {"P": 2e5})
 
     def test_0_1_2_export_stays_byte_stable(self):
-        """The 0.1.2 exporter never substitutes -- both pumps keep their
-        plain P spec, so pre-0.1.3 output is unchanged by this feature."""
+        """The 0.1.2 exporter never substitutes -- both P-unset units keep
+        their plain null spec, so pre-0.1.3 output is unchanged by this
+        feature."""
         self.assertEqual(self._specs("0.1.2", "PUMP1"), {"P": None})
         self.assertEqual(self._specs("0.1.2", "PUMP2"), {"P": 2e5})
+        self.assertEqual(self._specs("0.1.2", "MS1"), {"P": None})
 
 
 @unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
