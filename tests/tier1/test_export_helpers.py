@@ -9,8 +9,11 @@ import sys
 import tempfile
 import types
 import unittest
+from collections import deque
 from pathlib import Path
 from unittest import mock
+
+import numpy as np
 
 from tests import _fakes
 
@@ -98,6 +101,27 @@ class TestAvailableSffVersions(unittest.TestCase):
         self.assertIn("0.0.5", versions)
         numeric = [tuple(int(p) for p in v.split(".")) for v in versions]
         self.assertEqual(numeric, sorted(numeric))
+
+
+class TestJsonNativeExporterValues(unittest.TestCase):
+    def test_numpy_scalars_arrays_and_deques_serialize_as_json_native_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "export.json"
+            _export._write_sff_json({
+                "scalar": np.float32(1.25),
+                "array": np.array([[1, 2], [3, 4]], dtype=np.int64),
+                "queue": deque(["feed", "product"]),
+            }, path)
+
+            self.assertEqual(json.loads(path.read_text()), {
+                "scalar": 1.25,
+                "array": [[1, 2], [3, 4]],
+                "queue": ["feed", "product"],
+            })
+
+    def test_unknown_non_json_type_still_fails_closed(self):
+        with self.assertRaises(TypeError):
+            _export._json_default(object())
 
 
 class TestAssignStreamIds(unittest.TestCase):
