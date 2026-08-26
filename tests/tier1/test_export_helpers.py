@@ -242,53 +242,53 @@ class TestGetDesignInputSpecs(unittest.TestCase):
 
 
 class TestGetDesignInputSpecsPumpDPDesign(unittest.TestCase):
-    """Pump-specific spec enrichment (0.1.3+). In biosteam, Pump defaults to
+    """Pump-specific spec substitution (0.1.3+). In biosteam, Pump defaults to
     P=None and its _run gates on truthiness (`if self.P: s_out.P = self.P`),
     so a falsy P means the outlet keeps the inlet's pressure; _design then
     falls back to `dP = self.dP_design` whenever the actual rise Po - Pi < 1.
     A bare {"P": null} spec is therefore uninformative -- the quantity that
-    actually drives the design is dP_design, so the exporter records it as its
-    own key (a pressure RISE in Pa, never substituted under "P", which is an
-    absolute outlet pressure). dP_design exists only on Pump in biosteam, so
+    actually drives the design is dP_design, so the exporter substitutes its
+    value under the existing "P" key (no new SFF key is introduced; deliberate
+    format decision 2026-08-26). dP_design exists only on Pump in biosteam, so
     the hasattr guard is naturally pump-specific. Gated by the
-    include_pump_dP_design flag so pre-0.1.3 exporters stay byte-stable."""
+    substitute_pump_dP_design flag so pre-0.1.3 exporters stay byte-stable."""
 
-    def test_pump_with_none_P_records_dP_design_when_enabled(self):
-        """A pump-like unit with P=None gains a 'dP_design' key alongside the
-        (kept) null P when the 0.1.3+ flag is on."""
+    def test_pump_with_none_P_substitutes_dP_design_when_enabled(self):
+        """A pump-like unit with P=None exports its dP_design value under the
+        'P' key when the 0.1.3+ flag is on -- no separate dP_design key."""
         unit = types.SimpleNamespace(P=None, dP_design=101325.0)
         self.assertEqual(
-            _export.get_design_input_specs(unit, include_pump_dP_design=True),
-            {"P": None, "dP_design": 101325.0})
+            _export.get_design_input_specs(unit, substitute_pump_dP_design=True),
+            {"P": 101325.0})
 
-    def test_pump_with_none_P_omits_dP_design_by_default(self):
+    def test_pump_with_none_P_keeps_null_P_by_default(self):
         """With the flag off (the default, used by every pre-0.1.3 exporter),
         the spec is byte-stable: just {'P': None}."""
         unit = types.SimpleNamespace(P=None, dP_design=101325.0)
         self.assertEqual(_export.get_design_input_specs(unit), {"P": None})
 
-    def test_pump_with_truthy_P_does_not_record_dP_design(self):
-        """A pump with an explicit outlet-pressure spec (P=2e6) does not gain
-        dP_design -- biosteam only falls back to it when P is unset."""
+    def test_pump_with_truthy_P_is_not_substituted(self):
+        """A pump with an explicit outlet-pressure spec (P=2e6) keeps it --
+        biosteam only falls back to dP_design when P is unset."""
         unit = types.SimpleNamespace(P=2e6, dP_design=101325.0)
         self.assertEqual(
-            _export.get_design_input_specs(unit, include_pump_dP_design=True),
+            _export.get_design_input_specs(unit, substitute_pump_dP_design=True),
             {"P": 2e6})
 
-    def test_pump_with_zero_P_records_dP_design(self):
+    def test_pump_with_zero_P_is_substituted(self):
         """biosteam's _run treats P=0 exactly like P=None (truthiness), so the
-        exporter mirrors that: dP_design is recorded for a zero P too."""
+        exporter mirrors that: a zero P is substituted with dP_design too."""
         unit = types.SimpleNamespace(P=0.0, dP_design=101325.0)
         self.assertEqual(
-            _export.get_design_input_specs(unit, include_pump_dP_design=True),
-            {"P": 0.0, "dP_design": 101325.0})
+            _export.get_design_input_specs(unit, substitute_pump_dP_design=True),
+            {"P": 101325.0})
 
     def test_non_pump_with_none_P_is_unchanged(self):
         """A non-pump unit with P=None but no dP_design attribute (dP_design
-        exists only on Pump) keeps the plain spec even with the flag on."""
+        exists only on Pump) keeps the plain null spec even with the flag on."""
         unit = types.SimpleNamespace(P=None)
         self.assertEqual(
-            _export.get_design_input_specs(unit, include_pump_dP_design=True),
+            _export.get_design_input_specs(unit, substitute_pump_dP_design=True),
             {"P": None})
 
 

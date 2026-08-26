@@ -182,13 +182,14 @@ _TAGS_SINCE = (0, 1, 3)
 #: exporters stay byte-stable; for a single-thermo system the union adds nothing.
 _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
 
-#: First schema version whose design_input_specs record a Pump's dP_design
-#: when its P spec is falsy. BioSTEAM's Pump defaults to P=None and its _run
-#: gates on truthiness (`if self.P: s_out.P = self.P`), so a falsy P means the
-#: outlet keeps the inlet's pressure and _design falls back to
-#: `dP = self.dP_design` -- making a bare {"P": null} spec uninformative.
-#: dP_design is a pressure RISE (Pa), never substituted under "P" (an absolute
-#: outlet pressure); it exists only on Pump, so the hasattr guard is naturally
+#: First schema version whose design_input_specs export a Pump's dP_design
+#: value under the "P" key when its P spec is falsy. BioSTEAM's Pump defaults
+#: to P=None and its _run gates on truthiness (`if self.P: s_out.P = self.P`),
+#: so a falsy P means the outlet keeps the inlet's pressure and _design falls
+#: back to `dP = self.dP_design` -- making a bare {"P": null} spec
+#: uninformative. The value is substituted under the existing "P" key rather
+#: than emitted as a new SFF key (deliberate format decision, 2026-08-26);
+#: dP_design exists only on Pump, so the hasattr guard is naturally
 #: pump-specific. Gated in _build_sff_dict so 0.0.5-0.1.2 stay byte-stable.
 #: Semantics verified against both biosteam 2.54.0 and the 2.46.1 pinned in
 #: the M_BST_01 reproducibility environment.
@@ -392,7 +393,7 @@ def _build_sff_dict(sys, tea=None,
                 "unit_type": get_unit_type(ru),
                 "design_input_specs": get_design_input_specs(
                     ru,
-                    include_pump_dP_design=(
+                    substitute_pump_dP_design=(
                         version_tuple(sff_version) >= _PUMP_DP_DESIGN_SINCE)),
                 "design_simulation_method": get_design_simulation_method(ru),
                 "thermo_property_package": get_thermo(ru),
@@ -1857,7 +1858,7 @@ def get_design_simulation_method(unit):
     return classname + ' on ' + link_address
 
 
-def get_design_input_specs(unit, include_pump_dP_design=False): # !!! update
+def get_design_input_specs(unit, substitute_pump_dP_design=False): # !!! update
     param_names = ('LHK', 'Lr', 'Hr', 'x_bot', 'y_top', 'k',
                    'T', 'P',
                    'V', 'V_wf',
@@ -1874,13 +1875,14 @@ def get_design_input_specs(unit, include_pump_dP_design=False): # !!! update
                 ) from e
     # 0.1.3+ (_PUMP_DP_DESIGN_SINCE): a Pump with a falsy P leaves the outlet
     # at the inlet's pressure, and its design pressure rise is dP_design -- so
-    # record that as its own key (a rise in Pa, distinct from the absolute
-    # outlet pressure "P"). The falsy check mirrors Pump._run's `if self.P:`;
-    # only Pump has dP_design, so this never touches other unit types.
-    if include_pump_dP_design and 'P' in dis and not dis['P'] \
+    # export that value under the "P" key in place of the uninformative null
+    # (no new SFF key; deliberate format decision, 2026-08-26). The falsy
+    # check mirrors Pump._run's `if self.P:`; only Pump has dP_design, so this
+    # never touches other unit types.
+    if substitute_pump_dP_design and 'P' in dis and not dis['P'] \
             and hasattr(unit, 'dP_design'):
         try:
-            dis['dP_design'] = unit.dP_design
+            dis['P'] = unit.dP_design
         except Exception as e:
             raise DesignInputSpecError(
                 f"could not read design input spec 'dP_design' for unit "

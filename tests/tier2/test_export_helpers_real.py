@@ -326,13 +326,13 @@ class TestUtilityEmissionSortedById(RealBiosteamTestCase):
 
 @unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
 class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
-    """Re-verify Tier 1's pump dP_design spec enrichment against a REAL
+    """Re-verify Tier 1's pump dP_design spec substitution against a REAL
     biosteam Pump, and pin the 0.1.3 version gate end-to-end. A real Pump
     defaults to P=None (its _run gates on truthiness, so the outlet keeps the
     inlet's pressure and _design falls back to dP_design); the 0.1.3+ export
-    therefore records dP_design as its own key next to the kept null P, while
-    a pump with an explicit outlet-pressure spec does not gain it, and the
-    0.1.2 exporter stays byte-stable (no dP_design key ever)."""
+    therefore substitutes the dP_design value under the existing "P" key (no
+    new SFF key), while a pump with an explicit outlet-pressure spec keeps it,
+    and the 0.1.2 exporter stays byte-stable (null P, never substituted)."""
 
     @classmethod
     def setUpClass(cls):
@@ -385,13 +385,14 @@ class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
                  if u["id"] == unit_id]
         return unit["design_input_specs"]
 
-    def test_helper_records_dP_design_for_real_default_pump(self):
+    def test_helper_substitutes_dP_design_for_real_default_pump(self):
         """get_design_input_specs on a real P=None Pump with the 0.1.3+ flag
-        -> {'P': None, 'dP_design': 101325} (the real biosteam default)."""
+        -> {'P': 101325} (the real biosteam dP_design default, exported under
+        the existing 'P' key; no separate dP_design key)."""
         self.assertEqual(
             self._export.get_design_input_specs(
-                self.pump_no_P, include_pump_dP_design=True),
-            {"P": None, "dP_design": 101325})
+                self.pump_no_P, substitute_pump_dP_design=True),
+            {"P": 101325})
 
     def test_helper_default_stays_byte_stable_for_real_pump(self):
         """The flag defaults off, so the pre-0.1.3 helper call on the same
@@ -400,16 +401,15 @@ class TestPumpDPDesignSpecRealObjects(RealBiosteamTestCase):
             self._export.get_design_input_specs(self.pump_no_P),
             {"P": None})
 
-    def test_0_1_3_export_records_dP_design_only_for_unspecified_P(self):
-        """In the 0.1.3 export, the P=None pump's specs gain dP_design while
-        the P=2e5 pump's specs do not (biosteam only falls back to dP_design
-        when P is unset)."""
-        self.assertEqual(self._specs("0.1.3", "PUMP1"),
-                         {"P": None, "dP_design": 101325})
+    def test_0_1_3_export_substitutes_only_for_unspecified_P(self):
+        """In the 0.1.3 export, the P=None pump's P spec carries the dP_design
+        value while the P=2e5 pump keeps its explicit spec (biosteam only
+        falls back to dP_design when P is unset)."""
+        self.assertEqual(self._specs("0.1.3", "PUMP1"), {"P": 101325})
         self.assertEqual(self._specs("0.1.3", "PUMP2"), {"P": 2e5})
 
     def test_0_1_2_export_stays_byte_stable(self):
-        """The 0.1.2 exporter never emits dP_design -- both pumps keep their
+        """The 0.1.2 exporter never substitutes -- both pumps keep their
         plain P spec, so pre-0.1.3 output is unchanged by this feature."""
         self.assertEqual(self._specs("0.1.2", "PUMP1"), {"P": None})
         self.assertEqual(self._specs("0.1.2", "PUMP2"), {"P": 2e5})
