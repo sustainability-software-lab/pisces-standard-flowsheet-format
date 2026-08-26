@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-18T18:05:46Z",
+                "exported_at": "2026-08-26T22:50:16Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
