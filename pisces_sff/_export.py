@@ -13,6 +13,7 @@ import re
 import warnings
 import numpy as np
 
+from collections import deque
 from types import FunctionType
 
 from thermosteam import Reaction, ReactionSet, SeriesReaction, ParallelReaction
@@ -525,6 +526,24 @@ def _build_sff_dict(sys, tea=None,
     return document
 
 
+def _json_default(value):
+    """Return JSON-native equivalents for containers emitted by BioSTEAM.
+
+    NumPy scalars and arrays occur in design and cost results, while some
+    BioSTEAM models retain ordered values in ``collections.deque``. Unknown
+    objects still raise ``TypeError`` so the export boundary fails closed.
+    """
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, deque):
+        return list(value)
+    raise TypeError(
+        f"Object of type {type(value).__name__} is not JSON serializable"
+    )
+
+
 def _write_sff_json(flowsheet_to_export, filepath):
     """
     Serialize an assembled SFF document to `filepath` as indented JSON.
@@ -536,7 +555,12 @@ def _write_sff_json(flowsheet_to_export, filepath):
     """
     try:
         with open(filepath, "w") as json_file:
-            json.dump(flowsheet_to_export, json_file, indent=4)
+            json.dump(
+                flowsheet_to_export,
+                json_file,
+                indent=4,
+                default=_json_default,
+            )
     except Exception as e:
         raise FlowsheetWriteError(
             f"could not write SFF document to {filepath!r}: {e}"
