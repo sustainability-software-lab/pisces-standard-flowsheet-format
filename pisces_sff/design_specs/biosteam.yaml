@@ -945,6 +945,12 @@ IsothermalCompressor:
     driver_efficiency:
       accessors:
       - driver_efficiency
+JetCooker:
+  line: Jet cooker
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
 Junction:
   line: Junction
   design_input_spec_params:
@@ -1501,6 +1507,9 @@ NRELBatchBioreactor:
     Nmax:
       accessors:
       - Nmax
+    V_wf:
+      accessors:
+      - V_wf
 NRELEthanolFermentation:
   line: Fermentation
   design_input_spec_params:

@@ -118,8 +118,10 @@ class TestDesignSpecCoverage(unittest.TestCase):
         of (or newly falling out of) registry coverage changes this set, so
         this test forces that change to be a deliberate, reviewed diff rather
         than a silent one."""
+        # E313 (JetCooker) left this set when its hand-added registry entry
+        # restored the T spec (hand-curated additions, 2026-08-26).
         expected_empty = {
-            "MH101", "M104", "E313", "MH604", "MH612", "other_facilities",
+            "MH101", "M104", "MH604", "MH612", "other_facilities",
             "T608",
         }
         actual_empty = {uid for uid, u in self.units.items()
@@ -144,11 +146,22 @@ class TestDesignSpecCoverage(unittest.TestCase):
         skew (the recipe's biosteam resolved it as NRELBatchBioreactor,
         which had no registry entry) and then restored by adding that
         alias entry. A regression here means the alias entry was lost or
-        the resolved class name changed again."""
+        the resolved class name changed again. V_wf is a class-attribute
+        design value (not an _init param) hand-curated into the alias
+        entry -- the generator's signature sweep would never restore it."""
         specs = self.units["V405"].get("design_input_specs", {})
-        for param in ("tau", "V", "T", "P"):
+        for param in ("tau", "V", "T", "P", "V_wf"):
             with self.subTest(param=param):
                 self.assertIn(param, specs)
+
+    def test_E313_carries_the_jet_cooker_T(self):
+        """E313 (JetCooker, a biorefinery-defined class) resolves through a
+        hand-added JetCooker registry entry -- biorefinery classes are never
+        swept by the generator, so only that hand entry keeps its T spec
+        from silently collapsing back to the empty Unit fallback."""
+        specs = self.units["E313"].get("design_input_specs", {})
+        self.assertIn("T", specs)
+        self.assertIsNotNone(specs["T"])
 
     def test_no_unit_has_a_none_spec_value(self):
         """The 0.1.4+ exporter is documented to omit a param entirely rather

@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-27T02:49:10Z",
+                "exported_at": "2026-08-27T04:12:33Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -997,7 +997,9 @@
         {
             "id": "E313",
             "unit_type": "Jet cooker",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "T": 483.15
+            },
             "design_simulation_method": "JetCooker on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1457,7 +1459,8 @@
                 "T": 305.15,
                 "P": 101325.0,
                 "Nmin": 2,
-                "Nmax": 36
+                "Nmax": 36,
+                "V_wf": 0.83
             },
             "design_simulation_method": "SimultaneousSaccharificationFermentation on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
