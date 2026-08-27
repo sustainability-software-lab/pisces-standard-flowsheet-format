@@ -17,7 +17,7 @@ def validator_ids():
     Enforcement cell mentions 'validator' (includes the dual schema+validator
     UNIT-04/UNIT-05)."""
     rows = []
-    text = (REPO / "sff_checks.md").read_text(encoding="utf-8")
+    text = (REPO / "pisces_sff" / "validate" / "sff_checks.md").read_text(encoding="utf-8")
     for line in text.splitlines():
         if line.startswith("| ") and "validator" in line:
             cells = [c.strip() for c in line.strip("|").split("|")]

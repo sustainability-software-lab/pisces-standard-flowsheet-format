@@ -6,15 +6,15 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 
-"""Load pisces_sff/_validate.py by file path, WITHOUT importing pisces_sff (which
-would drag in biosteam). _validate.py holds no package-relative top-level imports,
-so this works; it is the Tier 1/4 entry point to the validator internals."""
+"""Load pisces_sff/validate/_validate.py by file path, WITHOUT importing pisces_sff
+(which would drag in biosteam). _validate.py holds no package-relative top-level
+imports, so this works; it is the Tier 1/4 entry point to the validator internals."""
 
 import importlib.util
 from pathlib import Path
 
 VALIDATE_PATH = (
-    Path(__file__).resolve().parent.parent / "pisces_sff" / "_validate.py")
+    Path(__file__).resolve().parent.parent / "pisces_sff" / "validate" / "_validate.py")
 
 
 def load_validate_module():

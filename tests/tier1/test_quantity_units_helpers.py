@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Unit tests for pisces_sff/_quantity_units.py — the pure quantity-unit helpers.
+# Unit tests for pisces_sff/export/_quantity_units.py — the pure quantity-unit helpers.
 #
 # Import-light by construction: the module under test imports no biosteam, and
 # we load it by file path (like tests/tier1/test_version.py loads _version.py) so
@@ -12,7 +12,7 @@ from pathlib import Path
 
 MODULE_PATH = (
     Path(__file__).resolve().parents[2]
-    / "pisces_sff" / "_quantity_units.py"
+    / "pisces_sff" / "export" / "_quantity_units.py"
 )
 
 

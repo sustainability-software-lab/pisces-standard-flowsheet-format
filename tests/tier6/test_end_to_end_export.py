@@ -29,7 +29,7 @@ from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = (
-    REPO_ROOT / "pisces_sff" / "models" / "biosteam_models"
+    REPO_ROOT / "pisces_sff" / "export" / "models" / "biosteam_models"
     / "M_BST_01"
 )
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
@@ -46,8 +46,8 @@ class TestEndToEndExport(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()   # evict Tier-1 stub so the in-process full validator sees real thermosteam
-        from pisces_sff._regenerate_corpus import regenerate_corpus
-        from pisces_sff._validate import (validate_json_against_schema,
+        from pisces_sff.export._regenerate_corpus import regenerate_corpus
+        from pisces_sff.validate._validate import (validate_json_against_schema,
                                           validate_flowsheet_against_SFF)
 
         cls.validate = staticmethod(validate_json_against_schema)

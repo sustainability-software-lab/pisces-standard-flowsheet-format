@@ -28,7 +28,7 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / "pisces_sff"
 SCHEMA_PATH = PACKAGE_ROOT / "schema" / "sff_schema.json"
 VERSION_PATH = PACKAGE_ROOT / "_version.py"
-EXPORT_PATH = PACKAGE_ROOT / "_export.py"
+EXPORT_PATH = PACKAGE_ROOT / "export" / "_export.py"
 INIT_PATH = PACKAGE_ROOT / "__init__.py"
 
 # Mirrors _EXPORTER_PREFIX in _export.py. Duplicated rather than imported

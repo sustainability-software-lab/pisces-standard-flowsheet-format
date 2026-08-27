@@ -6,14 +6,14 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 #
-# Tier 2: quantity_units_for_design_results (pisces_sff/_quantity_units.py)
+# Tier 2: quantity_units_for_design_results (pisces_sff/export/_quantity_units.py)
 # against a REAL biosteam unit's design_results/_units. _quantity_units.py is
 # deliberately import-light -- no biosteam/thermosteam imports of its own (see
 # its module docstring) -- so this helper never binds a biosteam-derived
 # module-level name the way _export.py's `bst`/`PowerUtility` do. The
 # pisces_sff.* stub-eviction guard used in test_export_helpers_real.py and
 # test_version_shape_guard.py is therefore not needed here: re-importing
-# pisces_sff._quantity_units after a Tier-1 combined-process import would
+# pisces_sff.export._quantity_units after a Tier-1 combined-process import would
 # yield an identical module either way. RealBiosteamTestCase is still
 # required, though -- build_small_system_and_tea() needs the REAL
 # biosteam/thermosteam (not the Tier-1 stub) to build a real HXutility.
@@ -34,7 +34,7 @@ class TestQuantityUnitsForDesignResultsWithRealUnit(RealBiosteamTestCase):
     def setUpClass(cls):
         super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
 
-        from pisces_sff._quantity_units import quantity_units_for_design_results
+        from pisces_sff.export._quantity_units import quantity_units_for_design_results
 
         cls.quantity_units_for_design_results = staticmethod(
             quantity_units_for_design_results)

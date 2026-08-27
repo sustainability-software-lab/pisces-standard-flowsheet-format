@@ -13,7 +13,7 @@ restores them. That's fine for Tier 1, which never needs the real simulator -
 but when the whole suite runs in one pytest process, the fake lingers in
 sys.modules for every test that runs afterward, including Tiers 3/4/5.
 
-pisces_sff/_validate.py's QU-02 check (_unit_is_parseable) lazily does
+pisces_sff/validate/_validate.py's QU-02 check (_unit_is_parseable) lazily does
 `from thermosteam.units_of_measure import ureg` the first time it needs to
 parse a unit string. If Tier 1 already ran, that import hits the fake (a bare
 ModuleType with no units_of_measure submodule and no __path__), raises, and is

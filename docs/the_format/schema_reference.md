@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.1.5.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.0.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
@@ -21,7 +21,7 @@ Provenance for the flowsheet: version, currency, DOI, feedstocks/products, TEA y
 The unit operations (graph nodes).
 
 From v0.1.4 on, the reference exporter fills `design_input_specs` from a
-per-unit-type registry (`pisces_sff/design_specs/biosteam.yaml`): each unit
+per-unit-type registry (`pisces_sff/export/design_specs/biosteam.yaml`): each unit
 class declares which initialization parameters constitute its design input
 specification and an ordered list of accessors to read each one (e.g. a
 `Pump` whose `P` is unset falls back to its outlet's pressure, still

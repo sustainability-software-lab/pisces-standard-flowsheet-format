@@ -19,11 +19,11 @@ jobs:
       run:
         # Login shell so `conda activate` / `conda run` work the same on both
         # OSes; setup-miniconda populates CONDA_EXE and PATH in this shell,
-        # which is what pisces_sff._harness.find_conda_exe relies on.
+        # which is what pisces_sff.export._harness.find_conda_exe relies on.
         shell: bash -el {0}
     env:
       # Single source for the env hash and the env build (Approach A).
-      ENV_YAML: pisces_sff/models/biosteam_models/M_BST_01/environment.yaml
+      ENV_YAML: pisces_sff/export/models/biosteam_models/M_BST_01/environment.yaml
       # Workspace-relative cache dirs: identical path shape on Ubuntu and Windows.
       CONDA_PKGS_DIRS: ${{ github.workspace }}/.cache/conda-pkgs
       PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.CONDA_PKGS_DIRS }}
-          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/M_BST_01/environment.yaml') }}
+          key: conda-pkgs-${{ runner.os }}-${{ hashFiles('pisces_sff/export/models/biosteam_models/M_BST_01/environment.yaml') }}
           restore-keys: |
             conda-pkgs-${{ runner.os }}-
 
@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.PIP_CACHE_DIR }}
-          key: pip-${{ runner.os }}-${{ hashFiles('pisces_sff/models/biosteam_models/M_BST_01/environment.yaml') }}
+          key: pip-${{ runner.os }}-${{ hashFiles('pisces_sff/export/models/biosteam_models/M_BST_01/environment.yaml') }}
           restore-keys: |
             pip-${{ runner.os }}-
 
@@ -70,12 +70,12 @@ jobs:
           python -m pip install --quiet --disable-pip-version-check pyyaml
           NAME=$(python - <<'PY'
           import importlib.util, pathlib
-          harness_path = pathlib.Path("pisces_sff/_harness.py")
+          harness_path = pathlib.Path("pisces_sff/export/_harness.py")
           spec = importlib.util.spec_from_file_location("_sff_harness", harness_path)
           harness = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(harness)
           env_text = pathlib.Path(
-              "pisces_sff/models/biosteam_models/M_BST_01/environment.yaml"
+              "pisces_sff/export/models/biosteam_models/M_BST_01/environment.yaml"
           ).read_text(encoding="utf-8")
           print(harness.environment_name(env_text))
           PY

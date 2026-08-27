@@ -11,7 +11,7 @@ Parent side of the reproducible export harness.
 
 Reads a model's pinned environment specification, provisions the conda
 environment it describes, and runs the export inside that environment via
-:mod:`pisces_sff._runner`. Running in the provisioned environment (rather than
+:mod:`pisces_sff.export._runner`. Running in the provisioned environment (rather than
 in whatever environment the caller happens to be in) is what makes the recorded
 pins true rather than merely declared.
 
@@ -40,7 +40,7 @@ __all__ = ('export_model', 'ensure_environment', 'environment_key',
 ENV_NAME_PREFIX = 'sff-'
 
 #: Repository root; the only entry placed on the child's PYTHONPATH.
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _schema_version():
     """
@@ -53,7 +53,7 @@ def _schema_version():
     relative import of ``_version`` here is not available. The single source of
     truth is unchanged: this reads the same schema file.
     """
-    schema_file = Path(__file__).resolve().parent / 'schema' / 'sff_schema.json'
+    schema_file = Path(__file__).resolve().parents[1] / 'schema' / 'sff_schema.json'
     with open(schema_file, 'r', encoding='utf-8') as f:
         return json.load(f)['version']
 
@@ -505,7 +505,7 @@ def export_model(model_dir, output_path, recreate_env=False, conda_exe=None,
     Export a model to SFF from inside the environment its recipe pins.
 
     Provisions the conda environment described by ``<model_dir>/environment.yaml``
-    (reusing it when one already matches), then runs :mod:`pisces_sff._runner`
+    (reusing it when one already matches), then runs :mod:`pisces_sff.export._runner`
     with that environment's interpreter. The child's ``PYTHONPATH`` is set to the
     repository root alone, so source clones on a user-level ``PYTHONPATH`` cannot
     shadow the pinned installs -- which is the failure mode that made previous
@@ -574,7 +574,7 @@ def export_model(model_dir, output_path, recreate_env=False, conda_exe=None,
     # from our code or a dependency -- would hang forever, so neutralize it.
     child_env['PYTHONBREAKPOINT'] = '0'
 
-    command = [str(environment_python(prefix)), '-m', 'pisces_sff._runner',
+    command = [str(environment_python(prefix)), '-m', 'pisces_sff.export._runner',
                '--model-dir', str(model_dir),
                '--output', str(output_path),
                '--env-key', key,

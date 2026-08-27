@@ -1,4 +1,4 @@
-# Two layers, one module (`pisces_sff/_validate.py`)
+# Two layers, one module (`pisces_sff/validate/_validate.py`)
 
 `validate_json_against_schema(json_file, schema_file) -> (is_valid, errors)`
 is the structural gate: it checks a file against the JSON Schema

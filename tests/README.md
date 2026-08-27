@@ -8,7 +8,7 @@ This guide describes the six-tier test suite and where your new test belongs.
 - **Tier 2** — every helper function **except** those in `_harness.py` and `_runner.py`, with **real** biosteam/thermosteam objects (no fake stubs).
 - **Tier 3** — every SFF requirement that `sff_checks.md` marks as **schema**-enforced is actually enforced by the schema.
 - **Tier 4** — every SFF requirement that `sff_checks.md` marks as **validator**-enforced is actually enforced by `validate_flowsheet_against_SFF`.
-- **Tier 5** — validate **all** exported flowsheets in `exported_flowsheets/`.
+- **Tier 5** — validate **all** exported flowsheets in `export/exported_flowsheets/`.
 - **Tier 6** *(run when a change affects the exporter or how exported flowsheets are validated)* — re-export **all** models via the **full harness**, then re-validate each and cross-check numeric/other values against the live biosteam objects **and** stored baselines.
 
 ## Gating
@@ -70,7 +70,7 @@ Two forward-looking meta-tests keep the suite honest and drive coverage complete
 
 **`tests/tier1/test_coverage_meta.py`** (Tier 1 coverage, built in Phase 3)
 
-Enumerates every module-level helper in `pisces_sff/*.py` (via `ast`, import-light) and asserts each one is named in some `tests/tier1/test_*.py` source. Exempts public entry points covered elsewhere or untested trivial wrappers (each exemption carries a one-line reason). Failing this test means a new helper lacks a Tier 1 test.
+Enumerates every module-level helper in `pisces_sff/**/*.py` (via `ast`, import-light) — the modules under `pisces_sff/export/` and `pisces_sff/validate/`, plus top-level `_version.py`/`exceptions.py` — and asserts each one is named in some `tests/tier1/test_*.py` source. Exempts public entry points covered elsewhere or untested trivial wrappers (each exemption carries a one-line reason). Failing this test means a new helper lacks a Tier 1 test.
 
 **`tests/tier4/test_coverage_meta.py`** (Tier 4 coverage, built in Phase 5)
 

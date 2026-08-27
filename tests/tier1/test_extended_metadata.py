@@ -12,7 +12,7 @@ from pathlib import Path
 from tests import _fakes
 
 _fakes.install_biosteam_stubs()
-_runner = importlib.import_module("pisces_sff._runner")
+_runner = importlib.import_module("pisces_sff.export._runner")
 load_extended_metadata = _runner.load_extended_metadata
 
 

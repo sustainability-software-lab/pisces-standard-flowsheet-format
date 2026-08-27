@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
 # 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, 0.1.2,
-# 0.1.3, 0.1.4, and 0.1.5 and asserts the scalar-shape, results-key,
+# 0.1.3, 0.1.4, 0.1.5, and 0.2.0 and asserts the scalar-shape, results-key,
 # required-metadata, stream-roles, enthalpy-flow, tightened-constraint (0.0.12
 # shape-identical to 0.0.11), milestone-bump (0.1.0 shape-identical to
 # 0.0.12), constraint-loosening (0.1.1 shape-identical to 0.1.0 -- CHEM-02's
@@ -17,7 +17,9 @@
 # accessor fallbacks, None omitted; otherwise shape-identical to 0.1.3), and
 # validation-vocabulary-only bump (0.1.5 adds the extracted-from-table tag to
 # the enum/registry; the exporter never stamps extracted-from-* tags, so the
-# 0.1.5 export is shape-identical to 0.1.4)
+# 0.1.5 export is shape-identical to 0.1.4), and milestone bump (0.2.0 marks
+# the validate//export/ package restructure; no schema shape or constraint
+# change, so the 0.2.0 export is shape-identical to 0.1.5)
 # differences the schema versions require. This is about exporter version
 # dispatch, not the corn model, so it needs no whole-model simulation --
 # which is why it lives in Tier 2 rather than Tier 3.
@@ -59,12 +61,12 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
 
         # If Tier 1 already ran in this same pytest process, its collection-time
-        # tests._fakes.load_export() call imported the real `pisces_sff._export`
+        # tests._fakes.load_export() call imported the real `pisces_sff.export._export`
         # module WHILE the fake biosteam stub was installed, permanently binding
         # that module's top-level `import biosteam as bst` to the fake object.
         # Evicting sys.modules['biosteam']/['thermosteam'] above does not touch
         # that already-bound name -- Python only re-resolves a module-level
-        # import on a fresh import, and 'pisces_sff._export' is already cached.
+        # import on a fresh import, and 'pisces_sff.export._export' is already cached.
         # Discard the whole pisces_sff package tree so the import below
         # re-executes against the (now real, just-evicted) biosteam/thermosteam;
         # sys.modules['biosteam']/['thermosteam'] themselves are left untouched,
@@ -74,7 +76,7 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
             del sys.modules[key]
 
         from pisces_sff import _export
-        from pisces_sff._validate import validate_json_against_schema
+        from pisces_sff.validate._validate import validate_json_against_schema
 
         cls.validate = staticmethod(validate_json_against_schema)
         system, _H1, tea = build_small_system_and_tea()
@@ -150,6 +152,11 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_105), sff_version="0.1.5", tea=tea)
         cls.doc_105 = json.loads(cls.path_105.read_text(encoding="utf-8"))
+
+        cls.path_200 = tmp / "small_200.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_200), sff_version="0.2.0", tea=tea)
+        cls.doc_200 = json.loads(cls.path_200.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -508,6 +515,23 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         equals the v0.1.4 export apart from metadata.sff_version."""
         a = copy.deepcopy(self.doc_104)
         b = copy.deepcopy(self.doc_105)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
+
+    def test_0_2_0_validates_against_committed_schema(self):
+        """v0.2.0 export of the real small System -> validates against the
+        committed schema; records metadata.sff_version "0.2.0"."""
+        is_valid, errors = self.validate(str(self.path_200), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_200["metadata"]["sff_version"], "0.2.0")
+
+    def test_0_2_0_is_shape_identical_to_0_1_5_except_version(self):
+        """v0.2.0 is a milestone bump marking the validate//export/ package
+        restructure -- no schema shape or constraint change and no exporter
+        behavior change, so its export equals the v0.1.5 export apart from
+        metadata.sff_version."""
+        a = copy.deepcopy(self.doc_105)
+        b = copy.deepcopy(self.doc_200)
         a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
         self.assertEqual(a, b)
 

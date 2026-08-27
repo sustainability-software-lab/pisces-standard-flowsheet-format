@@ -7,7 +7,7 @@
 # for license details.
 
 """
-The design-input-spec registry: ``pisces_sff/design_specs/biosteam.yaml``.
+The design-input-spec registry: ``pisces_sff/export/design_specs/biosteam.yaml``.
 
 The registry declares, per simulator unit class, which initialization
 parameters constitute that unit type's design input specification and how to
@@ -18,7 +18,7 @@ listed ancestor's entry as-is. Each parameter carries an ordered list of
 accessor paths (e.g. ``P``, then ``outs[0].P``); the first accessor yielding a
 non-None value wins and is exported under the parameter name. A parameter
 whose accessors are all exhausted is omitted -- the 0.1.4+ exporter emits no
-null design specs. Consumed by ``pisces_sff._export.get_design_input_specs``
+null design specs. Consumed by ``pisces_sff.export._export.get_design_input_specs``
 from SFF 0.1.4 on (``_DESIGN_SPEC_REGISTRY_SINCE``); older exporters keep the
 legacy fixed probe for byte-stable output.
 
@@ -63,7 +63,7 @@ class DesignSpecReadError(Exception):
     Defined here rather than reusing :class:`pisces_sff.exceptions
     .DesignInputSpecError` so this module stays loadable by file path with no
     package-relative import (the same deliberate-duplication trade-off as
-    ``_harness._schema_version``). ``pisces_sff._export`` catches this and
+    ``_harness._schema_version``). ``pisces_sff.export._export`` catches this and
     re-raises it as ``DesignInputSpecError``, so the package's public
     exception contract is unchanged.
     """
@@ -140,7 +140,7 @@ def load_design_spec_registry(path=None):
     ----------
     path : str or Path, optional
         Registry file to load. Defaults to the committed
-        ``pisces_sff/design_specs/biosteam.yaml``.
+        ``pisces_sff/export/design_specs/biosteam.yaml``.
 
     Returns
     -------
@@ -368,14 +368,14 @@ _REGISTRY_HEADER = """\
 # display name, informational only. Each parameter lists ordered accessor
 # paths; the exporter (SFF 0.1.4+) records the first non-None value under the
 # parameter name and omits the parameter when every accessor is exhausted.
-# Curate by hand freely -- regeneration (python pisces_sff/_design_specs.py)
+# Curate by hand freely -- regeneration (python pisces_sff/export/_design_specs.py)
 # merges entry-atomically: it appends classes that are not listed yet and
 # never touches an entry that is, so hand-pruned parameters stay pruned. To
 # pick up parameters a newer BioSTEAM added to a listed class, delete that
 # entry and regenerate. A recipe's pinned biosteam may resolve a unit under a
 # different class name than the biosteam that generated this file, so an
 # alias entry (e.g. NRELBatchBioreactor) may need hand-adding. See
-# docs/the_format/schema_reference.md and pisces_sff/_design_specs.py.
+# docs/the_format/schema_reference.md and pisces_sff/export/_design_specs.py.
 """
 
 
@@ -392,7 +392,7 @@ def generate_design_spec_registry(path=None, classes=None):
     ----------
     path : str or Path, optional
         Output file. Defaults to the committed registry
-        (``pisces_sff/design_specs/biosteam.yaml``).
+        (``pisces_sff/export/design_specs/biosteam.yaml``).
     classes : iterable of type, optional
         Unit classes to sweep. Defaults to every public biosteam unit class
         (imports biosteam lazily).
@@ -432,8 +432,8 @@ def main(argv=None):
         Process exit code.
     """
     parser = argparse.ArgumentParser(
-        prog='python pisces_sff/_design_specs.py',
-        description='Generate or refresh pisces_sff/design_specs/'
+        prog='python pisces_sff/export/_design_specs.py',
+        description='Generate or refresh pisces_sff/export/design_specs/'
                     'biosteam.yaml from the installed biosteam unit classes. '
                     'Merges: hand-curated entries are never overwritten.',
     )

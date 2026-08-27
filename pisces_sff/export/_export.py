@@ -30,7 +30,7 @@ from ._quantity_units import (
     version_tuple,
     quantity_units_for_design_results,
 )
-from .exceptions import (
+from ..exceptions import (
     SFFExportError,
     FlowsheetWriteError,
     DesignInputSpecError,
@@ -106,7 +106,7 @@ def get_versioned_exporter(sff_version):
         available = available_sff_versions()
         raise ValueError(
             f'no exporter implemented for SFF version {sff_version!r} '
-            f'(expected a function named {name!r} in pisces_sff._export); '
+            f'(expected a function named {name!r} in pisces_sff.export._export); '
             f"available versions: {', '.join(available) if available else 'none'}."
         )
     return exporter
@@ -188,7 +188,7 @@ _TAGS_SINCE = (0, 1, 3)
 _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
 
 #: First schema version whose design_input_specs are driven by the committed
-#: design-spec registry (pisces_sff/design_specs/biosteam.yaml): per-unit-type
+#: design-spec registry (pisces_sff/export/design_specs/biosteam.yaml): per-unit-type
 #: parameters resolved by class-name MRO lookup with ordered accessor
 #: fallbacks; a parameter whose accessors all yield None is OMITTED (no more
 #: null values), and unmapped unit types export {}. Older exporters keep the
@@ -618,7 +618,7 @@ def export_biosteam_flowsheet_sff_0_0_5(sys, filepath, tea=None,
 def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
                                         microorganisms=None, # optional list of microbial hosts
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.0.6', # must match this function's name suffix
                                         ):
     """
@@ -639,7 +639,7 @@ def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``: the environment
         specification, load script, pinned packages, and resolved runtime facts.
-        Built by :func:`pisces_sff._runner.build_reproducibility`. Omitted
+        Built by :func:`pisces_sff.export._runner.build_reproducibility`. Omitted
         entirely when falsy, so hand exports still validate -- the schema marks
         the block optional.
     sff_version : str, optional
@@ -659,7 +659,7 @@ def export_biosteam_flowsheet_sff_0_0_6(sys, filepath, tea=None,
 def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
                                         microorganisms=None, # optional list of microbial hosts
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.0.7', # must match this function's name suffix
                                         ):
     """
@@ -686,7 +686,7 @@ def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -704,7 +704,7 @@ def export_biosteam_flowsheet_sff_0_0_7(sys, filepath, tea=None,
 def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
                                         microorganisms=None, # optional list of microbial hosts
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.0.8', # must match this function's name suffix
                                         ):
     """
@@ -728,7 +728,7 @@ def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -746,7 +746,7 @@ def export_biosteam_flowsheet_sff_0_0_8(sys, filepath, tea=None,
 def export_biosteam_flowsheet_sff_0_0_9(sys, filepath, tea=None,
                                         stoichiometry="dict", # must be one of (None, "vector", "dict")
                                         microorganisms=None, # optional list of microbial hosts
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.0.9', # must match this function's name suffix
                                         ):
     """
@@ -773,7 +773,7 @@ def export_biosteam_flowsheet_sff_0_0_9(sys, filepath, tea=None,
         Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -794,7 +794,7 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
                                          source_doi=None, # optional; authored descriptive metadata
                                          process_title=None, # optional; authored
                                          flowsheet_designers=None, # optional; authored
-                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                         reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                          sff_version='0.0.10', # must match this function's name suffix
                                          ):
     """
@@ -828,7 +828,7 @@ def export_biosteam_flowsheet_sff_0_0_10(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -851,7 +851,7 @@ def export_biosteam_flowsheet_sff_0_0_11(sys, filepath, tea=None,
                                          source_doi=None, # optional; authored descriptive metadata
                                          process_title=None, # optional; authored
                                          flowsheet_designers=None, # optional; authored
-                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                         reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                          sff_version='0.0.11', # must match this function's name suffix
                                          ):
     """
@@ -884,7 +884,7 @@ def export_biosteam_flowsheet_sff_0_0_11(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -907,7 +907,7 @@ def export_biosteam_flowsheet_sff_0_0_12(sys, filepath, tea=None,
                                          source_doi=None, # optional; authored descriptive metadata
                                          process_title=None, # optional; authored
                                          flowsheet_designers=None, # optional; authored
-                                         reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                         reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                          sff_version='0.0.12', # must match this function's name suffix
                                          ):
     """
@@ -942,7 +942,7 @@ def export_biosteam_flowsheet_sff_0_0_12(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -964,7 +964,7 @@ def export_biosteam_flowsheet_sff_0_1_0(sys, filepath, tea=None,
                                         source_doi=None, # optional; authored descriptive metadata
                                         process_title=None, # optional; authored
                                         flowsheet_designers=None, # optional; authored
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.1.0', # must match this function's name suffix
                                         ):
     """
@@ -998,7 +998,7 @@ def export_biosteam_flowsheet_sff_0_1_0(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -1020,7 +1020,7 @@ def export_biosteam_flowsheet_sff_0_1_1(sys, filepath, tea=None,
                                         source_doi=None, # optional; authored descriptive metadata
                                         process_title=None, # optional; authored
                                         flowsheet_designers=None, # optional; authored
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.1.1', # must match this function's name suffix
                                         ):
     """
@@ -1055,7 +1055,7 @@ def export_biosteam_flowsheet_sff_0_1_1(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -1077,7 +1077,7 @@ def export_biosteam_flowsheet_sff_0_1_2(sys, filepath, tea=None,
                                         source_doi=None, # optional; authored descriptive metadata
                                         process_title=None, # optional; authored
                                         flowsheet_designers=None, # optional; authored
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.1.2', # must match this function's name suffix
                                         ):
     """
@@ -1112,7 +1112,7 @@ def export_biosteam_flowsheet_sff_0_1_2(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -1134,7 +1134,7 @@ def export_biosteam_flowsheet_sff_0_1_3(sys, filepath, tea=None,
                                         source_doi=None, # optional; authored descriptive metadata
                                         process_title=None, # optional; authored
                                         flowsheet_designers=None, # optional; authored
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.1.3', # must match this function's name suffix
                                         ):
     """
@@ -1174,7 +1174,7 @@ def export_biosteam_flowsheet_sff_0_1_3(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -1200,7 +1200,7 @@ def export_biosteam_flowsheet_sff_0_1_4(sys, filepath, tea=None,
                                         source_doi=None, # optional; authored descriptive metadata
                                         process_title=None, # optional; authored
                                         flowsheet_designers=None, # optional; authored
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.1.4', # must match this function's name suffix
                                         ):
     """
@@ -1210,7 +1210,7 @@ def export_biosteam_flowsheet_sff_0_1_4(sys, filepath, tea=None,
     export -- no schema shape change and no new SFF keys, only different
     contents inside the existing free-form object. Specs are now resolved
     from the committed design-spec registry
-    (``pisces_sff/design_specs/biosteam.yaml``): the unit's class (via MRO)
+    (``pisces_sff/export/design_specs/biosteam.yaml``): the unit's class (via MRO)
     selects a per-type parameter list, each parameter is read through an
     ordered accessor list (e.g. a P-unset Pump falls back from ``P`` to
     ``outs[0].P``, still exported under ``P``), a parameter whose accessors
@@ -1240,7 +1240,7 @@ def export_biosteam_flowsheet_sff_0_1_4(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -1266,7 +1266,7 @@ def export_biosteam_flowsheet_sff_0_1_5(sys, filepath, tea=None,
                                         source_doi=None, # optional; authored descriptive metadata
                                         process_title=None, # optional; authored
                                         flowsheet_designers=None, # optional; authored
-                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
                                         sff_version='0.1.5', # must match this function's name suffix
                                         ):
     """
@@ -1302,7 +1302,67 @@ def export_biosteam_flowsheet_sff_0_1_5(sys, filepath, tea=None,
         Name(s) of the flowsheet's authors. Emitted only when truthy.
     reproducibility : dict, optional
         Recipe block written to ``metadata['reproducibility']``. Built by
-        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_2_0(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.0', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.0.
+
+    A milestone bump marking the 2026-08 reorganization of ``pisces_sff``
+    into the ``validate/`` and ``export/`` subpackages -- no schema shape or
+    constraint change, no new SFF keys, and no exporter behavior change, so
+    this export is byte-identical to the 0.1.5 export apart from
+    ``metadata.sff_version``. All version-gated behavior active at 0.1.5
+    (including conditional ``exported-from-simulator`` stamping) remains so
+    here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
     sff_version : str, optional
         Version recorded as ``metadata['sff_version']``.
     """
@@ -1574,7 +1634,7 @@ def _stamp_static_tags(doc):
     the exporter (it needs a second harness run to prove). Stamping only when
     earned guarantees the exporter never writes a self-contradictory file (a
     stamped-but-unearned tag would be a TAG-01 error)."""
-    from . import _validate
+    from ..validate import _validate
     with open(_validate._SCHEMA_FILE, 'r', encoding='utf-8') as f:
         schema = json.load(f)
     ctx, results = _validate._run_all_checks(doc, schema)
@@ -2011,7 +2071,7 @@ def get_design_input_specs(unit, registry=None):
     unit : biosteam.Unit
     registry : dict, optional
         A design-spec registry mapping (see
-        :func:`pisces_sff._design_specs.load_design_spec_registry`). When
+        :func:`pisces_sff.export._design_specs.load_design_spec_registry`). When
         given (exporters at ``_DESIGN_SPEC_REGISTRY_SINCE`` = 0.1.4 and
         later), specs are resolved per unit type by class-name MRO lookup
         with ordered accessor fallbacks, omitting parameters whose accessors

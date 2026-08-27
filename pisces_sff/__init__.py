@@ -18,20 +18,20 @@ __version__ = read_schema_version()
 from . import exceptions
 from .exceptions import *
 
-from . import _export
-from ._export import *
+from .export import _export
+from .export._export import *
 
-from . import _harness
-from ._harness import *
+from .export import _harness
+from .export._harness import *
 
-from . import _validate
-from ._validate import *
+from .validate import _validate
+from .validate._validate import *
 
-from . import _registry
-from ._registry import *
+from .export import _registry
+from .export._registry import *
 
-from . import _design_specs
-from ._design_specs import *
+from .export import _design_specs
+from .export._design_specs import *
 
 
 __all__ = (

@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 MODULE_PATH = (
-    Path(__file__).resolve().parents[2] / "pisces_sff" / "_regenerate_corpus.py"
+    Path(__file__).resolve().parents[2] / "pisces_sff" / "export" / "_regenerate_corpus.py"
 )
 
 
@@ -41,7 +41,7 @@ def corn_registry():
 def _make_model_stubs(models_root, registry):
     """Create a load.py stub for each registry entry's model_dir under
     models_root, so regenerate_corpus's unregistered-dir scan sees exactly
-    the registered recipes (isolates the test from the real pisces_sff/models/
+    the registered recipes (isolates the test from the real pisces_sff/export/models/
     tree)."""
     for entry in registry.values():
         d = Path(models_root) / entry["model_dir"]
@@ -246,7 +246,7 @@ class TestRegenerateCorpusLoop(unittest.TestCase):
 class TestWriteJson(unittest.TestCase):
     """_write_json must match _export.py's _write_sff_json byte-for-byte (same
     json.dump call shape: indent=4, default ensure_ascii, no explicit encoding/
-    newline handling, no trailing newline) -- see pisces_sff/_export.py's
+    newline handling, no trailing newline) -- see pisces_sff/export/_export.py's
     _write_sff_json (`json.dump(doc, f, indent=4)` inside `open(path, "w")`).
     A stamped corpus file must stay diff-clean against a freshly
     harness-exported one apart from the two stamped keys."""

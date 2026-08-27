@@ -6,7 +6,7 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 #
-# Tier 1: the model registry (pisces_sff/models/all_models.yaml) loader and,
+# Tier 1: the model registry (pisces_sff/export/models/all_models.yaml) loader and,
 # from Task 4 of the naming-convention plan on, the README generator. _registry
 # holds no package-relative imports (yaml is imported lazily), so we load it by
 # file path -- like test_regenerate_corpus.py -- keeping this tier import-light
@@ -19,8 +19,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODULE_PATH = REPO_ROOT / "pisces_sff" / "_registry.py"
-MODELS_ROOT = REPO_ROOT / "pisces_sff" / "models"
+MODULE_PATH = REPO_ROOT / "pisces_sff" / "export" / "_registry.py"
+MODELS_ROOT = REPO_ROOT / "pisces_sff" / "export" / "models"
 
 
 def load_module():
@@ -222,7 +222,7 @@ class TestCommittedRegistry(unittest.TestCase):
                          "bioindustrial_park/SF_BST_01.json")
 
     def test_every_model_dir_on_disk_is_registered(self):
-        """Every load.py directory under pisces_sff/models/ appears in the
+        """Every load.py directory under pisces_sff/export/models/ appears in the
         registry (mirror of regenerate_corpus's runtime hard error) -> expected:
         on-disk set is a subset of the registered set."""
         registry = self.m.load_model_registry()
@@ -232,7 +232,7 @@ class TestCommittedRegistry(unittest.TestCase):
         self.assertTrue(
             on_disk <= registered,
             f"unregistered model dir(s): {sorted(on_disk - registered)} -- "
-            f"register them in pisces_sff/models/all_models.yaml")
+            f"register them in pisces_sff/export/models/all_models.yaml")
 
 
 class TestReadmeGeneration(unittest.TestCase):
@@ -248,7 +248,7 @@ class TestReadmeGeneration(unittest.TestCase):
         text = self.m.render_registry_readme(registry)
         self.assertEqual(text, self.m.render_registry_readme(registry))
         self.assertIn("AUTO-GENERATED", text)
-        self.assertIn("python -m pisces_sff._registry", text)
+        self.assertIn("python -m pisces_sff.export._registry", text)
         self.assertIn("git config core.hooksPath .githooks", text)
         self.assertIn("git log --follow", text)
         for model_id, entry in registry.items():
@@ -269,7 +269,7 @@ class TestReadmeGeneration(unittest.TestCase):
 
     def test_committed_readmes_are_in_sync(self):
         """Both committed READMEs byte-match a fresh render of the committed
-        registry -> if this fails, run: python -m pisces_sff._registry"""
+        registry -> if this fails, run: python -m pisces_sff.export._registry"""
         expected = self.m.render_registry_readme(
             self.m.load_model_registry()).encode("utf-8")
         for path in self.m.README_PATHS:
@@ -277,7 +277,7 @@ class TestReadmeGeneration(unittest.TestCase):
                 self.assertEqual(
                     path.read_bytes(), expected,
                     f"{path} is stale -- regenerate with: "
-                    f"python -m pisces_sff._registry")
+                    f"python -m pisces_sff.export._registry")
 
     def test_table_cells_survive_pipes_and_newlines(self):
         """A registry entry whose title carries a literal '|' and a YAML

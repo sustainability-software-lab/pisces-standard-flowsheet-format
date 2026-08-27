@@ -30,9 +30,10 @@ REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "pisces_sff"
 TIER1 = Path(__file__).resolve().parent
 
-MODULES = ["_export.py", "_validate.py", "_quantity_units.py", "_harness.py",
-           "_runner.py", "_version.py", "_regenerate_corpus.py",
-           "_registry.py", "_design_specs.py", "exceptions.py"]
+MODULES = ["export/_export.py", "validate/_validate.py", "export/_quantity_units.py",
+           "export/_harness.py", "export/_runner.py", "_version.py",
+           "export/_regenerate_corpus.py", "export/_registry.py",
+           "export/_design_specs.py", "exceptions.py"]
 
 # name -> reason it needs no dedicated Tier 1 test.
 _EXEMPT = {
@@ -60,6 +61,7 @@ _EXEMPT = {
     "export_biosteam_flowsheet_sff_0_1_3": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_1_4": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_1_5": "real-only; needs a simulated System, covered in Tier 2/3",
+    "export_biosteam_flowsheet_sff_0_2_0": "real-only; needs a simulated System, covered in Tier 2/3",
     "_build_sff_dict": "real-only; needs a simulated System (sys.flowsheet/units/streams/feeds/products/TEA), covered in Tier 2/3",
 
     # -- _runner.py: the child process of the full reproducible-export harness.
