@@ -30,6 +30,9 @@ Three tags are **static**: `exported-from-simulator`, `extracted-from-prose`,
 and `extracted-from-image`. A file earns a static tag by passing a
 tag-specific subset of the catalogue's checks with no `warning`-severity
 finding — fast, and requiring no simulation.
+The tag names, subsets, and tolerated-skip policies live in one committed
+registry file, `pisces_sff/tags/tags.yaml`, which the validator reads at
+evaluation time.
 
 The fourth tag, `reproducible`, is a **harness** tag. It is earned only via
 `verify_reproducible(file, *, rtol=None, ...) -> (matches, diffs)`, which
