@@ -1442,6 +1442,125 @@ def _run_all_checks(doc, schema):
 
 #%% Tags (sff_checks.md section 8)
 
+# The committed tag registry: THE single source of truth for tag names, check
+# subsets, and tolerated-skip policies (sff_checks.md section 8). The schema's
+# metadata.tags enum mirrors the tag names; tests/tier1/test_tag_registry.py
+# pins the sync.
+_TAGS_YAML = Path(__file__).resolve().parent / 'tags' / 'tags.yaml'
+
+# Condition names a tolerated_skips entry in tags.yaml may reference. The
+# registry names the *policy* (which check is tolerated, under what
+# circumstance); these predicates are the implementation. An unknown name in
+# the YAML is rejected at load time by _load_tag_registry. Predicates read
+# only the read-only _Context.
+_TOLERATED_SKIP_CONDITIONS = {
+    'always': lambda ctx: True,
+    'all_streams_empty': lambda ctx: _all_streams_empty(ctx),
+    'no_reactions': lambda ctx: not _has_reactions(ctx),
+}
+
+_TAG_CLASSES = ('static', 'harness')
+
+#: Cache for the parsed registry (the committed file is immutable at runtime).
+#: Tests that repoint _TAGS_YAML must reset this to None and restore both.
+_TAG_REGISTRY_CACHE = None
+
+
+def _load_tag_registry():
+    """Parse, shape-validate, and cache ``pisces_sff/tags/tags.yaml``.
+
+    Returns
+    -------
+    dict
+        ``{tag_name: entry}`` in YAML declaration order (the canonical tag
+        order). A ``static`` entry holds ``subset`` (``None`` for the
+        "all checks that ran" sentinel, else a frozenset of check ids) and
+        ``tolerated_skips`` (``{check_id: condition_name}``, possibly empty);
+        a ``harness`` entry holds only ``class``.
+
+    Raises
+    ------
+    ImportError
+        pyyaml is not installed.
+    ValueError
+        The registry file is malformed. Failing fast is deliberate: the
+        registry is committed repo infrastructure, not document content, so a
+        broken registry must abort tag evaluation rather than silently skip
+        the TAG-01 gate (Tier 1 pins the committed file's validity).
+    """
+    global _TAG_REGISTRY_CACHE
+    if _TAG_REGISTRY_CACHE is not None:
+        return _TAG_REGISTRY_CACHE
+    try:
+        import yaml
+    except ImportError as e:  # pragma: no cover - env-dependent
+        raise ImportError(
+            'pyyaml is required for SFF tag evaluation (it reads the tag '
+            'registry pisces_sff/tags/tags.yaml)') from e
+    with _TAGS_YAML.open('r', encoding='utf-8') as f:
+        raw = yaml.safe_load(f)
+    if (not isinstance(raw, dict) or set(raw) != {'tags'}
+            or not isinstance(raw['tags'], dict) or not raw['tags']):
+        raise ValueError(
+            f'{_TAGS_YAML}: expected a single top-level "tags" mapping '
+            f'with at least one entry')
+    registry = {}
+    for tag, entry in raw['tags'].items():
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: entry must be a mapping')
+        unknown = set(entry) - {'class', 'subset', 'tolerated_skips'}
+        if unknown:
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: unknown key(s) {sorted(unknown)}')
+        cls = entry.get('class')
+        if cls not in _TAG_CLASSES:
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "class" must be one of '
+                f'{_TAG_CLASSES}, got {cls!r}')
+        if cls == 'harness':
+            if 'subset' in entry or 'tolerated_skips' in entry:
+                raise ValueError(
+                    f'{_TAGS_YAML}: tag {tag!r}: a harness tag may not '
+                    f'declare "subset" or "tolerated_skips" (its earning '
+                    f'rule is code)')
+            registry[tag] = {'class': cls}
+            continue
+        subset = entry.get('subset')
+        if subset == 'all':
+            subset = None  # sentinel: every check id that ran
+        elif (isinstance(subset, list) and subset
+                and all(isinstance(c, str) for c in subset)):
+            subset = frozenset(subset)
+        else:
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "subset" must be the string '
+                f'"all" or a non-empty list of check ids, got {subset!r}')
+        tolerated = entry.get('tolerated_skips') or {}
+        if not isinstance(tolerated, dict):
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "tolerated_skips" must be a '
+                f'mapping of check id to condition name')
+        for check_id, cond in tolerated.items():
+            if (not isinstance(check_id, str)
+                    or cond not in _TOLERATED_SKIP_CONDITIONS):
+                raise ValueError(
+                    f'{_TAGS_YAML}: tag {tag!r}: tolerated_skips'
+                    f'[{check_id!r}] names unknown condition {cond!r}; '
+                    f'known: {sorted(_TOLERATED_SKIP_CONDITIONS)}')
+        registry[tag] = {'class': cls, 'subset': subset,
+                         'tolerated_skips': dict(tolerated)}
+    _TAG_REGISTRY_CACHE = registry
+    return registry
+
+
+def _tag_names():
+    """The tag names in canonical (registry declaration) order. Mirrors the
+    schema's metadata.tags enum; tests/tier1/test_tag_registry.py pins the
+    sync."""
+    return tuple(_load_tag_registry())
+
+
 # The four tag names, also enforced by the schema enum on metadata.tags.
 _TAG_NAMES = ('exported-from-simulator', 'extracted-from-prose',
               'extracted-from-image', 'reproducible')
