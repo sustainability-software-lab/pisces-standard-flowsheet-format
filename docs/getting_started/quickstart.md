@@ -24,6 +24,5 @@ for r in results:
 ```
 
 `SF_BST_01.json` (corn dry-grind ethanol) is the one corpus file in the current shape
-(exported at 0.1.4; the 0.1.5 bump only added a tag name to the validation vocabulary,
-and 0.2.0 is a milestone bump with no schema change);
+(exported at 0.2.0 via the reproducible-export harness);
 it validates clean (benign `info`/`skip` findings only).
