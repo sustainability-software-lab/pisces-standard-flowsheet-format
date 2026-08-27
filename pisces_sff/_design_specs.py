@@ -36,7 +36,7 @@ from pathlib import Path
 # REGISTRY_PATH is a module attribute but deliberately NOT in __all__: the
 # star-import aggregation in pisces_sff/__init__.py would otherwise surface an
 # ambiguous package-level REGISTRY_PATH next to _registry.py's model registry.
-__all__ = ('resolve_design_input_specs', 'DesignSpecReadError')
+__all__ = ('load_design_spec_registry', 'resolve_design_input_specs', 'DesignSpecReadError')
 
 _PKG_ROOT = Path(__file__).resolve().parent
 
@@ -99,6 +99,79 @@ def parse_accessor(accessor):
         name, index = _STEP_RE.match(segment).groups()
         steps.append((name, int(index) if index is not None else None))
     return steps
+
+
+_ENTRY_KEYS = frozenset({'line', 'design_input_spec_params'})
+
+
+def load_design_spec_registry(path=None):
+    """
+    Parse and validate the design-input-spec registry.
+
+    Parameters
+    ----------
+    path : str or Path, optional
+        Registry file to load. Defaults to the committed
+        ``pisces_sff/design_specs/biosteam.yaml``.
+
+    Returns
+    -------
+    dict
+        ``{class_name: {'line': str, 'design_input_spec_params':
+        {param: {'accessors': [str, ...]}}}}``.
+
+    Raises
+    ------
+    ValueError
+        On a missing/unreadable file, malformed YAML, a non-mapping shape, a
+        missing or unknown entry key, a non-string ``line``, or a parameter
+        without a non-empty list of syntactically valid accessors.
+    """
+    import yaml  # lazy: keep the module import-light for Tier 1
+
+    path = Path(path) if path is not None else REGISTRY_PATH
+    try:
+        text = path.read_text(encoding='utf-8')
+    except OSError as e:
+        raise ValueError(
+            f'design-spec registry not readable: {path}: {e}') from e
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise ValueError(
+            f'design-spec registry is not valid YAML: {path}: {e}') from e
+    if not isinstance(data, dict):
+        raise ValueError(
+            f'design-spec registry must be a mapping of class names to '
+            f'entries: {path}')
+    for class_name, entry in data.items():
+        if not isinstance(entry, dict):
+            raise ValueError(f'{class_name}: entry must be a mapping')
+        unknown = set(entry) - _ENTRY_KEYS
+        if unknown:
+            raise ValueError(
+                f'{class_name}: unknown key(s) {sorted(unknown)}; '
+                f'expected only {sorted(_ENTRY_KEYS)}')
+        if not isinstance(entry.get('line'), str):
+            raise ValueError(f"{class_name}: 'line' must be a string")
+        params = entry.get('design_input_spec_params')
+        if not isinstance(params, dict):
+            raise ValueError(
+                f"{class_name}: 'design_input_spec_params' must be a "
+                f'mapping (possibly empty)')
+        for param, param_spec in params.items():
+            accessors = (param_spec.get('accessors')
+                         if isinstance(param_spec, dict) else None)
+            if not isinstance(accessors, list) or not accessors:
+                raise ValueError(
+                    f'{class_name}.{param}: must carry a non-empty '
+                    f"'accessors' list")
+            for accessor in accessors:
+                try:
+                    parse_accessor(accessor)
+                except ValueError as e:
+                    raise ValueError(f'{class_name}.{param}: {e}') from e
+    return data
 
 
 def _read_accessor(obj, steps, accessor):

@@ -147,5 +147,80 @@ class TestResolveDesignInputSpecs(unittest.TestCase):
         self.assertIsInstance(caught.exception.__cause__, ValueError)
 
 
+class TestLoadDesignSpecRegistry(unittest.TestCase):
+    # NOTE: accessors containing [i] must be QUOTED in YAML flow style --
+    # '[' inside a plain scalar is invalid in flow context.
+    GOOD = (
+        "Pump:\n"
+        "  line: Pump\n"
+        "  design_input_spec_params:\n"
+        "    P:\n"
+        "      accessors: [P, 'outs[0].P']\n"
+        "    material:\n"
+        "      accessors: [material]\n"
+    )
+
+    def _load(self, text):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "reg.yaml"
+            p.write_text(text, encoding="utf-8")
+            return _ds.load_design_spec_registry(p)
+
+    def test_well_formed_registry_loads(self):
+        """A well-formed file loads into the documented mapping shape."""
+        reg = self._load(self.GOOD)
+        self.assertEqual(
+            reg["Pump"]["design_input_spec_params"]["P"]["accessors"],
+            ["P", "outs[0].P"])
+        self.assertEqual(reg["Pump"]["line"], "Pump")
+
+    def test_missing_file_raises_value_error(self):
+        """A nonexistent path raises ValueError naming the path."""
+        with self.assertRaises(ValueError):
+            _ds.load_design_spec_registry(
+                Path("no_such_dir") / "no_such.yaml")
+
+    def test_invalid_yaml_raises_value_error(self):
+        """Unparseable YAML raises ValueError, not a bare yaml error."""
+        with self.assertRaises(ValueError):
+            self._load("Pump: [unclosed\n")
+
+    def test_missing_line_raises_value_error(self):
+        """An entry without 'line' is rejected."""
+        with self.assertRaises(ValueError):
+            self._load("Pump:\n  design_input_spec_params: {}\n")
+
+    def test_missing_params_mapping_raises_value_error(self):
+        """An entry without 'design_input_spec_params' is rejected."""
+        with self.assertRaises(ValueError):
+            self._load("Pump:\n  line: Pump\n")
+
+    def test_unknown_entry_key_raises_value_error(self):
+        """A stray key inside an entry is rejected (typo protection)."""
+        with self.assertRaises(ValueError):
+            self._load("Pump:\n  line: Pump\n  design_input_spec_params: {}\n"
+                       "  extra: 1\n")
+
+    def test_malformed_accessor_raises_value_error(self):
+        """A syntactically bad accessor is rejected at LOAD time."""
+        with self.assertRaises(ValueError):
+            self._load("Pump:\n  line: Pump\n  design_input_spec_params:\n"
+                       "    P:\n      accessors: ['outs[-1].P']\n")
+
+    def test_empty_accessor_list_raises_value_error(self):
+        """A param with no accessors can never resolve -- rejected."""
+        with self.assertRaises(ValueError):
+            self._load("Pump:\n  line: Pump\n  design_input_spec_params:\n"
+                       "    P:\n      accessors: []\n")
+
+    def test_empty_params_mapping_is_allowed(self):
+        """design_input_spec_params: {} is valid (a unit type with no design
+        input specs)."""
+        reg = self._load("Mixer:\n  line: Mixer\n"
+                         "  design_input_spec_params: {}\n")
+        self.assertEqual(reg["Mixer"]["design_input_spec_params"], {})
+
+
 if __name__ == "__main__":
     unittest.main()
