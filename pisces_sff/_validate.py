@@ -1561,36 +1561,17 @@ def _tag_names():
     return tuple(_load_tag_registry())
 
 
-# The four tag names, also enforced by the schema enum on metadata.tags.
-_TAG_NAMES = ('exported-from-simulator', 'extracted-from-prose',
-              'extracted-from-image', 'reproducible')
-
-# Static subsets. exported-from-simulator uses ALL checks (sentinel None means
-# "every check id that ran"); the extracted tags use exactly {UNIT-10, STR-14}.
-_STATIC_TAG_SUBSETS = {
-    'exported-from-simulator': None,
-    'extracted-from-prose': frozenset({'UNIT-10', 'STR-14'}),
-    'extracted-from-image': frozenset({'UNIT-10', 'STR-14'}),
-}
-
 # Result ids never part of any subset: the schema gate and the two aggregates.
 _NON_SUBSET_IDS = frozenset({'SCHEMA', 'XREF-01', 'TAG-01'})
 
-# Skips always tolerated by exported-from-simulator (legitimate absences).
-_ALWAYS_TOLERATED_SKIPS = frozenset({'STR-03', 'STR-13', 'CHEM-04'})
 
-
-def _skip_tolerated(check_id, ctx):
-    """True if a `skip` from `check_id` is a legitimate absence-of-construct for
-    the exported-from-simulator tag (sff_checks.md section 8 tolerated-skip
-    table). Predicates read only the read-only _Context."""
-    if check_id in _ALWAYS_TOLERATED_SKIPS:
-        return True
-    if check_id == 'STR-10':
-        return _all_streams_empty(ctx)
-    if check_id in ('UNIT-04', 'UNIT-05', 'UNIT-06'):
-        return not _has_reactions(ctx)
-    return False
+def _skip_tolerated(tag, check_id, ctx):
+    """True if a `skip` from `check_id` is a legitimate absence-of-construct
+    under `tag`'s tolerated-skip policy in the tags.yaml registry
+    (sff_checks.md section 8 tolerated-skip table). Condition predicates read
+    only the read-only _Context."""
+    cond = _load_tag_registry()[tag]['tolerated_skips'].get(check_id)
+    return cond is not None and _TOLERATED_SKIP_CONDITIONS[cond](ctx)
 
 
 def _conformant(results):
@@ -1619,8 +1600,9 @@ def _reproducible_precondition(ctx, results):
 
 
 def _earned_tags(ctx, results):
-    """Apply the static earning rules (sff_checks.md section 8) to produce a
-    per-tag verdict dict. reproducible.earned is None here (static path); its
+    """Apply the static earning rules from the tags.yaml registry
+    (sff_checks.md section 8) to produce a per-tag verdict dict.
+    reproducible.earned is None here (static path); its
     blocking holds the precondition problems. Used by evaluate_sff_tags and the
     TAG-01 aggregate.
 
@@ -1631,7 +1613,10 @@ def _earned_tags(ctx, results):
     declared = set(ctx.metadata.get('tags') or [])
     conformant = _conformant(results)
     verdict = {}
-    for tag, subset in _STATIC_TAG_SUBSETS.items():
+    for tag, entry in _load_tag_registry().items():
+        if entry['class'] != 'static':
+            continue  # `reproducible` (harness): precondition verdict below
+        subset = entry['subset']
         blocking = []
         for r in results:
             if r.check_id in _NON_SUBSET_IDS or r.severity == 'info':
@@ -1640,7 +1625,7 @@ def _earned_tags(ctx, results):
                 continue
             if r.status == 'fail' and r.severity in ('warning', 'error'):
                 blocking.append(r.check_id)
-            elif r.status == 'skip' and not _skip_tolerated(r.check_id, ctx):
+            elif r.status == 'skip' and not _skip_tolerated(tag, r.check_id, ctx):
                 blocking.append(r.check_id)
         verdict[tag] = {'earned': conformant and not blocking,
                         'declared': tag in declared, 'blocking': blocking}
