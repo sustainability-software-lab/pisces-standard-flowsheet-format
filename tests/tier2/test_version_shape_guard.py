@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
-# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, 0.1.2, and
-# 0.1.3 and asserts the scalar-shape, results-key, required-metadata,
-# stream-roles, enthalpy-flow, tightened-constraint (0.0.12 shape-identical to
-# 0.0.11), milestone-bump (0.1.0 shape-identical to 0.0.12),
-# constraint-loosening (0.1.1 shape-identical to 0.1.0 -- CHEM-02's molar_mass
-# constraint moved from the schema to the validator, a validation-only change
-# with no output effect), new-field (0.1.2 adds the optional per-unit
-# purchase_cost_correlations object, present -- possibly empty -- on every
-# unit, otherwise shape-identical to 0.1.1), and conditional-tag-stamping
-# (0.1.3 adds the optional metadata.tags field, stamped ["exported-from-
-# simulator"] only when earned -- the recipe-less small fixture earns nothing,
-# so its 0.1.3 export is otherwise shape-identical to 0.1.2) differences the
-# schema versions require. This is about exporter version dispatch, not the
-# corn model, so it needs no whole-model simulation -- which is why it lives
-# in Tier 2 rather than Tier 3.
+# 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, 0.1.2,
+# 0.1.3, and 0.1.4 and asserts the scalar-shape, results-key,
+# required-metadata, stream-roles, enthalpy-flow, tightened-constraint (0.0.12
+# shape-identical to 0.0.11), milestone-bump (0.1.0 shape-identical to
+# 0.0.12), constraint-loosening (0.1.1 shape-identical to 0.1.0 -- CHEM-02's
+# molar_mass constraint moved from the schema to the validator, a
+# validation-only change with no output effect), new-field (0.1.2 adds the
+# optional per-unit purchase_cost_correlations object, present -- possibly
+# empty -- on every unit, otherwise shape-identical to 0.1.1),
+# conditional-tag-stamping (0.1.3 adds the optional metadata.tags field,
+# stamped ["exported-from-simulator"] only when earned -- the recipe-less
+# small fixture earns nothing, so its 0.1.3 export is otherwise
+# shape-identical to 0.1.2), and design-spec-semantics (0.1.4 changes
+# design_input_specs semantics -- registry-driven, per-type params, ordered
+# accessor fallbacks, None omitted; otherwise shape-identical to 0.1.3)
+# differences the schema versions require. This is about exporter version
+# dispatch, not the corn model, so it needs no whole-model simulation --
+# which is why it lives in Tier 2 rather than Tier 3.
 #
 # All asserted shapes are verified from a real export run:
 #   0.0.9 -> per-phase stream structure (stream_properties.phases keyed by
@@ -134,6 +137,11 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_103), sff_version="0.1.3", tea=tea)
         cls.doc_103 = json.loads(cls.path_103.read_text(encoding="utf-8"))
+
+        cls.path_104 = tmp / "small_104.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_104), sff_version="0.1.4", tea=tea)
+        cls.doc_104 = json.loads(cls.path_104.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -437,6 +445,47 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                     self.doc_011, self.doc_010, self.doc_009, self.doc_008,
                     self.doc_007, self.doc_006):
             self.assertNotIn("tags", doc["metadata"])
+
+    def test_0_1_4_validates_against_committed_schema(self):
+        """v0.1.4 export of the real small System -> validates against the
+        committed schema; records metadata.sff_version "0.1.4"."""
+        is_valid, errors = self.validate(str(self.path_104), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_104["metadata"]["sff_version"], "0.1.4")
+
+    def test_0_1_4_design_specs_carry_no_nulls_and_keep_the_set_T(self):
+        """v0.1.4 design_input_specs are registry-driven: the HXutility
+        fixture's set T survives, its unset V is OMITTED (v0.1.3 exported
+        "V": null), and no unit carries a null spec value."""
+        # The small fixture has exactly one unit (the HXutility H1).
+        hx = self.doc_104["units"][0]
+        self.assertEqual(hx["design_input_specs"]["T"], 350.0)
+        self.assertNotIn("V", hx["design_input_specs"])
+        for unit in self.doc_104["units"]:
+            with self.subTest(unit=unit["id"]):
+                self.assertTrue(
+                    all(v is not None
+                        for v in unit["design_input_specs"].values()))
+
+    def test_0_1_3_design_specs_still_carry_the_legacy_null(self):
+        """The 0.1.3 export is BYTE-STABLE: its HXutility still exports the
+        legacy probe's "V": null (proving the registry did not leak into
+        older exporters)."""
+        hx = self.doc_103["units"][0]
+        self.assertIn("V", hx["design_input_specs"])
+        self.assertIsNone(hx["design_input_specs"]["V"])
+
+    def test_0_1_4_is_shape_identical_to_0_1_3_except_design_specs_and_version(self):
+        """With every unit's design_input_specs normalized away and
+        metadata.sff_version normalized, the v0.1.4 export equals the v0.1.3
+        export -- design_input_specs content is the ONLY 0.1.4 change."""
+        a = copy.deepcopy(self.doc_103)
+        b = copy.deepcopy(self.doc_104)
+        for doc in (a, b):
+            for unit in doc["units"]:
+                unit["design_input_specs"] = {}
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
 
 
 if __name__ == "__main__":

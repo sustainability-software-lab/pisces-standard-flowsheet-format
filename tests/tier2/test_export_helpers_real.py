@@ -241,6 +241,37 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         self.assertEqual(specs, {'T': self.H1.T, 'V': self.H1.V})
         self.assertEqual(specs, {'T': 350, 'V': None})
 
+    def test_registry_resolves_P_set_pump_from_its_own_P(self):
+        """A real Pump with P set exports that P via the registry path."""
+        import biosteam as bst
+        from pisces_sff._design_specs import load_design_spec_registry
+        registry = load_design_spec_registry()
+        # Reuse the shared fixture's thermo rather than switching the global
+        # thermo mid-class (other tests in this module use the cached system).
+        bst.settings.set_thermo(["Water", "Ethanol"])
+        pump = bst.Pump("TP1", ins=bst.Stream(Water=1.0), P=2.0e5)
+        specs = self._export.get_design_input_specs(pump, registry=registry)
+        self.assertEqual(specs["P"], 2.0e5)
+
+    def test_registry_resolves_P_unset_pump_from_outlet_pressure(self):
+        """A real Pump with P unset (None) exports outs[0].P under 'P' --
+        the user-approved fallback -- and never a null. outs[0].P is set to
+        a value distinct from ins[0].P so the assertion can actually tell
+        the outlet-reading fallback apart from a hypothetical bug reading
+        the inlet instead."""
+        import biosteam as bst
+        from pisces_sff._design_specs import load_design_spec_registry
+        registry = load_design_spec_registry()
+        bst.settings.set_thermo(["Water", "Ethanol"])
+        pump = bst.Pump("TP2", ins=bst.Stream(Water=1.0))  # P=None default
+        pump.outs[0].P = 3.0e5
+        self.assertIsNone(pump.P)
+        self.assertNotEqual(pump.ins[0].P, 3.0e5)
+        specs = self._export.get_design_input_specs(pump, registry=registry)
+        self.assertEqual(specs["P"], 3.0e5)
+        self.assertIsNotNone(specs["P"])
+        self.assertTrue(all(v is not None for v in specs.values()))
+
     def test_is_feedstock_true_for_the_real_highest_carbon_feed(self):
         """is_feedstock(feed, system.feeds) is True: feed is system's only
         (and therefore trivially highest-carbon-flow) feed, and has a

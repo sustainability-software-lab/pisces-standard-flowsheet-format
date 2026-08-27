@@ -1,0 +1,2209 @@
+# Design-input-spec registry for BioSTEAM unit classes.
+# Keyed by unit CLASS NAME, resolved by MRO walk (a subclass without its own
+# entry uses its nearest listed ancestor's entry as-is); `line` is the class's
+# display name, informational only. Each parameter lists ordered accessor
+# paths; the exporter (SFF 0.1.4+) records the first non-None value under the
+# parameter name and omits the parameter when every accessor is exhausted.
+# Curate by hand freely -- regeneration (python pisces_sff/_design_specs.py)
+# merges entry-atomically: it appends classes that are not listed yet and
+# never touches an entry that is, so hand-pruned parameters stay pruned. To
+# pick up parameters a newer BioSTEAM added to a listed class, delete that
+# entry and regenerate. A recipe's pinned biosteam may resolve a unit under a
+# different class name than the biosteam that generated this file, so an
+# alias entry (e.g. NRELBatchBioreactor) may need hand-adding. See
+# docs/the_format/schema_reference.md and pisces_sff/_design_specs.py.
+AbstractStirredTankReactor:
+  line: Abstract stirred tank reactor
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    V_max:
+      accessors:
+      - V_max
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    kW_per_m3:
+      accessors:
+      - kW_per_m3
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+    batch:
+      accessors:
+      - batch
+    tau_0:
+      accessors:
+      - tau_0
+    adiabatic:
+      accessors:
+      - adiabatic
+    heat_exchanger_configuration:
+      accessors:
+      - heat_exchanger_configuration
+    dT_hx_loop:
+      accessors:
+      - dT_hx_loop
+    jacket_annular_diameter:
+      accessors:
+      - jacket_annular_diameter
+    reactions:
+      accessors:
+      - reactions
+    loading_time:
+      accessors:
+      - loading_time
+    N:
+      accessors:
+      - N
+    tau_phases:
+      accessors:
+      - tau_phases
+AdiabaticMultiStageVLEColumn:
+  line: Adiabatic multi stage vlecolumn
+  design_input_spec_params:
+    N_stages:
+      accessors:
+      - N_stages
+    solute:
+      accessors:
+      - solute
+    feed_stages:
+      accessors:
+      - feed_stages
+    vapor_side_draws:
+      accessors:
+      - vapor_side_draws
+    liquid_side_draws:
+      accessors:
+      - liquid_side_draws
+    P:
+      accessors:
+      - P
+    T:
+      accessors:
+      - T
+    partition_data:
+      accessors:
+      - partition_data
+    vessel_material:
+      accessors:
+      - vessel_material
+    tray_material:
+      accessors:
+      - tray_material
+    tray_type:
+      accessors:
+      - tray_type
+    tray_spacing:
+      accessors:
+      - tray_spacing
+    stage_efficiency:
+      accessors:
+      - stage_efficiency
+    velocity_fraction:
+      accessors:
+      - velocity_fraction
+    foaming_factor:
+      accessors:
+      - foaming_factor
+    open_tray_area:
+      accessors:
+      - open_tray_area
+    downcomer_area_fraction:
+      accessors:
+      - downcomer_area_fraction
+    weir_height:
+      accessors:
+      - weir_height
+    use_cache:
+      accessors:
+      - use_cache
+    vle_decomposition:
+      accessors:
+      - vle_decomposition
+    maxiter:
+      accessors:
+      - maxiter
+    max_attempts:
+      accessors:
+      - max_attempts
+    methods:
+      accessors:
+      - methods
+    vlle:
+      accessors:
+      - vlle
+AeratedBioreactor:
+  line: Aerated bioreactor
+  design_input_spec_params:
+    theta_O2:
+      accessors:
+      - theta_O2
+    Q_O2_consumption:
+      accessors:
+      - Q_O2_consumption
+    optimize_power:
+      accessors:
+      - optimize_power
+    design:
+      accessors:
+      - design
+    method:
+      accessors:
+      - method
+    kLa_kwargs:
+      accessors:
+      - kLa_kwargs
+    cooler_pressure_drop:
+      accessors:
+      - cooler_pressure_drop
+    compressor_isentropic_efficiency:
+      accessors:
+      - compressor_isentropic_efficiency
+AmineAbsorption:
+  line: Amine absorption
+  design_input_spec_params:
+    CO2_recovery:
+      accessors:
+      - CO2_recovery
+    MEA_to_CO2:
+      accessors:
+      - MEA_to_CO2
+    heat_ratio:
+      accessors:
+      - heat_ratio
+AnaerobicBioreactor:
+  line: Anaerobic bioreactor
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    V_max:
+      accessors:
+      - V_max
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    kW_per_m3:
+      accessors:
+      - kW_per_m3
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+    batch:
+      accessors:
+      - batch
+    tau_0:
+      accessors:
+      - tau_0
+    adiabatic:
+      accessors:
+      - adiabatic
+    heat_exchanger_configuration:
+      accessors:
+      - heat_exchanger_configuration
+    dT_hx_loop:
+      accessors:
+      - dT_hx_loop
+    jacket_annular_diameter:
+      accessors:
+      - jacket_annular_diameter
+    reactions:
+      accessors:
+      - reactions
+    loading_time:
+      accessors:
+      - loading_time
+    N:
+      accessors:
+      - N
+    tau_phases:
+      accessors:
+      - tau_phases
+BagassePelletMill:
+  line: Bagasse pellet mill
+  design_input_spec_params:
+    kW:
+      accessors:
+      - kW
+BatchCrystallizer:
+  line: Batch crystallizer
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    N:
+      accessors:
+      - N
+    V:
+      accessors:
+      - V
+    T:
+      accessors:
+      - T
+    Nmin:
+      accessors:
+      - Nmin
+    Nmax:
+      accessors:
+      - Nmax
+    vessel_material:
+      accessors:
+      - vessel_material
+    kW:
+      accessors:
+      - kW
+BinaryDistillation:
+  line: Binary distillation
+  design_input_spec_params:
+    LHK:
+      accessors:
+      - LHK
+    k:
+      accessors:
+      - k
+    P:
+      accessors:
+      - P
+    Rmin:
+      accessors:
+      - Rmin
+    Lr:
+      accessors:
+      - Lr
+    Hr:
+      accessors:
+      - Hr
+    y_top:
+      accessors:
+      - y_top
+    x_bot:
+      accessors:
+      - x_bot
+    product_specification_format:
+      accessors:
+      - product_specification_format
+    vessel_material:
+      accessors:
+      - vessel_material
+    tray_material:
+      accessors:
+      - tray_material
+    tray_type:
+      accessors:
+      - tray_type
+    tray_spacing:
+      accessors:
+      - tray_spacing
+    stage_efficiency:
+      accessors:
+      - stage_efficiency
+    velocity_fraction:
+      accessors:
+      - velocity_fraction
+    foaming_factor:
+      accessors:
+      - foaming_factor
+    open_tray_area:
+      accessors:
+      - open_tray_area
+    downcomer_area_fraction:
+      accessors:
+      - downcomer_area_fraction
+    is_divided:
+      accessors:
+      - is_divided
+    vacuum_system_preference:
+      accessors:
+      - vacuum_system_preference
+    partial_condenser:
+      accessors:
+      - partial_condenser
+    weir_height:
+      accessors:
+      - weir_height
+    vlle:
+      accessors:
+      - vlle
+CO2Compression:
+  line: CO2Compression
+  design_input_spec_params: {}
+Clarifier:
+  line: Clarifier
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+Compressor:
+  line: Compressor
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    compressor_type:
+      accessors:
+      - compressor_type
+    driver:
+      accessors:
+      - driver
+    material:
+      accessors:
+      - material
+    driver_efficiency:
+      accessors:
+      - driver_efficiency
+ConveyingBelt:
+  line: Conveying belt
+  design_input_spec_params: {}
+CrushingMill:
+  line: Crushing mill
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    moisture_content:
+      accessors:
+      - moisture_content
+    moisture_ID:
+      accessors:
+      - moisture_ID
+    strict_moisture_content:
+      accessors:
+      - strict_moisture_content
+DiagramOnlyStreamUnit:
+  line: DiagramOnlyStreamUnit
+  design_input_spec_params: {}
+DiagramOnlySystemUnit:
+  line: System
+  design_input_spec_params: {}
+DiagramOnlyUnit:
+  line: Diagram only unit
+  design_input_spec_params: {}
+Distillation:
+  line: Distillation
+  design_input_spec_params:
+    LHK:
+      accessors:
+      - LHK
+    k:
+      accessors:
+      - k
+    P:
+      accessors:
+      - P
+    Rmin:
+      accessors:
+      - Rmin
+    Lr:
+      accessors:
+      - Lr
+    Hr:
+      accessors:
+      - Hr
+    y_top:
+      accessors:
+      - y_top
+    x_bot:
+      accessors:
+      - x_bot
+    product_specification_format:
+      accessors:
+      - product_specification_format
+    vessel_material:
+      accessors:
+      - vessel_material
+    tray_material:
+      accessors:
+      - tray_material
+    tray_type:
+      accessors:
+      - tray_type
+    tray_spacing:
+      accessors:
+      - tray_spacing
+    stage_efficiency:
+      accessors:
+      - stage_efficiency
+    velocity_fraction:
+      accessors:
+      - velocity_fraction
+    foaming_factor:
+      accessors:
+      - foaming_factor
+    open_tray_area:
+      accessors:
+      - open_tray_area
+    downcomer_area_fraction:
+      accessors:
+      - downcomer_area_fraction
+    is_divided:
+      accessors:
+      - is_divided
+    vacuum_system_preference:
+      accessors:
+      - vacuum_system_preference
+    condenser_thermo:
+      accessors:
+      - condenser_thermo
+    reboiler_thermo:
+      accessors:
+      - reboiler_thermo
+    partial_condenser:
+      accessors:
+      - partial_condenser
+    weir_height:
+      accessors:
+      - weir_height
+    vlle:
+      accessors:
+      - vlle
+    check_LHK:
+      accessors:
+      - check_LHK
+DrumDryer:
+  line: Drum dryer
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    RH:
+      accessors:
+      - RH
+    H:
+      accessors:
+      - H
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    moisture_content:
+      accessors:
+      - moisture_content
+    utility_agent:
+      accessors:
+      - utility_agent
+    gas_composition:
+      accessors:
+      - gas_composition
+    moisture_ID:
+      accessors:
+      - moisture_ID
+Duplicator:
+  line: Duplicator
+  design_input_spec_params: {}
+EnzymeTreatment:
+  line: Enzyme treatment
+  design_input_spec_params:
+    vessel_type:
+      accessors:
+      - vessel_type
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    vessel_material:
+      accessors:
+      - vessel_material
+    T:
+      accessors:
+      - T
+Flash:
+  line: Flash
+  design_input_spec_params:
+    V:
+      accessors:
+      - V
+    T:
+      accessors:
+      - T
+    Q:
+      accessors:
+      - Q
+    P:
+      accessors:
+      - P
+    y:
+      accessors:
+      - y
+    x:
+      accessors:
+      - x
+    vessel_material:
+      accessors:
+      - vessel_material
+    vacuum_system_preference:
+      accessors:
+      - vacuum_system_preference
+    has_glycol_groups:
+      accessors:
+      - has_glycol_groups
+    has_amine_groups:
+      accessors:
+      - has_amine_groups
+    vessel_type:
+      accessors:
+      - vessel_type
+    holdup_time:
+      accessors:
+      - holdup_time
+    surge_time:
+      accessors:
+      - surge_time
+    has_mist_eliminator:
+      accessors:
+      - has_mist_eliminator
+    flash_inlet:
+      accessors:
+      - flash_inlet
+    has_vapor_condenser:
+      accessors:
+      - has_vapor_condenser
+FluidizedCatalyticCracking:
+  line: Fluidized catalytic cracking
+  design_input_spec_params:
+    reaction:
+      accessors:
+      - reaction
+    bulk_reactant:
+      accessors:
+      - bulk_reactant
+    vessel_material:
+      accessors:
+      - vessel_material
+    feed_pressure:
+      accessors:
+      - feed_pressure
+    feed_vapor_fraction:
+      accessors:
+      - feed_vapor_fraction
+    catalyst_to_feed_ratio:
+      accessors:
+      - catalyst_to_feed_ratio
+    spent_catalyst_to_feed_ratio:
+      accessors:
+      - spent_catalyst_to_feed_ratio
+    product_loss:
+      accessors:
+      - product_loss
+    riser_product_residence_time:
+      accessors:
+      - riser_product_residence_time
+    riser_length_to_diameter:
+      accessors:
+      - riser_length_to_diameter
+    reactor_vessel_dissengagement_height:
+      accessors:
+      - reactor_vessel_dissengagement_height
+    reactor_vessel_exit_velocity:
+      accessors:
+      - reactor_vessel_exit_velocity
+    stripper_steam_rate:
+      accessors:
+      - stripper_steam_rate
+    stripper_catalyst_residence_time:
+      accessors:
+      - stripper_catalyst_residence_time
+    stripper_length_to_diameter:
+      accessors:
+      - stripper_length_to_diameter
+    CO2_concentration:
+      accessors:
+      - CO2_concentration
+    regenerator_catalyst_residence_time:
+      accessors:
+      - regenerator_catalyst_residence_time
+    regenerator_length_to_diameter:
+      accessors:
+      - regenerator_length_to_diameter
+    regenerator_pressure:
+      accessors:
+      - regenerator_pressure
+GasFedBioreactor:
+  line: Gas fed bioreactor
+  design_input_spec_params:
+    gas_substrates:
+      accessors:
+      - gas_substrates
+    titer:
+      accessors:
+      - titer
+    backward_reactions:
+      accessors:
+      - backward_reactions
+    variable_gas_feeds:
+      accessors:
+      - variable_gas_feeds
+    design:
+      accessors:
+      - design
+    method:
+      accessors:
+      - method
+    kLa_kwargs:
+      accessors:
+      - kLa_kwargs
+    theta:
+      accessors:
+      - theta
+    Q_consumption:
+      accessors:
+      - Q_consumption
+    cooler_pressure_drop:
+      accessors:
+      - cooler_pressure_drop
+    compressor_isentropic_efficiency:
+      accessors:
+      - compressor_isentropic_efficiency
+    optimize_power:
+      accessors:
+      - optimize_power
+GibbsEquilibriumReactor:
+  line: Gibbs equilibrium reactor
+  design_input_spec_params:
+    phases:
+      accessors:
+      - phases
+    products:
+      accessors:
+      - products
+    method:
+      accessors:
+      - method
+    phase_hook:
+      accessors:
+      - phase_hook
+HX:
+  line: Heat exchanger
+  design_input_spec_params: {}
+HXprocess:
+  line: Heat exchanger
+  design_input_spec_params:
+    U:
+      accessors:
+      - U
+    dT:
+      accessors:
+      - dT
+    T_lim0:
+      accessors:
+      - T_lim0
+    T_lim1:
+      accessors:
+      - T_lim1
+    material:
+      accessors:
+      - material
+    heat_exchanger_type:
+      accessors:
+      - heat_exchanger_type
+    N_shells:
+      accessors:
+      - N_shells
+    ft:
+      accessors:
+      - ft
+    phase0:
+      accessors:
+      - phase0
+    phase1:
+      accessors:
+      - phase1
+    H_lim0:
+      accessors:
+      - H_lim0
+    H_lim1:
+      accessors:
+      - H_lim1
+    dP0:
+      accessors:
+      - dP0
+    dP1:
+      accessors:
+      - dP1
+    estimate_pressure_drop:
+      accessors:
+      - estimate_pressure_drop
+HXutilities:
+  line: Heat exchanger
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+    V:
+      accessors:
+      - V
+    rigorous:
+      accessors:
+      - rigorous
+    U:
+      accessors:
+      - U
+    H:
+      accessors:
+      - H
+    heat_exchanger_type:
+      accessors:
+      - heat_exchanger_type
+    material:
+      accessors:
+      - material
+    N_shells:
+      accessors:
+      - N_shells
+    ft:
+      accessors:
+      - ft
+    heat_only:
+      accessors:
+      - heat_only
+    cool_only:
+      accessors:
+      - cool_only
+    heat_transfer_efficiency:
+      accessors:
+      - heat_transfer_efficiency
+    dP:
+      accessors:
+      - dP
+    estimate_pressure_drop:
+      accessors:
+      - estimate_pressure_drop
+    furnace_pressure:
+      accessors:
+      - furnace_pressure
+HXutility:
+  line: Heat exchanger
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+    V:
+      accessors:
+      - V
+    rigorous:
+      accessors:
+      - rigorous
+    U:
+      accessors:
+      - U
+    H:
+      accessors:
+      - H
+    heat_exchanger_type:
+      accessors:
+      - heat_exchanger_type
+    material:
+      accessors:
+      - material
+    N_shells:
+      accessors:
+      - N_shells
+    ft:
+      accessors:
+      - ft
+    heat_only:
+      accessors:
+      - heat_only
+    cool_only:
+      accessors:
+      - cool_only
+    heat_transfer_efficiency:
+      accessors:
+      - heat_transfer_efficiency
+    dP:
+      accessors:
+      - dP
+    estimate_pressure_drop:
+      accessors:
+      - estimate_pressure_drop
+    furnace_pressure:
+      accessors:
+      - furnace_pressure
+HammerMill:
+  line: Hammer mill
+  design_input_spec_params: {}
+IsenthalpicValve:
+  line: Isenthalpic valve
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    vle:
+      accessors:
+      - vle
+IsentropicCompressor:
+  line: Isentropic compressor
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    compressor_type:
+      accessors:
+      - compressor_type
+    driver:
+      accessors:
+      - driver
+    material:
+      accessors:
+      - material
+    driver_efficiency:
+      accessors:
+      - driver_efficiency
+IsentropicTurbine:
+  line: Isentropic turbine
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    turbine_type:
+      accessors:
+      - turbine_type
+    material:
+      accessors:
+      - material
+    efficiency:
+      accessors:
+      - efficiency
+IsothermalCompressor:
+  line: Isothermal compressor
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    compressor_type:
+      accessors:
+      - compressor_type
+    driver:
+      accessors:
+      - driver
+    material:
+      accessors:
+      - material
+    driver_efficiency:
+      accessors:
+      - driver_efficiency
+JetCooker:
+  line: Jet cooker
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+Junction:
+  line: Junction
+  design_input_spec_params:
+    upstream:
+      accessors:
+      - upstream
+    downstream:
+      accessors:
+      - downstream
+LLECentrifuge:
+  line: Liquids centrifuge
+  design_input_spec_params:
+    top_chemical:
+      accessors:
+      - top_chemical
+    efficiency:
+      accessors:
+      - efficiency
+    forced_split_IDs:
+      accessors:
+      - forced_split_IDs
+    forced_split:
+      accessors:
+      - forced_split
+LLESettler:
+  line: Settler
+  design_input_spec_params:
+    area_to_feed:
+      accessors:
+      - area_to_feed
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+    top_chemical:
+      accessors:
+      - top_chemical
+    efficiency:
+      accessors:
+      - efficiency
+    cache_tolerance:
+      accessors:
+      - cache_tolerance
+LLEUnit:
+  line: LLEUnit
+  design_input_spec_params:
+    top_chemical:
+      accessors:
+      - top_chemical
+    efficiency:
+      accessors:
+      - efficiency
+    forced_split_IDs:
+      accessors:
+      - forced_split_IDs
+    forced_split:
+      accessors:
+      - forced_split
+LiquidsCentrifuge:
+  line: Liquids centrifuge
+  design_input_spec_params: {}
+LiquidsMixingTank:
+  line: Liquids mixing tank
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    agitator_kW_per_m3:
+      accessors:
+      - agitator_kW_per_m3
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+LiquidsPartitionSettler:
+  line: Settler
+  design_input_spec_params:
+    partition_coefficients:
+      accessors:
+      - partition_coefficients
+    partition_IDs:
+      accessors:
+      - partition_IDs
+    area_to_feed:
+      accessors:
+      - area_to_feed
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+    top_chemicals:
+      accessors:
+      - top_chemicals
+    bottom_chemicals:
+      accessors:
+      - bottom_chemicals
+LiquidsRatioCentrifuge:
+  line: Liquids centrifuge
+  design_input_spec_params:
+    K_chemicals:
+      accessors:
+      - K_chemicals
+    Ks:
+      accessors:
+      - Ks
+    top_solvents:
+      accessors:
+      - top_solvents
+    top_split:
+      accessors:
+      - top_split
+    bot_solvents:
+      accessors:
+      - bot_solvents
+    bot_split:
+      accessors:
+      - bot_split
+LiquidsSettler:
+  line: Liquids settler
+  design_input_spec_params:
+    area_to_feed:
+      accessors:
+      - area_to_feed
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+LiquidsSplitCentrifuge:
+  line: Liquids centrifuge
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+LiquidsSplitSettler:
+  line: Settler
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    area_to_feed:
+      accessors:
+      - area_to_feed
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+MESHDistillation:
+  line: Distillation
+  design_input_spec_params:
+    N_stages:
+      accessors:
+      - N_stages
+    feed_stages:
+      accessors:
+      - feed_stages
+    reflux:
+      accessors:
+      - reflux
+    boilup:
+      accessors:
+      - boilup
+    bottoms_product_to_feed:
+      accessors:
+      - bottoms_product_to_feed
+    P:
+      accessors:
+      - P
+    vapor_side_draws:
+      accessors:
+      - vapor_side_draws
+    liquid_side_draws:
+      accessors:
+      - liquid_side_draws
+    stage_reactions:
+      accessors:
+      - stage_reactions
+    vessel_material:
+      accessors:
+      - vessel_material
+    tray_material:
+      accessors:
+      - tray_material
+    tray_type:
+      accessors:
+      - tray_type
+    tray_spacing:
+      accessors:
+      - tray_spacing
+    stage_efficiency:
+      accessors:
+      - stage_efficiency
+    velocity_fraction:
+      accessors:
+      - velocity_fraction
+    foaming_factor:
+      accessors:
+      - foaming_factor
+    open_tray_area:
+      accessors:
+      - open_tray_area
+    weir_height:
+      accessors:
+      - weir_height
+    downcomer_area_fraction:
+      accessors:
+      - downcomer_area_fraction
+    vacuum_system_preference:
+      accessors:
+      - vacuum_system_preference
+    partition_data:
+      accessors:
+      - partition_data
+    full_condenser:
+      accessors:
+      - full_condenser
+    use_cache:
+      accessors:
+      - use_cache
+    algorithms:
+      accessors:
+      - algorithms
+    methods:
+      accessors:
+      - methods
+    maxiter:
+      accessors:
+      - maxiter
+    max_attempts:
+      accessors:
+      - max_attempts
+    stage_specifications:
+      accessors:
+      - stage_specifications
+    vlle:
+      accessors:
+      - vlle
+    specifications_by_weight:
+      accessors:
+      - specifications_by_weight
+    LHK:
+      accessors:
+      - LHK
+MagneticSeparator:
+  line: Magnetic separator
+  design_input_spec_params: {}
+MassBalance:
+  line: Mass balance
+  design_input_spec_params:
+    chemical_IDs:
+      accessors:
+      - chemical_IDs
+    variable_inlets:
+      accessors:
+      - variable_inlets
+    constant_outlets:
+      accessors:
+      - constant_outlets
+    constant_inlets:
+      accessors:
+      - constant_inlets
+    is_exact:
+      accessors:
+      - is_exact
+    balance:
+      accessors:
+      - balance
+    description:
+      accessors:
+      - description
+MixTank:
+  line: Mix tank
+  design_input_spec_params:
+    vessel_type:
+      accessors:
+      - vessel_type
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    vessel_material:
+      accessors:
+      - vessel_material
+    kW_per_m3:
+      accessors:
+      - kW_per_m3
+Mixer:
+  line: Mixer
+  design_input_spec_params:
+    rigorous:
+      accessors:
+      - rigorous
+    conserve_phases:
+      accessors:
+      - conserve_phases
+MixerSettler:
+  line: Mixer settler
+  design_input_spec_params:
+    top_chemical:
+      accessors:
+      - top_chemical
+    mixer_data:
+      accessors:
+      - mixer_data
+    settler_data:
+      accessors:
+      - settler_data
+    model:
+      accessors:
+      - model
+MockMixer:
+  line: Mixer
+  design_input_spec_params: {}
+MockSplitter:
+  line: Splitter
+  design_input_spec_params: {}
+MolecularSieve:
+  line: Molecular sieve
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    P:
+      accessors:
+      - P
+      - outs[0].P
+    approx_duty:
+      accessors:
+      - approx_duty
+MultiEffectEvaporator:
+  line: Multi-effect evaporator
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    V:
+      accessors:
+      - V
+    V_definition:
+      accessors:
+      - V_definition
+    flash:
+      accessors:
+      - flash
+    chemical:
+      accessors:
+      - chemical
+MultiStageEquilibrium:
+  line: Multi stage equilibrium
+  design_input_spec_params:
+    N_stages:
+      accessors:
+      - N_stages
+    stages:
+      accessors:
+      - stages
+    top_side_draws:
+      accessors:
+      - top_side_draws
+    bottom_side_draws:
+      accessors:
+      - bottom_side_draws
+    feed_stages:
+      accessors:
+      - feed_stages
+    phases:
+      accessors:
+      - phases
+    P:
+      accessors:
+      - P
+    T:
+      accessors:
+      - T
+    stage_specifications:
+      accessors:
+      - stage_specifications
+    stage_reactions:
+      accessors:
+      - stage_reactions
+    partition_data:
+      accessors:
+      - partition_data
+    top_chemical:
+      accessors:
+      - top_chemical
+    use_cache:
+      accessors:
+      - use_cache
+    algorithms:
+      accessors:
+      - algorithms
+    methods:
+      accessors:
+      - methods
+    maxiter:
+      accessors:
+      - maxiter
+    max_attempts:
+      accessors:
+      - max_attempts
+    vle_decomposition:
+      accessors:
+      - vle_decomposition
+    vlle:
+      accessors:
+      - vlle
+    specifications_by_weight:
+      accessors:
+      - specifications_by_weight
+MultiStageMixerSettlers:
+  line: Multi stage mixer settlers
+  design_input_spec_params:
+    N_stages:
+      accessors:
+      - N_stages
+    feed_stages:
+      accessors:
+      - feed_stages
+    extract_side_draws:
+      accessors:
+      - extract_side_draws
+    raffinate_side_draws:
+      accessors:
+      - raffinate_side_draws
+    partition_data:
+      accessors:
+      - partition_data
+    top_chemical:
+      accessors:
+      - top_chemical
+    mixer_data:
+      accessors:
+      - mixer_data
+    settler_data:
+      accessors:
+      - settler_data
+    use_cache:
+      accessors:
+      - use_cache
+MultistageCompressor:
+  line: Multistage compressor
+  design_input_spec_params:
+    pr:
+      accessors:
+      - pr
+    n_stages:
+      accessors:
+      - n_stages
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    compressor_type:
+      accessors:
+      - compressor_type
+    compressors:
+      accessors:
+      - compressors
+    hxs:
+      accessors:
+      - hxs
+NRELAnaerobicBatchBioreactor:
+  line: NRELAnaerobic batch bioreactor
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    N:
+      accessors:
+      - N
+    V_max:
+      accessors:
+      - V_max
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Nmin:
+      accessors:
+      - Nmin
+    Nmax:
+      accessors:
+      - Nmax
+    loading_time:
+      accessors:
+      - loading_time
+    tau_0:
+      accessors:
+      - tau_0
+    V_wf:
+      accessors:
+      - V_wf
+NRELBatchBioreactor:
+  line: NRELBatch bioreactor
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    N:
+      accessors:
+      - N
+    V:
+      accessors:
+      - V
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Nmin:
+      accessors:
+      - Nmin
+    Nmax:
+      accessors:
+      - Nmax
+    V_wf:
+      accessors:
+      - V_wf
+NRELEthanolFermentation:
+  line: Fermentation
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    N:
+      accessors:
+      - N
+    V_max:
+      accessors:
+      - V_max
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Nmin:
+      accessors:
+      - Nmin
+    Nmax:
+      accessors:
+      - Nmax
+    efficiency:
+      accessors:
+      - efficiency
+    iskinetic:
+      accessors:
+      - iskinetic
+    fermentation_reaction:
+      accessors:
+      - fermentation_reaction
+    cell_growth_reaction:
+      accessors:
+      - cell_growth_reaction
+    loading_time:
+      accessors:
+      - loading_time
+PelletMill:
+  line: Pellet mill
+  design_input_spec_params:
+    kW:
+      accessors:
+      - kW
+PhasePartition:
+  line: Phase partition
+  design_input_spec_params:
+    phases:
+      accessors:
+      - phases
+    partition_data:
+      accessors:
+      - partition_data
+    top_chemical:
+      accessors:
+      - top_chemical
+    reaction:
+      accessors:
+      - reaction
+    vlle:
+      accessors:
+      - vlle
+    wt:
+      accessors:
+      - wt
+PhaseSplitter:
+  line: Phase splitter
+  design_input_spec_params: {}
+PolytropicCompressor:
+  line: Polytropic compressor
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    compressor_type:
+      accessors:
+      - compressor_type
+    method:
+      accessors:
+      - method
+    n_steps:
+      accessors:
+      - n_steps
+PressureFilter:
+  line: Pressure filter
+  design_input_spec_params:
+    moisture_content:
+      accessors:
+      - moisture_content
+    split:
+      accessors:
+      - split
+Pump:
+  line: Pump
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+      - outs[0].P
+    pump_type:
+      accessors:
+      - pump_type
+    material:
+      accessors:
+      - material
+    dP_design:
+      accessors:
+      - dP_design
+    ignore_NPSH:
+      accessors:
+      - ignore_NPSH
+ReactivePhaseStage:
+  line: Reactive phase stage
+  design_input_spec_params:
+    reaction:
+      accessors:
+      - reaction
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Q:
+      accessors:
+      - Q
+    phase:
+      accessors:
+      - phase
+ReversedSplitter:
+  line: Reversed splitter
+  design_input_spec_params: {}
+RotaryVacuumFilter:
+  line: Rotary vacuum filter
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    moisture_content:
+      accessors:
+      - moisture_content
+    moisture_ID:
+      accessors:
+      - moisture_ID
+    strict_moisture_content:
+      accessors:
+      - strict_moisture_content
+SLLECentrifuge:
+  line: 3-Phase decanter centrifuge
+  design_input_spec_params:
+    solids_split:
+      accessors:
+      - solids_split
+    top_chemical:
+      accessors:
+      - top_chemical
+    efficiency:
+      accessors:
+      - efficiency
+    moisture_content:
+      accessors:
+      - moisture_content
+Scaler:
+  line: Scaler
+  design_input_spec_params:
+    upstream:
+      accessors:
+      - upstream
+    downstream:
+      accessors:
+      - downstream
+    scale:
+      accessors:
+      - scale
+ScrewFeeder:
+  line: Screw feeder
+  design_input_spec_params: {}
+ScrewPress:
+  line: Screw press
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    moisture_content:
+      accessors:
+      - moisture_content
+    moisture_ID:
+      accessors:
+      - moisture_ID
+    strict_moisture_content:
+      accessors:
+      - strict_moisture_content
+Separator:
+  line: Separator
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    phases:
+      accessors:
+      - phases
+ShortcutColumn:
+  line: Distillation
+  design_input_spec_params:
+    LHK:
+      accessors:
+      - LHK
+    k:
+      accessors:
+      - k
+    P:
+      accessors:
+      - P
+    Rmin:
+      accessors:
+      - Rmin
+    Lr:
+      accessors:
+      - Lr
+    Hr:
+      accessors:
+      - Hr
+    y_top:
+      accessors:
+      - y_top
+    x_bot:
+      accessors:
+      - x_bot
+    product_specification_format:
+      accessors:
+      - product_specification_format
+    vessel_material:
+      accessors:
+      - vessel_material
+    tray_material:
+      accessors:
+      - tray_material
+    tray_type:
+      accessors:
+      - tray_type
+    tray_spacing:
+      accessors:
+      - tray_spacing
+    stage_efficiency:
+      accessors:
+      - stage_efficiency
+    velocity_fraction:
+      accessors:
+      - velocity_fraction
+    foaming_factor:
+      accessors:
+      - foaming_factor
+    open_tray_area:
+      accessors:
+      - open_tray_area
+    downcomer_area_fraction:
+      accessors:
+      - downcomer_area_fraction
+    is_divided:
+      accessors:
+      - is_divided
+    vacuum_system_preference:
+      accessors:
+      - vacuum_system_preference
+    condenser_thermo:
+      accessors:
+      - condenser_thermo
+    reboiler_thermo:
+      accessors:
+      - reboiler_thermo
+    partial_condenser:
+      accessors:
+      - partial_condenser
+    weir_height:
+      accessors:
+      - weir_height
+    vlle:
+      accessors:
+      - vlle
+    check_LHK:
+      accessors:
+      - check_LHK
+Shredder:
+  line: Shredder
+  design_input_spec_params: {}
+SingleComponentAdsorptionColumn:
+  line: Single component adsorption column
+  design_input_spec_params:
+    cycle_time:
+      accessors:
+      - cycle_time
+    k:
+      accessors:
+      - k
+    isotherm_args:
+      accessors:
+      - isotherm_args
+    isotherm_model:
+      accessors:
+      - isotherm_model
+    k_regeneration:
+      accessors:
+      - k_regeneration
+    regeneration_isotherm_args:
+      accessors:
+      - regeneration_isotherm_args
+    regeneration_isotherm_model:
+      accessors:
+      - regeneration_isotherm_model
+    LUB_forced:
+      accessors:
+      - LUB_forced
+    void_fraction:
+      accessors:
+      - void_fraction
+    rho_adsorbent:
+      accessors:
+      - rho_adsorbent
+    superficial_velocity:
+      accessors:
+      - superficial_velocity
+    P:
+      accessors:
+      - P
+    C_final_scaled:
+      accessors:
+      - C_final_scaled
+    N_slices:
+      accessors:
+      - N_slices
+    regeneration_fluid:
+      accessors:
+      - regeneration_fluid
+    adsorbate:
+      accessors:
+      - adsorbate
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+    adsorbent:
+      accessors:
+      - adsorbent
+    N_columns:
+      accessors:
+      - N_columns
+    particle_diameter:
+      accessors:
+      - particle_diameter
+SinglePhaseReactor:
+  line: Single phase reactor
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    V_max:
+      accessors:
+      - V_max
+    length_to_diameter:
+      accessors:
+      - length_to_diameter
+    kW_per_m3:
+      accessors:
+      - kW_per_m3
+    vessel_material:
+      accessors:
+      - vessel_material
+    vessel_type:
+      accessors:
+      - vessel_type
+    batch:
+      accessors:
+      - batch
+    tau_0:
+      accessors:
+      - tau_0
+    adiabatic:
+      accessors:
+      - adiabatic
+    heat_exchanger_configuration:
+      accessors:
+      - heat_exchanger_configuration
+    dT_hx_loop:
+      accessors:
+      - dT_hx_loop
+    jacket_annular_diameter:
+      accessors:
+      - jacket_annular_diameter
+    reactions:
+      accessors:
+      - reactions
+    loading_time:
+      accessors:
+      - loading_time
+    N:
+      accessors:
+      - N
+    tau_phases:
+      accessors:
+      - tau_phases
+SinglePhaseStage:
+  line: Single phase stage
+  design_input_spec_params:
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Q:
+      accessors:
+      - Q
+    phase:
+      accessors:
+      - phase
+SolidLiquidsSplitCentrifuge:
+  line: 3-Phase decanter centrifuge
+  design_input_spec_params:
+    aqueous_split:
+      accessors:
+      - aqueous_split
+    solids_split:
+      accessors:
+      - solids_split
+    moisture_content:
+      accessors:
+      - moisture_content
+SolidsCentrifuge:
+  line: Solids centrifuge
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    solids:
+      accessors:
+      - solids
+    moisture_content:
+      accessors:
+      - moisture_content
+    centrifuge_type:
+      accessors:
+      - centrifuge_type
+    moisture_ID:
+      accessors:
+      - moisture_ID
+    strict_moisture_content:
+      accessors:
+      - strict_moisture_content
+SolidsSeparator:
+  line: Solids separator
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    moisture_content:
+      accessors:
+      - moisture_content
+    moisture_ID:
+      accessors:
+      - moisture_ID
+    strict_moisture_content:
+      accessors:
+      - strict_moisture_content
+SplitFlash:
+  line: Flash
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Q:
+      accessors:
+      - Q
+    vessel_material:
+      accessors:
+      - vessel_material
+    vacuum_system_preference:
+      accessors:
+      - vacuum_system_preference
+    has_glycol_groups:
+      accessors:
+      - has_glycol_groups
+    has_amine_groups:
+      accessors:
+      - has_amine_groups
+    vessel_type:
+      accessors:
+      - vessel_type
+    holdup_time:
+      accessors:
+      - holdup_time
+    surge_time:
+      accessors:
+      - surge_time
+    has_mist_eliminator:
+      accessors:
+      - has_mist_eliminator
+    has_vapor_condenser:
+      accessors:
+      - has_vapor_condenser
+Splitter:
+  line: Splitter
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order
+SprayDryer:
+  line: Spray dryer
+  design_input_spec_params:
+    moisture_content:
+      accessors:
+      - moisture_content
+StageEquilibrium:
+  line: Stage equilibrium
+  design_input_spec_params:
+    phases:
+      accessors:
+      - phases
+    partition_data:
+      accessors:
+      - partition_data
+    top_split:
+      accessors:
+      - top_split
+    bottom_split:
+      accessors:
+      - bottom_split
+    top_chemical:
+      accessors:
+      - top_chemical
+    reaction:
+      accessors:
+      - reaction
+    vlle:
+      accessors:
+      - vlle
+SteamMixer:
+  line: Steam mixer
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    T:
+      accessors:
+      - T
+    solids_loading:
+      accessors:
+      - solids_loading
+    liquid_IDs:
+      accessors:
+      - liquid_IDs
+    solid_IDs:
+      accessors:
+      - solid_IDs
+    solids_loading_includes_steam:
+      accessors:
+      - solids_loading_includes_steam
+StorageTank:
+  line: Storage tank
+  design_input_spec_params:
+    vessel_type:
+      accessors:
+      - vessel_type
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    vessel_material:
+      accessors:
+      - vessel_material
+    kW_per_m3:
+      accessors:
+      - kW_per_m3
+Tank:
+  line: Tank
+  design_input_spec_params:
+    vessel_type:
+      accessors:
+      - vessel_type
+    tau:
+      accessors:
+      - tau
+    V_wf:
+      accessors:
+      - V_wf
+    vessel_material:
+      accessors:
+      - vessel_material
+    kW_per_m3:
+      accessors:
+      - kW_per_m3
+ThermalOxidizer:
+  line: Thermal oxidizer
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    duty_per_kg:
+      accessors:
+      - duty_per_kg
+    V_wf:
+      accessors:
+      - V_wf
+Turbine:
+  line: Turbine
+  design_input_spec_params:
+    P:
+      accessors:
+      - P
+    eta:
+      accessors:
+      - eta
+    vle:
+      accessors:
+      - vle
+    turbine_type:
+      accessors:
+      - turbine_type
+    material:
+      accessors:
+      - material
+    efficiency:
+      accessors:
+      - efficiency
+Unit:
+  line: Unit
+  design_input_spec_params: {}
+Valve:
+  line: Valve
+  design_input_spec_params: {}
+VentScrubber:
+  line: Vent scrubber
+  design_input_spec_params:
+    gas:
+      accessors:
+      - gas
+VibratingScreen:
+  line: Vibrating screen
+  design_input_spec_params:
+    split:
+      accessors:
+      - split
+    order:
+      accessors:
+      - order

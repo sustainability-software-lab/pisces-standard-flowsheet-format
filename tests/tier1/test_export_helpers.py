@@ -123,6 +123,17 @@ class TestJsonNativeExporterValues(unittest.TestCase):
         with self.assertRaises(TypeError):
             _export._json_default(object())
 
+    def test_tolist_duck_type_serializes_via_tolist(self):
+        """An object exposing a callable .tolist() (e.g. thermosteam's
+        SparseVector, surfaced by 0.1.4+ registry-resolved split params) is
+        serialized via that method, covering array-likes _json_default has
+        no specific branch for."""
+        class SparseLike:
+            def tolist(self):
+                return [0.0, 1.0, 0.5]
+
+        self.assertEqual(_export._json_default(SparseLike()), [0.0, 1.0, 0.5])
+
 
 class TestAssignStreamIds(unittest.TestCase):
     def test_pre_0_0_12_keeps_raw_id_including_blanks(self):
@@ -239,6 +250,64 @@ class TestGetDesignInputSpecs(unittest.TestCase):
 
         with self.assertRaises(_export.DesignInputSpecError):
             _export.get_design_input_specs(FakeUnit())
+
+
+class TestGetDesignInputSpecsRegistryPath(unittest.TestCase):
+    """The 0.1.4+ registry-driven path of get_design_input_specs. The
+    resolver itself is tier1-tested in test_design_specs.py; here we pin the
+    exporter-facing contract: registry=None keeps the legacy probe, a
+    registry delegates, and unexpected read failures surface as
+    DesignInputSpecError (the package's public exception), chaining the
+    resolver's DesignSpecReadError."""
+
+    @staticmethod
+    def _registry(params):
+        return {"FakeUnit": {"line": "Fake", "design_input_spec_params":
+                {p: {"accessors": list(a)} for p, a in params.items()}}}
+
+    def test_registry_none_keeps_the_legacy_probe(self):
+        """registry=None (all pre-0.1.4 exporters) -> the fixed-tuple probe,
+        including its export-None behavior, byte-stable."""
+        unit = types.SimpleNamespace(T=350.0, P=None)
+        self.assertEqual(_export.get_design_input_specs(unit),
+                         {"T": 350.0, "P": None})
+
+    def test_registry_path_omits_exhausted_params(self):
+        """With a registry, None values are omitted rather than exported."""
+        FakeUnit = type("FakeUnit", (), {})
+        unit = FakeUnit()
+        unit.T = 350.0
+        unit.P = None
+        registry = self._registry({"T": ["T"], "P": ["P"]})
+        self.assertEqual(
+            _export.get_design_input_specs(unit, registry=registry),
+            {"T": 350.0})
+
+    def test_registry_path_uses_accessor_fallback_under_param_name(self):
+        """The Pump case: P=None falls back to outs[0].P, exported as 'P'."""
+        FakeUnit = type("FakeUnit", (), {})
+        unit = FakeUnit()
+        unit.P = None
+        unit.outs = [types.SimpleNamespace(P=101325.0)]
+        registry = self._registry({"P": ["P", "outs[0].P"]})
+        self.assertEqual(
+            _export.get_design_input_specs(unit, registry=registry),
+            {"P": 101325.0})
+
+    def test_unexpected_read_error_raises_DesignInputSpecError(self):
+        """An accessor read failing unexpectedly is re-raised as the public
+        DesignInputSpecError, chaining the resolver's DesignSpecReadError."""
+        class Boom:
+            @property
+            def P(self):
+                raise ValueError("boom")
+
+        FakeUnit = type("FakeUnit", (Boom,), {})
+        registry = self._registry({"P": ["P"]})
+        with self.assertRaises(_export.DesignInputSpecError) as caught:
+            _export.get_design_input_specs(FakeUnit(), registry=registry)
+        self.assertEqual(type(caught.exception.__cause__).__name__,
+                         "DesignSpecReadError")
 
 
 class TestGetThermo(unittest.TestCase):

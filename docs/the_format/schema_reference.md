@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.1.3.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.1.4.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
@@ -19,6 +19,17 @@ Provenance for the flowsheet: version, currency, DOI, feedstocks/products, TEA y
 
 ## `units`
 The unit operations (graph nodes).
+
+From v0.1.4 on, the reference exporter fills `design_input_specs` from a
+per-unit-type registry (`pisces_sff/design_specs/biosteam.yaml`): each unit
+class declares which initialization parameters constitute its design input
+specification and an ordered list of accessors to read each one (e.g. a
+`Pump` whose `P` is unset falls back to its outlet's pressure, still
+reported under `P`). Parameters that resolve to no value are omitted --
+files exported at v0.1.4+ contain no `null` design specs -- and unit types
+absent from the registry carry `{}`. This changes only the *contents* of the
+existing free-form object; the schema shape is unchanged, so older files
+remain valid.
 
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/units
 ```

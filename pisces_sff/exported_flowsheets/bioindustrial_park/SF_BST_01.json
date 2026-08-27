@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "sff_version": "0.1.3",
+        "sff_version": "0.1.4",
         "TEA_currency": "USD",
         "TEA_year": 2018,
         "process_simulator": {
@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-18T18:05:46Z",
+                "exported_at": "2026-08-27T04:12:33Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -144,8 +144,11 @@
             "id": "V102",
             "unit_type": "Corn storage",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 259.2,
                 "V_wf": 0.9,
-                "tau": 259.2
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "CornStorage on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -176,7 +179,32 @@
         {
             "id": "MH103",
             "unit_type": "Cleaning system",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "split": [
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997,
+                    0.997
+                ]
+            },
             "design_simulation_method": "CleaningSystem on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -261,8 +289,11 @@
             "id": "V105",
             "unit_type": "Milled corn surge tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 2.0,
                 "V_wf": 0.9,
-                "tau": 2.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "MilledCornSurgeTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -294,8 +325,11 @@
             "id": "W106",
             "unit_type": "Milled corn hopper",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 2.0,
                 "V_wf": 0.9,
-                "tau": 2.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "MilledCornHopper on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -327,8 +361,11 @@
             "id": "V107",
             "unit_type": "Milled corn weigh tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 2.0,
                 "V_wf": 0.9,
-                "tau": 2.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "MilledCornWeighTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -360,8 +397,11 @@
             "id": "V319",
             "unit_type": "Alpha amylase tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 336.0,
                 "V_wf": 0.9,
-                "tau": 336.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "AlphaAmylaseTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -393,7 +433,11 @@
             "id": "P320",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -439,8 +483,11 @@
             "id": "V303",
             "unit_type": "Ammonia tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 100.0,
                 "V_wf": 0.9,
-                "tau": 100.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "AmmoniaTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -472,7 +519,11 @@
             "id": "P304",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -518,8 +569,11 @@
             "id": "V403",
             "unit_type": "Yeast tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 40.0,
                 "V_wf": 0.9,
-                "tau": 40.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.5
             },
             "design_simulation_method": "YeastTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -553,7 +607,11 @@
             "id": "P404",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -599,8 +657,11 @@
             "id": "V305",
             "unit_type": "Lime hopper",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 46.3,
                 "V_wf": 0.75,
-                "tau": 46.3
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "LimeHopper on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -632,8 +693,11 @@
             "id": "V317",
             "unit_type": "Alpha amylase tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 336.0,
                 "V_wf": 0.9,
-                "tau": 336.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "AlphaAmylaseTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -665,7 +729,11 @@
             "id": "P318",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -711,8 +779,11 @@
             "id": "V301",
             "unit_type": "Alpha amylase tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 336.0,
                 "V_wf": 0.9,
-                "tau": 336.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "AlphaAmylaseTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -744,7 +815,11 @@
             "id": "P302",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -790,8 +865,11 @@
             "id": "V307",
             "unit_type": "Slurry mix tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 0.25,
                 "V_wf": 0.65,
-                "tau": 0.25
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 1.1607597
             },
             "design_simulation_method": "SlurryMixTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -825,7 +903,11 @@
             "id": "P311",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": 2000000.0
+                "P": 2000000.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -870,7 +952,14 @@
         {
             "id": "E312",
             "unit_type": "Heat exchanger",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "U": 0.56783,
+                "dT": 5.0,
+                "material": "Carbon steel/carbon steel",
+                "heat_exchanger_type": "Floating head",
+                "N_shells": 2,
+                "ft": 1.0
+            },
             "design_simulation_method": "HXprocess on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -951,8 +1040,11 @@
             "id": "V314",
             "unit_type": "Cooked slurry surge tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 0.25,
                 "V_wf": 0.9,
-                "tau": 0.25
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "CookedSlurrySurgeTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -984,7 +1076,11 @@
             "id": "P308",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 1555000.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1031,7 +1127,13 @@
             "unit_type": "Heat exchanger",
             "design_input_specs": {
                 "T": 360.15,
-                "V": null
+                "rigorous": false,
+                "U": 1.5,
+                "heat_exchanger_type": "Floating head",
+                "material": "Carbon steel/carbon steel",
+                "N_shells": 2,
+                "ft": 1.0,
+                "furnace_pressure": 500
             },
             "design_simulation_method": "HXutility on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
@@ -1073,8 +1175,11 @@
             "id": "V310",
             "unit_type": "Liquefaction",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 0.9,
                 "V_wf": 0.9,
-                "tau": 0.9
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.6
             },
             "design_simulation_method": "Liquefaction on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
@@ -1119,7 +1224,14 @@
         {
             "id": "E316",
             "unit_type": "Heat exchanger",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "U": 0.85174,
+                "dT": 5,
+                "material": "Carbon steel/carbon steel",
+                "heat_exchanger_type": "Floating head",
+                "N_shells": 2,
+                "ft": 1.0
+            },
             "design_simulation_method": "HXprocess on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1158,8 +1270,11 @@
             "id": "V321",
             "unit_type": "Alpha amylase tank",
             "design_input_specs": {
+                "vessel_type": "Tank",
+                "tau": 0.3333333333333333,
                 "V_wf": 0.9,
-                "tau": 0.3333333333333333
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.036
             },
             "design_simulation_method": "AlphaAmylaseTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -1193,7 +1308,11 @@
             "id": "P322",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1238,7 +1357,16 @@
         {
             "id": "E401",
             "unit_type": "Heat exchanger",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "U": 0.9937,
+                "dT": 5.0,
+                "material": "Carbon steel/carbon steel",
+                "heat_exchanger_type": "Floating head",
+                "N_shells": 2,
+                "ft": 0.85,
+                "phase0": "l",
+                "phase1": "l"
+            },
             "design_simulation_method": "HXprocess on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1278,7 +1406,13 @@
             "unit_type": "Heat exchanger",
             "design_input_specs": {
                 "T": 305.34999999999997,
-                "V": null
+                "rigorous": false,
+                "U": 0.9937,
+                "heat_exchanger_type": "Floating head",
+                "material": "Carbon steel/carbon steel",
+                "N_shells": 2,
+                "ft": 0.95,
+                "furnace_pressure": 500
             },
             "design_simulation_method": "HXutility on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
@@ -1320,11 +1454,13 @@
             "id": "V405",
             "unit_type": "Simultaneous saccharification fermentation",
             "design_input_specs": {
+                "tau": 60.0,
+                "V": 1900.0,
                 "T": 305.15,
                 "P": 101325.0,
-                "V": 1900.0,
-                "V_wf": 0.83,
-                "tau": 60.0
+                "Nmin": 2,
+                "Nmax": 36,
+                "V_wf": 0.83
             },
             "design_simulation_method": "SimultaneousSaccharificationFermentation on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
@@ -1455,7 +1591,11 @@
             "id": "P406",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1500,7 +1640,10 @@
         {
             "id": "MX",
             "unit_type": "Mixer",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "rigorous": false,
+                "conserve_phases": false
+            },
             "design_simulation_method": "Mixer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/mixing.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1521,7 +1664,11 @@
             "id": "P407",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1567,8 +1714,11 @@
             "id": "V412",
             "unit_type": "Storage tank",
             "design_input_specs": {
+                "vessel_type": "Field erected",
+                "tau": 4,
                 "V_wf": 1.0,
-                "tau": 4
+                "vessel_material": "Stainless steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "StorageTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -1600,7 +1750,11 @@
             "id": "PX",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1646,7 +1800,11 @@
             "id": "P301",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": 607950.0
+                "P": 607950.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1691,7 +1849,16 @@
         {
             "id": "E413",
             "unit_type": "Heat exchanger",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "U": 0.79496,
+                "dT": 5.0,
+                "material": "Carbon steel/carbon steel",
+                "heat_exchanger_type": "Floating head",
+                "N_shells": 2,
+                "ft": 1.0,
+                "phase0": "l",
+                "phase1": "l"
+            },
             "design_simulation_method": "HXprocess on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1734,10 +1901,22 @@
                     "Ethanol",
                     "Water"
                 ],
-                "x_bot": 3.9106e-06,
-                "y_top": 0.28,
                 "k": 1.05,
-                "P": 101325
+                "P": 101325,
+                "Rmin": 0.0001,
+                "y_top": 0.28,
+                "x_bot": 3.9106e-06,
+                "product_specification_format": "Composition",
+                "vessel_material": "Stainless steel 304",
+                "tray_material": "Stainless steel 304",
+                "tray_type": "Sieve",
+                "tray_spacing": 450,
+                "velocity_fraction": 0.8,
+                "foaming_factor": 1.0,
+                "open_tray_area": 0.1,
+                "is_divided": false,
+                "vacuum_system_preference": "Liquid-ring pump",
+                "weir_height": 0.1
             },
             "design_simulation_method": "BinaryDistillation on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/distillation.py",
             "thermo_property_package": {
@@ -1804,7 +1983,11 @@
             "id": "P502",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": 607950.0
+                "P": 607950.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1850,8 +2033,11 @@
             "id": "V601",
             "unit_type": "Mix tank",
             "design_input_specs": {
+                "vessel_type": "Conventional",
+                "tau": 1,
                 "V_wf": 0.8,
-                "tau": 1
+                "vessel_material": "Stainless steel",
+                "kW_per_m3": 0.0985
             },
             "design_simulation_method": "MixTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -1885,7 +2071,11 @@
             "id": "P602",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 607950.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -1930,7 +2120,32 @@
         {
             "id": "C603",
             "unit_type": "DDGSCentrifuge",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "split": [
+                    0.8285,
+                    0.8285,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.2734,
+                    0.0,
+                    0.5,
+                    0.0,
+                    0.8285,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.08,
+                    0.5328,
+                    0.8285,
+                    0.08
+                ]
+            },
             "design_simulation_method": "DDGSCentrifuge on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1973,7 +2188,32 @@
         {
             "id": "S1",
             "unit_type": "Splitter",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "split": [
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208,
+                    0.208
+                ]
+            },
             "design_simulation_method": "Splitter on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/splitting.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -1994,8 +2234,11 @@
             "id": "V605",
             "unit_type": "Mix tank",
             "design_input_specs": {
+                "vessel_type": "Conventional",
+                "tau": 1,
                 "V_wf": 0.8,
-                "tau": 1
+                "vessel_material": "Stainless steel",
+                "kW_per_m3": 0.0985
             },
             "design_simulation_method": "MixTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -2029,7 +2272,11 @@
             "id": "P606",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 607950.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -2082,7 +2329,10 @@
                     30953,
                     19781
                 ],
-                "V": 0.9
+                "V": 0.9,
+                "V_definition": "Overall",
+                "flash": true,
+                "chemical": "7732-18-5"
             },
             "design_simulation_method": "MultiEffectEvaporator on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_multi_effect_evaporator.py",
             "thermo_property_package": {
@@ -2122,7 +2372,32 @@
         {
             "id": "C603_2",
             "unit_type": "Liquids centrifuge",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "split": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.99,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ]
+            },
             "design_simulation_method": "LiquidsSplitCentrifuge on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/liquid_liquid_extraction.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -2207,7 +2482,10 @@
         {
             "id": "MX6",
             "unit_type": "Mixer",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "rigorous": false,
+                "conserve_phases": false
+            },
             "design_simulation_method": "Mixer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/mixing.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -2228,8 +2506,36 @@
             "id": "D610",
             "unit_type": "Drum dryer",
             "design_input_specs": {
+                "split": [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "H": 20.0,
+                "length_to_diameter": 25,
                 "T": 343.15,
-                "P": 1013250
+                "P": 1013250,
+                "moisture_content": 0.1,
+                "utility_agent": "Natural gas"
             },
             "design_simulation_method": "DrumDryer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/drying.py",
             "thermo_property_package": {
@@ -2325,8 +2631,9 @@
             "id": "X611",
             "unit_type": "Thermal oxidizer",
             "design_input_specs": {
-                "V_wf": 0.95,
-                "tau": 0.00014
+                "tau": 0.00014,
+                "duty_per_kg": 61.0,
+                "V_wf": 0.95
             },
             "design_simulation_method": "ThermalOxidizer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/drying.py",
             "thermo_property_package": {
@@ -2361,7 +2668,10 @@
         {
             "id": "MX3",
             "unit_type": "Mixer",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "rigorous": false,
+                "conserve_phases": false
+            },
             "design_simulation_method": "Mixer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/mixing.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -2386,10 +2696,22 @@
                     "Ethanol",
                     "Water"
                 ],
-                "x_bot": 3.9106e-06,
-                "y_top": 0.80805,
                 "k": 1.05,
-                "P": 101325
+                "P": 101325,
+                "Rmin": 0.01,
+                "y_top": 0.80805,
+                "x_bot": 3.9106e-06,
+                "product_specification_format": "Composition",
+                "vessel_material": "Stainless steel 304",
+                "tray_material": "Stainless steel 304",
+                "tray_type": "Sieve",
+                "tray_spacing": 450,
+                "velocity_fraction": 0.8,
+                "foaming_factor": 1.0,
+                "open_tray_area": 0.1,
+                "is_divided": true,
+                "vacuum_system_preference": "Liquid-ring pump",
+                "weir_height": 0.1
             },
             "design_simulation_method": "BinaryDistillation on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/distillation.py",
             "thermo_property_package": {
@@ -2473,7 +2795,13 @@
             "unit_type": "Heat exchanger",
             "design_input_specs": {
                 "T": 388.15,
-                "V": 1
+                "V": 1,
+                "rigorous": false,
+                "heat_exchanger_type": "Floating head",
+                "material": "Carbon steel/carbon steel",
+                "N_shells": 2,
+                "heat_only": true,
+                "furnace_pressure": 500
             },
             "design_simulation_method": "HXutility on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
@@ -2515,7 +2843,32 @@
             "id": "X504",
             "unit_type": "Molecular sieve",
             "design_input_specs": {
-                "P": null
+                "split": [
+                    0.9249990967229107,
+                    0.16210942764472103,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "P": 101325.0,
+                "approx_duty": false
             },
             "design_simulation_method": "MolecularSieve on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/molecular_sieve.py",
             "thermo_property_package": {
@@ -2560,7 +2913,12 @@
             "unit_type": "Heat exchanger",
             "design_input_specs": {
                 "T": 340.0,
-                "V": 0
+                "V": 0,
+                "rigorous": false,
+                "heat_exchanger_type": "Floating head",
+                "material": "Carbon steel/carbon steel",
+                "N_shells": 2,
+                "furnace_pressure": 500
             },
             "design_simulation_method": "HXutility on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/heat_exchange.py",
             "thermo_property_package": {
@@ -2602,8 +2960,11 @@
             "id": "V511",
             "unit_type": "Storage tank",
             "design_input_specs": {
+                "vessel_type": "Floating roof",
+                "tau": 12,
                 "V_wf": 1.0,
-                "tau": 12
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "StorageTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -2635,7 +2996,11 @@
             "id": "P512",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -2681,8 +3046,11 @@
             "id": "V509",
             "unit_type": "Storage tank",
             "design_input_specs": {
+                "vessel_type": "Floating roof",
+                "tau": 168,
                 "V_wf": 1.0,
-                "tau": 168
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "StorageTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -2714,7 +3082,11 @@
             "id": "P510",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -2759,7 +3131,10 @@
         {
             "id": "MX4",
             "unit_type": "Mixer",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "rigorous": false,
+                "conserve_phases": false
+            },
             "design_simulation_method": "Mixer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/mixing.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -2780,8 +3155,11 @@
             "id": "V513",
             "unit_type": "Storage tank",
             "design_input_specs": {
+                "vessel_type": "Floating roof",
+                "tau": 156.0,
                 "V_wf": 1.0,
-                "tau": 156.0
+                "vessel_material": "Carbon steel",
+                "kW_per_m3": 0.0
             },
             "design_simulation_method": "StorageTank on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/tank.py",
             "thermo_property_package": {
@@ -2813,7 +3191,11 @@
             "id": "P508",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -2858,7 +3240,12 @@
         {
             "id": "V409",
             "unit_type": "Vent scrubber",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "gas": [
+                    "CO2",
+                    "O2"
+                ]
+            },
             "design_simulation_method": "VentScrubber on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_vent_scrubber.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -2899,7 +3286,11 @@
             "id": "P410",
             "unit_type": "Pump",
             "design_input_specs": {
-                "P": null
+                "P": 101325.0,
+                "pump_type": "Default",
+                "material": "Cast iron",
+                "dP_design": 101325,
+                "ignore_NPSH": true
             },
             "design_simulation_method": "Pump on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/_pump.py",
             "thermo_property_package": {
@@ -2944,7 +3335,10 @@
         {
             "id": "MX5",
             "unit_type": "Mixer",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "rigorous": false,
+                "conserve_phases": false
+            },
             "design_simulation_method": "Mixer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/mixing.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",

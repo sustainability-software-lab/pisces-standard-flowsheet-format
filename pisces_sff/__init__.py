@@ -30,6 +30,9 @@ from ._validate import *
 from . import _registry
 from ._registry import *
 
+from . import _design_specs
+from ._design_specs import *
+
 
 __all__ = (
      *_version.__all__,
@@ -38,4 +41,5 @@ __all__ = (
      *_harness.__all__,
      *_validate.__all__,
      *_registry.__all__,
+     *_design_specs.__all__,
     )
