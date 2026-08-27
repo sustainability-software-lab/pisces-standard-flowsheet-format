@@ -49,6 +49,34 @@ _REQUIRED_FIELDS = ('flowsheet', 'simulator', 'model_dir', 'flowsheet_file',
                     'title', 'description', 'source_corpus')
 
 
+def _yaml_load_no_duplicates(text, source):
+    """yaml.safe_load, except a mapping key repeated at any depth raises
+    ValueError naming `source` and the key. PyYAML's safe_load silently keeps
+    the last occurrence of a duplicated key, which would let a registry edit
+    override an earlier entry unnoticed. Deliberately duplicated across
+    _validate.py/_registry.py/_design_specs.py: each must stay loadable with
+    no package-relative imports (file-path loading, script form), so they
+    cannot share one import."""
+    import yaml  # lazy: keep the module import-light
+
+    class _NoDuplicateKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            seen = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                try:
+                    duplicated = key in seen
+                    seen.add(key)
+                except TypeError:
+                    continue  # unhashable key: super() raises its own error
+                if duplicated:
+                    raise ValueError(
+                        f'{source}: duplicate YAML key {key!r}')
+            return super().construct_mapping(node, deep=deep)
+
+    return yaml.load(text, Loader=_NoDuplicateKeyLoader)
+
+
 def load_model_registry(path=None, models_root=None, flowsheets_root=None):
     """
     Parse and validate the model registry.
@@ -77,11 +105,11 @@ def load_model_registry(path=None, models_root=None, flowsheets_root=None):
     Raises
     ------
     ValueError
-        On a missing/unreadable file, malformed YAML, a shape without a
-        top-level ``models`` mapping, a missing required field, an ID that
-        does not match the naming convention, a flowsheet ID claimed by two
-        models, or a referenced ``model_dir``/``flowsheet_file`` that does
-        not exist on disk.
+        On a missing/unreadable file, malformed YAML, a duplicated mapping
+        key, a shape without a top-level ``models`` mapping, a missing
+        required field, an ID that does not match the naming convention, a
+        flowsheet ID claimed by two models, or a referenced
+        ``model_dir``/``flowsheet_file`` that does not exist on disk.
     """
     import yaml  # lazy: keep the module import-light for Tier 1
 
@@ -95,7 +123,7 @@ def load_model_registry(path=None, models_root=None, flowsheets_root=None):
     except OSError as e:
         raise ValueError(f'model registry not readable: {path}: {e}') from e
     try:
-        data = yaml.safe_load(text)
+        data = _yaml_load_no_duplicates(text, path)
     except yaml.YAMLError as e:
         raise ValueError(f'model registry is not valid YAML: {path}: {e}') from e
     if not isinstance(data, dict) or not isinstance(data.get('models'), dict):

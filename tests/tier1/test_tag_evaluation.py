@@ -62,29 +62,39 @@ class TestSchemaGateAndRunAllChecks(unittest.TestCase):
 
 
 class TestSkipTolerated(unittest.TestCase):
+    # _skip_tolerated is per-tag from the tags.yaml registry rewire on: the
+    # tag's tolerated_skips table names a condition per check id.
+    EFS = "exported-from-simulator"
+
     def test_always_tolerated_ids(self):
         ctx = V._Context({})
         for cid in ("STR-03", "STR-13", "CHEM-04"):
-            self.assertTrue(V._skip_tolerated(cid, ctx))
+            self.assertTrue(V._skip_tolerated(self.EFS, cid, ctx))
 
     def test_str10_tolerated_only_when_all_streams_empty(self):
         empty = V._Context({"streams": [{"id": "s",
                             "stream_properties": {"total_mass_flow": 0.0}}]})
         nonempty = V._Context({"streams": [{"id": "s",
                               "stream_properties": {"total_mass_flow": 5.0}}]})
-        self.assertTrue(V._skip_tolerated("STR-10", empty))
-        self.assertFalse(V._skip_tolerated("STR-10", nonempty))
+        self.assertTrue(V._skip_tolerated(self.EFS, "STR-10", empty))
+        self.assertFalse(V._skip_tolerated(self.EFS, "STR-10", nonempty))
 
     def test_reaction_checks_tolerated_only_without_reactions(self):
         none = V._Context({"units": [{"id": "U1"}]})
         some = V._Context({"units": [{"id": "U1",
                           "reactions": [{"reactant": "A"}]}]})
         for cid in ("UNIT-04", "UNIT-05", "UNIT-06"):
-            self.assertTrue(V._skip_tolerated(cid, none))
-            self.assertFalse(V._skip_tolerated(cid, some))
+            self.assertTrue(V._skip_tolerated(self.EFS, cid, none))
+            self.assertFalse(V._skip_tolerated(self.EFS, cid, some))
 
     def test_untolerated_id_blocks(self):
-        self.assertFalse(V._skip_tolerated("MET-07", V._Context({})))
+        self.assertFalse(V._skip_tolerated(self.EFS, "MET-07", V._Context({})))
+
+    def test_extracted_tags_tolerate_nothing(self):
+        ctx = V._Context({})
+        for tag in ("extracted-from-prose", "extracted-from-image"):
+            for cid in ("STR-03", "STR-13", "CHEM-04", "UNIT-10", "STR-14"):
+                self.assertFalse(V._skip_tolerated(tag, cid, ctx))
 
 
 class TestEarnedTags(unittest.TestCase):

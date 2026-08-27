@@ -715,6 +715,12 @@ circularity); (2) **subset warning-clean** — no check in `T`'s subset produced
 | `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) |
 | `extracted-from-image` | `{UNIT-10, STR-14}` | none |
 
+The machine-readable home of this table — the tag names, classes, subsets, and
+tolerated-skip policies the validator executes — is the committed registry
+`pisces_sff/tags/tags.yaml`; the named skip conditions (`always`,
+`all_streams_empty`, `no_reactions`) are implemented as predicates in the
+validator, which rejects an unknown condition name at load time.
+
 ### `reproducible` (harness) earning rule
 Earned iff: (1) static conformance (as above); (2) the reproducibility recipe is present and
 complete (`environment`, `load_script`, `extended_metadata` when used) with a recorded

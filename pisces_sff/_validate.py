@@ -1442,36 +1442,173 @@ def _run_all_checks(doc, schema):
 
 #%% Tags (sff_checks.md section 8)
 
-# The four tag names, also enforced by the schema enum on metadata.tags.
-_TAG_NAMES = ('exported-from-simulator', 'extracted-from-prose',
-              'extracted-from-image', 'reproducible')
+# The committed tag registry: THE single source of truth for tag names, check
+# subsets, and tolerated-skip policies (sff_checks.md section 8). The schema's
+# metadata.tags enum mirrors the tag names; tests/tier1/test_tag_registry.py
+# pins the sync.
+_TAGS_YAML = Path(__file__).resolve().parent / 'tags' / 'tags.yaml'
 
-# Static subsets. exported-from-simulator uses ALL checks (sentinel None means
-# "every check id that ran"); the extracted tags use exactly {UNIT-10, STR-14}.
-_STATIC_TAG_SUBSETS = {
-    'exported-from-simulator': None,
-    'extracted-from-prose': frozenset({'UNIT-10', 'STR-14'}),
-    'extracted-from-image': frozenset({'UNIT-10', 'STR-14'}),
+# Condition names a tolerated_skips entry in tags.yaml may reference. The
+# registry names the *policy* (which check is tolerated, under what
+# circumstance); these predicates are the implementation. An unknown name in
+# the YAML is rejected at load time by _load_tag_registry. Predicates read
+# only the read-only _Context.
+_TOLERATED_SKIP_CONDITIONS = {
+    'always': lambda ctx: True,
+    'all_streams_empty': lambda ctx: _all_streams_empty(ctx),
+    'no_reactions': lambda ctx: not _has_reactions(ctx),
 }
+
+_TAG_CLASSES = ('static', 'harness')
+
+#: Cache for the parsed registry (the committed file is immutable at runtime).
+#: Tests that repoint _TAGS_YAML must reset this to None and restore both.
+_TAG_REGISTRY_CACHE = None
+
+
+def _yaml_load_no_duplicates(text, source):
+    """yaml.safe_load, except a mapping key repeated at any depth raises
+    ValueError naming `source` and the key. PyYAML's safe_load silently keeps
+    the last occurrence of a duplicated key, which would let a registry edit
+    override an earlier entry unnoticed. Deliberately duplicated across
+    _validate.py/_registry.py/_design_specs.py: each must stay loadable with
+    no package-relative imports (file-path loading, script form), so they
+    cannot share one import."""
+    import yaml  # lazy: keep the module import-light
+
+    class _NoDuplicateKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            seen = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                try:
+                    duplicated = key in seen
+                    seen.add(key)
+                except TypeError:
+                    continue  # unhashable key: super() raises its own error
+                if duplicated:
+                    raise ValueError(
+                        f'{source}: duplicate YAML key {key!r}')
+            return super().construct_mapping(node, deep=deep)
+
+    return yaml.load(text, Loader=_NoDuplicateKeyLoader)
+
+
+def _load_tag_registry():
+    """Parse, shape-validate, and cache ``pisces_sff/tags/tags.yaml``.
+
+    Returns
+    -------
+    dict
+        ``{tag_name: entry}`` in YAML declaration order (the canonical tag
+        order). A ``static`` entry holds ``subset`` (``None`` for the
+        "all checks that ran" sentinel, else a frozenset of check ids) and
+        ``tolerated_skips`` (``{check_id: condition_name}``, possibly empty);
+        a ``harness`` entry holds only ``class``.
+
+    Raises
+    ------
+    ImportError
+        pyyaml is not installed.
+    ValueError
+        The registry file is missing, unreadable, not valid YAML, repeats a
+        mapping key, or is otherwise malformed. Failing fast is deliberate:
+        the registry is committed repo infrastructure, not document content,
+        so a broken registry must abort tag evaluation rather than silently
+        skip the TAG-01 gate (Tier 1 pins the committed file's validity).
+    """
+    global _TAG_REGISTRY_CACHE
+    if _TAG_REGISTRY_CACHE is not None:
+        return _TAG_REGISTRY_CACHE
+    try:
+        import yaml
+    except ImportError as e:  # pragma: no cover - env-dependent
+        raise ImportError(
+            'pyyaml is required for SFF tag evaluation (it reads the tag '
+            'registry pisces_sff/tags/tags.yaml)') from e
+    try:
+        text = _TAGS_YAML.read_text(encoding='utf-8')
+    except OSError as e:
+        raise ValueError(
+            f'tag registry not readable: {_TAGS_YAML}: {e}') from e
+    try:
+        raw = _yaml_load_no_duplicates(text, _TAGS_YAML)
+    except yaml.YAMLError as e:
+        raise ValueError(
+            f'tag registry is not valid YAML: {_TAGS_YAML}: {e}') from e
+    if (not isinstance(raw, dict) or set(raw) != {'tags'}
+            or not isinstance(raw['tags'], dict) or not raw['tags']):
+        raise ValueError(
+            f'{_TAGS_YAML}: expected a single top-level "tags" mapping '
+            f'with at least one entry')
+    registry = {}
+    for tag, entry in raw['tags'].items():
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: entry must be a mapping')
+        unknown = set(entry) - {'class', 'subset', 'tolerated_skips'}
+        if unknown:
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: unknown key(s) {sorted(unknown)}')
+        cls = entry.get('class')
+        if cls not in _TAG_CLASSES:
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "class" must be one of '
+                f'{_TAG_CLASSES}, got {cls!r}')
+        if cls == 'harness':
+            if 'subset' in entry or 'tolerated_skips' in entry:
+                raise ValueError(
+                    f'{_TAGS_YAML}: tag {tag!r}: a harness tag may not '
+                    f'declare "subset" or "tolerated_skips" (its earning '
+                    f'rule is code)')
+            registry[tag] = {'class': cls}
+            continue
+        subset = entry.get('subset')
+        if subset == 'all':
+            subset = None  # sentinel: every check id that ran
+        elif (isinstance(subset, list) and subset
+                and all(isinstance(c, str) for c in subset)):
+            subset = frozenset(subset)
+        else:
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "subset" must be the string '
+                f'"all" or a non-empty list of check ids, got {subset!r}')
+        tolerated = entry.get('tolerated_skips') or {}
+        if not isinstance(tolerated, dict):
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "tolerated_skips" must be a '
+                f'mapping of check id to condition name')
+        for check_id, cond in tolerated.items():
+            if (not isinstance(check_id, str)
+                    or cond not in _TOLERATED_SKIP_CONDITIONS):
+                raise ValueError(
+                    f'{_TAGS_YAML}: tag {tag!r}: tolerated_skips'
+                    f'[{check_id!r}] names unknown condition {cond!r}; '
+                    f'known: {sorted(_TOLERATED_SKIP_CONDITIONS)}')
+        registry[tag] = {'class': cls, 'subset': subset,
+                         'tolerated_skips': dict(tolerated)}
+    _TAG_REGISTRY_CACHE = registry
+    return registry
+
+
+def _tag_names():
+    """The tag names in canonical (registry declaration) order. Mirrors the
+    schema's metadata.tags enum; tests/tier1/test_tag_registry.py pins the
+    sync."""
+    return tuple(_load_tag_registry())
+
 
 # Result ids never part of any subset: the schema gate and the two aggregates.
 _NON_SUBSET_IDS = frozenset({'SCHEMA', 'XREF-01', 'TAG-01'})
 
-# Skips always tolerated by exported-from-simulator (legitimate absences).
-_ALWAYS_TOLERATED_SKIPS = frozenset({'STR-03', 'STR-13', 'CHEM-04'})
 
-
-def _skip_tolerated(check_id, ctx):
-    """True if a `skip` from `check_id` is a legitimate absence-of-construct for
-    the exported-from-simulator tag (sff_checks.md section 8 tolerated-skip
-    table). Predicates read only the read-only _Context."""
-    if check_id in _ALWAYS_TOLERATED_SKIPS:
-        return True
-    if check_id == 'STR-10':
-        return _all_streams_empty(ctx)
-    if check_id in ('UNIT-04', 'UNIT-05', 'UNIT-06'):
-        return not _has_reactions(ctx)
-    return False
+def _skip_tolerated(tag, check_id, ctx):
+    """True if a `skip` from `check_id` is a legitimate absence-of-construct
+    under `tag`'s tolerated-skip policy in the tags.yaml registry
+    (sff_checks.md section 8 tolerated-skip table). Condition predicates read
+    only the read-only _Context."""
+    cond = _load_tag_registry()[tag]['tolerated_skips'].get(check_id)
+    return cond is not None and _TOLERATED_SKIP_CONDITIONS[cond](ctx)
 
 
 def _conformant(results):
@@ -1500,8 +1637,9 @@ def _reproducible_precondition(ctx, results):
 
 
 def _earned_tags(ctx, results):
-    """Apply the static earning rules (sff_checks.md section 8) to produce a
-    per-tag verdict dict. reproducible.earned is None here (static path); its
+    """Apply the static earning rules from the tags.yaml registry
+    (sff_checks.md section 8) to produce a per-tag verdict dict.
+    reproducible.earned is None here (static path); its
     blocking holds the precondition problems. Used by evaluate_sff_tags and the
     TAG-01 aggregate.
 
@@ -1512,7 +1650,10 @@ def _earned_tags(ctx, results):
     declared = set(ctx.metadata.get('tags') or [])
     conformant = _conformant(results)
     verdict = {}
-    for tag, subset in _STATIC_TAG_SUBSETS.items():
+    for tag, entry in _load_tag_registry().items():
+        if entry['class'] != 'static':
+            continue  # `reproducible` (harness): precondition verdict below
+        subset = entry['subset']
         blocking = []
         for r in results:
             if r.check_id in _NON_SUBSET_IDS or r.severity == 'info':
@@ -1521,7 +1662,7 @@ def _earned_tags(ctx, results):
                 continue
             if r.status == 'fail' and r.severity in ('warning', 'error'):
                 blocking.append(r.check_id)
-            elif r.status == 'skip' and not _skip_tolerated(r.check_id, ctx):
+            elif r.status == 'skip' and not _skip_tolerated(tag, r.check_id, ctx):
                 blocking.append(r.check_id)
         verdict[tag] = {'earned': conformant and not blocking,
                         'declared': tag in declared, 'blocking': blocking}
