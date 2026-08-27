@@ -36,7 +36,7 @@ from pathlib import Path
 # REGISTRY_PATH is a module attribute but deliberately NOT in __all__: the
 # star-import aggregation in pisces_sff/__init__.py would otherwise surface an
 # ambiguous package-level REGISTRY_PATH next to _registry.py's model registry.
-__all__ = ('load_design_spec_registry', 'resolve_design_input_specs', 'DesignSpecReadError')
+__all__ = ('load_design_spec_registry', 'resolve_design_input_specs', 'generate_design_spec_registry', 'DesignSpecReadError')
 
 _PKG_ROOT = Path(__file__).resolve().parent
 
@@ -240,3 +240,174 @@ def resolve_design_input_specs(unit, registry):
                 specs[param] = value
                 break
     return specs
+
+
+# Init-signature plumbing that is never a design input spec. biosteam units
+# declare their per-type parameters on `_init` (Unit.__init__ handles
+# ID/ins/outs/thermo then delegates), so for `_init`-bearing classes only
+# `self` occurs; the __init__ fallback needs the full set.
+_PLUMBING_PARAMS = frozenset({'self', 'ID', 'ins', 'outs', 'thermo'})
+
+
+def _params_from_class(cls):
+    """Ordered candidate design-spec parameter names for a unit class, from
+    ``inspect.signature`` on ``cls._init`` when defined (the biosteam
+    convention) else ``cls.__init__``, excluding plumbing and VAR_* params."""
+    init = getattr(cls, '_init', None) or cls.__init__
+    params = []
+    for name, p in inspect.signature(init).parameters.items():
+        if name in _PLUMBING_PARAMS:
+            continue
+        if p.kind in (inspect.Parameter.VAR_POSITIONAL,
+                      inspect.Parameter.VAR_KEYWORD):
+            continue
+        params.append(name)
+    return params
+
+
+def _generated_entry(cls):
+    """Default registry entry for one unit class: its display ``line`` (class
+    name when absent) and one same-named accessor per candidate parameter."""
+    line = getattr(cls, 'line', '') or cls.__name__
+    return {'line': str(line),
+            'design_input_spec_params':
+                {p: {'accessors': [p]} for p in _params_from_class(cls)}}
+
+
+def merge_design_spec_entries(existing, generated):
+    """
+    Merge freshly generated entries into an existing registry mapping.
+
+    The committed registry is the authority: existing entries -- their
+    ``line`` and every parameter's accessors -- are preserved verbatim, and a
+    parameter deleted by hand is NOT resurrected unless the class entry
+    itself was deleted. Only genuinely new classes, and new parameters of
+    existing classes, are appended. Neither input is mutated.
+
+    Parameters
+    ----------
+    existing : dict
+        The current registry mapping (may be empty).
+    generated : dict
+        Freshly generated entries (from :func:`_generated_entry`).
+
+    Returns
+    -------
+    dict
+        The merged mapping: existing classes first (original order), then new
+        classes in sorted order.
+    """
+    import copy
+
+    merged = copy.deepcopy(existing)
+    for class_name in sorted(generated):
+        if class_name not in merged:
+            merged[class_name] = copy.deepcopy(generated[class_name])
+            continue
+        params = merged[class_name]['design_input_spec_params']
+        for param, spec in generated[class_name][
+                'design_input_spec_params'].items():
+            if param not in params:
+                params[param] = copy.deepcopy(spec)
+    return merged
+
+
+def _biosteam_unit_classes():
+    """Every public biosteam unit class: names in ``biosteam.units.__all__``
+    (falling back to ``dir``) that resolve to ``biosteam.Unit`` subclasses,
+    deduplicated by class object in listing order. Imports biosteam lazily --
+    call only from :func:`generate_design_spec_registry`."""
+    import biosteam
+    from biosteam import Unit
+
+    units_mod = biosteam.units
+    seen, classes = set(), []
+    for name in getattr(units_mod, '__all__', None) or dir(units_mod):
+        obj = getattr(units_mod, name, None)
+        if (isinstance(obj, type) and issubclass(obj, Unit)
+                and id(obj) not in seen):
+            seen.add(id(obj))
+            classes.append(obj)
+    return classes
+
+
+_REGISTRY_HEADER = """\
+# Design-input-spec registry for BioSTEAM unit classes.
+# Keyed by unit CLASS NAME, resolved by MRO walk (a subclass without its own
+# entry uses its nearest listed ancestor's entry as-is); `line` is the class's
+# display name, informational only. Each parameter lists ordered accessor
+# paths; the exporter (SFF 0.1.4+) records the first non-None value under the
+# parameter name and omits the parameter when every accessor is exhausted.
+# Curate by hand freely -- regeneration (python pisces_sff/_design_specs.py)
+# merges: it appends new classes/parameters and never overwrites existing
+# entries. See docs/the_format/schema_reference.md and
+# pisces_sff/_design_specs.py.
+"""
+
+
+def generate_design_spec_registry(path=None, classes=None):
+    """
+    Generate (or refresh) the design-spec registry file.
+
+    Sweeps the given classes' init signatures into default entries and merges
+    them into the file's existing content (:func:`merge_design_spec_entries`
+    -- hand-curated content is never clobbered), then rewrites the file with
+    LF endings.
+
+    Parameters
+    ----------
+    path : str or Path, optional
+        Output file. Defaults to the committed registry
+        (``pisces_sff/design_specs/biosteam.yaml``).
+    classes : iterable of type, optional
+        Unit classes to sweep. Defaults to every public biosteam unit class
+        (imports biosteam lazily).
+
+    Returns
+    -------
+    Path
+        The written file.
+    """
+    import yaml  # lazy: keep the module import-light for Tier 1
+
+    path = Path(path) if path is not None else REGISTRY_PATH
+    if classes is None:
+        classes = _biosteam_unit_classes()
+    existing = load_design_spec_registry(path) if path.is_file() else {}
+    generated = {cls.__name__: _generated_entry(cls) for cls in classes}
+    merged = merge_design_spec_entries(existing, generated)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = yaml.safe_dump(merged, sort_keys=False, default_flow_style=False,
+                          width=100, allow_unicode=True)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(_REGISTRY_HEADER + body)
+    return path
+
+
+def main(argv=None):
+    """
+    Generate/refresh the committed registry from the installed biosteam.
+
+    Parameters
+    ----------
+    argv : list of str, optional
+
+    Returns
+    -------
+    int
+        Process exit code.
+    """
+    parser = argparse.ArgumentParser(
+        prog='python pisces_sff/_design_specs.py',
+        description='Generate or refresh pisces_sff/design_specs/'
+                    'biosteam.yaml from the installed biosteam unit classes. '
+                    'Merges: hand-curated entries are never overwritten.',
+    )
+    parser.parse_args(argv)
+    print(f'wrote {generate_design_spec_registry()}')
+    return 0
+
+
+if __name__ == '__main__':
+    import sys
+    sys.exit(main())

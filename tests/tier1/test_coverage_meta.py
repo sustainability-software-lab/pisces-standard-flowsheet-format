@@ -32,7 +32,7 @@ TIER1 = Path(__file__).resolve().parent
 
 MODULES = ["_export.py", "_validate.py", "_quantity_units.py", "_harness.py",
            "_runner.py", "_version.py", "_regenerate_corpus.py",
-           "_registry.py", "exceptions.py"]
+           "_registry.py", "_design_specs.py", "exceptions.py"]
 
 # name -> reason it needs no dedicated Tier 1 test.
 _EXEMPT = {
@@ -98,6 +98,10 @@ _EXEMPT = {
     # tests/tier2/test_validate_helpers_real.py (TestUnitParseable,
     # TestQuantityUnitStringsParseable, TestUtilityResultUnitsParseable).
     "_unit_is_parseable": "real-only; needs real thermosteam.units_of_measure (poisoned by the Tier-1 biosteam stub -- see tests/_stub_eviction.py), covered in Tier 2 test_validate_helpers_real.py (TestUnitParseable)",
+
+    # -- _design_specs.py: registry generation and merge.
+    "_read_accessor": "internal helper to resolve_design_input_specs; tested indirectly through resolve_design_input_specs tests in test_design_specs.py",
+    "_biosteam_unit_classes": "real-only; imports biosteam and walks its public unit classes; the pure sweep/merge/write it feeds (_params_from_class, _generated_entry, merge_design_spec_entries, generate_design_spec_registry with injected classes) is tier1-tested in test_design_specs.py",
 }
 
 

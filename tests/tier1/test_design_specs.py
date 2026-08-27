@@ -222,5 +222,146 @@ class TestLoadDesignSpecRegistry(unittest.TestCase):
         self.assertEqual(reg["Mixer"]["design_input_spec_params"], {})
 
 
+class TestParamsFromClass(unittest.TestCase):
+    def test_prefers_init_underscore_over_dunder_init(self):
+        """biosteam units declare per-type params on _init (Unit.__init__ is
+        generic plumbing); _params_from_class must introspect _init when
+        present, excluding self and VAR_* params."""
+        class WithInit:
+            def __init__(self, ID='', ins=None, outs=(), thermo=None,
+                         **kwargs):
+                pass
+
+            def _init(self, P=None, material='Cast iron', *args, **kwargs):
+                pass
+
+        self.assertEqual(_ds._params_from_class(WithInit), ["P", "material"])
+
+    def test_falls_back_to_dunder_init_excluding_plumbing(self):
+        """Without _init, __init__ is swept minus self/ID/ins/outs/thermo."""
+        class NoInit:
+            def __init__(self, ID='', ins=None, outs=(), thermo=None,
+                         tau=8.0, V_wf=0.9):
+                pass
+
+        self.assertEqual(_ds._params_from_class(NoInit), ["tau", "V_wf"])
+
+
+class TestGeneratedEntry(unittest.TestCase):
+    def test_entry_records_line_and_default_accessors(self):
+        """The generated entry carries the class's line and one same-named
+        accessor per param."""
+        class Fermenter:
+            line = "Fermentation"
+
+            def _init(self, tau=None, T=305.15):
+                pass
+
+        self.assertEqual(_ds._generated_entry(Fermenter), {
+            "line": "Fermentation",
+            "design_input_spec_params": {
+                "tau": {"accessors": ["tau"]},
+                "T": {"accessors": ["T"]},
+            },
+        })
+
+    def test_missing_line_falls_back_to_class_name(self):
+        """A class without a truthy `line` uses its __name__."""
+        class Bare:
+            def _init(self, x=1):
+                pass
+
+        self.assertEqual(_ds._generated_entry(Bare)["line"], "Bare")
+
+
+class TestMergeDesignSpecEntries(unittest.TestCase):
+    def test_new_class_is_appended(self):
+        existing = {"A": {"line": "A", "design_input_spec_params": {}}}
+        generated = {"B": {"line": "B", "design_input_spec_params": {}}}
+        merged = _ds.merge_design_spec_entries(existing, generated)
+        self.assertEqual(list(merged), ["A", "B"])
+
+    def test_existing_entries_and_accessors_are_preserved_verbatim(self):
+        """Regeneration must never clobber hand-curated accessors, prune
+        hand-removed params back in from ITS OWN param list, or overwrite
+        line."""
+        existing = {"Pump": {
+            "line": "Pump (curated)",
+            "design_input_spec_params": {
+                "P": {"accessors": ["P", "outs[0].P"]},
+            },
+        }}
+        generated = {"Pump": {
+            "line": "Pump",
+            "design_input_spec_params": {
+                "P": {"accessors": ["P"]},          # must NOT clobber
+                "dP_design": {"accessors": ["dP_design"]},  # genuinely new
+            },
+        }}
+        merged = _ds.merge_design_spec_entries(existing, generated)
+        self.assertEqual(merged["Pump"]["line"], "Pump (curated)")
+        self.assertEqual(
+            merged["Pump"]["design_input_spec_params"]["P"]["accessors"],
+            ["P", "outs[0].P"])
+        self.assertEqual(
+            merged["Pump"]["design_input_spec_params"]["dP_design"],
+            {"accessors": ["dP_design"]})
+
+    def test_inputs_are_not_mutated(self):
+        """merge returns a new mapping; both inputs are left untouched."""
+        existing = {"A": {"line": "A", "design_input_spec_params":
+                          {"x": {"accessors": ["x"]}}}}
+        generated = {"A": {"line": "A2", "design_input_spec_params":
+                           {"y": {"accessors": ["y"]}}}}
+        import copy
+        existing_before = copy.deepcopy(existing)
+        generated_before = copy.deepcopy(generated)
+        _ds.merge_design_spec_entries(existing, generated)
+        self.assertEqual(existing, existing_before)
+        self.assertEqual(generated, generated_before)
+
+
+class TestGenerateDesignSpecRegistry(unittest.TestCase):
+    class FakeMixer:
+        line = "Mixer"
+
+        def _init(self, rigorous=False):
+            pass
+
+    def test_writes_a_loadable_registry_for_injected_classes(self):
+        """generate(classes=[...]) writes a file load_design_spec_registry
+        accepts, with LF endings (repo .gitattributes pin)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "biosteam.yaml"
+            written = _ds.generate_design_spec_registry(
+                path=out, classes=[self.FakeMixer])
+            self.assertEqual(written, out)
+            raw = out.read_bytes()
+            self.assertNotIn(b"\r\n", raw)
+            reg = _ds.load_design_spec_registry(out)
+            self.assertEqual(
+                reg["FakeMixer"]["design_input_spec_params"]["rigorous"],
+                {"accessors": ["rigorous"]})
+
+    def test_regeneration_merges_with_an_existing_file(self):
+        """Running generate over an existing file preserves curated content
+        (merge semantics, exercised through the file-level entry point)."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "biosteam.yaml"
+            out.write_text(
+                "FakeMixer:\n  line: Mixer\n  design_input_spec_params:\n"
+                "    rigorous:\n      accessors: [rigorous, 'outs[0].P']\n",
+                encoding="utf-8")
+            _ds.generate_design_spec_registry(
+                path=out, classes=[self.FakeMixer])
+            reg = _ds.load_design_spec_registry(out)
+            self.assertEqual(
+                reg["FakeMixer"]["design_input_spec_params"]["rigorous"]
+                ["accessors"],
+                ["rigorous", "outs[0].P"])
+
+
 if __name__ == "__main__":
     unittest.main()
