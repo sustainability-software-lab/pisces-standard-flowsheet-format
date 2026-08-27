@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.1.5.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.0.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`

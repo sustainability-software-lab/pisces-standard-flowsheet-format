@@ -1322,6 +1322,66 @@ def export_biosteam_flowsheet_sff_0_1_5(sys, filepath, tea=None,
     _write_sff_json(flowsheet_to_export, filepath)
 
 
+def export_biosteam_flowsheet_sff_0_2_0(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.0', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.0.
+
+    A milestone bump marking the 2026-08 reorganization of ``pisces_sff``
+    into the ``validate/`` and ``export/`` subpackages -- no schema shape or
+    constraint change, no new SFF keys, and no exporter behavior change, so
+    this export is byte-identical to the 0.1.5 export apart from
+    ``metadata.sff_version``. All version-gated behavior active at 0.1.5
+    (including conditional ``exported-from-simulator`` stamping) remains so
+    here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
 #%% Helper functions
 
 def _max_carbon_boundary_feed(all_sys_feeds):
