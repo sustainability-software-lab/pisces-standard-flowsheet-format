@@ -255,15 +255,20 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
 
     def test_registry_resolves_P_unset_pump_from_outlet_pressure(self):
         """A real Pump with P unset (None) exports outs[0].P under 'P' --
-        the user-approved fallback -- and never a null."""
+        the user-approved fallback -- and never a null. outs[0].P is set to
+        a value distinct from ins[0].P so the assertion can actually tell
+        the outlet-reading fallback apart from a hypothetical bug reading
+        the inlet instead."""
         import biosteam as bst
         from pisces_sff._design_specs import load_design_spec_registry
         registry = load_design_spec_registry()
         bst.settings.set_thermo(["Water", "Ethanol"])
         pump = bst.Pump("TP2", ins=bst.Stream(Water=1.0))  # P=None default
+        pump.outs[0].P = 3.0e5
         self.assertIsNone(pump.P)
+        self.assertNotEqual(pump.ins[0].P, 3.0e5)
         specs = self._export.get_design_input_specs(pump, registry=registry)
-        self.assertEqual(specs["P"], pump.outs[0].P)
+        self.assertEqual(specs["P"], 3.0e5)
         self.assertIsNotNone(specs["P"])
         self.assertTrue(all(v is not None for v in specs.values()))
 
