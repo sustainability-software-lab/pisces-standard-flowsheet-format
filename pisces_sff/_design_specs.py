@@ -278,11 +278,18 @@ def merge_design_spec_entries(existing, generated):
     """
     Merge freshly generated entries into an existing registry mapping.
 
-    The committed registry is the authority: existing entries -- their
-    ``line`` and every parameter's accessors -- are preserved verbatim, and a
-    parameter deleted by hand is NOT resurrected unless the class entry
-    itself was deleted. Only genuinely new classes, and new parameters of
-    existing classes, are appended. Neither input is mutated.
+    The committed registry is the authority: an entry that already exists is
+    carried over verbatim -- its ``line`` and its whole parameter set,
+    accessors included -- so a parameter deleted by hand is NOT resurrected.
+    Only genuinely new classes are appended. To pick up parameters a newer
+    simulator added to an already-listed class, delete that class's entry and
+    regenerate. Neither input is mutated.
+
+    Deliberately entry-atomic: a merge that appended generated parameters
+    missing from an existing entry could not tell "the curator pruned this"
+    from "the simulator just added this", and would undo every hand-prune on
+    each regeneration -- which is the property the committed registry depends
+    on (its corpus classes are curated down to genuine design inputs).
 
     Parameters
     ----------
@@ -303,12 +310,6 @@ def merge_design_spec_entries(existing, generated):
     for class_name in sorted(generated):
         if class_name not in merged:
             merged[class_name] = copy.deepcopy(generated[class_name])
-            continue
-        params = merged[class_name]['design_input_spec_params']
-        for param, spec in generated[class_name][
-                'design_input_spec_params'].items():
-            if param not in params:
-                params[param] = copy.deepcopy(spec)
     return merged
 
 
@@ -339,8 +340,10 @@ _REGISTRY_HEADER = """\
 # paths; the exporter (SFF 0.1.4+) records the first non-None value under the
 # parameter name and omits the parameter when every accessor is exhausted.
 # Curate by hand freely -- regeneration (python pisces_sff/_design_specs.py)
-# merges: it appends new classes/parameters and never overwrites existing
-# entries. See docs/the_format/schema_reference.md and
+# merges entry-atomically: it appends classes that are not listed yet and
+# never touches an entry that is, so hand-pruned parameters stay pruned. To
+# pick up parameters a newer BioSTEAM added to a listed class, delete that
+# entry and regenerate. See docs/the_format/schema_reference.md and
 # pisces_sff/_design_specs.py.
 """
 

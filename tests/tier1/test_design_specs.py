@@ -281,10 +281,15 @@ class TestMergeDesignSpecEntries(unittest.TestCase):
         merged = _ds.merge_design_spec_entries(existing, generated)
         self.assertEqual(list(merged), ["A", "B"])
 
-    def test_existing_entries_and_accessors_are_preserved_verbatim(self):
-        """Regeneration must never clobber hand-curated accessors, prune
-        hand-removed params back in from ITS OWN param list, or overwrite
-        line."""
+    def test_existing_entries_are_preserved_verbatim(self):
+        """Regeneration must never clobber a hand-curated accessor list,
+        overwrite line, or resurrect a hand-pruned param. The merge is
+        entry-atomic: it cannot distinguish "the curator pruned this" from
+        "the simulator just added this", so a listed class keeps exactly the
+        param set the committed file gives it. (Task 4 curation depends on
+        this: e.g. BinaryDistillation's condenser_thermo/reboiler_thermo/
+        check_LHK and NRELAnaerobicBatchBioreactor's reactions are pruned and
+        must stay pruned across regeneration.)"""
         existing = {"Pump": {
             "line": "Pump (curated)",
             "design_input_spec_params": {
@@ -295,17 +300,33 @@ class TestMergeDesignSpecEntries(unittest.TestCase):
             "line": "Pump",
             "design_input_spec_params": {
                 "P": {"accessors": ["P"]},          # must NOT clobber
-                "dP_design": {"accessors": ["dP_design"]},  # genuinely new
+                "dP_design": {"accessors": ["dP_design"]},  # pruned by hand
             },
         }}
         merged = _ds.merge_design_spec_entries(existing, generated)
         self.assertEqual(merged["Pump"]["line"], "Pump (curated)")
         self.assertEqual(
-            merged["Pump"]["design_input_spec_params"]["P"]["accessors"],
-            ["P", "outs[0].P"])
-        self.assertEqual(
-            merged["Pump"]["design_input_spec_params"]["dP_design"],
-            {"accessors": ["dP_design"]})
+            merged["Pump"]["design_input_spec_params"],
+            {"P": {"accessors": ["P", "outs[0].P"]}})
+
+    def test_regeneration_is_idempotent_over_a_curated_entry(self):
+        """Merging twice changes nothing -- the property the committed
+        registry's Step 5 stability check rests on."""
+        existing = {"Pump": {
+            "line": "Pump",
+            "design_input_spec_params": {"P": {"accessors": ["P"]}},
+        }}
+        generated = {"Pump": {
+            "line": "Pump",
+            "design_input_spec_params": {
+                "P": {"accessors": ["P"]},
+                "check_LHK": {"accessors": ["check_LHK"]},
+            },
+        }}
+        once = _ds.merge_design_spec_entries(existing, generated)
+        twice = _ds.merge_design_spec_entries(once, generated)
+        self.assertEqual(once, existing)
+        self.assertEqual(twice, once)
 
     def test_inputs_are_not_mutated(self):
         """merge returns a new mapping; both inputs are left untouched."""
@@ -361,6 +382,32 @@ class TestGenerateDesignSpecRegistry(unittest.TestCase):
                 reg["FakeMixer"]["design_input_spec_params"]["rigorous"]
                 ["accessors"],
                 ["rigorous", "outs[0].P"])
+
+
+class TestCommittedRegistry(unittest.TestCase):
+    """The committed pisces_sff/design_specs/biosteam.yaml itself."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.registry = _ds.load_design_spec_registry()  # committed file
+
+    def test_committed_registry_loads_clean(self):
+        """The committed file passes load-time validation and is non-trivial
+        (the all-of-biosteam sweep yields far more than the corpus classes)."""
+        self.assertGreater(len(self.registry), 25)
+
+    def test_pump_and_molecular_sieve_carry_the_outs0_P_fallback(self):
+        """The user-approved curation: a P-unset Pump/MolecularSieve exports
+        outs[0].P under the same 'P' key (no new SFF keys)."""
+        for class_name in ("Pump", "MolecularSieve"):
+            with self.subTest(class_name=class_name):
+                accessors = (self.registry[class_name]
+                             ["design_input_spec_params"]["P"]["accessors"])
+                self.assertEqual(accessors, ["P", "outs[0].P"])
+
+    def test_registry_file_has_lf_endings(self):
+        """.gitattributes pins LF; the generated file must comply at rest."""
+        self.assertNotIn(b"\r\n", _ds.REGISTRY_PATH.read_bytes())
 
 
 if __name__ == "__main__":
