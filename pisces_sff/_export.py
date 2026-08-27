@@ -35,6 +35,11 @@ from .exceptions import (
     FlowsheetWriteError,
     DesignInputSpecError,
 )
+from ._design_specs import (
+    load_design_spec_registry,
+    resolve_design_input_specs,
+    DesignSpecReadError,
+)
 
 __all__ = ('export_biosteam_flowsheet', 'available_sff_versions',
            'get_purchase_cost_correlations')
@@ -181,6 +186,14 @@ _TAGS_SINCE = (0, 1, 3)
 #: dangling (sff_checks.md STR-07, UTIL-04, UNIT-04, UNIT-06). Gated so older
 #: exporters stay byte-stable; for a single-thermo system the union adds nothing.
 _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
+
+#: First schema version whose design_input_specs are driven by the committed
+#: design-spec registry (pisces_sff/design_specs/biosteam.yaml): per-unit-type
+#: parameters resolved by class-name MRO lookup with ordered accessor
+#: fallbacks; a parameter whose accessors all yield None is OMITTED (no more
+#: null values), and unmapped unit types export {}. Older exporters keep the
+#: legacy fixed-tuple probe so their historical output stays byte-stable.
+_DESIGN_SPEC_REGISTRY_SINCE = (0, 1, 4)
 
 #: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
 #: serialized as EMPTY -- empty composition -- mirroring the validator's
@@ -361,6 +374,14 @@ def _build_sff_dict(sys, tea=None,
         if normalized_hosts:
             metadata['microorganisms'] = normalized_hosts
 
+    # 0.1.4+ resolves design_input_specs from the committed design-spec
+    # registry; older versions keep the legacy fixed-tuple probe (registry
+    # None). Loaded once per export, not per unit.
+    design_spec_registry = (
+        load_design_spec_registry()
+        if version_tuple(sff_version) >= _DESIGN_SPEC_REGISTRY_SINCE
+        else None)
+
     ## ------- Units ------- ##
     units = []
     all_hu_agents = set()
@@ -378,7 +399,7 @@ def _build_sff_dict(sys, tea=None,
             
         unit = {"id": ru.ID,
                 "unit_type": get_unit_type(ru),
-                "design_input_specs": get_design_input_specs(ru),
+                "design_input_specs": get_design_input_specs(ru, registry=design_spec_registry),
                 "design_simulation_method": get_design_simulation_method(ru),
                 "thermo_property_package": get_thermo(ru),
                 "reactions": get_reactions(ru, stoichiometry=stoichiometry),
@@ -539,6 +560,14 @@ def _json_default(value):
         return value.tolist()
     if isinstance(value, deque):
         return list(value)
+    # Duck-typed fall-through for other array-likes json can't natively
+    # serialize -- notably thermosteam SparseVector, which surfaces in
+    # design_input_specs.split params resolved by the 0.1.4+ design-spec
+    # registry path. Kept last so it only converts prior failures into
+    # successes; anything without .tolist() still raises below.
+    tolist = getattr(value, "tolist", None)
+    if callable(tolist):
+        return tolist()
     raise TypeError(
         f"Object of type {type(value).__name__} is not JSON serializable"
     )
@@ -1121,6 +1150,72 @@ def export_biosteam_flowsheet_sff_0_1_3(sys, filepath, tea=None,
     conditionally-present metadata.tags. Because tag earning requires a digest-valid
     reproducibility recipe (MET-07 must not skip), a direct export without one omits
     the tag. All version-gated behavior active at 0.1.2 remains so here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_1_4(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff._runner
+                                        sff_version='0.1.4', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.1.4.
+
+    Changes each unit's ``design_input_specs`` semantics over the v0.1.3
+    export -- no schema shape change and no new SFF keys, only different
+    contents inside the existing free-form object. Specs are now resolved
+    from the committed design-spec registry
+    (``pisces_sff/design_specs/biosteam.yaml``): the unit's class (via MRO)
+    selects a per-type parameter list, each parameter is read through an
+    ordered accessor list (e.g. a P-unset Pump falls back from ``P`` to
+    ``outs[0].P``, still exported under ``P``), a parameter whose accessors
+    all yield None is OMITTED (v0.1.3 exported nulls), and unit types absent
+    from the registry export ``{}``. Every field outside design_input_specs
+    is byte-identical to the 0.1.3 export apart from metadata.sff_version.
+    All version-gated behavior active at 0.1.3 (including conditional tag
+    stamping) remains so here.
 
     Parameters
     ----------
@@ -1842,9 +1937,37 @@ def get_design_simulation_method(unit):
     return classname + ' on ' + link_address
 
 
-def get_design_input_specs(unit): # !!! update
-    param_names = ('LHK', 'Lr', 'Hr', 'x_bot', 'y_top', 'k', 
-                   'T', 'P', 
+def get_design_input_specs(unit, registry=None):
+    """
+    Read a unit's design input specifications.
+
+    Parameters
+    ----------
+    unit : biosteam.Unit
+    registry : dict, optional
+        A design-spec registry mapping (see
+        :func:`pisces_sff._design_specs.load_design_spec_registry`). When
+        given (exporters at ``_DESIGN_SPEC_REGISTRY_SINCE`` = 0.1.4 and
+        later), specs are resolved per unit type by class-name MRO lookup
+        with ordered accessor fallbacks, omitting parameters whose accessors
+        all yield None. When None (all older exporters), the legacy
+        fixed-tuple attribute probe below runs unchanged, byte-stable.
+
+    Raises
+    ------
+    DesignInputSpecError
+        If reading a spec fails unexpectedly (either path).
+    """
+    if registry is not None:
+        try:
+            return resolve_design_input_specs(unit, registry)
+        except DesignSpecReadError as e:
+            raise DesignInputSpecError(
+                f"could not read design input specs for unit "
+                f"{getattr(unit, 'ID', unit)!r}: {e}"
+            ) from e
+    param_names = ('LHK', 'Lr', 'Hr', 'x_bot', 'y_top', 'k',
+                   'T', 'P',
                    'V', 'V_wf',
                    'tau',)
     dis = {}
