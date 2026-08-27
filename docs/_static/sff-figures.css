@@ -108,9 +108,9 @@ html[data-theme="dark"] {
   display: flex; flex-direction: column; justify-content: center;
 }
 .viz-lane h4 { margin: 0 0 0.25rem; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
-.viz-lane--static { grid-column: 3; grid-row: 1 / span 3; border-left: 3px solid var(--viz-accent); }
+.viz-lane--static { grid-column: 3; grid-row: 1 / span 4; border-left: 3px solid var(--viz-accent); }
 .viz-lane--static h4 { color: var(--viz-accent); }
-.viz-lane--harness { grid-column: 3; grid-row: 4; border-left: 3px solid var(--viz-copper); background: var(--viz-copper-soft); }
+.viz-lane--harness { grid-column: 3; grid-row: 5; border-left: 3px solid var(--viz-copper); background: var(--viz-copper-soft); }
 .viz-lane--harness h4 { color: var(--viz-copper); }
 .viz-outcomes { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 0.8rem 0 1.2rem; }
 .viz-outcome { border: 1px solid var(--viz-hairline); border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.88rem; }
