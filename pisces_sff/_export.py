@@ -182,26 +182,6 @@ _TAGS_SINCE = (0, 1, 3)
 #: exporters stay byte-stable; for a single-thermo system the union adds nothing.
 _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
 
-#: First schema version whose design_input_specs export the simulated outlet
-#: pressure (unit.outs[0].P) under the "P" key when a Pump's or
-#: MolecularSieve's own P spec is falsy. In BioSTEAM both classes default to
-#: P=None, in which case the simulated outlets keep the inlet's pressure
-#: (Pump._run: `if self.P: s_out.P = self.P`; MolecularSieve._run:
-#: `if P is None: P = self.ins[0].P` then sets every outlet -- and
-#: MolecularSieve._init even hardcodes self.P = None) -- making a bare
-#: {"P": null} spec uninformative, while outs[0].P is the actual applied
-#: outlet pressure. The value replaces the null under the existing "P" key;
-#: no new SFF key and no dP_design involvement (deliberate format decision,
-#: 2026-08-26). Gated in _build_sff_dict so 0.0.5-0.1.2 stay byte-stable.
-#: Semantics verified against both biosteam 2.54.0 and the 2.46.1 pinned in
-#: the M_BST_01 reproducibility environment.
-_P_SPEC_FROM_OUTLET_SINCE = (0, 1, 3)
-
-#: Unit classes (matched by name anywhere in the MRO, so model subclasses
-#: qualify) whose falsy P spec is replaced by outs[0].P -- see
-#: _P_SPEC_FROM_OUTLET_SINCE.
-_P_SPEC_FROM_OUTLET_CLASSES = ('Pump', 'MolecularSieve')
-
 #: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
 #: serialized as EMPTY -- empty composition -- mirroring the validator's
 #: ZERO_FLOW (sff_checks.md "Default tolerances", STR-13). A converged
@@ -398,10 +378,7 @@ def _build_sff_dict(sys, tea=None,
             
         unit = {"id": ru.ID,
                 "unit_type": get_unit_type(ru),
-                "design_input_specs": get_design_input_specs(
-                    ru,
-                    substitute_outlet_P=(
-                        version_tuple(sff_version) >= _P_SPEC_FROM_OUTLET_SINCE)),
+                "design_input_specs": get_design_input_specs(ru),
                 "design_simulation_method": get_design_simulation_method(ru),
                 "thermo_property_package": get_thermo(ru),
                 "reactions": get_reactions(ru, stoichiometry=stoichiometry),
@@ -1865,9 +1842,9 @@ def get_design_simulation_method(unit):
     return classname + ' on ' + link_address
 
 
-def get_design_input_specs(unit, substitute_outlet_P=False): # !!! update
-    param_names = ('LHK', 'Lr', 'Hr', 'x_bot', 'y_top', 'k',
-                   'T', 'P',
+def get_design_input_specs(unit): # !!! update
+    param_names = ('LHK', 'Lr', 'Hr', 'x_bot', 'y_top', 'k', 
+                   'T', 'P', 
                    'V', 'V_wf',
                    'tau',)
     dis = {}
@@ -1880,22 +1857,4 @@ def get_design_input_specs(unit, substitute_outlet_P=False): # !!! update
                     f"could not read design input spec {p!r} for unit "
                     f"{getattr(unit, 'ID', unit)!r}: {e}"
                 ) from e
-    # 0.1.3+ (_P_SPEC_FROM_OUTLET_SINCE): a Pump or MolecularSieve with a
-    # falsy P leaves its simulated outlet(s) at the inlet's pressure, so
-    # export the actual applied outlet pressure (outs[0].P) under the "P" key
-    # in place of the uninformative null (no new SFF key; deliberate format
-    # decision, 2026-08-26). The falsy check mirrors Pump._run's `if self.P:`
-    # (for MolecularSieve, whose _run gates on `is None`, a falsy-but-set P
-    # equals outs[0].P anyway); the class check walks the MRO by name so
-    # model-defined subclasses qualify.
-    if substitute_outlet_P and 'P' in dis and not dis['P'] \
-            and any(c.__name__ in _P_SPEC_FROM_OUTLET_CLASSES
-                    for c in type(unit).__mro__):
-        try:
-            dis['P'] = unit.outs[0].P
-        except Exception as e:
-            raise DesignInputSpecError(
-                f"could not read outs[0].P as the design input spec 'P' for "
-                f"unit {getattr(unit, 'ID', unit)!r}: {e}"
-            ) from e
     return dis
