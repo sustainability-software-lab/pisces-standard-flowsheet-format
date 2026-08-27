@@ -170,6 +170,56 @@ class TestLoaderShapeValidation(_RegistryPatchCase):
             "    subset: all\n")
         self.assertIs(V._load_tag_registry(), reg1)
 
+    def test_duplicate_tag_key_rejected(self):
+        """A repeated mapping key is silently last-wins under plain
+        yaml.safe_load; _yaml_load_no_duplicates rejects it at load time so a
+        registry edit cannot override an earlier entry unnoticed."""
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            self._load_from(
+                "tags:\n"
+                "  t:\n"
+                "    class: static\n"
+                "    subset: all\n"
+                "  t:\n"
+                "    class: harness\n")
+
+    def test_duplicate_nested_key_rejected(self):
+        """Duplicate keys are rejected at any depth (here inside
+        tolerated_skips), not just at the top level -- even when the repeated
+        entry's value is identical."""
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            self._load_from(
+                "tags:\n"
+                "  t:\n"
+                "    class: static\n"
+                "    subset: all\n"
+                "    tolerated_skips:\n"
+                "      STR-03: always\n"
+                "      STR-03: always\n")
+
+    def test_missing_registry_file_rejected(self):
+        """A missing registry file surfaces as ValueError ('not readable'),
+        never a raw OSError -- matching the model/design-spec registry
+        loaders' contract."""
+        td = tempfile.TemporaryDirectory()
+        self.addCleanup(td.cleanup)
+        old_path, old_cache = V._TAGS_YAML, V._TAG_REGISTRY_CACHE
+
+        def _restore():
+            V._TAGS_YAML, V._TAG_REGISTRY_CACHE = old_path, old_cache
+
+        self.addCleanup(_restore)
+        V._TAGS_YAML = Path(td.name) / "no_such.yaml"
+        V._TAG_REGISTRY_CACHE = None
+        with self.assertRaisesRegex(ValueError, "not readable"):
+            V._load_tag_registry()
+
+    def test_invalid_yaml_syntax_rejected(self):
+        """Syntactically invalid YAML surfaces as ValueError ('not valid
+        YAML'), never a raw yaml.YAMLError leak."""
+        with self.assertRaisesRegex(ValueError, "not valid YAML"):
+            self._load_from("tags: [unclosed\n")
+
 
 class TestSchemaEnumSync(unittest.TestCase):
     """The metadata.tags enum in sff_schema.json is hardcoded by design (the

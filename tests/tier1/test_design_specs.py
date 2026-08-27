@@ -181,6 +181,16 @@ class TestLoadDesignSpecRegistry(unittest.TestCase):
             _ds.load_design_spec_registry(
                 Path("no_such_dir") / "no_such.yaml")
 
+    def test_duplicate_class_key_rejected(self):
+        """A repeated class-name mapping key -> ValueError from
+        _yaml_load_no_duplicates. Plain yaml.safe_load silently keeps the
+        last occurrence, which would let a registry edit override an earlier
+        entry unnoticed."""
+        with self.assertRaises(ValueError) as ctx:
+            self._load(self.GOOD + self.GOOD)
+        self.assertIn("duplicate", str(ctx.exception).lower())
+        self.assertIn("Pump", str(ctx.exception))
+
     def test_invalid_yaml_raises_value_error(self):
         """Unparseable YAML raises ValueError, not a bare yaml error."""
         with self.assertRaises(ValueError):

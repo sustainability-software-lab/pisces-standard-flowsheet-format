@@ -1466,6 +1466,34 @@ _TAG_CLASSES = ('static', 'harness')
 _TAG_REGISTRY_CACHE = None
 
 
+def _yaml_load_no_duplicates(text, source):
+    """yaml.safe_load, except a mapping key repeated at any depth raises
+    ValueError naming `source` and the key. PyYAML's safe_load silently keeps
+    the last occurrence of a duplicated key, which would let a registry edit
+    override an earlier entry unnoticed. Deliberately duplicated across
+    _validate.py/_registry.py/_design_specs.py: each must stay loadable with
+    no package-relative imports (file-path loading, script form), so they
+    cannot share one import."""
+    import yaml  # lazy: keep the module import-light
+
+    class _NoDuplicateKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            seen = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                try:
+                    duplicated = key in seen
+                    seen.add(key)
+                except TypeError:
+                    continue  # unhashable key: super() raises its own error
+                if duplicated:
+                    raise ValueError(
+                        f'{source}: duplicate YAML key {key!r}')
+            return super().construct_mapping(node, deep=deep)
+
+    return yaml.load(text, Loader=_NoDuplicateKeyLoader)
+
+
 def _load_tag_registry():
     """Parse, shape-validate, and cache ``pisces_sff/tags/tags.yaml``.
 
@@ -1483,10 +1511,11 @@ def _load_tag_registry():
     ImportError
         pyyaml is not installed.
     ValueError
-        The registry file is malformed. Failing fast is deliberate: the
-        registry is committed repo infrastructure, not document content, so a
-        broken registry must abort tag evaluation rather than silently skip
-        the TAG-01 gate (Tier 1 pins the committed file's validity).
+        The registry file is missing, unreadable, not valid YAML, repeats a
+        mapping key, or is otherwise malformed. Failing fast is deliberate:
+        the registry is committed repo infrastructure, not document content,
+        so a broken registry must abort tag evaluation rather than silently
+        skip the TAG-01 gate (Tier 1 pins the committed file's validity).
     """
     global _TAG_REGISTRY_CACHE
     if _TAG_REGISTRY_CACHE is not None:
@@ -1497,8 +1526,16 @@ def _load_tag_registry():
         raise ImportError(
             'pyyaml is required for SFF tag evaluation (it reads the tag '
             'registry pisces_sff/tags/tags.yaml)') from e
-    with _TAGS_YAML.open('r', encoding='utf-8') as f:
-        raw = yaml.safe_load(f)
+    try:
+        text = _TAGS_YAML.read_text(encoding='utf-8')
+    except OSError as e:
+        raise ValueError(
+            f'tag registry not readable: {_TAGS_YAML}: {e}') from e
+    try:
+        raw = _yaml_load_no_duplicates(text, _TAGS_YAML)
+    except yaml.YAMLError as e:
+        raise ValueError(
+            f'tag registry is not valid YAML: {_TAGS_YAML}: {e}') from e
     if (not isinstance(raw, dict) or set(raw) != {'tags'}
             or not isinstance(raw['tags'], dict) or not raw['tags']):
         raise ValueError(

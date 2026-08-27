@@ -153,6 +153,28 @@ class TestLoadModelRegistry(unittest.TestCase):
                 self.m.load_model_registry(path)
             self.assertIn("SF_BST_01", str(ctx.exception))
 
+    def test_duplicate_model_key_raises(self):
+        """The same model id as a repeated YAML mapping key -> ValueError from
+        _yaml_load_no_duplicates. Plain yaml.safe_load silently keeps the last
+        occurrence, which would let a registry edit override an earlier entry
+        unnoticed."""
+        dup = VALID_ENTRY + (
+            "  M_BST_01:\n"
+            "    flowsheet: SF_BST_01\n"
+            "    simulator: biosteam\n"
+            "    model_dir: biosteam_models/M_BST_01\n"
+            "    flowsheet_file: bioindustrial_park/SF_BST_01.json\n"
+            "    title: Duplicate key\n"
+            "    description: Repeats the M_BST_01 mapping key.\n"
+            "    source_corpus: Bioindustrial-Park\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = make_tree(tmp, dup)
+            with self.assertRaises(ValueError) as ctx:
+                self.m.load_model_registry(path)
+            self.assertIn("duplicate", str(ctx.exception).lower())
+            self.assertIn("M_BST_01", str(ctx.exception))
+
     def test_dangling_model_dir_raises(self):
         """A model_dir with no load.py on disk -> ValueError naming the dir."""
         bad = VALID_ENTRY.replace("model_dir: biosteam_models/M_BST_01",

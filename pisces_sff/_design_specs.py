@@ -104,6 +104,34 @@ def parse_accessor(accessor):
 _ENTRY_KEYS = frozenset({'line', 'design_input_spec_params'})
 
 
+def _yaml_load_no_duplicates(text, source):
+    """yaml.safe_load, except a mapping key repeated at any depth raises
+    ValueError naming `source` and the key. PyYAML's safe_load silently keeps
+    the last occurrence of a duplicated key, which would let a registry edit
+    override an earlier entry unnoticed. Deliberately duplicated across
+    _validate.py/_registry.py/_design_specs.py: each must stay loadable with
+    no package-relative imports (file-path loading, script form), so they
+    cannot share one import."""
+    import yaml  # lazy: keep the module import-light
+
+    class _NoDuplicateKeyLoader(yaml.SafeLoader):
+        def construct_mapping(self, node, deep=False):
+            seen = set()
+            for key_node, _ in node.value:
+                key = self.construct_object(key_node, deep=deep)
+                try:
+                    duplicated = key in seen
+                    seen.add(key)
+                except TypeError:
+                    continue  # unhashable key: super() raises its own error
+                if duplicated:
+                    raise ValueError(
+                        f'{source}: duplicate YAML key {key!r}')
+            return super().construct_mapping(node, deep=deep)
+
+    return yaml.load(text, Loader=_NoDuplicateKeyLoader)
+
+
 def load_design_spec_registry(path=None):
     """
     Parse and validate the design-input-spec registry.
@@ -123,9 +151,10 @@ def load_design_spec_registry(path=None):
     Raises
     ------
     ValueError
-        On a missing/unreadable file, malformed YAML, a non-mapping shape, a
-        missing or unknown entry key, a non-string ``line``, or a parameter
-        without a non-empty list of syntactically valid accessors.
+        On a missing/unreadable file, malformed YAML, a duplicated mapping
+        key, a non-mapping shape, a missing or unknown entry key, a
+        non-string ``line``, or a parameter without a non-empty list of
+        syntactically valid accessors.
     """
     import yaml  # lazy: keep the module import-light for Tier 1
 
@@ -136,7 +165,7 @@ def load_design_spec_registry(path=None):
         raise ValueError(
             f'design-spec registry not readable: {path}: {e}') from e
     try:
-        data = yaml.safe_load(text)
+        data = _yaml_load_no_duplicates(text, path)
     except yaml.YAMLError as e:
         raise ValueError(
             f'design-spec registry is not valid YAML: {path}: {e}') from e
