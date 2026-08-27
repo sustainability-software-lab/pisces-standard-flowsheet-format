@@ -28,7 +28,7 @@ referenced by ID, plus `metadata` for provenance. The format, BioSTEAM exporter,
 
 ## What this repo provides
 
-- **The spec** — `pisces_sff/schema/sff_schema.json` (current version **0.1.4**).
+- **The spec** — `pisces_sff/schema/sff_schema.json` (current version **0.1.5**).
 - **A reference exporter** — serializes a simulated BioSTEAM `System` to conforming SFF JSON.
 - **A two-layer validator** — a `jsonschema` structural gate plus a semantic-check engine.
 - **A corpus** — 18 pre-exported bioindustrial flowsheets.

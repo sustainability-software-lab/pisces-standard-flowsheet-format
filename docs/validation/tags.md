@@ -14,6 +14,8 @@ for every tag and returns it as a per-tag `{earned, declared, blocking}` dict.
     <div class="viz-tag-link"><svg viewBox="0 0 40 16" width="40" height="16" role="img" aria-label="verified via the static lane"><title>verified via the static lane</title><line class="viz-edge" x1="0" y1="8" x2="30" y2="8"/><path class="viz-head" d="M 30 3 l 10 5 l -10 5 z"/></svg></div>
     <div class="viz-tag"><code>extracted-from-image</code> <span class="viz-chip">static</span><span class="m">As above, but extracted from figures/diagrams.</span></div>
     <div class="viz-tag-link"><svg viewBox="0 0 40 16" width="40" height="16" role="img" aria-label="verified via the static lane"><title>verified via the static lane</title><line class="viz-edge" x1="0" y1="8" x2="30" y2="8"/><path class="viz-head" d="M 30 3 l 10 5 l -10 5 z"/></svg></div>
+    <div class="viz-tag"><code>extracted-from-table</code> <span class="viz-chip">static</span><span class="m">As above, but extracted from spreadsheets or similar tabular data.</span></div>
+    <div class="viz-tag-link"><svg viewBox="0 0 40 16" width="40" height="16" role="img" aria-label="verified via the static lane"><title>verified via the static lane</title><line class="viz-edge" x1="0" y1="8" x2="30" y2="8"/><path class="viz-head" d="M 30 3 l 10 5 l -10 5 z"/></svg></div>
     <div class="viz-tag"><code>reproducible</code> <span class="viz-chip viz-chip--copper">harness</span><span class="m">Re-running the embedded recipe in its pinned environment regenerates the file within the declared tolerance (<code>metadata.reproducibility.comparison_rtol</code>).</span></div>
     <div class="viz-tag-link"><svg viewBox="0 0 40 16" width="40" height="16" role="img" aria-label="verified via the harness lane"><title>verified via the harness lane</title><line class="viz-edge" x1="0" y1="8" x2="30" y2="8"/><path class="viz-head" d="M 30 3 l 10 5 l -10 5 z"/></svg></div>
     <div class="viz-lane viz-lane--harness"><h4>Harness lane</h4>Re-run the embedded recipe in its pinned environment → deep-compare within <code>comparison_rtol</code>.</div>
@@ -26,15 +28,15 @@ for every tag and returns it as a per-tag `{earned, declared, blocking}` dict.
 </div>
 ```
 
-Three tags are **static**: `exported-from-simulator`, `extracted-from-prose`,
-and `extracted-from-image`. A file earns a static tag by passing a
+Four tags are **static**: `exported-from-simulator`, `extracted-from-prose`,
+`extracted-from-image`, and `extracted-from-table`. A file earns a static tag by passing a
 tag-specific subset of the catalogue's checks with no `warning`-severity
 finding — fast, and requiring no simulation.
 The tag names, subsets, and tolerated-skip policies live in one committed
 registry file, `pisces_sff/tags/tags.yaml`, which the validator reads at
 evaluation time.
 
-The fourth tag, `reproducible`, is a **harness** tag. It is earned only via
+The remaining tag, `reproducible`, is a **harness** tag. It is earned only via
 `verify_reproducible(file, *, rtol=None, ...) -> (matches, diffs)`, which
 reconstructs the flowsheet's embedded reproducibility recipe, re-runs the
 export inside the pinned conda environment, and deep-compares the result
