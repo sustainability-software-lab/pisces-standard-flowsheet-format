@@ -9,7 +9,7 @@
 """Regression test for Task 1.5.1: Tier 1's install_biosteam_stubs() permanently
 replaces sys.modules['thermosteam']/['biosteam'] with fakes, which poisons the
 real validator's lazy `from thermosteam.units_of_measure import ureg` import
-(QU-02, in pisces_sff/_validate.py::_unit_is_parseable) whenever Tier 1 has
+(QU-02, in pisces_sff/validate/_validate.py::_unit_is_parseable) whenever Tier 1 has
 already run earlier in the same pytest process. evict_biosteam_stubs() removes
 the fake sys.modules entries so the next import re-loads the real package."""
 

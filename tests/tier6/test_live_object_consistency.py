@@ -16,7 +16,7 @@
 # objects in the same process moments apart, so any daylight between them is a
 # genuine export bug, not simulator drift.
 #
-# Every assertion below mirrors the *exact* expression pisces_sff/_export.py
+# Every assertion below mirrors the *exact* expression pisces_sff/export/_export.py
 # used to produce the corresponding JSON value (see the comment atop each test
 # for the source line numbers) -- reading a value a different way would make a
 # 1e-9 tolerance meaningless.
@@ -41,7 +41,7 @@ from tests._gating import RUN_TIER6
 from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODEL_DIR = (REPO_ROOT / "pisces_sff" / "models" / "biosteam_models"
+MODEL_DIR = (REPO_ROOT / "pisces_sff" / "export" / "models" / "biosteam_models"
              / "M_BST_01")
 
 #: Self-consistency tolerance: the export and these assertions read the same
@@ -93,8 +93,8 @@ class TestLiveObjectConsistency(RealBiosteamTestCase):
                     or any(k.startswith(r + ".") for r in cls._PURGE_ROOTS)]:
             del sys.modules[key]
 
-        from pisces_sff._runner import load_model_module
-        from pisces_sff._export import export_biosteam_flowsheet
+        from pisces_sff.export._runner import load_model_module
+        from pisces_sff.export._export import export_biosteam_flowsheet
         from pisces_sff._version import read_schema_version
 
         module = load_model_module(MODEL_DIR)          # file-path import of load.py

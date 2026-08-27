@@ -11,7 +11,7 @@ valid_doc() with exactly one thing broken and asserts the target check's
 CheckResult carries the catalogue's declared severity, status == "fail", and the
 correct effect on is_valid.
 
-Note on STR-04/STR-05/STR-06 (see pisces_sff/_validate.py): TOPOLOGY_ROLES =
+Note on STR-04/STR-05/STR-06 (see pisces_sff/validate/_validate.py): TOPOLOGY_ROLES =
 ('input', 'output', 'internal') and DESIGNATION_ROLES = ('purchased_raw_material',
 'feedstock', 'product'). valid_doc()'s 'feed' stream carries roles
 ["input", "feedstock"] (topology 'input', designation 'feedstock'); 'prod'

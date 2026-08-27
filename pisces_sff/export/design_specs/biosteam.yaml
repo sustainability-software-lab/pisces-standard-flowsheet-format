@@ -4,14 +4,14 @@
 # display name, informational only. Each parameter lists ordered accessor
 # paths; the exporter (SFF 0.1.4+) records the first non-None value under the
 # parameter name and omits the parameter when every accessor is exhausted.
-# Curate by hand freely -- regeneration (python pisces_sff/_design_specs.py)
+# Curate by hand freely -- regeneration (python pisces_sff/export/_design_specs.py)
 # merges entry-atomically: it appends classes that are not listed yet and
 # never touches an entry that is, so hand-pruned parameters stay pruned. To
 # pick up parameters a newer BioSTEAM added to a listed class, delete that
 # entry and regenerate. A recipe's pinned biosteam may resolve a unit under a
 # different class name than the biosteam that generated this file, so an
 # alias entry (e.g. NRELBatchBioreactor) may need hand-adding. See
-# docs/the_format/schema_reference.md and pisces_sff/_design_specs.py.
+# docs/the_format/schema_reference.md and pisces_sff/export/_design_specs.py.
 AbstractStirredTankReactor:
   line: Abstract stirred tank reactor
   design_input_spec_params:

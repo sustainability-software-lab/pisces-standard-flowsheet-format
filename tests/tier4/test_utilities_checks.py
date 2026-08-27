@@ -13,7 +13,7 @@ status == "fail", and the correct effect on is_valid.
 
 valid_doc() declares an empty utilities registry (heat/power/other_utilities
 all []), so every conformer here exercises the "vacuous pass" branch documented
-in pisces_sff/_validate.py's checks -- never a skip (see each check's
+in pisces_sff/validate/_validate.py's checks -- never a skip (see each check's
 "Skipped when: never" comment)."""
 
 import unittest
@@ -107,7 +107,7 @@ class TestUTIL03(RealBiosteamTestCase):
         textually identical to the branch QU-02 runs over the very same
         `quantity_units_for_utility_results` string (see
         _iter_quantity_unit_strings/_check_quantity_unit_strings_parseable in
-        pisces_sff/_validate.py -- utility-result strings there always have
+        pisces_sff/validate/_validate.py -- utility-result strings there always have
         empty_ok=False). So any string that fails UTIL-03 necessarily also
         fails QU-02, which is error-severity, and is_valid is False whenever
         any error-severity check fails. There is no alternative break that

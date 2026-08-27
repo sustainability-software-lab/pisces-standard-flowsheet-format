@@ -8,7 +8,7 @@ from pisces_sff import validate_json_against_schema, validate_flowsheet_against_
 
 pkg = os.path.dirname(pisces_sff.__file__)
 schema = os.path.join(pkg, "schema", "sff_schema.json")
-sff = os.path.join(pkg, "exported_flowsheets", "bioindustrial_park",
+sff = os.path.join(pkg, "export", "exported_flowsheets", "bioindustrial_park",
                    "SF_BST_01.json")
 
 # Layer 1: structural JSON-Schema gate

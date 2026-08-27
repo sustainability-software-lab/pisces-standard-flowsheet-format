@@ -59,7 +59,7 @@
 <g class="n n-teal">
   <rect x="252" y="140" width="176" height="56" rx="8"/>
   <text class="th" x="340" y="161" text-anchor="middle" dominant-baseline="central">BioSTEAM exporter</text>
-  <text class="ts" x="340" y="179" text-anchor="middle" dominant-baseline="central">_export.py + harness</text>
+  <text class="ts" x="340" y="179" text-anchor="middle" dominant-baseline="central">export/_export.py + harness</text>
 </g>
 <g class="n n-teal">
   <rect x="465" y="140" width="175" height="56" rx="8"/>
@@ -84,7 +84,7 @@
 <g class="n n-coral">
   <rect x="40" y="350" width="175" height="56" rx="8"/>
   <text class="th" x="127" y="371" text-anchor="middle" dominant-baseline="central">Checks catalogue</text>
-  <text class="ts" x="127" y="389" text-anchor="middle" dominant-baseline="central">sff_checks.md</text>
+  <text class="ts" x="127" y="389" text-anchor="middle" dominant-baseline="central">validate/sff_checks.md</text>
 </g>
 <g class="n n-coral">
   <rect x="252" y="350" width="176" height="56" rx="8"/>

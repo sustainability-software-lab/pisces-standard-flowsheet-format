@@ -95,13 +95,13 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         # _export.py binds via `from biosteam import PowerUtility, System` at
         # import time -- the same class of hazard as the module-level `bst`
         # name documented in test_version_shape_guard.py. If
-        # pisces_sff._export was already imported earlier in this process
+        # pisces_sff.export._export was already imported earlier in this process
         # while the Tier-1 fake biosteam stub was installed (e.g. Tier 1
         # collected first in a combined `pytest tests` run), that name stays
         # permanently bound to the fake even after
         # RealBiosteamTestCase.setUpClass() evicts the fake from
         # sys.modules['biosteam'] -- Python only re-resolves a module-level
-        # import on a fresh import, and 'pisces_sff._export' is already
+        # import on a fresh import, and 'pisces_sff.export._export' is already
         # cached. Discard the whole pisces_sff package tree so the import
         # below re-executes against the (now real, just-evicted)
         # biosteam/thermosteam; sys.modules['biosteam']/['thermosteam']
@@ -244,7 +244,7 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
     def test_registry_resolves_P_set_pump_from_its_own_P(self):
         """A real Pump with P set exports that P via the registry path."""
         import biosteam as bst
-        from pisces_sff._design_specs import load_design_spec_registry
+        from pisces_sff.export._design_specs import load_design_spec_registry
         registry = load_design_spec_registry()
         # Reuse the shared fixture's thermo rather than switching the global
         # thermo mid-class (other tests in this module use the cached system).
@@ -260,7 +260,7 @@ class TestExportHelpersAgainstRealObjects(RealBiosteamTestCase):
         the outlet-reading fallback apart from a hypothetical bug reading
         the inlet instead."""
         import biosteam as bst
-        from pisces_sff._design_specs import load_design_spec_registry
+        from pisces_sff.export._design_specs import load_design_spec_registry
         registry = load_design_spec_registry()
         bst.settings.set_thermo(["Water", "Ethanol"])
         pump = bst.Pump("TP2", ins=bst.Stream(Water=1.0))  # P=None default

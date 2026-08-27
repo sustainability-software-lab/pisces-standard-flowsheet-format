@@ -14,7 +14,7 @@ from pathlib import Path
 
 PKG_DIR = Path(__file__).resolve().parents[2] / "pisces_sff"
 EXCEPTIONS_PATH = PKG_DIR / "exceptions.py"
-EXPORT_PATH = PKG_DIR / "_export.py"
+EXPORT_PATH = PKG_DIR / "export" / "_export.py"
 
 
 def load_module():

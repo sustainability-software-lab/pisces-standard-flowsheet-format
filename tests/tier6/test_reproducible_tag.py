@@ -19,7 +19,7 @@ from tests._gating import RUN_TIER6
 from tests._stub_eviction import RealBiosteamTestCase
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CORN = (REPO_ROOT / "pisces_sff" / "exported_flowsheets" / "bioindustrial_park"
+CORN = (REPO_ROOT / "pisces_sff" / "export" / "exported_flowsheets" / "bioindustrial_park"
         / "SF_BST_01.json")
 
 

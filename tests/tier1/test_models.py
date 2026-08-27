@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Tests the per-model recipe contract under pisces_sff/models/.
+# Tests the per-model recipe contract under pisces_sff/export/models/.
 #
 # The runner imports a model's load.py and reads module-level declarations off
 # it (SIMULATOR selects the export entry point; SIMULATOR_PACKAGE and
@@ -18,7 +18,7 @@ import ast
 import unittest
 from pathlib import Path
 
-MODELS_ROOT = Path(__file__).resolve().parents[2] / "pisces_sff" / "models"
+MODELS_ROOT = Path(__file__).resolve().parents[2] / "pisces_sff" / "export" / "models"
 
 REQUIRED_CONSTANTS = (
     "SIMULATOR",
@@ -57,7 +57,7 @@ def module_functions(path):
 
 class TestModelsTreeExists(unittest.TestCase):
     def test_at_least_one_model_is_present(self):
-        """model_dirs() finds at least one model directory under pisces_sff/models/."""
+        """model_dirs() finds at least one model directory under pisces_sff/export/models/."""
         self.assertTrue(model_dirs(), f"no model directories found under {MODELS_ROOT}")
 
     def test_corn_model_is_present(self):

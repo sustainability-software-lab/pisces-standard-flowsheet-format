@@ -1,13 +1,13 @@
 <!-- AUTO-GENERATED FILE -- DO NOT EDIT BY HAND.
-     Generated from pisces_sff/models/all_models.yaml by pisces_sff/_registry.py.
-     Regenerate with: python -m pisces_sff._registry
+     Generated from pisces_sff/export/models/all_models.yaml by pisces_sff/export/_registry.py.
+     Regenerate with: python -m pisces_sff.export._registry
      (or activate the committed pre-commit hook -- see below). -->
 
 # SFF model recipes and exported flowsheets
 
-This file indexes the model recipes under `pisces_sff/models/` and the
-reference SFF exports under `pisces_sff/exported_flowsheets/`. It is generated
-from `pisces_sff/models/all_models.yaml` -- the single source of truth for
+This file indexes the model recipes under `pisces_sff/export/models/` and the
+reference SFF exports under `pisces_sff/export/exported_flowsheets/`. It is generated
+from `pisces_sff/export/models/all_models.yaml` -- the single source of truth for
 model <-> flowsheet pairing. Edit that file, not this one. Only items with
 both a model recipe and an exported flowsheet are registered.
 

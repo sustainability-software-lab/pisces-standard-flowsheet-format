@@ -8,7 +8,7 @@ developed in a later session — **not** in the one that produced this file:
 
 1. **Tighter constraints in `pisces_sff/schema/sff_schema.json`** — wherever a requirement
    can be expressed declaratively in JSON Schema (Draft-07).
-2. **Validator helper functions in `pisces_sff/_validate.py`** — for everything the schema
+2. **Validator helper functions in `pisces_sff/validate/_validate.py`** — for everything the schema
    cannot express (cross-object referential integrity, graph properties, physical
    consistency). These helpers are invoked by a new entry point,
    **`validate_flowsheet_against_SFF`**, alongside the existing

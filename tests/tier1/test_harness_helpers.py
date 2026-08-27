@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Tests for the pure half of pisces_sff/_harness.py.
+# Tests for the pure half of pisces_sff/export/_harness.py.
 #
 # Two invariants matter here and both are silent when broken:
 #
@@ -27,10 +27,11 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-HARNESS_PATH = REPO_ROOT / "pisces_sff" / "_harness.py"
+HARNESS_PATH = REPO_ROOT / "pisces_sff" / "export" / "_harness.py"
 CORN_ENV = (
     REPO_ROOT
     / "pisces_sff"
+    / "export"
     / "models"
     / "biosteam_models"
     / "M_BST_01"
@@ -558,13 +559,13 @@ class TestExportModelInvocation(unittest.TestCase):
         self.fake_run = fake_run
 
     def test_child_runs_the_runner_module(self):
-        """export_model launches the child as `python -m pisces_sff._runner <model_dir>`."""
+        """export_model launches the child as `python -m pisces_sff.export._runner <model_dir>`."""
         self.harness.export_model(
             self.model_dir, self.output, conda_exe=self.conda_exe, run=self.fake_run
         )
         cmd = self.recorded["cmd"]
         self.assertIn("-m", cmd)
-        self.assertIn("pisces_sff._runner", cmd)
+        self.assertIn("pisces_sff.export._runner", cmd)
         self.assertIn(str(self.model_dir.resolve()), cmd)
 
     def test_child_python_comes_from_the_provisioned_environment(self):

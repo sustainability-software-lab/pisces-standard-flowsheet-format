@@ -1,13 +1,13 @@
 # Registry of model recipes and their exported flowsheets.
 # The single source of truth for model <-> flowsheet pairing; consumed by
-# _regenerate_corpus, the README generator (python -m pisces_sff._registry),
+# _regenerate_corpus, the README generator (python -m pisces_sff.export._registry),
 # and the Tier 1 consistency tests.
 models:
   M_BST_01:
     flowsheet: SF_BST_01
     simulator: biosteam
-    model_dir: biosteam_models/M_BST_01                 # relative to pisces_sff/models/
-    flowsheet_file: bioindustrial_park/SF_BST_01.json   # relative to pisces_sff/exported_flowsheets/
+    model_dir: biosteam_models/M_BST_01                 # relative to pisces_sff/export/models/
+    flowsheet_file: bioindustrial_park/SF_BST_01.json   # relative to pisces_sff/export/exported_flowsheets/
     title: Corn dry-grind ethanol
     description: >-
       Dry-grind corn-to-ethanol biorefinery from the Bioindustrial-Park

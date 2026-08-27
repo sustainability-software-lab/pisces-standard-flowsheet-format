@@ -65,7 +65,7 @@ def validate_json_against_schema(
 # The schema file shipped in this package. Defined here (not imported from
 # _version) so this module stays free of package-relative top-level imports and
 # can be loaded by file path in the fast Tier-1 tests.
-_SCHEMA_FILE = Path(__file__).resolve().parent / 'schema' / 'sff_schema.json'
+_SCHEMA_FILE = Path(__file__).resolve().parents[1] / 'schema' / 'sff_schema.json'
 
 # A single finding. severity is the check's declared level (error | warning |
 # info); status is the outcome (pass | fail | skip). is_valid is driven only by
@@ -1446,7 +1446,7 @@ def _run_all_checks(doc, schema):
 # subsets, and tolerated-skip policies (sff_checks.md section 8). The schema's
 # metadata.tags enum mirrors the tag names; tests/tier1/test_tag_registry.py
 # pins the sync.
-_TAGS_YAML = Path(__file__).resolve().parent / 'tags' / 'tags.yaml'
+_TAGS_YAML = Path(__file__).resolve().parents[1] / 'tags' / 'tags.yaml'
 
 # Condition names a tolerated_skips entry in tags.yaml may reference. The
 # registry names the *policy* (which check is tolerated, under what
@@ -1810,7 +1810,7 @@ _REPRO_DEFAULT_RTOL = 1e-4
 #:
 #: The three `.../path` entries cover _runner.py's _file_record: it records a
 #: repo-relative `path` only when the original model directory lives under
-#: REPO_ROOT (true for every model under pisces_sff/models/), via
+#: REPO_ROOT (true for every model under pisces_sff/export/models/), via
 #: `path.relative_to(REPO_ROOT)`. _reconstruct_model_dir() below always writes
 #: the reconstructed recipe into a tempdir OUTSIDE the repo (by design, for
 #: verification isolation), so a re-export's `path` key is always absent
@@ -1925,7 +1925,7 @@ def verify_reproducible(json_file, *, conda_exe=None, rtol=None,
     export : callable, optional
         ``export(model_dir, output_path, sff_version=..., recreate_env=...,
         conda_exe=...)`` used to re-export. Defaults to
-        :func:`pisces_sff._harness.export_model` (the full harness), imported
+        :func:`pisces_sff.export._harness.export_model` (the full harness), imported
         lazily so the static path never pulls in biosteam. Tests inject a fake.
 
     Returns
@@ -1953,7 +1953,7 @@ def verify_reproducible(json_file, *, conda_exe=None, rtol=None,
     sff_version = metadata.get('sff_version')
 
     if export is None:
-        from ._harness import export_model as export
+        from ..export._harness import export_model as export
 
     with tempfile.TemporaryDirectory() as tmp:
         model_dir = _reconstruct_model_dir(original, Path(tmp) / 'model')

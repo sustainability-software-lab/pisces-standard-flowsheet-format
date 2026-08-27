@@ -7,15 +7,15 @@
 # for license details.
 
 """
-The model registry: ``pisces_sff/models/all_models.yaml``.
+The model registry: ``pisces_sff/export/models/all_models.yaml``.
 
 The registry is the load-bearing single source of truth for model <->
 flowsheet pairing. Only items with BOTH a model recipe (a ``load.py``
-directory under ``pisces_sff/models/``) and an exported flowsheet (under
-``pisces_sff/exported_flowsheets/``) appear in it. It is consumed by
+directory under ``pisces_sff/export/models/``) and an exported flowsheet (under
+``pisces_sff/export/exported_flowsheets/``) appear in it. It is consumed by
 :func:`pisces_sff.regenerate_corpus` (which refuses to run with an
 unregistered model directory on disk), by the README generator in this module
-(``python -m pisces_sff._registry``), and by the Tier 1 consistency tests.
+(``python -m pisces_sff.export._registry``), and by the Tier 1 consistency tests.
 
 Import-light by design: no package-relative imports at module top and ``yaml``
 is imported lazily inside functions, so Tier 1 can load this file by path
@@ -85,11 +85,11 @@ def load_model_registry(path=None, models_root=None, flowsheets_root=None):
     ----------
     path : str or Path, optional
         Registry file to load. Defaults to the committed
-        ``pisces_sff/models/all_models.yaml``.
+        ``pisces_sff/export/models/all_models.yaml``.
     models_root : str or Path, optional
         Root the entries' ``model_dir`` paths are relative to. Defaults to the
         registry file's own directory (the committed registry lives in
-        ``pisces_sff/models/``).
+        ``pisces_sff/export/models/``).
     flowsheets_root : str or Path, optional
         Root the entries' ``flowsheet_file`` paths are relative to. Defaults
         to the ``exported_flowsheets`` directory sibling to `models_root`'s
@@ -167,15 +167,15 @@ def load_model_registry(path=None, models_root=None, flowsheets_root=None):
 
 _README_TEMPLATE = """\
 <!-- AUTO-GENERATED FILE -- DO NOT EDIT BY HAND.
-     Generated from pisces_sff/models/all_models.yaml by pisces_sff/_registry.py.
-     Regenerate with: python -m pisces_sff._registry
+     Generated from pisces_sff/export/models/all_models.yaml by pisces_sff/export/_registry.py.
+     Regenerate with: python -m pisces_sff.export._registry
      (or activate the committed pre-commit hook -- see below). -->
 
 # SFF model recipes and exported flowsheets
 
-This file indexes the model recipes under `pisces_sff/models/` and the
-reference SFF exports under `pisces_sff/exported_flowsheets/`. It is generated
-from `pisces_sff/models/all_models.yaml` -- the single source of truth for
+This file indexes the model recipes under `pisces_sff/export/models/` and the
+reference SFF exports under `pisces_sff/export/exported_flowsheets/`. It is generated
+from `pisces_sff/export/models/all_models.yaml` -- the single source of truth for
 model <-> flowsheet pairing. Edit that file, not this one. Only items with
 both a model recipe and an exported flowsheet are registered.
 
@@ -275,8 +275,8 @@ def write_registry_readmes(registry=None, paths=None):
     registry : dict, optional
         Defaults to :func:`load_model_registry` on the committed file.
     paths : iterable of str or Path, optional
-        Defaults to the two committed destinations (``pisces_sff/models/`` and
-        ``pisces_sff/exported_flowsheets/``). Tests pass temp paths.
+        Defaults to the two committed destinations (``pisces_sff/export/models/`` and
+        ``pisces_sff/export/exported_flowsheets/``). Tests pass temp paths.
 
     Returns
     -------
@@ -312,9 +312,9 @@ def main(argv=None):
         Process exit code.
     """
     parser = argparse.ArgumentParser(
-        prog='python -m pisces_sff._registry',
-        description='Regenerate pisces_sff/models/README.md and '
-                    'pisces_sff/exported_flowsheets/README.md from '
+        prog='python -m pisces_sff.export._registry',
+        description='Regenerate pisces_sff/export/models/README.md and '
+                    'pisces_sff/export/exported_flowsheets/README.md from '
                     'all_models.yaml.',
     )
     parser.parse_args(argv)

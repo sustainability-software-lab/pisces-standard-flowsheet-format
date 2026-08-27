@@ -396,7 +396,7 @@ class TestMicroorganismsSchemaShape(unittest.TestCase):
 class TestMicroorganismsValidation(unittest.TestCase):
     """Behavioural checks: good values validate, bad values are rejected.
 
-    Uses Draft7Validator (the same validator pisces_sff._validate uses) against
+    Uses Draft7Validator (the same validator pisces_sff.validate._validate uses) against
     the extracted sub-schema so we exercise the real schema semantics.
     """
 

@@ -17,7 +17,7 @@ validates the result.
 Usable directly for debugging, provided the current environment can import the
 model's dependencies::
 
-    python -m pisces_sff._runner --model-dir <dir> --output <path>
+    python -m pisces_sff.export._runner --model-dir <dir> --output <path>
 """
 
 import argparse
@@ -32,7 +32,7 @@ import yaml
 
 from ._harness import (DEFAULT_SFF_VERSION, REPO_ROOT, environment_key,
                        package_record, sha256_bytes)
-from ._validate import validate_json_against_schema
+from ..validate._validate import validate_json_against_schema
 
 __all__ = ('run_model_export', 'build_reproducibility', 'load_model_module',
            'load_extended_metadata')
@@ -42,7 +42,7 @@ __all__ = ('run_model_export', 'build_reproducibility', 'load_model_module',
 #: one-to-one onto versioned-exporter keyword arguments.
 EXTENDED_METADATA_FILENAME = 'extended_metadata.yaml'
 
-SCHEMA_PATH = Path(__file__).resolve().parent / 'schema' / 'sff_schema.json'
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / 'schema' / 'sff_schema.json'
 
 #: Packages whose installed versions are recorded in `resolved.package_versions`.
 #: Distinguishes what actually ran from what the recipe declared.
@@ -249,7 +249,7 @@ def run_model_export(model_dir, output_path, sff_version=None, env_key=None):
         Path to write the SFF JSON file to.
     sff_version : str, optional
         SFF schema version to export against. Defaults to ``None``, which
-        resolves to :data:`pisces_sff._harness.DEFAULT_SFF_VERSION` (the schema's
+        resolves to :data:`pisces_sff.export._harness.DEFAULT_SFF_VERSION` (the schema's
         current ``"version"``).
     env_key : str, optional
         Environment key supplied by the harness.
@@ -289,7 +289,7 @@ def run_model_export(model_dir, output_path, sff_version=None, env_key=None):
         raise ValueError(
             f'model {model_dir.name!r} declares SIMULATOR={simulator!r}, but no '
             f'export entry point named {entry_point_name!r} exists in '
-            'pisces_sff._export.'
+            'pisces_sff.export._export.'
         )
     # Built before simulating so a malformed recipe fails in milliseconds
     # instead of after a multi-minute simulation.
@@ -336,7 +336,7 @@ def main(argv=None):
         Process exit code.
     """
     parser = argparse.ArgumentParser(
-        prog='python -m pisces_sff._runner',
+        prog='python -m pisces_sff.export._runner',
         description='Load, simulate, and export one model to SFF.',
     )
     parser.add_argument('--model-dir', required=True,

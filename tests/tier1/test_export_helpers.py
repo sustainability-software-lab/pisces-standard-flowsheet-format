@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Tier 1 walking skeleton: prove the shared biosteam stub lets us import
-# pisces_sff._export and exercise its pure / near-pure helpers with NO real
+# pisces_sff.export._export and exercise its pure / near-pure helpers with NO real
 # biosteam loaded. Any helper tested here with a FAKE object is re-verified
 # against a REAL object in Tier 2/3 (is_product -> tests/tier2).
 
@@ -1159,7 +1159,7 @@ class TestGetPurchaseCostCorrelations(unittest.TestCase):
 
 class TestStampStaticTags(unittest.TestCase):
     """_stamp_static_tags's own logic is just "stamp iff earned": it delegates
-    entirely to pisces_sff._validate's _run_all_checks/_earned_tags. Mocking
+    entirely to pisces_sff.validate._validate's _run_all_checks/_earned_tags. Mocking
     those two (rather than exercising the real semantic checks against a real
     document) keeps this test independent of the real thermosteam
     units-of-measure registry, which the Tier-1 biosteam stub poisons for the

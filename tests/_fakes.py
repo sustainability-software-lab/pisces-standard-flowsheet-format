@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-# Shared Tier-1 helper: make pisces_sff._export importable WITHOUT loading the
-# real biosteam/thermosteam (slow, JIT-heavy). We install fake modules into
+# Shared Tier-1 helper: make pisces_sff.export._export importable WITHOUT loading
+# the real biosteam/thermosteam (slow, JIT-heavy). We install fake modules into
 # sys.modules providing exactly the names _export.py imports at module top, then
 # import the real _export as a genuine package submodule so its relative imports
 # (._quantity_units, .exceptions) resolve normally.
@@ -93,6 +93,6 @@ def install_biosteam_stubs():
 
 
 def load_export():
-    """Install the stubs, then import and return the real pisces_sff._export."""
+    """Install the stubs, then import and return the real pisces_sff.export._export."""
     install_biosteam_stubs()
-    return importlib.import_module("pisces_sff._export")
+    return importlib.import_module("pisces_sff.export._export")

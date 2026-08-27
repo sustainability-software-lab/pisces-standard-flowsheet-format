@@ -8,19 +8,19 @@
 
 """
 Regenerate the committed reference corpus by exporting every model registered
-in ``pisces_sff/models/all_models.yaml``.
+in ``pisces_sff/export/models/all_models.yaml``.
 
 Two entry points share one loop:
 
 * :func:`regenerate_corpus` -- iterates registry entries (from
-  ``pisces_sff/models/all_models.yaml``) and exports each into a caller-chosen
+  ``pisces_sff/export/models/all_models.yaml``) and exports each into a caller-chosen
   directory, naming each output by its flowsheet ID. It refuses to run --
   raising before exporting anything -- if a ``load.py`` directory exists on
   disk but is not registered. The Tier 6 test calls it with a temporary
   directory, so running the test never touches the committed corpus.
-* ``python -m pisces_sff._regenerate_corpus`` -- the one deliberate command that
+* ``python -m pisces_sff.export._regenerate_corpus`` -- the one deliberate command that
   writes the committed corpus files in
-  ``pisces_sff/exported_flowsheets/bioindustrial_park/``. Regenerating the
+  ``pisces_sff/export/exported_flowsheets/bioindustrial_park/``. Regenerating the
   committed corpus is an announced act, never a side effect of a test run.
 
 Imports nothing heavy at module top: :func:`pisces_sff.export_model` is imported
@@ -111,7 +111,7 @@ def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
     ValueError
         If a directory holding a ``load.py`` exists under `models_root` but is
         not present in the registry: a new recipe must be registered in
-        ``pisces_sff/models/all_models.yaml`` before the corpus can be
+        ``pisces_sff/export/models/all_models.yaml`` before the corpus can be
         regenerated. (Dangling registry entries -- registered paths missing on
         disk -- are already rejected by ``load_model_registry``.)
     """
@@ -133,7 +133,7 @@ def regenerate_corpus(output_dir, models_root=MODELS_ROOT, export=None,
         listing = ', '.join(str(d) for d in unregistered)
         raise ValueError(
             f'model dir(s) on disk but not in the registry: {listing}. '
-            f'Register new recipes in pisces_sff/models/all_models.yaml '
+            f'Register new recipes in pisces_sff/export/models/all_models.yaml '
             f'before regenerating the corpus.')
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -156,7 +156,7 @@ def _stamp_reproducible(output_path, comparison_rtol, verify):
     false reproducible claim."""
     import json
     if verify is None:
-        from . import verify_reproducible as verify
+        from ..validate._validate import verify_reproducible as verify
     matches, diffs = verify(str(output_path), rtol=comparison_rtol)
     if not matches:
         raise RuntimeError(
@@ -202,7 +202,7 @@ def main(argv=None, _regenerate=None):
         Process exit code.
     """
     parser = argparse.ArgumentParser(
-        prog='python -m pisces_sff._regenerate_corpus',
+        prog='python -m pisces_sff.export._regenerate_corpus',
         description='Regenerate the committed reference corpus in-place.',
     )
     parser.add_argument(

@@ -25,7 +25,7 @@ from tests._validate_loader import V
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
-CORPUS_DIR = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
+CORPUS_DIR = (REPO_ROOT / "pisces_sff" / "export" / "exported_flowsheets"
               / "bioindustrial_park")
 
 # Recorded outcomes (see canonical validation ss1 in CLAUDE.md): only
@@ -85,9 +85,9 @@ class TestCorpusValidation(RealBiosteamTestCase):
 # JSON-only -- no biosteam/thermosteam import needed, so this class is a plain
 # unittest.TestCase rather than RealBiosteamTestCase.
 #
-# WHY this guard exists: pisces_sff/_design_specs.py resolves a unit's specs
+# WHY this guard exists: pisces_sff/export/_design_specs.py resolves a unit's specs
 # by walking type(unit).__mro__ against the class-name-keyed registry
-# (pisces_sff/design_specs/biosteam.yaml); a unit whose class (or any
+# (pisces_sff/export/design_specs/biosteam.yaml); a unit whose class (or any
 # alias under which the pinned recipe env resolves it) is not listed silently
 # gets {} with no error -- resolve_design_input_specs's documented contract for
 # "no ancestor is listed" is to return {} rather than raise. That silence bit

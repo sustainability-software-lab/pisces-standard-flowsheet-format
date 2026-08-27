@@ -834,7 +834,7 @@ class TestXrefGate(unittest.TestCase):
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = REPO_ROOT / "pisces_sff" / "schema" / "sff_schema.json"
-CORN_PATH = (REPO_ROOT / "pisces_sff" / "exported_flowsheets"
+CORN_PATH = (REPO_ROOT / "pisces_sff" / "export" / "exported_flowsheets"
              / "bioindustrial_park" / "SF_BST_01.json")
 
 

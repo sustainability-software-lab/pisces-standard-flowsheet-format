@@ -11,7 +11,7 @@ on valid_doc() with exactly one thing broken and asserts the target check's
 CheckResult carries the catalogue's declared severity, status == "fail", and
 the correct effect on is_valid.
 
-XREF-01 is an aggregate (pisces_sff/_validate.py's _xref_gate, not in _CHECKS)
+XREF-01 is an aggregate (pisces_sff/validate/_validate.py's _xref_gate, not in _CHECKS)
 computed from the referential error-checks in _REFERENTIAL_IDS -- it fails iff
 any of {STR-02, STR-07, UNIT-02, UNIT-04, UNIT-06, CHEM-04, MET-02, UTIL-04}
 failed at error severity. It still appears in the results keyed by check id

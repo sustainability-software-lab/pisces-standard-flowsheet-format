@@ -59,12 +59,12 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         super().setUpClass()   # evicts Tier-1 biosteam/thermosteam stubs
 
         # If Tier 1 already ran in this same pytest process, its collection-time
-        # tests._fakes.load_export() call imported the real `pisces_sff._export`
+        # tests._fakes.load_export() call imported the real `pisces_sff.export._export`
         # module WHILE the fake biosteam stub was installed, permanently binding
         # that module's top-level `import biosteam as bst` to the fake object.
         # Evicting sys.modules['biosteam']/['thermosteam'] above does not touch
         # that already-bound name -- Python only re-resolves a module-level
-        # import on a fresh import, and 'pisces_sff._export' is already cached.
+        # import on a fresh import, and 'pisces_sff.export._export' is already cached.
         # Discard the whole pisces_sff package tree so the import below
         # re-executes against the (now real, just-evicted) biosteam/thermosteam;
         # sys.modules['biosteam']/['thermosteam'] themselves are left untouched,
@@ -74,7 +74,7 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
             del sys.modules[key]
 
         from pisces_sff import _export
-        from pisces_sff._validate import validate_json_against_schema
+        from pisces_sff.validate._validate import validate_json_against_schema
 
         cls.validate = staticmethod(validate_json_against_schema)
         system, _H1, tea = build_small_system_and_tea()

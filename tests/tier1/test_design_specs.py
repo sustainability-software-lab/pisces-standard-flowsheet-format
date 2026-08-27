@@ -6,7 +6,7 @@
 # https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/main/LICENSE
 # for license details.
 #
-# Tier 1: pisces_sff/_design_specs.py -- the design-input-spec registry
+# Tier 1: pisces_sff/export/_design_specs.py -- the design-input-spec registry
 # machinery, exercised with FAKE unit classes only. The module is import-light
 # by design (no package-relative imports, yaml lazy), so it is loaded here by
 # file path -- importing the pisces_sff package would drag in biosteam.
@@ -21,7 +21,7 @@ PKG = Path(__file__).resolve().parents[2] / "pisces_sff"
 
 def load_design_specs():
     spec = importlib.util.spec_from_file_location(
-        "sff_design_specs_under_test", PKG / "_design_specs.py")
+        "sff_design_specs_under_test", PKG / "export" / "_design_specs.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -395,7 +395,7 @@ class TestGenerateDesignSpecRegistry(unittest.TestCase):
 
 
 class TestCommittedRegistry(unittest.TestCase):
-    """The committed pisces_sff/design_specs/biosteam.yaml itself."""
+    """The committed pisces_sff/export/design_specs/biosteam.yaml itself."""
 
     @classmethod
     def setUpClass(cls):
