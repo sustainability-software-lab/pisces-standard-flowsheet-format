@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-27T02:40:05Z",
+                "exported_at": "2026-08-27T02:49:10Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -1451,7 +1451,14 @@
         {
             "id": "V405",
             "unit_type": "Simultaneous saccharification fermentation",
-            "design_input_specs": {},
+            "design_input_specs": {
+                "tau": 60.0,
+                "V": 1900.0,
+                "T": 305.15,
+                "P": 101325.0,
+                "Nmin": 2,
+                "Nmax": 36
+            },
             "design_simulation_method": "SimultaneousSaccharificationFermentation on https://github.com/BioSTEAMDevelopmentGroup/Bioindustrial-Park/blob/master/biorefineries/corn/units.py",
             "thermo_property_package": {
                 "mixture": "IdealMixture(include_excess_energies=False)",
@@ -2622,7 +2629,8 @@
             "unit_type": "Thermal oxidizer",
             "design_input_specs": {
                 "tau": 0.00014,
-                "duty_per_kg": 61.0
+                "duty_per_kg": 61.0,
+                "V_wf": 0.95
             },
             "design_simulation_method": "ThermalOxidizer on https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/biosteam/units/drying.py",
             "thermo_property_package": {
