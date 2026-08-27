@@ -26,7 +26,8 @@ TAGS_YAML_PATH = _REPO / "pisces_sff" / "tags" / "tags.yaml"
 # Deliberately duplicated here (not read from the YAML) so an accidental edit
 # to the committed registry fails a test instead of silently redefining policy.
 EXPECTED_TAG_ORDER = ("exported-from-simulator", "extracted-from-prose",
-                      "extracted-from-image", "reproducible")
+                      "extracted-from-image", "extracted-from-table",
+                      "reproducible")
 EXPECTED_EFS_TOLERATED = {
     "STR-03": "always", "STR-13": "always", "CHEM-04": "always",
     "STR-10": "all_streams_empty",
@@ -75,7 +76,8 @@ class TestCommittedRegistry(unittest.TestCase):
 
     def test_extracted_tags_subset_and_no_tolerated_skips(self):
         reg = V._load_tag_registry()
-        for tag in ("extracted-from-prose", "extracted-from-image"):
+        for tag in ("extracted-from-prose", "extracted-from-image",
+                    "extracted-from-table"):
             self.assertEqual(reg[tag]["class"], "static")
             self.assertEqual(reg[tag]["subset"],
                              frozenset({"UNIT-10", "STR-14"}))

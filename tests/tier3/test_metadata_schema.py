@@ -474,6 +474,13 @@ class TestTagsSchema(unittest.TestCase):
         doc = self._with_tags(["exported-from-simulator"])
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
+    def test_extracted_from_table_accepted(self):
+        """The extracted-from-table tag (added in schema v0.1.5 for flowsheets
+        extracted from spreadsheets or similar tabular data) is a valid enum
+        value."""
+        doc = self._with_tags(["extracted-from-table"])
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
     def test_unknown_tag_rejected(self):
         """An unknown tag string is rejected by the items enum."""
         self.assertFalse(self.v.is_valid(self._with_tags(["made-up-tag"])))

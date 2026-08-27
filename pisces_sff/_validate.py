@@ -1643,7 +1643,7 @@ def _earned_tags(ctx, results):
     blocking holds the precondition problems. Used by evaluate_sff_tags and the
     TAG-01 aggregate.
 
-    `blocking` is uniformly a ``list[str]`` across all four tags: for the three
+    `blocking` is uniformly a ``list[str]`` across all registered tags: for the
     static-subset tags it holds the failing/untolerated-skip checks' `check_id`
     strings; for `reproducible` it holds the precondition-problem reason
     strings (unchanged)."""
@@ -1756,7 +1756,7 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
         Path to the SFF JSON Schema. Defaults to the schema shipped with this
         package.
     run_harness : bool, optional
-        When False (default), the three static tags are fully evaluated and
+        When False (default), the four static tags are fully evaluated and
         ``reproducible.earned`` is ``None`` ("not evaluated"); fast, no
         simulation. When True, additionally calls :func:`verify_reproducible` to
         set ``reproducible.earned`` to a real bool (heavy; obeys the export lock).
@@ -1767,8 +1767,8 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
     -------
     dict
         ``{tag: {"earned": bool | None, "declared": bool, "blocking": list[str]}}``
-        for each of the four tags. ``blocking`` is uniformly a list of strings:
-        failing/untolerated-skip check IDs for the three static-subset tags,
+        for each of the five tags. ``blocking`` is uniformly a list of strings:
+        failing/untolerated-skip check IDs for the four static-subset tags,
         and precondition/diff reason strings for ``reproducible``.
     """
     if schema_file is None:

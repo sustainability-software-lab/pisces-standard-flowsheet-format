@@ -714,6 +714,7 @@ circularity); (2) **subset warning-clean** — no check in `T`'s subset produced
 | `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. |
 | `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) |
 | `extracted-from-image` | `{UNIT-10, STR-14}` | none |
+| `extracted-from-table` | `{UNIT-10, STR-14}` | none |
 
 The machine-readable home of this table — the tag names, classes, subsets, and
 tolerated-skip policies the validator executes — is the committed registry

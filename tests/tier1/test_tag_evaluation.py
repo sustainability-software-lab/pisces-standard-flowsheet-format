@@ -92,7 +92,8 @@ class TestSkipTolerated(unittest.TestCase):
 
     def test_extracted_tags_tolerate_nothing(self):
         ctx = V._Context({})
-        for tag in ("extracted-from-prose", "extracted-from-image"):
+        for tag in ("extracted-from-prose", "extracted-from-image",
+                    "extracted-from-table"):
             for cid in ("STR-03", "STR-13", "CHEM-04", "UNIT-10", "STR-14"):
                 self.assertFalse(V._skip_tolerated(tag, cid, ctx))
 
@@ -133,6 +134,7 @@ class TestEarnedTags(unittest.TestCase):
         self.assertFalse(v["exported-from-simulator"]["earned"])
         self.assertFalse(v["extracted-from-prose"]["earned"])
         self.assertFalse(v["extracted-from-image"]["earned"])
+        self.assertFalse(v["extracted-from-table"]["earned"])
 
     def test_extracted_tags_earned_on_unit_and_stream_presence(self):
         results = [_R("SCHEMA", "error", "pass"),
@@ -142,6 +144,7 @@ class TestEarnedTags(unittest.TestCase):
         v = self._verdict(results)
         self.assertTrue(v["extracted-from-prose"]["earned"])
         self.assertTrue(v["extracted-from-image"]["earned"])
+        self.assertTrue(v["extracted-from-table"]["earned"])
 
     def test_extracted_tags_denied_when_unit10_fails(self):
         results = [_R("SCHEMA", "error", "pass"),

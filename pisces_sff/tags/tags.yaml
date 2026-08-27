@@ -24,5 +24,8 @@ tags:
   extracted-from-image:
     class: static
     subset: [UNIT-10, STR-14]
+  extracted-from-table:
+    class: static
+    subset: [UNIT-10, STR-14]
   reproducible:
     class: harness

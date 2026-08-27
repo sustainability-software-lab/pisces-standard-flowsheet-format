@@ -23,5 +23,6 @@ for r in results:
         print(r.check_id, r.severity, r.status, r.path)
 ```
 
-`SF_BST_01.json` (corn dry-grind ethanol) is the one corpus file in the current 0.1.4 shape;
+`SF_BST_01.json` (corn dry-grind ethanol) is the one corpus file in the current shape
+(exported at 0.1.4; the 0.1.5 bump only added a tag name to the validation vocabulary);
 it validates clean (benign `info`/`skip` findings only).
