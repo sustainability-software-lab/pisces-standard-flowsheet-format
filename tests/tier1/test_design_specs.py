@@ -409,6 +409,28 @@ class TestCommittedRegistry(unittest.TestCase):
         """.gitattributes pins LF; the generated file must comply at rest."""
         self.assertNotIn(b"\r\n", _ds.REGISTRY_PATH.read_bytes())
 
+    def test_hand_pruned_params_stay_absent(self):
+        """Deliberate curation protection: the entry-atomic merge in
+        merge_design_spec_entries only protects a hand-pruned param against
+        REGENERATION (it never re-adds a param to a class that is already
+        listed) -- it does nothing to stop a careless hand-edit of the
+        committed YAML from re-adding one. Pin the pruned params absent
+        directly against the committed file so such an edit fails loudly:
+        BinaryDistillation had condenser_thermo/reboiler_thermo/check_LHK
+        pruned (it has no condenser/reboiler sub-thermo or LHK-checking
+        knobs worth exporting), and NRELAnaerobicBatchBioreactor had
+        reactions pruned (the reaction set is a model detail, not a design
+        input)."""
+        bd_params = (self.registry["BinaryDistillation"]
+                     ["design_input_spec_params"])
+        for pruned in ("condenser_thermo", "reboiler_thermo", "check_LHK"):
+            with self.subTest(param=pruned):
+                self.assertNotIn(pruned, bd_params)
+
+        nrel_params = (self.registry["NRELAnaerobicBatchBioreactor"]
+                       ["design_input_spec_params"])
+        self.assertNotIn("reactions", nrel_params)
+
 
 if __name__ == "__main__":
     unittest.main()

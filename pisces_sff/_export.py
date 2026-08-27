@@ -551,8 +551,11 @@ def _json_default(value):
     """Return JSON-native equivalents for containers emitted by BioSTEAM.
 
     NumPy scalars and arrays occur in design and cost results, while some
-    BioSTEAM models retain ordered values in ``collections.deque``. Unknown
-    objects still raise ``TypeError`` so the export boundary fails closed.
+    BioSTEAM models retain ordered values in ``collections.deque``. Any other
+    array-like exposing a duck-typed ``.tolist()`` (e.g. thermosteam's
+    ``SparseVector``, seen in design-spec ``split`` values) also serializes as
+    a list; unknown objects still raise ``TypeError`` so the export boundary
+    fails closed.
     """
     if isinstance(value, np.generic):
         return value.item()

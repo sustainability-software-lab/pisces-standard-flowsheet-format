@@ -343,8 +343,10 @@ _REGISTRY_HEADER = """\
 # merges entry-atomically: it appends classes that are not listed yet and
 # never touches an entry that is, so hand-pruned parameters stay pruned. To
 # pick up parameters a newer BioSTEAM added to a listed class, delete that
-# entry and regenerate. See docs/the_format/schema_reference.md and
-# pisces_sff/_design_specs.py.
+# entry and regenerate. A recipe's pinned biosteam may resolve a unit under a
+# different class name than the biosteam that generated this file, so an
+# alias entry (e.g. NRELBatchBioreactor) may need hand-adding. See
+# docs/the_format/schema_reference.md and pisces_sff/_design_specs.py.
 """
 
 

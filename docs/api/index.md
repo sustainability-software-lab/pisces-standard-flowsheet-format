@@ -21,6 +21,9 @@ signatures and docstrings without a simulation.
    CheckResult
    read_schema_version
    load_model_registry
+   load_design_spec_registry
+   resolve_design_input_specs
+   generate_design_spec_registry
 ```
 
 ## Exceptions
@@ -34,4 +37,5 @@ signatures and docstrings without a simulation.
    SFFExportError
    FlowsheetWriteError
    DesignInputSpecError
+   DesignSpecReadError
 ```
