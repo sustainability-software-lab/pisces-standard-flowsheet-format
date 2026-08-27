@@ -1475,6 +1475,30 @@ NRELAnaerobicBatchBioreactor:
     V_wf:
       accessors:
       - V_wf
+NRELBatchBioreactor:
+  line: NRELBatch bioreactor
+  design_input_spec_params:
+    tau:
+      accessors:
+      - tau
+    N:
+      accessors:
+      - N
+    V:
+      accessors:
+      - V
+    T:
+      accessors:
+      - T
+    P:
+      accessors:
+      - P
+    Nmin:
+      accessors:
+      - Nmin
+    Nmax:
+      accessors:
+      - Nmax
 NRELEthanolFermentation:
   line: Fermentation
   design_input_spec_params:
@@ -2127,6 +2151,9 @@ ThermalOxidizer:
     duty_per_kg:
       accessors:
       - duty_per_kg
+    V_wf:
+      accessors:
+      - V_wf
 Turbine:
   line: Turbine
   design_input_spec_params:
