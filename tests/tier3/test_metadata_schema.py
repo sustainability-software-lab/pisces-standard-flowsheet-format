@@ -253,8 +253,9 @@ class TestReproducibilityIsOptional(unittest.TestCase):
 
     def test_block_is_an_object(self):
         """The reproducibility subschema is declared type object."""
-        # metadata declares additionalProperties: {"type": "string"}, so an
-        # object-valued property is only expressible if declared explicitly.
+        # Declaring the subschema type explicitly is what gives the block its
+        # structural validation; metadata's additionalProperties is permissive
+        # (any type), so an undeclared object key would otherwise pass unchecked.
         self.assertEqual(reproducibility_subschema(self.schema)["type"], "object")
 
 
