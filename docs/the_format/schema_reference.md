@@ -8,11 +8,17 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.2.0.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.1.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
 Provenance for the flowsheet: version, currency, DOI, feedstocks/products, TEA year, tags.
+
+From v0.2.1 on, `metadata.additionalProperties` is `true` (previously
+`{"type": "string"}`): a producer may attach ad-hoc metadata keys of any JSON
+type beyond those defined below, not only string-valued ones. This is a
+backwards-compatible loosening -- every file valid under an earlier version
+remains valid -- and does not change any field the reference exporter emits.
 
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/metadata
 ```
