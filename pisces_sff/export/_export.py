@@ -258,6 +258,15 @@ def _build_tea_details(tea, products_list, stream_ids, all_sys_products, all_str
     """
     Build the economics details block from a TEA object.
 
+    Captures NPV, TCI, AOC, sales, and throughput BEFORE any solve calls (which
+    may iterate on cash flows). TEA.IRR is an INPUT (target discount rate used
+    to solve NPV and prices), so we emit it as irr_assumed_pct; irr_solved_pct
+    is the actual IRR from solve_IRR(). NPV is computed at the assumed IRR.
+
+    Main product is chosen by largest annual sales (price * F_mass), with
+    fallback to first product only when all prices are zero. Stream prices are
+    saved and restored around solve_price calls to prevent model mutation.
+
     Parameters
     ----------
     tea : biosteam.TEA
@@ -282,6 +291,9 @@ def _build_tea_details(tea, products_list, stream_ids, all_sys_products, all_str
 
     warnings = []
     tea_details = {'currency': 'USD'}
+
+    # STEP 1: Capture all values BEFORE solve calls
+    # These are state at export time; solve calls may iterate and change state
 
     try:
         tea_details['total_capital_cost_usd'] = float(tea.TCI) if tea.TCI is not None else None
@@ -319,66 +331,97 @@ def _build_tea_details(tea, products_list, stream_ids, all_sys_products, all_str
         tea_details['purchase_cost_usd'] = None
         warnings.append('Could not extract TEA.purchase_cost')
 
+    # NPV at assumed IRR
     try:
         tea_details['npv_usd'] = float(tea.NPV) if hasattr(tea, 'NPV') and tea.NPV is not None else None
     except (AttributeError, TypeError, ValueError):
         tea_details['npv_usd'] = None
         warnings.append('Could not extract TEA.NPV')
 
-    # IRR: try to get it directly, fall back to solve_IRR if needed
+    # IRR assumed (input target rate) vs solved (actual result from solve_IRR)
     try:
         if hasattr(tea, 'IRR') and tea.IRR is not None:
-            irr_value = float(tea.IRR) * 100
-        elif hasattr(tea, 'solve_IRR'):
-            irr_value = float(tea.solve_IRR()) * 100
+            tea_details['irr_assumed_pct'] = float(tea.IRR) * 100
         else:
-            irr_value = None
-        tea_details['irr_pct'] = irr_value
+            tea_details['irr_assumed_pct'] = None
     except (AttributeError, TypeError, ValueError):
-        tea_details['irr_pct'] = None
-        warnings.append('Could not extract or solve TEA.IRR')
+        tea_details['irr_assumed_pct'] = None
+        warnings.append('Could not extract TEA.IRR (assumed target rate)')
 
-    # MSP: find the main product (first one in products list) and try to solve
-    msp_value = None
+    try:
+        if hasattr(tea, 'solve_IRR'):
+            irr_solved = tea.solve_IRR()
+            tea_details['irr_solved_pct'] = float(irr_solved) * 100 if irr_solved is not None else None
+        else:
+            tea_details['irr_solved_pct'] = None
+    except Exception as e:
+        tea_details['irr_solved_pct'] = None
+        warnings.append(f'Could not solve IRR: {str(e)[:50]}')
+
+    # STEP 2: Choose main product by largest annual sales (price * F_mass)
+    main_product_stream = None
     msp_product_id = None
-    if products_list:
-        msp_product_id = products_list[0].get('stream_id')
-        # Find the stream object corresponding to the first product
-        main_product_stream = None
-        for stream in all_streams:
-            if stream_ids.get(stream) == msp_product_id:
-                main_product_stream = stream
-                break
+    throughput_value = None
 
-        if main_product_stream is not None:
-            try:
-                if hasattr(tea, 'solve_price'):
-                    msp_value = float(tea.solve_price(main_product_stream))
-                else:
-                    msp_value = None
-                    warnings.append('TEA object does not have solve_price method')
-            except Exception as e:
+    if products_list:
+        # Find stream object with largest annual sales
+        max_sales = -1.0
+        for product_entry in products_list:
+            product_id = product_entry.get('stream_id')
+            for stream in all_streams:
+                if stream_ids.get(stream) == product_id:
+                    try:
+                        price = float(stream.price) if stream.price else 0.0
+                        flow_kg = float(stream.F_mass) if stream.F_mass else 0.0
+                        annual_sales = price * flow_kg * (float(tea.operating_hours) if hasattr(tea, 'operating_hours') else 8760.0)
+                        if annual_sales > max_sales:
+                            max_sales = annual_sales
+                            main_product_stream = stream
+                            msp_product_id = product_id
+                    except (AttributeError, TypeError, ValueError):
+                        pass
+                    break
+
+        # Fall back to first product if all prices are zero
+        if main_product_stream is None and products_list:
+            first_id = products_list[0].get('stream_id')
+            for stream in all_streams:
+                if stream_ids.get(stream) == first_id:
+                    main_product_stream = stream
+                    msp_product_id = first_id
+                    warnings.append('All product prices are zero; using first product for MSP')
+                    break
+
+    # Calculate throughput of main product before any solve calls
+    if main_product_stream is not None:
+        try:
+            mass_flow_kg_hr = float(main_product_stream.F_mass) if main_product_stream.F_mass else 0.0
+            operating_hours = float(tea.operating_hours) if hasattr(tea, 'operating_hours') else 8760.0
+            throughput_value = mass_flow_kg_hr * operating_hours
+        except (AttributeError, TypeError, ValueError):
+            warnings.append('Could not calculate annual throughput for main product')
+
+    tea_details['msp_product_stream_id'] = msp_product_id
+    tea_details['annual_throughput_kg_yr'] = throughput_value
+
+    # STEP 3: Solve calls that may mutate state - save/restore stream price
+    msp_value = None
+    if main_product_stream is not None:
+        try:
+            if hasattr(tea, 'solve_price'):
+                # Save original price in case solve_price mutates it
+                original_price = main_product_stream.price
+                msp_value = float(tea.solve_price(main_product_stream))
+                # Restore original price to prevent model mutation
+                main_product_stream.price = original_price
+            else:
                 msp_value = None
-                warnings.append(f'Could not solve MSP for main product stream: {str(e)[:50]}')
+                warnings.append('TEA object does not have solve_price method')
+        except Exception as e:
+            msp_value = None
+            warnings.append(f'Could not solve MSP for main product stream: {str(e)[:50]}')
 
     tea_details['msp_usd_per_kg'] = msp_value
-    tea_details['msp_product_stream_id'] = msp_product_id
-
-    # Annual throughput of main product: mass flow * operating hours
-    throughput_value = None
-    if products_list:
-        msp_product_id = products_list[0].get('stream_id')
-        for stream in all_streams:
-            if stream_ids.get(stream) == msp_product_id:
-                try:
-                    mass_flow_kg_hr = float(stream.F_mass)
-                    operating_hours = float(tea.operating_hours) if hasattr(tea, 'operating_hours') else 8760.0
-                    throughput_value = mass_flow_kg_hr * operating_hours
-                except (AttributeError, TypeError, ValueError):
-                    warnings.append('Could not calculate annual throughput for main product')
-                break
-
-    tea_details['annual_throughput_kg_yr'] = throughput_value
 
     try:
         tea_details['tea_class'] = type(tea).__name__

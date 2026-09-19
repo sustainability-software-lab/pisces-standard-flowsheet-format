@@ -64,7 +64,8 @@ class TestTeaDetailsExport(unittest.TestCase):
                 "installed_equipment_cost_usd",
                 "purchase_cost_usd",
                 "npv_usd",
-                "irr_pct",
+                "irr_assumed_pct",
+                "irr_solved_pct",
                 "msp_usd_per_kg",
                 "annual_throughput_kg_yr",
             ]
@@ -80,7 +81,7 @@ class TestTeaDetailsExport(unittest.TestCase):
             self.assertIn("tea_class", tea_details)
             self.assertIsInstance(tea_details["tea_class"], str)
 
-            # msp_product_stream_id should be a string (first product stream)
+            # msp_product_stream_id should be a string (highest sales product)
             self.assertIn("msp_product_stream_id", tea_details)
             if tea_details["msp_product_stream_id"] is not None:
                 self.assertIsInstance(tea_details["msp_product_stream_id"], str)
@@ -153,6 +154,29 @@ class TestTeaDetailsExport(unittest.TestCase):
             self.assertTrue(
                 isinstance(throughput, (int, float, type(None))),
                 f"annual_throughput_kg_yr should be a number or null, got {type(throughput).__name__}",
+            )
+
+    def test_product_stream_price_unchanged_after_export(self):
+        """Export does not mutate product stream prices (saves/restores around solve)."""
+        from pisces_sff.export import export_biosteam_flowsheet
+
+        # Record all product stream prices before export
+        products = self.sys.products
+        prices_before = {stream: stream.price for stream in products}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            filepath = Path(tmpdir) / "export.json"
+            export_biosteam_flowsheet(
+                self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
+            )
+
+        # Verify all product stream prices are unchanged
+        for stream in products:
+            self.assertEqual(
+                stream.price,
+                prices_before[stream],
+                f"Stream {stream.ID} price changed during export: "
+                f"{prices_before[stream]} -> {stream.price}",
             )
 
     def test_exported_file_validates_against_schema(self):

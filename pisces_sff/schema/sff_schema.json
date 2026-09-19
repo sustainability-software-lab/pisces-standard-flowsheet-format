@@ -307,7 +307,7 @@
         },
         "tea_details": {
           "type": "object",
-          "description": "Comprehensive economic analysis details extracted from the TEA (Techno-Economic Analysis) object. All numeric fields are nullable. Optional; emitted only in SFF v0.2.1 and later.",
+          "description": "Comprehensive economic analysis details extracted from the TEA (Techno-Economic Analysis) object. All numeric fields are nullable. Optional; emitted only in SFF v0.2.1 and later. Captured before solve calls to avoid model mutation.",
           "properties": {
             "currency": {
               "type": "string",
@@ -339,19 +339,23 @@
             },
             "npv_usd": {
               "type": ["number", "null"],
-              "description": "Net present value (NPV) in USD."
+              "description": "Net present value (NPV) in USD, computed at the assumed IRR (irr_assumed_pct)."
             },
-            "irr_pct": {
+            "irr_assumed_pct": {
               "type": ["number", "null"],
-              "description": "Internal rate of return (IRR) expressed as a percentage (e.g., 15.5 for 15.5%)."
+              "description": "Assumed internal rate of return (discount rate used as input to TEA calculations) expressed as a percentage (e.g., 15.5 for 15.5%). This is a TEA input, not a result."
+            },
+            "irr_solved_pct": {
+              "type": ["number", "null"],
+              "description": "Solved internal rate of return (actual result from solve_IRR()) expressed as a percentage. Null if unsolvable."
             },
             "msp_usd_per_kg": {
               "type": ["number", "null"],
-              "description": "Minimum selling price (MSP) of the main product in USD per kilogram. Null if unsolvable."
+              "description": "Minimum selling price (MSP) of the main product in USD per kilogram. Null if unsolvable. Computed from solve_price on main product stream."
             },
             "msp_product_stream_id": {
               "type": ["string", "null"],
-              "description": "Stream ID of the product stream used to calculate MSP."
+              "description": "Stream ID of the product stream used to calculate MSP (highest annual sales; first product if all prices are zero)."
             },
             "annual_throughput_kg_yr": {
               "type": ["number", "null"],
