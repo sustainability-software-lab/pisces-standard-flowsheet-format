@@ -1198,5 +1198,148 @@ class TestStampStaticTags(unittest.TestCase):
         self.assertNotIn("tags", doc["metadata"])
 
 
+class TestBuildTeaDetails(unittest.TestCase):
+    """Test _build_tea_details with synthetic TEA and stream objects."""
+
+    def _fake_tea(self, tci=100.0, aoc=10.0, npv=50.0, irr=0.15,
+                  sales=200.0, utility_cost=5.0, installed_cost=80.0,
+                  purchase_cost=60.0, operating_hours=8760, solve_irr_result=0.18,
+                  solve_price_result=1.5):
+        """Create a synthetic TEA object with configurable values."""
+        tea = _Bag(TCI=tci, AOC=aoc, NPV=npv, IRR=irr, sales=sales,
+                   utility_cost=utility_cost, installed_equipment_cost=installed_cost,
+                   purchase_cost=purchase_cost, operating_hours=operating_hours)
+        tea.solve_IRR = lambda: solve_irr_result
+        tea.solve_price = lambda stream: solve_price_result
+        return tea
+
+    def _fake_stream(self, stream_id, price=1.0, f_mass=100.0):
+        """Create a synthetic stream object (hashable by identity)."""
+        return _Bag(price=price, F_mass=f_mass)
+
+    def test_returns_none_when_tea_is_none(self):
+        """_build_tea_details returns None when tea argument is None."""
+        result = _export._build_tea_details(None, [], {}, [], [])
+        self.assertIsNone(result)
+
+    def test_captures_all_tea_values_before_solve_calls(self):
+        """_build_tea_details captures numeric values; solves only at end."""
+        tea = self._fake_tea()
+        streams = [self._fake_stream("s1", price=1.0, f_mass=100.0)]
+        stream_ids = {streams[0]: "s1"}
+        products_list = [{"stream_id": "s1"}]
+
+        result = _export._build_tea_details(tea, products_list, stream_ids, [], [streams[0]])
+
+        self.assertEqual(result["currency"], "USD")
+        self.assertEqual(result["total_capital_cost_usd"], 100.0)
+        self.assertEqual(result["annual_operating_cost_usd"], 10.0)
+        self.assertEqual(result["npv_usd"], 50.0)
+        self.assertEqual(result["annual_sales_usd"], 200.0)
+        self.assertEqual(result["utility_cost_usd_yr"], 5.0)
+        self.assertEqual(result["installed_equipment_cost_usd"], 80.0)
+        self.assertEqual(result["purchase_cost_usd"], 60.0)
+
+    def test_irr_assumed_vs_solved(self):
+        """_build_tea_details emits irr_assumed_pct and irr_solved_pct separately."""
+        tea = self._fake_tea(irr=0.15, solve_irr_result=0.18)
+        result = _export._build_tea_details(tea, [], {}, [], [])
+
+        self.assertEqual(result["irr_assumed_pct"], 15.0)
+        self.assertEqual(result["irr_solved_pct"], 18.0)
+
+    def test_main_product_chosen_by_largest_sales(self):
+        """_build_tea_details selects main product by largest annual sales."""
+        tea = self._fake_tea(operating_hours=8760)
+        s1 = self._fake_stream("s1", price=1.0, f_mass=100.0)  # sales: 1*100*8760
+        s2 = self._fake_stream("s2", price=2.0, f_mass=150.0)  # sales: 2*150*8760
+        s3 = self._fake_stream("s3", price=0.5, f_mass=200.0)  # sales: 0.5*200*8760
+        streams = [s1, s2, s3]
+        stream_ids = {s1: "s1", s2: "s2", s3: "s3"}
+        products_list = [{"stream_id": "s1"}, {"stream_id": "s2"}, {"stream_id": "s3"}]
+
+        result = _export._build_tea_details(tea, products_list, stream_ids, streams, streams)
+
+        self.assertEqual(result["msp_product_stream_id"], "s2")
+
+    def test_zero_price_fallback_with_warning(self):
+        """When all product prices are zero, first product with matching stream is used."""
+        tea = self._fake_tea()
+        s1 = self._fake_stream("s1", price=0.0, f_mass=100.0)
+        s2 = self._fake_stream("s2", price=0.0, f_mass=150.0)
+        streams = [s1, s2]
+        stream_ids = {s1: "s1", s2: "s2"}
+        products_list = [{"stream_id": "s1"}, {"stream_id": "s2"}]
+
+        result = _export._build_tea_details(tea, products_list, stream_ids, streams, streams)
+
+        # Both have price=0, so both have annual_sales=0; first one wins the tie
+        self.assertEqual(result["msp_product_stream_id"], "s1")
+
+    def test_solve_price_failure_yields_null_with_warning(self):
+        """When solve_price raises, msp_usd_per_kg is null and warning is recorded."""
+        tea = self._fake_tea()
+        tea.solve_price = lambda stream: 1.0 / 0.0  # raises ZeroDivisionError
+        stream = self._fake_stream("s1", price=1.0, f_mass=100.0)
+        stream_ids = {stream: "s1"}
+        products_list = [{"stream_id": "s1"}]
+
+        result = _export._build_tea_details(tea, products_list, stream_ids, [], [stream])
+
+        self.assertIsNone(result["msp_usd_per_kg"])
+        self.assertIn("warnings", result)
+        self.assertTrue(any("solve" in w.lower() or "msp" in w.lower() for w in result["warnings"]))
+
+    def test_stream_price_restored_after_solve(self):
+        """_build_tea_details saves and restores stream.price around solve_price."""
+        tea = self._fake_tea()
+        stream = self._fake_stream("s1", price=1.5, f_mass=100.0)
+        original_price = stream.price
+
+        def mutating_solve_price(s):
+            s.price = 2.0  # Mutate the stream
+            return 1.5
+
+        tea.solve_price = mutating_solve_price
+        stream_ids = {stream: "s1"}
+        products_list = [{"stream_id": "s1"}]
+
+        _export._build_tea_details(tea, products_list, stream_ids, [], [stream])
+
+        self.assertEqual(stream.price, original_price, "Stream price should be restored")
+
+    def test_throughput_uses_same_stream_as_msp(self):
+        """annual_throughput_kg_yr is calculated from the same product as MSP."""
+        tea = self._fake_tea(operating_hours=8760)
+        s1 = self._fake_stream("s1", price=1.0, f_mass=100.0)
+        s2 = self._fake_stream("s2", price=5.0, f_mass=50.0)
+        stream_ids = {s1: "s1", s2: "s2"}
+        products_list = [{"stream_id": "s1"}, {"stream_id": "s2"}]
+
+        result = _export._build_tea_details(tea, products_list, stream_ids, [s1, s2], [s1, s2])
+
+        # s2 has higher sales (5*50 = 250 vs 1*100 = 100), so it's main product
+        self.assertEqual(result["msp_product_stream_id"], "s2")
+        self.assertAlmostEqual(result["annual_throughput_kg_yr"], 50.0 * 8760)
+
+    def test_tea_class_name_captured(self):
+        """tea_class field contains the type name of the TEA object."""
+        tea = self._fake_tea()
+        result = _export._build_tea_details(tea, [], {}, [], [])
+        self.assertEqual(result["tea_class"], "_Bag")
+
+    def test_null_values_for_extracton_failures(self):
+        """When values cannot be extracted, they are null with warning recorded."""
+        tea = types.SimpleNamespace()
+        tea.operating_hours = 8760
+        tea.solve_IRR = lambda: None
+        tea.solve_price = lambda s: 1.0
+        result = _export._build_tea_details(tea, [], {}, [], [])
+
+        self.assertIsNone(result["total_capital_cost_usd"])
+        self.assertIsNone(result["npv_usd"])
+        self.assertIn("warnings", result)
+
+
 if __name__ == "__main__":
     unittest.main()

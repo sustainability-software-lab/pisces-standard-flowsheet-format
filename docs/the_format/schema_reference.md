@@ -18,7 +18,17 @@ From v0.2.1 on, `metadata.additionalProperties` is `true` (previously
 `{"type": "string"}`): a producer may attach ad-hoc metadata keys of any JSON
 type beyond those defined below, not only string-valued ones. This is a
 backwards-compatible loosening -- every file valid under an earlier version
-remains valid -- and does not change any field the reference exporter emits.
+remains valid.
+
+**TEA economics (v0.2.2+).** The optional `tea_details` block contains
+comprehensive economics extracted from a BioSTEAM TEA object: capital costs,
+operating costs, NPV, IRR, minimum selling price (MSP), annual throughput, and
+utility costs. All numeric fields are nullable (if extraction or solving fails).
+The `irr_assumed_pct` is the target discount rate input to TEA calculations;
+`irr_solved_pct` is the actual IRR result from `solve_IRR()`. The `msp_usd_per_kg`
+is solved from the product stream with the largest annual sales (price times
+flow), with fallback to the first product only if all prices are zero. The block
+is not emitted for older SFF versions (byte-stable export).
 
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/metadata
 ```

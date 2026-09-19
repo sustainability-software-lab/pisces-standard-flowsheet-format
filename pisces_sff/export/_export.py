@@ -195,6 +195,12 @@ _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
 #: legacy fixed-tuple probe so their historical output stays byte-stable.
 _DESIGN_SPEC_REGISTRY_SINCE = (0, 1, 4)
 
+#: First schema version that emits metadata.tea_details, a comprehensive
+#: economics block from the TEA object (capital costs, operating costs, NPV,
+#: IRR, MSP, etc.). v0.2.2 is the first version to include this; v0.2.1 is a
+#: validation-only release and stays byte-stable with v0.2.0.
+_TEA_DETAILS_SINCE = (0, 2, 2)
+
 #: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
 #: serialized as EMPTY -- empty composition -- mirroring the validator's
 #: ZERO_FLOW (sff_checks.md "Default tolerances", STR-13). A converged
@@ -246,6 +252,188 @@ def _assign_stream_ids(all_streams, sff_version):
         existing.add(candidate)
         resolved[s] = candidate
     return resolved
+
+
+def _build_tea_details(tea, products_list, stream_ids, all_sys_products, all_streams):
+    """
+    Build the economics details block from a TEA object.
+
+    Captures NPV, TCI, AOC, sales, and throughput BEFORE any solve calls (which
+    may iterate on cash flows). TEA.IRR is an INPUT (target discount rate used
+    to solve NPV and prices), so we emit it as irr_assumed_pct; irr_solved_pct
+    is the actual IRR from solve_IRR(). NPV is computed at the assumed IRR.
+
+    Main product is chosen by largest annual sales (price * F_mass), with
+    fallback to first product only when all prices are zero. Stream prices are
+    saved and restored around solve_price calls to prevent model mutation.
+
+    Parameters
+    ----------
+    tea : biosteam.TEA
+        The TEA object to extract economics from.
+    products_list : list of dict
+        List of product metadata dicts with 'stream_id' keys.
+    stream_ids : dict
+        Stream object to stream_id mapping.
+    all_sys_products : list
+        All product streams from the system.
+    all_streams : list
+        All streams from the system.
+
+    Returns
+    -------
+    dict or None
+        A dictionary of economics data with numeric values and optional 'warnings'
+        key, or None if TEA object is None.
+    """
+    if tea is None:
+        return None
+
+    warnings = []
+    tea_details = {'currency': 'USD'}
+
+    # STEP 1: Capture all values BEFORE solve calls
+    # These are state at export time; solve calls may iterate and change state
+
+    try:
+        tea_details['total_capital_cost_usd'] = float(tea.TCI) if tea.TCI is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['total_capital_cost_usd'] = None
+        warnings.append('Could not extract TEA.TCI (total capital investment)')
+
+    try:
+        tea_details['annual_operating_cost_usd'] = float(tea.AOC) if tea.AOC is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['annual_operating_cost_usd'] = None
+        warnings.append('Could not extract TEA.AOC (annual operating cost)')
+
+    try:
+        tea_details['utility_cost_usd_yr'] = float(tea.utility_cost) if hasattr(tea, 'utility_cost') and tea.utility_cost is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['utility_cost_usd_yr'] = None
+        warnings.append('Could not extract TEA.utility_cost')
+
+    try:
+        tea_details['annual_sales_usd'] = float(tea.sales) if hasattr(tea, 'sales') and tea.sales is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['annual_sales_usd'] = None
+        warnings.append('Could not extract TEA.sales')
+
+    try:
+        tea_details['installed_equipment_cost_usd'] = float(tea.installed_equipment_cost) if hasattr(tea, 'installed_equipment_cost') and tea.installed_equipment_cost is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['installed_equipment_cost_usd'] = None
+        warnings.append('Could not extract TEA.installed_equipment_cost')
+
+    try:
+        tea_details['purchase_cost_usd'] = float(tea.purchase_cost) if hasattr(tea, 'purchase_cost') and tea.purchase_cost is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['purchase_cost_usd'] = None
+        warnings.append('Could not extract TEA.purchase_cost')
+
+    # NPV at assumed IRR
+    try:
+        tea_details['npv_usd'] = float(tea.NPV) if hasattr(tea, 'NPV') and tea.NPV is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['npv_usd'] = None
+        warnings.append('Could not extract TEA.NPV')
+
+    # IRR assumed (input target rate) vs solved (actual result from solve_IRR)
+    try:
+        if hasattr(tea, 'IRR') and tea.IRR is not None:
+            tea_details['irr_assumed_pct'] = float(tea.IRR) * 100
+        else:
+            tea_details['irr_assumed_pct'] = None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['irr_assumed_pct'] = None
+        warnings.append('Could not extract TEA.IRR (assumed target rate)')
+
+    try:
+        if hasattr(tea, 'solve_IRR'):
+            irr_solved = tea.solve_IRR()
+            tea_details['irr_solved_pct'] = float(irr_solved) * 100 if irr_solved is not None else None
+        else:
+            tea_details['irr_solved_pct'] = None
+    except Exception as e:
+        tea_details['irr_solved_pct'] = None
+        warnings.append(f'Could not solve IRR: {str(e)[:50]}')
+
+    # STEP 2: Choose main product by largest annual sales (price * F_mass)
+    main_product_stream = None
+    msp_product_id = None
+    throughput_value = None
+
+    if products_list:
+        # Find stream object with largest annual sales
+        max_sales = -1.0
+        for product_entry in products_list:
+            product_id = product_entry.get('stream_id')
+            for stream in all_streams:
+                if stream_ids.get(stream) == product_id:
+                    try:
+                        price = float(stream.price) if stream.price else 0.0
+                        flow_kg = float(stream.F_mass) if stream.F_mass else 0.0
+                        annual_sales = price * flow_kg * (float(tea.operating_hours) if hasattr(tea, 'operating_hours') else 8760.0)
+                        if annual_sales > max_sales:
+                            max_sales = annual_sales
+                            main_product_stream = stream
+                            msp_product_id = product_id
+                    except (AttributeError, TypeError, ValueError):
+                        pass
+                    break
+
+        # Fall back to first product if all prices are zero
+        if main_product_stream is None and products_list:
+            first_id = products_list[0].get('stream_id')
+            for stream in all_streams:
+                if stream_ids.get(stream) == first_id:
+                    main_product_stream = stream
+                    msp_product_id = first_id
+                    warnings.append('All product prices are zero; using first product for MSP')
+                    break
+
+    # Calculate throughput of main product before any solve calls
+    if main_product_stream is not None:
+        try:
+            mass_flow_kg_hr = float(main_product_stream.F_mass) if main_product_stream.F_mass else 0.0
+            operating_hours = float(tea.operating_hours) if hasattr(tea, 'operating_hours') else 8760.0
+            throughput_value = mass_flow_kg_hr * operating_hours
+        except (AttributeError, TypeError, ValueError):
+            warnings.append('Could not calculate annual throughput for main product')
+
+    tea_details['msp_product_stream_id'] = msp_product_id
+    tea_details['annual_throughput_kg_yr'] = throughput_value
+
+    # STEP 3: Solve calls that may mutate state - save/restore stream price
+    msp_value = None
+    if main_product_stream is not None:
+        if hasattr(tea, 'solve_price'):
+            # Save original price; restore in finally block to prevent model mutation
+            # even if solve_price raises. solve_price mutates stream.price as a side effect.
+            original_price = main_product_stream.price
+            try:
+                msp_value = float(tea.solve_price(main_product_stream))
+            except Exception as e:
+                msp_value = None
+                warnings.append(f'Could not solve MSP for main product stream: {str(e)[:50]}')
+            finally:
+                # Always restore, whether solve_price succeeded or raised
+                main_product_stream.price = original_price
+        else:
+            msp_value = None
+            warnings.append('TEA object does not have solve_price method')
+
+    tea_details['msp_usd_per_kg'] = msp_value
+
+    try:
+        tea_details['tea_class'] = type(tea).__name__
+    except (AttributeError, TypeError):
+        warnings.append('Could not extract TEA class name')
+
+    if warnings:
+        tea_details['warnings'] = warnings
+
+    return tea_details
 
 
 # Every versioned exporter assembles the same core document; only the
@@ -325,6 +513,14 @@ def _build_sff_dict(sys, tea=None,
                               for stream in all_streams if is_feedstock(stream, all_sys_feeds, max_carbon_feed)]
     metadata['products'] = [{"display_name": format_name(stream_ids[stream]), "stream_id": stream_ids[stream]}
                             for stream in all_streams if is_product(stream, all_sys_products)]
+
+    # ------- Economics details (optional, v0.2.1+) -------
+    # Emit comprehensive TEA economics data for versions that support additional
+    # metadata properties. Older exporters stay byte-stable by omitting the block.
+    if version_tuple(sff_version) >= _TEA_DETAILS_SINCE:
+        tea_details = _build_tea_details(tea, metadata.get('products', []), stream_ids, all_sys_products, all_streams)
+        if tea_details:
+            metadata['tea_details'] = tea_details
 
     # ------- Authored descriptive metadata (optional) -------
     # Human-authored fields a simulated System cannot carry: the source
@@ -1401,6 +1597,67 @@ def export_biosteam_flowsheet_sff_0_2_1(sys, filepath, tea=None,
     byte-identical to the 0.2.0 export apart from ``metadata.sff_version``.
     All version-gated behavior active at 0.2.0 (including conditional
     ``exported-from-simulator`` stamping) remains so here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_2_2(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.2', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.2.
+
+    First version to emit metadata.tea_details, a comprehensive economics
+    block extracted from the BioSTEAM TEA object (capital costs, operating
+    costs, NPV, IRR, MSP, throughput, and utility costs). All numeric fields
+    are nullable (extraction or solving may fail). IRR is split into
+    assumed (input discount rate) and solved (result from solve_IRR).
+    MSP is solved for the product with largest annual sales (price * flow),
+    with fallback to first product if all prices are zero. Stream prices
+    are saved and restored around solve calls to prevent model mutation.
 
     Parameters
     ----------

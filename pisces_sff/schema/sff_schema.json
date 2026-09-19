@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -304,6 +304,77 @@
             "enum": ["exported-from-simulator", "extracted-from-prose", "extracted-from-image", "extracted-from-table", "reproducible"]
           },
           "uniqueItems": true
+        },
+        "tea_details": {
+          "type": "object",
+          "description": "Comprehensive economic analysis details extracted from the TEA (Techno-Economic Analysis) object. All numeric fields are nullable. Optional; emitted only in SFF v0.2.2 and later. Captured before solve calls to avoid model mutation.",
+          "properties": {
+            "currency": {
+              "type": "string",
+              "description": "Currency used for all numeric values in this block; always 'USD' for BioSTEAM exports."
+            },
+            "total_capital_cost_usd": {
+              "type": ["number", "null"],
+              "description": "Total capital investment (TCI) in USD."
+            },
+            "annual_operating_cost_usd": {
+              "type": ["number", "null"],
+              "description": "Annual operating cost (AOC) in USD per year."
+            },
+            "utility_cost_usd_yr": {
+              "type": ["number", "null"],
+              "description": "Annual utility cost in USD per year."
+            },
+            "annual_sales_usd": {
+              "type": ["number", "null"],
+              "description": "Annual sales revenue in USD per year."
+            },
+            "installed_equipment_cost_usd": {
+              "type": ["number", "null"],
+              "description": "Installed equipment cost in USD."
+            },
+            "purchase_cost_usd": {
+              "type": ["number", "null"],
+              "description": "Equipment purchase cost in USD (before installation)."
+            },
+            "npv_usd": {
+              "type": ["number", "null"],
+              "description": "Net present value (NPV) in USD, computed at the assumed IRR (irr_assumed_pct)."
+            },
+            "irr_assumed_pct": {
+              "type": ["number", "null"],
+              "description": "Assumed internal rate of return (discount rate used as input to TEA calculations) expressed as a percentage (e.g., 15.5 for 15.5%). This is a TEA input, not a result."
+            },
+            "irr_solved_pct": {
+              "type": ["number", "null"],
+              "description": "Solved internal rate of return (actual result from solve_IRR()) expressed as a percentage. Null if unsolvable."
+            },
+            "msp_usd_per_kg": {
+              "type": ["number", "null"],
+              "description": "Minimum selling price (MSP) of the main product in USD per kilogram. Null if unsolvable. Computed from solve_price on main product stream."
+            },
+            "msp_product_stream_id": {
+              "type": ["string", "null"],
+              "description": "Stream ID of the product stream used to calculate MSP (highest annual sales; first product if all prices are zero)."
+            },
+            "annual_throughput_kg_yr": {
+              "type": ["number", "null"],
+              "description": "Annual mass throughput of the main product in kilograms per year."
+            },
+            "tea_class": {
+              "type": "string",
+              "description": "Class name of the TEA object (e.g., 'TEA', 'ScheduledTEA')."
+            },
+            "warnings": {
+              "type": "array",
+              "description": "List of warnings or failures encountered when extracting TEA data.",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["currency"],
+          "additionalProperties": false
         }
       },
       "required": [
