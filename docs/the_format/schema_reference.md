@@ -20,7 +20,7 @@ type beyond those defined below, not only string-valued ones. This is a
 backwards-compatible loosening -- every file valid under an earlier version
 remains valid.
 
-**TEA economics (v0.2.1+).** The optional `tea_details` block contains
+**TEA economics (v0.2.2+).** The optional `tea_details` block contains
 comprehensive economics extracted from a BioSTEAM TEA object: capital costs,
 operating costs, NPV, IRR, minimum selling price (MSP), annual throughput, and
 utility costs. All numeric fields are nullable (if extraction or solving fails).

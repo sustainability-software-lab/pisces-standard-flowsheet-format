@@ -307,7 +307,7 @@
         },
         "tea_details": {
           "type": "object",
-          "description": "Comprehensive economic analysis details extracted from the TEA (Techno-Economic Analysis) object. All numeric fields are nullable. Optional; emitted only in SFF v0.2.1 and later. Captured before solve calls to avoid model mutation.",
+          "description": "Comprehensive economic analysis details extracted from the TEA (Techno-Economic Analysis) object. All numeric fields are nullable. Optional; emitted only in SFF v0.2.2 and later. Captured before solve calls to avoid model mutation.",
           "properties": {
             "currency": {
               "type": "string",
