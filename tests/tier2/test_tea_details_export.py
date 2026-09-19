@@ -19,20 +19,24 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests._gating import skip_if_disabled
-from tests._real_objects import load_corn_biorefinery
-
-# Only run if real biosteam is available
-skip_real = skip_if_disabled("real")
+from tests._gating import RUN_TIER2
+from tests._real_objects import build_small_system_and_tea
+from tests._stub_eviction import RealBiosteamTestCase
 
 
-@skip_real
-class TestTeaDetailsExport(unittest.TestCase):
-    """Test tea_details export from real BioSTEAM TEA objects."""
+@unittest.skipUnless(RUN_TIER2, "set SFF_TEST_TIER2=1 (default on) to run; builds real biosteam objects")
+class TestTeaDetailsExport(RealBiosteamTestCase):
+    """Test tea_details export from real BioSTEAM TEA objects.
+
+    Uses a minimal real system (single HX unit with feed and product streams)
+    from build_small_system_and_tea. While not a full biorefinery, it exercises
+    the tea_details extraction logic with a real TEA object and verifies
+    model mutation safety.
+    """
 
     def setUp(self):
-        """Load the M_BST_01 corn biorefinery."""
-        self.sys, self.tea = load_corn_biorefinery()
+        """Build a small system and TEA for testing."""
+        self.sys, _, self.tea = build_small_system_and_tea()
 
     def test_tea_details_present_in_v0_2_1_export(self):
         """v0.2.1 exports include metadata.tea_details with economics data."""
