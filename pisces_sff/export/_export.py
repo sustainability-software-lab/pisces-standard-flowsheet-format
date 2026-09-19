@@ -195,6 +195,12 @@ _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
 #: legacy fixed-tuple probe so their historical output stays byte-stable.
 _DESIGN_SPEC_REGISTRY_SINCE = (0, 1, 4)
 
+#: First schema version that emits metadata.tea_details, a comprehensive
+#: economics block from the TEA object (capital costs, operating costs, NPV,
+#: IRR, MSP, etc.). v0.2.1 allows additional metadata properties of any type,
+#: so this block is gated to keep older exporters byte-stable.
+_TEA_DETAILS_SINCE = (0, 2, 1)
+
 #: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
 #: serialized as EMPTY -- empty composition -- mirroring the validator's
 #: ZERO_FLOW (sff_checks.md "Default tolerances", STR-13). A converged
@@ -246,6 +252,143 @@ def _assign_stream_ids(all_streams, sff_version):
         existing.add(candidate)
         resolved[s] = candidate
     return resolved
+
+
+def _build_tea_details(tea, products_list, stream_ids, all_sys_products, all_streams):
+    """
+    Build the economics details block from a TEA object.
+
+    Parameters
+    ----------
+    tea : biosteam.TEA
+        The TEA object to extract economics from.
+    products_list : list of dict
+        List of product metadata dicts with 'stream_id' keys.
+    stream_ids : dict
+        Stream object to stream_id mapping.
+    all_sys_products : list
+        All product streams from the system.
+    all_streams : list
+        All streams from the system.
+
+    Returns
+    -------
+    dict or None
+        A dictionary of economics data with numeric values and optional 'warnings'
+        key, or None if TEA object is None.
+    """
+    if tea is None:
+        return None
+
+    warnings = []
+    tea_details = {'currency': 'USD'}
+
+    try:
+        tea_details['total_capital_cost_usd'] = float(tea.TCI) if tea.TCI is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['total_capital_cost_usd'] = None
+        warnings.append('Could not extract TEA.TCI (total capital investment)')
+
+    try:
+        tea_details['annual_operating_cost_usd'] = float(tea.AOC) if tea.AOC is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['annual_operating_cost_usd'] = None
+        warnings.append('Could not extract TEA.AOC (annual operating cost)')
+
+    try:
+        tea_details['utility_cost_usd_yr'] = float(tea.utility_cost) if hasattr(tea, 'utility_cost') and tea.utility_cost is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['utility_cost_usd_yr'] = None
+        warnings.append('Could not extract TEA.utility_cost')
+
+    try:
+        tea_details['annual_sales_usd'] = float(tea.sales) if hasattr(tea, 'sales') and tea.sales is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['annual_sales_usd'] = None
+        warnings.append('Could not extract TEA.sales')
+
+    try:
+        tea_details['installed_equipment_cost_usd'] = float(tea.installed_equipment_cost) if hasattr(tea, 'installed_equipment_cost') and tea.installed_equipment_cost is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['installed_equipment_cost_usd'] = None
+        warnings.append('Could not extract TEA.installed_equipment_cost')
+
+    try:
+        tea_details['purchase_cost_usd'] = float(tea.purchase_cost) if hasattr(tea, 'purchase_cost') and tea.purchase_cost is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['purchase_cost_usd'] = None
+        warnings.append('Could not extract TEA.purchase_cost')
+
+    try:
+        tea_details['npv_usd'] = float(tea.NPV) if hasattr(tea, 'NPV') and tea.NPV is not None else None
+    except (AttributeError, TypeError, ValueError):
+        tea_details['npv_usd'] = None
+        warnings.append('Could not extract TEA.NPV')
+
+    # IRR: try to get it directly, fall back to solve_IRR if needed
+    try:
+        if hasattr(tea, 'IRR') and tea.IRR is not None:
+            irr_value = float(tea.IRR) * 100
+        elif hasattr(tea, 'solve_IRR'):
+            irr_value = float(tea.solve_IRR()) * 100
+        else:
+            irr_value = None
+        tea_details['irr_pct'] = irr_value
+    except (AttributeError, TypeError, ValueError):
+        tea_details['irr_pct'] = None
+        warnings.append('Could not extract or solve TEA.IRR')
+
+    # MSP: find the main product (first one in products list) and try to solve
+    msp_value = None
+    msp_product_id = None
+    if products_list:
+        msp_product_id = products_list[0].get('stream_id')
+        # Find the stream object corresponding to the first product
+        main_product_stream = None
+        for stream in all_streams:
+            if stream_ids.get(stream) == msp_product_id:
+                main_product_stream = stream
+                break
+
+        if main_product_stream is not None:
+            try:
+                if hasattr(tea, 'solve_price'):
+                    msp_value = float(tea.solve_price(main_product_stream))
+                else:
+                    msp_value = None
+                    warnings.append('TEA object does not have solve_price method')
+            except Exception as e:
+                msp_value = None
+                warnings.append(f'Could not solve MSP for main product stream: {str(e)[:50]}')
+
+    tea_details['msp_usd_per_kg'] = msp_value
+    tea_details['msp_product_stream_id'] = msp_product_id
+
+    # Annual throughput of main product: mass flow * operating hours
+    throughput_value = None
+    if products_list:
+        msp_product_id = products_list[0].get('stream_id')
+        for stream in all_streams:
+            if stream_ids.get(stream) == msp_product_id:
+                try:
+                    mass_flow_kg_hr = float(stream.F_mass)
+                    operating_hours = float(tea.operating_hours) if hasattr(tea, 'operating_hours') else 8760.0
+                    throughput_value = mass_flow_kg_hr * operating_hours
+                except (AttributeError, TypeError, ValueError):
+                    warnings.append('Could not calculate annual throughput for main product')
+                break
+
+    tea_details['annual_throughput_kg_yr'] = throughput_value
+
+    try:
+        tea_details['tea_class'] = type(tea).__name__
+    except (AttributeError, TypeError):
+        warnings.append('Could not extract TEA class name')
+
+    if warnings:
+        tea_details['warnings'] = warnings
+
+    return tea_details
 
 
 # Every versioned exporter assembles the same core document; only the
@@ -325,6 +468,14 @@ def _build_sff_dict(sys, tea=None,
                               for stream in all_streams if is_feedstock(stream, all_sys_feeds, max_carbon_feed)]
     metadata['products'] = [{"display_name": format_name(stream_ids[stream]), "stream_id": stream_ids[stream]}
                             for stream in all_streams if is_product(stream, all_sys_products)]
+
+    # ------- Economics details (optional, v0.2.1+) -------
+    # Emit comprehensive TEA economics data for versions that support additional
+    # metadata properties. Older exporters stay byte-stable by omitting the block.
+    if version_tuple(sff_version) >= _TEA_DETAILS_SINCE:
+        tea_details = _build_tea_details(tea, metadata.get('products', []), stream_ids, all_sys_products, all_streams)
+        if tea_details:
+            metadata['tea_details'] = tea_details
 
     # ------- Authored descriptive metadata (optional) -------
     # Human-authored fields a simulated System cannot carry: the source
