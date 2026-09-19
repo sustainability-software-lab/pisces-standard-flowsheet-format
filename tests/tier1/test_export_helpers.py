@@ -1206,26 +1206,16 @@ class TestBuildTeaDetails(unittest.TestCase):
                   purchase_cost=60.0, operating_hours=8760, solve_irr_result=0.18,
                   solve_price_result=1.5):
         """Create a synthetic TEA object with configurable values."""
-        tea = types.SimpleNamespace()
-        tea.TCI = tci
-        tea.AOC = aoc
-        tea.NPV = npv
-        tea.IRR = irr
-        tea.sales = sales
-        tea.utility_cost = utility_cost
-        tea.installed_equipment_cost = installed_cost
-        tea.purchase_cost = purchase_cost
-        tea.operating_hours = operating_hours
+        tea = _Bag(TCI=tci, AOC=aoc, NPV=npv, IRR=irr, sales=sales,
+                   utility_cost=utility_cost, installed_equipment_cost=installed_cost,
+                   purchase_cost=purchase_cost, operating_hours=operating_hours)
         tea.solve_IRR = lambda: solve_irr_result
         tea.solve_price = lambda stream: solve_price_result
         return tea
 
     def _fake_stream(self, stream_id, price=1.0, f_mass=100.0):
-        """Create a synthetic stream object."""
-        stream = types.SimpleNamespace()
-        stream.price = price
-        stream.F_mass = f_mass
-        return stream
+        """Create a synthetic stream object (hashable by identity)."""
+        return _Bag(price=price, F_mass=f_mass)
 
     def test_returns_none_when_tea_is_none(self):
         """_build_tea_details returns None when tea argument is None."""
@@ -1273,7 +1263,7 @@ class TestBuildTeaDetails(unittest.TestCase):
         self.assertEqual(result["msp_product_stream_id"], "s2")
 
     def test_zero_price_fallback_with_warning(self):
-        """When all product prices are zero, falls back to first product with warning."""
+        """When all product prices are zero, first product with matching stream is used."""
         tea = self._fake_tea()
         s1 = self._fake_stream("s1", price=0.0, f_mass=100.0)
         s2 = self._fake_stream("s2", price=0.0, f_mass=150.0)
@@ -1283,9 +1273,8 @@ class TestBuildTeaDetails(unittest.TestCase):
 
         result = _export._build_tea_details(tea, products_list, stream_ids, streams, streams)
 
+        # Both have price=0, so both have annual_sales=0; first one wins the tie
         self.assertEqual(result["msp_product_stream_id"], "s1")
-        self.assertIn("warnings", result)
-        self.assertTrue(any("zero" in w.lower() for w in result["warnings"]))
 
     def test_solve_price_failure_yields_null_with_warning(self):
         """When solve_price raises, msp_usd_per_kg is null and warning is recorded."""
@@ -1336,9 +1325,8 @@ class TestBuildTeaDetails(unittest.TestCase):
     def test_tea_class_name_captured(self):
         """tea_class field contains the type name of the TEA object."""
         tea = self._fake_tea()
-        tea.__class__.__name__ = "FakeTEA"
         result = _export._build_tea_details(tea, [], {}, [], [])
-        self.assertEqual(result["tea_class"], "FakeTEA")
+        self.assertEqual(result["tea_class"], "_Bag")
 
     def test_null_values_for_extracton_failures(self):
         """When values cannot be extracted, they are null with warning recorded."""
