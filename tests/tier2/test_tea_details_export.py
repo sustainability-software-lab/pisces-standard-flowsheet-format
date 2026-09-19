@@ -189,9 +189,8 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
                 self.sys, str(filepath_0010), sff_version="0.0.10", tea=self.tea
             )
 
-        # Load both exports and check that 0.0.10 export still sees products
-        with open(filepath_0010) as f:
-            export_0010 = json.load(f)
+            # Load 0.0.10 export into memory while directory still exists
+            export_0010 = json.loads(filepath_0010.read_text(encoding="utf-8"))
 
         # Verify product streams have 'product' role in 0.0.10 export
         # (confirming prices were not zeroed out by 0.2.2 export)
