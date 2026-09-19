@@ -197,9 +197,9 @@ _DESIGN_SPEC_REGISTRY_SINCE = (0, 1, 4)
 
 #: First schema version that emits metadata.tea_details, a comprehensive
 #: economics block from the TEA object (capital costs, operating costs, NPV,
-#: IRR, MSP, etc.). v0.2.1 allows additional metadata properties of any type,
-#: so this block is gated to keep older exporters byte-stable.
-_TEA_DETAILS_SINCE = (0, 2, 1)
+#: IRR, MSP, etc.). v0.2.2 is the first version to include this; v0.2.1 is a
+#: validation-only release and stays byte-stable with v0.2.0.
+_TEA_DETAILS_SINCE = (0, 2, 2)
 
 #: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
 #: serialized as EMPTY -- empty composition -- mirroring the validator's
@@ -407,19 +407,21 @@ def _build_tea_details(tea, products_list, stream_ids, all_sys_products, all_str
     # STEP 3: Solve calls that may mutate state - save/restore stream price
     msp_value = None
     if main_product_stream is not None:
-        try:
-            if hasattr(tea, 'solve_price'):
-                # Save original price in case solve_price mutates it
-                original_price = main_product_stream.price
+        if hasattr(tea, 'solve_price'):
+            # Save original price; restore in finally block to prevent model mutation
+            # even if solve_price raises. solve_price mutates stream.price as a side effect.
+            original_price = main_product_stream.price
+            try:
                 msp_value = float(tea.solve_price(main_product_stream))
-                # Restore original price to prevent model mutation
-                main_product_stream.price = original_price
-            else:
+            except Exception as e:
                 msp_value = None
-                warnings.append('TEA object does not have solve_price method')
-        except Exception as e:
+                warnings.append(f'Could not solve MSP for main product stream: {str(e)[:50]}')
+            finally:
+                # Always restore, whether solve_price succeeded or raised
+                main_product_stream.price = original_price
+        else:
             msp_value = None
-            warnings.append(f'Could not solve MSP for main product stream: {str(e)[:50]}')
+            warnings.append('TEA object does not have solve_price method')
 
     tea_details['msp_usd_per_kg'] = msp_value
 
@@ -1595,6 +1597,67 @@ def export_biosteam_flowsheet_sff_0_2_1(sys, filepath, tea=None,
     byte-identical to the 0.2.0 export apart from ``metadata.sff_version``.
     All version-gated behavior active at 0.2.0 (including conditional
     ``exported-from-simulator`` stamping) remains so here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_2_2(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.2', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.2.
+
+    First version to emit metadata.tea_details, a comprehensive economics
+    block extracted from the BioSTEAM TEA object (capital costs, operating
+    costs, NPV, IRR, MSP, throughput, and utility costs). All numeric fields
+    are nullable (extraction or solving may fail). IRR is split into
+    assumed (input discount rate) and solved (result from solve_IRR).
+    MSP is solved for the product with largest annual sales (price * flow),
+    with fallback to first product if all prices are zero. Stream prices
+    are saved and restored around solve calls to prevent model mutation.
 
     Parameters
     ----------

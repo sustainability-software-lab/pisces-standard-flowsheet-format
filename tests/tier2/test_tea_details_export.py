@@ -10,7 +10,7 @@
 Tier 2: test tea_details export from real BioSTEAM TEA objects.
 
 Tests that the exporter correctly extracts TEA economics data and writes it
-to metadata.tea_details for schema version 0.2.1+, and omits it for older
+to metadata.tea_details for schema version 0.2.2+, and omits it for older
 versions (byte-stability).
 """
 
@@ -38,14 +38,14 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
         """Build a small system and TEA for testing."""
         self.sys, _, self.tea = build_small_system_and_tea()
 
-    def test_tea_details_present_in_v0_2_1_export(self):
-        """v0.2.1 exports include metadata.tea_details with economics data."""
+    def test_tea_details_present_in_v0_2_2_export(self):
+        """v0.2.2 exports include metadata.tea_details with economics data."""
         from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
             _export.export_biosteam_flowsheet(
-                self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
+                self.sys, str(filepath), sff_version="0.2.2", tea=self.tea
             )
 
             with open(filepath) as f:
@@ -91,7 +91,7 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
                 self.assertIsInstance(tea_details["msp_product_stream_id"], str)
 
     def test_tea_details_omitted_in_older_versions(self):
-        """Versions before 0.2.1 do not emit metadata.tea_details."""
+        """Versions before 0.2.2 do not emit metadata.tea_details."""
         from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -113,7 +113,7 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
             _export.export_biosteam_flowsheet(
-                self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
+                self.sys, str(filepath), sff_version="0.2.2", tea=self.tea
             )
 
             with open(filepath) as f:
@@ -145,7 +145,7 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
             _export.export_biosteam_flowsheet(
-                self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
+                self.sys, str(filepath), sff_version="0.2.2", tea=self.tea
             )
 
             with open(filepath) as f:
@@ -161,37 +161,60 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
             )
 
     def test_product_stream_price_unchanged_after_export(self):
-        """Export does not mutate product stream prices (saves/restores around solve)."""
+        """Export at 0.2.2 does not mutate stream prices; subsequent 0.0.10 export sees unchanged roles."""
         from pisces_sff import _export
 
-        # Record all product stream prices before export
         products = self.sys.products
         prices_before = {stream: stream.price for stream in products}
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            filepath = Path(tmpdir) / "export.json"
+            # Export at 0.2.2 (which solves MSP and may mutate prices internally)
+            filepath_022 = Path(tmpdir) / "export_0_2_2.json"
             _export.export_biosteam_flowsheet(
-                self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
+                self.sys, str(filepath_022), sff_version="0.2.2", tea=self.tea
             )
 
-        # Verify all product stream prices are unchanged
-        for stream in products:
-            self.assertEqual(
-                stream.price,
-                prices_before[stream],
-                f"Stream {stream.ID} price changed during export: "
-                f"{prices_before[stream]} -> {stream.price}",
+            # Verify stream prices are unchanged after 0.2.2 export
+            for stream in products:
+                self.assertEqual(
+                    stream.price,
+                    prices_before[stream],
+                    f"0.2.2 export mutated stream {stream.ID} price: "
+                    f"{prices_before[stream]} -> {stream.price}",
+                )
+
+            # Export at 0.0.10 and verify product roles are still present
+            filepath_0010 = Path(tmpdir) / "export_0_0_10.json"
+            _export.export_biosteam_flowsheet(
+                self.sys, str(filepath_0010), sff_version="0.0.10", tea=self.tea
             )
+
+        # Load both exports and check that 0.0.10 export still sees products
+        with open(filepath_0010) as f:
+            export_0010 = json.load(f)
+
+        # Verify product streams have 'product' role in 0.0.10 export
+        # (confirming prices were not zeroed out by 0.2.2 export)
+        streams_0010 = {s.get("id"): s for s in export_0010.get("streams", [])}
+        for product in self.sys.products:
+            stream_id = product.ID
+            if stream_id in streams_0010:
+                roles = streams_0010[stream_id].get("roles", [])
+                self.assertIn(
+                    "product",
+                    roles,
+                    f"0.2.2 export mutation: stream {stream_id} lost 'product' role; roles={roles}",
+                )
 
     def test_exported_file_validates_against_schema(self):
-        """Exported v0.2.1 file with tea_details validates against schema."""
+        """Exported v0.2.2 file with tea_details validates against schema."""
         import jsonschema
         from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
             _export.export_biosteam_flowsheet(
-                self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
+                self.sys, str(filepath), sff_version="0.2.2", tea=self.tea
             )
 
             with open(filepath) as f:
