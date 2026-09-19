@@ -40,11 +40,11 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
 
     def test_tea_details_present_in_v0_2_1_export(self):
         """v0.2.1 exports include metadata.tea_details with economics data."""
-        from pisces_sff.export import export_biosteam_flowsheet
+        from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
-            export_biosteam_flowsheet(
+            _export.export_biosteam_flowsheet(
                 self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
             )
 
@@ -92,11 +92,11 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
 
     def test_tea_details_omitted_in_older_versions(self):
         """Versions before 0.2.1 do not emit metadata.tea_details."""
-        from pisces_sff.export import export_biosteam_flowsheet
+        from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath_old = Path(tmpdir) / "export_v0_2_0.json"
-            export_biosteam_flowsheet(
+            _export.export_biosteam_flowsheet(
                 self.sys, str(filepath_old), sff_version="0.2.0", tea=self.tea
             )
 
@@ -108,11 +108,11 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
 
     def test_tea_details_contains_finite_key_values(self):
         """Key economics fields in tea_details are finite numbers (not null)."""
-        from pisces_sff.export import export_biosteam_flowsheet
+        from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
-            export_biosteam_flowsheet(
+            _export.export_biosteam_flowsheet(
                 self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
             )
 
@@ -140,11 +140,11 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
 
     def test_tea_details_main_product_throughput(self):
         """annual_throughput_kg_yr is calculated from main product stream."""
-        from pisces_sff.export import export_biosteam_flowsheet
+        from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
-            export_biosteam_flowsheet(
+            _export.export_biosteam_flowsheet(
                 self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
             )
 
@@ -162,7 +162,7 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
 
     def test_product_stream_price_unchanged_after_export(self):
         """Export does not mutate product stream prices (saves/restores around solve)."""
-        from pisces_sff.export import export_biosteam_flowsheet
+        from pisces_sff import _export
 
         # Record all product stream prices before export
         products = self.sys.products
@@ -170,7 +170,7 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
-            export_biosteam_flowsheet(
+            _export.export_biosteam_flowsheet(
                 self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
             )
 
@@ -186,11 +186,11 @@ class TestTeaDetailsExport(RealBiosteamTestCase):
     def test_exported_file_validates_against_schema(self):
         """Exported v0.2.1 file with tea_details validates against schema."""
         import jsonschema
-        from pisces_sff.export import export_biosteam_flowsheet
+        from pisces_sff import _export
 
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = Path(tmpdir) / "export.json"
-            export_biosteam_flowsheet(
+            _export.export_biosteam_flowsheet(
                 self.sys, str(filepath), sff_version="0.2.1", tea=self.tea
             )
 
