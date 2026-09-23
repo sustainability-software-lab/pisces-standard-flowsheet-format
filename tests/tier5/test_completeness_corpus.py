@@ -91,7 +91,13 @@ def targeted_paths(doc):
     reactions of a multi-reaction unit (CMP-RXN-03), a non-empty feed's
     temperature, an empty boundary stream's flow and stream_properties
     (CMP-FEED-01/02), a phase, a unit's design_input_specs, a chemical's
-    registry_id, and each top-level section."""
+    registry_id, and each top-level section. Revision 2 part B adds: the
+    process-water center's design_simulation_method and specs (CMP-UOP-06
+    kind by keyword), the phases of the zero-priced natural-gas and air
+    feeds (CMP-FEED-02 utility ports identified by composition), a
+    formula-named chemical's molar_mass (the corrected CMP-THM-02 name
+    tier), and an outlet's phases of a physical-only unit (the R2.4 species
+    guard then cannot verify it)."""
     units, streams = doc["units"], doc["streams"]
     described = [(i, C._is_core_class(*C._dsm_class(u)))
                  for i, u in enumerate(units)
@@ -138,6 +144,26 @@ def targeted_paths(doc):
     chem = _first([i for i, c in enumerate(doc["chemicals"])
                    if c.get("registry_id")], "no chemical with a registry_id")
     paths.append(("chemicals", chem, "registry_id"))
+    # Revision 2 part B branches.
+    pwc = _first([i for i, u in enumerate(units)
+                  if C._dsm_class(u)[0] == "ProcessWaterCenter"],
+                 "no process-water center")
+    paths += [("units", pwc, "design_simulation_method"),
+              ("units", pwc, "design_input_specs")]
+    for sid in ("natural_gas", "dryer_air"):
+        i = _first([i for i, s in enumerate(streams) if s.get("id") == sid],
+                   f"no stream {sid}")
+        paths.append(("streams", i, "stream_properties", "phases"))
+    co2 = _first([i for i, c in enumerate(doc["chemicals"])
+                  if c.get("id") == "CO2"], "no CO2")
+    paths.append(("chemicals", co2, "molar_mass"))
+    sc = C._ScoringContext(doc)
+    guarded = _first([p for p in range(len(sc.units))
+                      if C._species_guarded(sc, p)
+                      and sc.unit_outlets.get(sc.units[p].get("id"))],
+                     "no guarded physical-only unit")
+    outlet = sc.unit_outlets[sc.units[guarded]["id"]][0]
+    paths.append(("streams", outlet, "stream_properties", "phases"))
     paths += [(section,) for section in SECTIONS]
     return paths
 
@@ -185,6 +211,33 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                 for c in report.criteria:
                     if c.status == "scored":
                         self.assertTrue(0.0 <= c.score <= 1.0, c)
+
+    def test_revision_2_part_b_on_the_corn_file(self):
+        """Revision 2 part B on SF_BST_01: CMP-UOP-06 applies to the
+        process-water center T608 alone (the cost-only plant-air/CIP lump is
+        excluded) and scores 0 -- its stream bindings are unstated; the
+        zero-priced dryer_air feed is scored like any price (air is not a
+        port material) while natural_gas into the dryer D610 keeps half
+        credit (R2.9); CO2 (a one-carbon formula id) earns verified name
+        credit (R2.3 corrected); the reactive population is exactly the two
+        reactor-family units (R2.4); every physical-only unit passes the
+        species-consistency guard, so CMP-UOP-04 stays 1."""
+        by_id = {c.criterion_id: c for c in self.base.criteria}
+        uop6 = by_id["CMP-UOP-06"]
+        self.assertEqual((uop6.status, uop6.score), ("scored", 0.0))
+        self.assertTrue(all(m.startswith("units[T608]") for m in uop6.missing))
+        self.assertTrue(any("process_water_streams" in m for m in uop6.missing))
+        feed = by_id["CMP-FEED-02"]
+        self.assertFalse(any("dryer_air" in m for m in feed.missing))
+        self.assertTrue(any("natural_gas" in m and "natural gas port" in m
+                            for m in feed.missing))
+        self.assertIn("chemicals[CO2].registry_id (id resolvable by name "
+                      "only; molar mass verified)", by_id["CMP-THM-02"].missing)
+        sc = C._ScoringContext(self.corn)
+        self.assertEqual(len(C._reactive_units(sc)), 2)
+        self.assertTrue(all(C._species_consistency(sc, p)[0]
+                            for p in range(len(sc.units))))
+        self.assertEqual(by_id["CMP-UOP-04"].score, 1.0)
 
     def test_sample_covers_the_targeted_deletions(self):
         """sampled_paths(SF_BST_01) -> deterministic (same list twice);

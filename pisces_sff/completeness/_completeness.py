@@ -216,7 +216,8 @@ _TOP_KEYS = frozenset({'categories', 'criteria', 'exclusions'})
 _CRITERION_KEYS = frozenset({'id', 'category', 'title', 'weight', 'criticality',
                              'representable_since', 'rationale', 'sff_paths'})
 _EXCLUSION_KEYS = frozenset({'id', 'kind', 'title', 'rationale'})
-_EXCLUSION_KINDS = ('not_capturable', 'derived', 'out_of_scope')
+_EXCLUSION_KINDS = ('not_capturable', 'derived', 'out_of_scope',
+                    'undetectable_need')
 _CRITERION_ID_RE = re.compile(r'^CMP-[A-Z]+-\d{2}$')
 _EXCLUSION_ID_RE = re.compile(r'^(EXC|DER)-\d{2}$')
 
@@ -814,7 +815,7 @@ _SPEC_PREDICATES = {
                      'pr', 'reflux', 'boilup'), _spec_positive),
     **dict.fromkeys(('tau_0', 'V'), _spec_nonnegative),
     **dict.fromkeys(('N_stages', 'n_stages'), _spec_positive_int),
-    **dict.fromkeys(('V_wf', 'eta', 'boiler_efficiency',
+    **dict.fromkeys(('V_wf', 'eta', 'efficiency', 'boiler_efficiency',
                      'turbogenerator_efficiency', 'theta_O2', 'theta', 'Lr',
                      'Hr', 'y_top', 'x_bot'), _spec_efficiency),
     'moisture_content': _spec_fraction,
@@ -823,7 +824,10 @@ _SPEC_PREDICATES = {
     **dict.fromkeys(('Q', 'H', 'H_lim0', 'H_lim1', 'Duty'), _spec_finite),
     **dict.fromkeys(('partial_condenser', 'full_condenser', 'batch',
                      'rigorous', 'approx_duty', 'conserve_phases', 'flash',
-                     'heat_only', 'ignore_NPSH', 'is_divided'), _spec_flag),
+                     'heat_only', 'ignore_NPSH', 'is_divided',
+                     'satisfy_system_electricity_demand',
+                     'satisfy_system_steam_demand'), _spec_flag),
+    'fuel_source': _nonempty_str,
 }
 
 
@@ -861,8 +865,18 @@ def _formula_counts(text):
 
 def _formula_like(cid):
     """True when a chemical id is itself a molecular formula ('C2H6O', 'HP',
-    'CO2'): isomer-ambiguous, so it earns no name-tier credit (R2.3)."""
+    'CO2'); it then narrows the search to that formula (formula tier)."""
     return _formula_counts(cid) is not None
+
+
+def _isomer_ambiguous(cid):
+    """True when a chemical id is a molecular formula with two or more
+    carbon atoms ('C2H6O': ethanol or dimethyl ether), so it earns no
+    name-tier credit (R2.3 as corrected). A formula with at most one carbon
+    atom ('CO2', 'CH4', 'H2SO4', 'P4O10', 'CaO') names one compound and is
+    eligible for name credit like any other name."""
+    counts = _formula_counts(cid)
+    return counts is not None and counts.get('C', 0) >= 2
 
 
 def _valid_formula(formula):
@@ -917,10 +931,10 @@ def _record_agreement(record, chem):
 
 def _name_tier(chem, cid):
     """CMP-THM-02 name tier of chemical id `cid` (chem: its declared entry,
-    or None): None when the id is not a string, is itself a molecular
-    formula (_formula_like), or does not resolve by name; else the
+    or None): None when the id is not a string, is an isomer-ambiguous
+    formula (_isomer_ambiguous), or does not resolve by name; else the
     _record_agreement of the resolved record with the chemical."""
-    if not _nonempty_str(cid) or _formula_like(cid):
+    if not _nonempty_str(cid) or _isomer_ambiguous(cid):
         return None
     record = _name_record(cid)
     return None if record is None else _record_agreement(record, chem)
@@ -1084,17 +1098,20 @@ def _valid_cost(x):
 # biosteam and Bioindustrial-Park).
 _DSM_CLASS_RE = re.compile(r'^\s*([A-Za-z_]\w*)\s+on\b\s*(\S*)')
 
-# A source URL inside the core BioSTEAM repository (not Bioindustrial-Park).
+# A source URL inside the core BioSTEAM repository (not Bioindustrial-Park),
+# or the hensmith repository that now defines HeatExchangerNetwork.
 _BIOSTEAM_URL_RE = re.compile(
-    r'github\.com/BioSTEAMDevelopmentGroup/biosteam(?:[/#?]|\.git|$)', re.I)
+    r'github\.com/BioSTEAMDevelopmentGroup/(?:biosteam|hensmith)'
+    r'(?:[/#?]|\.git|$)', re.I)
 
 FAMILIES = ('mixer', 'splitter', 'flash', 'hx_utility', 'hx_process',
             'steam_injection_heater', 'pump', 'valve', 'compressor', 'turbine',
             'distillation', 'staged_column', 'extraction', 'evaporator',
             'reactor', 'batch_bioreactor', 'aerated_bioreactor',
             'equilibrium_reactor', 'crystallizer', 'tank', 'combustor',
-            'dryer', 'boiler_turbogenerator', 'heat_exchanger_network',
-            'facility', 'solids_handling', 'junction')
+            'dryer', 'boiler', 'boiler_turbogenerator',
+            'heat_exchanger_network', 'facility', 'solids_handling',
+            'junction')
 
 # ---- family sets shared with the costing / utility / reaction criteria ----
 REACTOR_FAMILIES = frozenset({'reactor', 'batch_bioreactor',
@@ -1104,26 +1121,36 @@ REACTOR_FAMILIES = frozenset({'reactor', 'batch_bioreactor',
 # mixer-settlers) or fuel.
 UTILITY_USING_FAMILIES = REACTOR_FAMILIES | frozenset({
     'hx_utility', 'flash', 'distillation', 'staged_column', 'evaporator',
-    'pump', 'compressor', 'turbine', 'boiler_turbogenerator',
+    'pump', 'compressor', 'turbine', 'boiler', 'boiler_turbogenerator',
     'steam_injection_heater', 'dryer', 'crystallizer', 'tank',
     'solids_handling', 'extraction'})
 # The subset that exchanges heat with a heat-utility agent (steam, cooling
-# water, refrigerants): the need behind CMP-UTIL-03 and CMP-UTIL-05.
+# water, refrigerants): the need behind CMP-UTIL-03 and CMP-UTIL-05, and
+# behind the synthetic missing "heat agent" entry of CMP-UTIL-01/02 (R2.7).
 HEAT_UTILITY_FAMILIES = REACTOR_FAMILIES | frozenset({
     'hx_utility', 'flash', 'distillation', 'staged_column', 'evaporator',
-    'boiler_turbogenerator', 'steam_injection_heater', 'crystallizer'})
+    'boiler', 'boiler_turbogenerator', 'steam_injection_heater',
+    'crystallizer'})
+# Families whose units always draw (or, for turbines and boiler-
+# turbogenerators, deliver) electricity: the need behind the synthetic
+# missing "power utility" entry of CMP-UTIL-01/02 (R2.7).
+POWER_UTILITY_FAMILIES = frozenset({'pump', 'compressor', 'turbine',
+                                    'solids_handling',
+                                    'boiler_turbogenerator'})
 # Families that regenerate agents for the rest of the plant (a boiler raising
 # steam, a cooling tower, a heat-exchanger network): BioSTEAM records their
 # heat utilities with reversed duty, so they are no evidence of whether an
 # agent heats or cools (CMP-UTIL-03).
-AGENT_REGENERATOR_FAMILIES = frozenset({'facility', 'boiler_turbogenerator',
+AGENT_REGENERATOR_FAMILIES = frozenset({'facility', 'boiler',
+                                        'boiler_turbogenerator',
                                         'heat_exchanger_network'})
 # Families whose chemistry is fixed by the class itself (combustion, a
-# facility's internal make-up, Gibbs minimization, drying), so a species
-# appearing or vanishing there is not evidence of an undeclared reaction.
+# facility's internal make-up, Gibbs minimization, drying): never in the
+# reactive population of CMP-RXN-01, and exempt from the species-appearance
+# consistency guard.
 CLASS_IMPLIED_CHEMISTRY_FAMILIES = frozenset({
-    'combustor', 'facility', 'boiler_turbogenerator', 'equilibrium_reactor',
-    'dryer'})
+    'combustor', 'facility', 'boiler', 'boiler_turbogenerator',
+    'equilibrium_reactor', 'dryer'})
 # Physical-only families (R2.2): absent declared reactions, every species
 # balances one by one across such a unit, so a derivation from its stream
 # data also needs every species' balance to close.
@@ -1136,10 +1163,15 @@ PHYSICAL_FAMILIES = frozenset({
 # and flashes (a flash is waived only when stated adiabatic, Q = 0).
 ALWAYS_DRAW_FAMILIES = frozenset({'pump', 'hx_utility', 'compressor',
                                   'distillation', 'evaporator', 'flash'})
-# Families with a fuel/air port BioSTEAM prices from bst.stream_prices when
-# the stream's own price is 0 (CMP-FEED-02).
-UTILITY_PORT_FAMILIES = frozenset({'combustor', 'boiler_turbogenerator',
-                                   'dryer'})
+# Families with a fuel port BioSTEAM prices from bst.stream_utility_prices
+# (natural gas) or from class defaults (a boiler's lime and boiler
+# chemicals) when the stream's own price is 0 (CMP-FEED-02, R2.9).
+UTILITY_PORT_FAMILIES = frozenset({'combustor', 'boiler',
+                                   'boiler_turbogenerator', 'dryer'})
+# Families whose units carry plant-wide facility bindings and settings
+# (CMP-UOP-06, R2.5) instead of operating specifications (CMP-UOP-02).
+FACILITY_FAMILIES = frozenset({'facility', 'boiler', 'boiler_turbogenerator',
+                               'heat_exchanger_network'})
 # Families whose units carry no purchase cost by default. The class-level
 # sets refine it: COST_FREE_CLASSES are cost-free whatever their family
 # (Splitter-type splitters), _COSTED_CLASSES are costed although their family
@@ -1160,7 +1192,8 @@ FAMILY_WEIGHTS = {
                     3),
     **dict.fromkeys(('hx_utility', 'hx_process', 'splitter', 'dryer',
                      'steam_injection_heater', 'facility', 'combustor',
-                     'boiler_turbogenerator', 'heat_exchanger_network',
+                     'boiler', 'boiler_turbogenerator',
+                     'heat_exchanger_network',
                      'compressor', 'turbine'), 2),
     **dict.fromkeys(('pump', 'valve', 'tank', 'mixer', 'solids_handling',
                      'junction'), 1),
@@ -1273,8 +1306,10 @@ _CLASS_TABLE = {
     # -- core biosteam facilities and helpers (not in the registry) --
     'AirDistributionPackage': ('facility', None),
     'BlowdownMixer': ('mixer', 'Mixer'),
+    'Boiler': ('boiler', None),
     'BoilerTurbogenerator': ('boiler_turbogenerator', None),
     'CIPpackage': ('facility', None),
+    'ChemicalCapitalInvestment': ('facility', None),
     'ChilledWaterPackage': ('facility', None),
     'CoolingTower': ('facility', None),
     'Facility': ('facility', None),
@@ -1282,6 +1317,7 @@ _CLASS_TABLE = {
     'FireWaterTank': ('facility', None),
     'HeatExchangerNetwork': ('heat_exchanger_network', None),
     'ProcessWaterCenter': ('facility', None),
+    'RefrigerationPackage': ('facility', None),
     # -- core biosteam.wastewater and older biosteam names in the corpus --
     'AdsorptionColumnTSA': ('splitter', None),
     'AerobicDigestion': ('reactor', None),
@@ -1374,25 +1410,88 @@ _NONCORE_CLASSES = frozenset({
     'SeedTrain', 'SuccinicAcidCrystallizer', 'SulfuricAcidMixer',
     'SulfuricAcidStorage', 'SulfuricAcidStorageTank', 'SulfuricAcidTank',
     'TALCrystallizer', 'WasteVaporCondenser'})
-_CORE_CLASSES = frozenset(_CLASS_TABLE) - _NONCORE_CLASSES
+
+# The curated STATIC core list (R2.6): every concrete (not isabstract=True)
+# Unit subclass defined in biosteam -- biosteam.units, biosteam.facilities,
+# biosteam.wastewater -- plus HeatExchangerNetwork (now defined in the
+# hensmith package and re-exported by biosteam), enumerated once from the
+# biosteam 2.54 source tree and committed here, so the scorer needs no
+# biosteam import. Only these classes identify a unit at confidence 1 without
+# a pinned model package. Table entries outside it (Bioindustrial-Park
+# classes, classes made by biosteam's tank_factory inside a biorefinery, and
+# older biosteam names the corpus still carries: AdsorptionColumnTSA,
+# NRELFermentation, NRELBatchBioreactor) are custom classes.
+_CORE_CLASSES = frozenset({
+    'AdiabaticMultiStageVLEColumn', 'AeratedBioreactor',
+    'AerobicDigestion', 'AirDistributionPackage', 'AmineAbsorption',
+    'AnMBR', 'AnaerobicBioreactor', 'AnaerobicDigestion',
+    'BagassePelletMill', 'BatchCrystallizer', 'BeltThickener',
+    'BinaryDistillation', 'BiogasUpgrading', 'BlowdownMixer', 'Boiler',
+    'BoilerTurbogenerator', 'CHP', 'CIPpackage', 'CO2Compression',
+    'ChemicalCapitalInvestment', 'ChilledWaterPackage', 'Clarifier',
+    'ConveyingBelt', 'CoolingTower', 'CrushingMill', 'DrumDryer',
+    'EnzymeTreatment', 'Evaporator', 'FacilityModule', 'FireWaterTank',
+    'Flash', 'FluidizedCatalyticCracking', 'GasFedBioreactor',
+    'GibbsEquilibriumReactor', 'GroupedUnit', 'HXprocess', 'HXutilities',
+    'HXutility', 'HammerMill', 'HeatExchangerNetwork',
+    'InternalCirculationRx', 'IsenthalpicValve', 'IsentropicCompressor',
+    'IsentropicTurbine', 'IsothermalCompressor', 'Junction',
+    'LLECentrifuge', 'LLESettler', 'LiquidsMixingTank',
+    'LiquidsPartitionSettler', 'LiquidsRatioCentrifuge',
+    'LiquidsSplitCentrifuge', 'LiquidsSplitSettler', 'MESHDistillation',
+    'MagneticSeparator', 'MassBalance', 'MembraneBioreactor', 'MixTank',
+    'Mixer', 'MixerSettler', 'MockMixer', 'MockSplitter', 'Module',
+    'MolecularSieve', 'MultiEffectEvaporator', 'MultiStageEquilibrium',
+    'MultiStageMixerSettlers', 'MultistageCompressor',
+    'NRELEthanolFermentation', 'PelletMill', 'PhasePartition',
+    'PhaseSplitter', 'PolishingFilter', 'PolytropicCompressor',
+    'PressureFilter', 'ProcessWaterCenter', 'Pump', 'ReactivePhaseStage',
+    'RefluxDrum', 'RefrigerationPackage', 'ReverseOsmosis',
+    'ReversedSplitter', 'RotaryVacuumFilter', 'SLLECentrifuge', 'Scaler',
+    'ScrewFeeder', 'ScrewPress', 'Separator', 'ShortcutColumn', 'Shredder',
+    'SingleComponentAdsorptionColumn', 'SinglePhaseReactor',
+    'SinglePhaseStage', 'Skipped', 'SludgeCentrifuge', 'SludgeHandling',
+    'SolidLiquidsSplitCentrifuge', 'SolidsCentrifuge', 'SolidsSeparator',
+    'SplitFlash', 'Splitter', 'SprayDryer', 'StageEquilibrium',
+    'SteamMixer', 'StorageTank', 'ThermalOxidizer', 'VentScrubber',
+    'VibratingScreen', 'WWTpump', 'WastewaterSystemCost'})
+
+# Abstract BioSTEAM classes (R2.6): declared isabstract=True in the biosteam
+# source, plus the Unit base class itself. They cannot be instantiated, so
+# naming one identifies a family at most (confidence 0.5) and earns no
+# class-default or core-class credit.
+_ABSTRACT_CLASSES = frozenset({
+    'AbstractStirredTankReactor', 'Compressor', 'DiagramOnlyStreamUnit',
+    'DiagramOnlySystemUnit', 'DiagramOnlyUnit', 'Distillation',
+    'Duplicator', 'Facility', 'HX', 'LLEUnit', 'LiquidsCentrifuge',
+    'LiquidsSettler', 'NRELAnaerobicBatchBioreactor', 'Tank', 'Turbine',
+    'Unit', 'Valve'})
 
 # Keyword fallback, in precedence order: the first family whose pattern
 # matches the (raw or CamelCase-split) lowercase text wins, so specific
 # families precede generic ones -- junction-like before everything;
-# turbogenerator/boiler before turbine; heat exchanger network before heat
-# exchanger; facilities (fire water tank) before tank; mixer settler and
-# steam mixer before mixer; MESH/multistage/adiabatic columns and absorbers
-# before distillation; combustor/dryer/equilibrium/aerated/batch reactors
-# and crystallizers before reactor; screw press and crushing mill (splitter) before screw and
-# mill (solids handling); mix tank (tank) before mix (mixer).
+# turbogenerator before a plain boiler (R2.10), both before turbine; heat
+# exchanger network before heat exchanger; named plant facilities (fire
+# water tank, plant air / CIP, the wastewater cost lump) before wastewater
+# treatment, which scores as the reactor family of the biosteam.wastewater
+# digesters (R2.10), before a generic 'facility'; mixer settler and steam
+# mixer before mixer; MESH/multistage/adiabatic columns and absorbers before
+# distillation; combustor/dryer/equilibrium/aerated/batch reactors and
+# crystallizers before reactor; neutralizers, hydrotreaters, gasifiers and
+# pyrolysis units are reactors, and reactor precedes tank ('Neutralization
+# tank'); screw press and crushing mill (splitter) before screw and mill
+# (solids handling); mix tank (tank) before mix (mixer).
 _FAMILY_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
     ('junction', r'\bjunction|\bscaler\b|duplicator|mass balance|'
                  r'diagram only|\bmock\b'),
-    ('boiler_turbogenerator', r'turbo ?generator|\bboiler\b'),
+    ('boiler_turbogenerator', r'turbo ?generator'),
+    ('boiler', r'\bboiler\b'),
     ('heat_exchanger_network', r'heat exchanger network|\bhxn\b'),
-    ('facility', r'cooling tower|chilled water|process water|waste ?water|'
+    ('facility', r'cooling tower|chilled water|process water|'
                  r'\bcip\b|cip ?package|fire ?water|air distribution|'
-                 r'plant air|facilit'),
+                 r'plant air|refrigeration package|waste ?water system cost'),
+    ('reactor', r'waste ?water'),
+    ('facility', r'facilit'),
     ('extraction', r'mixer ?settler|extract|liquid ?liquid|\blle\b'),
     ('steam_injection_heater', r'steam ?mixer|jet ?cooker|steam injection|'
                                r'direct steam'),
@@ -1415,7 +1514,8 @@ _FAMILY_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
     ('flash', r'flash'),
     ('crystallizer', r'crystalli'),
     ('reactor', r'reactor|ferment|saccharif|digest|hydroly|liquefaction|'
-                r'\brx\b|\bmbr\b|seed train'),
+                r'\brx\b|\bmbr\b|seed train|neutrali[sz]|hydrotreat|gasif|'
+                r'pyroly'),
     ('splitter', r'splitter|\bsplit|centrifuge|filter|\bpress\b|screen|'
                  r'separator|decanter|settler|sieve|scrubber|clarifier|'
                  r'adsorp|absorp|membrane|cyclone|osmosis|thickener|'
@@ -1466,14 +1566,30 @@ def _dsm_class(unit):
 
 
 def _is_core_class(class_name, source=None):
-    """True for a core BioSTEAM class: its source URL is under the
-    BioSTEAMDevelopmentGroup/biosteam repository, or its name is on the
-    curated core list."""
-    if not _nonempty_str(class_name):
+    """True for a concrete core BioSTEAM class (R2.6): its name is on the
+    static core list (_CORE_CLASSES) and no source URL attributes it to
+    another repository (none, empty, or under the biosteam / hensmith
+    repositories). A biosteam URL alone never makes a class core."""
+    if not _nonempty_str(class_name) or class_name not in _CORE_CLASSES:
         return False
-    if isinstance(source, str) and _BIOSTEAM_URL_RE.search(source):
-        return True
-    return class_name in _CORE_CLASSES
+    return not _nonempty_str(source) or bool(_BIOSTEAM_URL_RE.search(source))
+
+
+def _class_confidence(class_name, source, pinned):
+    """Identity confidence of a class NAMED by a unit (R2.6): 1.0 for a
+    concrete core class (_is_core_class); None -- identifies a family at
+    most -- for an abstract class (_ABSTRACT_CLASSES) or a class a biosteam
+    URL claims but that is neither on the core list nor a curated table
+    entry (tank_factory and legacy biosteam classes are table entries);
+    else a custom class: 1.0 when the model package is `pinned`, 0.75."""
+    if class_name in _ABSTRACT_CLASSES:
+        return None
+    if _is_core_class(class_name, source):
+        return 1.0
+    if (_nonempty_str(source) and _BIOSTEAM_URL_RE.search(source)
+            and class_name not in _CLASS_TABLE):
+        return None
+    return 1.0 if pinned else 0.75
 
 
 def _infer_class_from_specs(unit, registry):
@@ -1504,29 +1620,41 @@ def _unit_class(unit, registry=None, pinned=False):
     """(class_name or None, family or None, confidence) for one unit.
 
     A class named by design_simulation_method "Class on <URL>", or by a
-    unit_type that exactly names a registry/table class, scores 1.0 when it
-    is a core BioSTEAM class or `pinned` (the flowsheet model package pins a
-    commit or version), else 0.75. Without a named class, a unique
-    tightest-superset match of the design_input_specs key set against the
-    registry infers the class (0.75); a unit_type keyword (or a family-only
-    key-set match) gives the family alone (0.5); else (None, None, 0.0)."""
+    unit_type that exactly names a registry/table/core class, scores
+    _class_confidence: 1.0 for a concrete core BioSTEAM class, 1.0 or 0.75
+    for a custom class (model package `pinned` to a commit or version, or
+    not). An abstract class, or an unverifiable biosteam-URL claim, names no
+    class (R2.6): the unit resolves exactly as if it were not named, with
+    the named class's family as the last-resort family (so naming such a
+    class never scores above, nor below, leaving it out). Without a named
+    class, a unique tightest-superset match of the design_input_specs key
+    set against the registry infers the class (0.75); a unit_type keyword
+    (or a family-only key-set match) gives the family alone (0.5); else
+    (None, None, 0.0)."""
     unit = _as_dict(unit)
     registry = _as_dict(registry)
     name, source = _dsm_class(unit)
     unit_type = unit.get('unit_type')
     unit_type = unit_type.strip() if isinstance(unit_type, str) else None
-    if name is None and unit_type and (unit_type in registry
-                                       or unit_type in _CLASS_TABLE):
-        name = unit_type
+    typed = unit_type if unit_type and (
+        unit_type in registry or unit_type in _CLASS_TABLE
+        or unit_type in _CORE_CLASSES) else None
     inferred = _infer_class_from_specs(unit, registry)
-    if name:
-        family = _class_family(name)
-        if family is None and name not in _CLASS_TABLE and inferred:
+    for candidate, url in ((name, source), (typed, None)):
+        if not candidate:
+            continue
+        confidence = _class_confidence(candidate, url, pinned)
+        if confidence is None:
+            continue
+        family = _class_family(candidate)
+        if family is None and candidate not in _CLASS_TABLE and inferred:
             family = inferred[1]
-        return name, family, 1.0 if _is_core_class(name, source) or pinned else 0.75
+        return candidate, family, confidence
     if inferred and inferred[0]:
         return inferred[0], inferred[1], 0.75
-    family = _keyword_family(unit_type) or (inferred[1] if inferred else None)
+    family = (_keyword_family(unit_type) or (inferred[1] if inferred else None)
+              or (_class_family(name) if name else None)
+              or (_class_family(typed) if typed else None))
     return (None, family, 0.5) if family else (None, None, 0.0)
 
 
@@ -1626,8 +1754,15 @@ _SPLIT = _Req(1, ('split',), {'split': ('all_ports_state',)})
 _ETA = _Req(1, ('eta',), {})
 _T_OR_Q = _Req(1, ('T', 'Q'), {'T': ('outlet_T',), 'Q': ('enthalpy',)},
                guard={'T': 'T'})
-_FEED_STAGES_DEFAULT = _Req(1, ('feed_stages',),
-                            {'feed_stages': ('class_default',)})
+# feed_stages defaults to (0, -1) in the constructor: a constructor argument,
+# so it must be stated (R2.8).
+_FEED_STAGES = _Req(1, ('feed_stages',), {})
+# A stirred-tank reactor's `batch` flag (R2.8): continuous by default, a
+# constructor argument. Applies unless the unit names a class whose
+# design-spec registry entry lacks `batch` (or that the registry does not
+# list); a unit of unknown class must state it (R2.13), so identifying the
+# class can only waive it.
+_BATCH = _Req(1, ('batch',), {}, when='batch_param')
 
 # Family rules (Revision 1, R1.4), checked against the biosteam source.
 _FAMILY_RULES = {
@@ -1637,7 +1772,7 @@ _FAMILY_RULES = {
     'dryer': (_SPLIT,),
     # MultiStageMixerSettlers: N_stages required, feed_stages default (0, -1);
     # the LLE split itself is computed from the thermo (or partition_data).
-    'extraction': (_Req(1, ('N_stages',), {}), _FEED_STAGES_DEFAULT),
+    'extraction': (_Req(1, ('N_stages',), {}), _FEED_STAGES),
     'flash': (_Req(2, ('T', 'P', 'V', 'Q', 'y', 'x'),
                    {'T': ('outlet_T',), 'P': ('outlet_P',),
                     'V': ('all_ports_state',), 'Q': ('enthalpy',)},
@@ -1681,10 +1816,13 @@ _FAMILY_RULES = {
         _P_FREE),
     'evaporator': (_Req(1, ('P',), {}),
                    _Req(1, ('V',), {'V': ('all_ports_state',)})),
-    'reactor': (_T_REQ, _TAU, _V_WF),
+    'reactor': (_T_REQ, _TAU, _V_WF, _BATCH),
     # NREL batch bioreactors: either N or V_max (V in older biosteam); tau_0
-    # (cleaning and unloading time) is a class attribute default; T is the
-    # heat-utility temperature, not the (adiabatic-mix) outlet temperature.
+    # (cleaning and unloading time) is a class attribute -- a class default
+    # only where the constructor does not take it (R2.8: NRELBatchBioreactor
+    # and NRELEthanolFermentation; NRELAnaerobicBatchBioreactor takes it);
+    # T is the heat-utility temperature, not the (adiabatic-mix) outlet
+    # temperature.
     'batch_bioreactor': (
         _T_FREE, _TAU,
         _Req(1, ('N', 'V', 'V_max'),
@@ -1693,18 +1831,17 @@ _FAMILY_RULES = {
         _Req(1, ('tau_0',), {'tau_0': ('class_default',)})),
     # AeratedBioreactor: the O2 transfer (and so the air flow and compressor)
     # is solved from the reactions' O2 uptake against the dissolved-O2 target
-    # theta_O2, a fraction of saturation defaulting to 0.5. Q_O2_consumption
-    # only forces the duty per O2 consumed, so it is not an alternative.
-    'aerated_bioreactor': (
-        _T_REQ, _TAU, _V_WF,
-        _Req(1, ('theta_O2',), {'theta_O2': ('class_default',)})),
+    # theta_O2, a fraction of saturation defaulting to 0.5 in the constructor
+    # (_init), so it must be stated (R2.8). Q_O2_consumption only forces the
+    # duty per O2 consumed, so it is not an alternative.
+    'aerated_bioreactor': (_T_REQ, _TAU, _V_WF, _Req(1, ('theta_O2',), {})),
     'equilibrium_reactor': (_T_REQ, _P_FREE),
     # BatchCrystallizer: T (default 305.15 K), tau, and N or V.
     'crystallizer': (_T_REQ, _TAU, _Req(1, ('N', 'V'), {})),
     'tank': (_TAU,),
-    'boiler_turbogenerator': (_Req(1, ('boiler_efficiency',), {}),
-                              _Req(1, ('turbogenerator_efficiency',), {})),
-    'heat_exchanger_network': (_Req(1, ('T_min_app',), {}),),
+    # Boilers, boiler-turbogenerators and heat-exchanger networks carry
+    # plant-wide settings, scored by CMP-UOP-06 (R2.5), not here.
+    'boiler': (), 'boiler_turbogenerator': (), 'heat_exchanger_network': (),
 }
 
 # Class-level rules where a class's real degrees of freedom differ from its
@@ -1712,9 +1849,9 @@ _FAMILY_RULES = {
 _CLASS_RULES = {
     'AdiabaticMultiStageVLEColumn': (_Req(1, ('N_stages',), {}),
                                      _Req(1, ('solute',), {}),
-                                     _FEED_STAGES_DEFAULT, _P_FREE),
+                                     _FEED_STAGES, _P_FREE),
     'MultiStageEquilibrium': (_Req(1, ('N_stages', 'stages'), {}),
-                              _FEED_STAGES_DEFAULT, _P_FREE),
+                              _FEED_STAGES, _P_FREE),
     # single-stage LLE: the split is computed from the thermo
     'MixerSettler': (), 'LLEUnit': (), 'LLECentrifuge': (), 'LLESettler': (),
     'LiquidsSettler': (), 'MagneticSeparator': (), 'PhaseSplitter': (),
@@ -1734,20 +1871,22 @@ _CLASS_RULES = {
         _Req(1, ('cycle_time',), {}), _Req(1, ('adsorbate',), {}),
         _Req(1, ('isotherm_model',), {}), _Req(1, ('isotherm_args',), {})),
     # GasFedBioreactor: gas_substrates is a required argument; the dissolved
-    # gas target theta (fraction of saturation) defaults to 0.5.
+    # gas target theta (fraction of saturation) defaults to 0.5 in the
+    # constructor, so it must be stated (R2.8).
     'GasFedBioreactor': (_T_REQ, _TAU, _V_WF,
                          _Req(1, ('gas_substrates',), {}),
-                         _Req(1, ('theta',), {'theta': ('class_default',)})),
+                         _Req(1, ('theta',), {})),
     'SplitFlash': (_SPLIT, _T_OR_Q, _P_REQ),
     'SinglePhaseStage': (_T_OR_Q,),
     'ReactivePhaseStage': (_T_OR_Q,),
     # StageEquilibrium: phases is required; one stage specification (T, Q/Duty,
     # B/Boilup, Reflux or F/Flow) passed as a keyword, adiabatic (Q = 0) by
-    # default. PhasePartition is its internal partition: phases only.
+    # constructor default, so it must be stated (R2.8). PhasePartition is its
+    # internal partition: phases only.
     'StageEquilibrium': (
         _Req(1, ('phases',), {}),
         _Req(1, ('T', 'Temperature', 'Q', 'Duty', 'B', 'Boilup', 'Reflux', 'F',
-                 'Flow'), {'T': ('outlet_T',), 'Q': ('class_default',)},
+                 'Flow'), {'T': ('outlet_T',)},
              guard={'T': 'T'})),
     'PhasePartition': (_Req(1, ('phases',), {}),),
     'MultistageCompressor': (
@@ -1761,20 +1900,20 @@ _CLASS_RULES = {
     # corn Liquefaction: a MixTank with a class-fixed reaction; T is the
     # mixed-inlet temperature, not a specification.
     'Liquefaction': (_TAU, _V_WF),
-    # biosteam.wastewater: sized by loading rates, not tau / V_wf; digestion
-    # chemistry and splits are class defaults.
+    # biosteam.wastewater: sized by loading rates, not tau / V_wf. Their
+    # reactor type, loading rates, working volume, sludge split and
+    # evaporation all default in the constructor (_init), so they must be
+    # stated (R2.8).
     'AnMBR': (_Req(1, ('T',), {'T': ('outlet_T',)}),
-              _Req(1, ('reactor_type',), {'reactor_type': ('class_default',)})),
+              _Req(1, ('reactor_type',), {})),
     'PolishingFilter': (_Req(1, ('T',), {'T': ('outlet_T',)}),
-                        _Req(1, ('OLR', 'HLR'), {'OLR': ('class_default',)})),
+                        _Req(1, ('OLR', 'HLR'), {})),
     'InternalCirculationRx': (
         _Req(1, ('T',), {'T': ('outlet_T',)}),
-        _Req(1, ('OLRall',), {'OLRall': ('class_default',)}),
-        _Req(1, ('V_wf',), {'V_wf': ('class_default',)})),
-    'AnaerobicDigestion': (_Req(1, ('sludge_split',),
-                                {'sludge_split': ('class_default',)}),),
-    'AerobicDigestion': (_Req(1, ('evaporation',),
-                              {'evaporation': ('class_default',)}),),
+        _Req(1, ('OLRall',), {}),
+        _Req(1, ('V_wf',), {})),
+    'AnaerobicDigestion': (_Req(1, ('sludge_split',), {}),),
+    'AerobicDigestion': (_Req(1, ('evaporation',), {}),),
 }
 
 
@@ -1790,8 +1929,9 @@ def _unit_rules(sc, position):
 
 
 def _spec_population(sc):
-    """Positions of units that need operating specifications (CMP-UOP-02 and
-    CMP-UOP-05): unknown family, or a non-empty rule set."""
+    """Positions of units that need operating specifications (CMP-UOP-02;
+    CMP-UOP-05 adds the CMP-UOP-06 facilities): unknown family, or a
+    non-empty rule set (facility families have none: R2.5)."""
     return [p for p in range(len(sc.units)) if _unit_rules(sc, p) != ()]
 
 
@@ -1875,8 +2015,9 @@ def _closure(sc, position):
     mass flow in and out (every connected stream stating a valid
     total_mass_flow) agree within CLOSURE_RTOL, and, for a physical unit
     (_physical_unit), so does every species' molar flow (relative to the
-    total molar throughput). reason says why not ('' when it closes). Cached
-    per context."""
+    total molar throughput), and the R2.4 species-appearance guard finds it
+    consistent (_species_consistency). reason says why not ('' when it
+    closes). Cached per context."""
     cache = sc.closures
     if position in cache:
         return cache[position]
@@ -1916,6 +2057,8 @@ def _closure(sc, position):
                 if off:
                     result = False, (f"species balance does not close for "
                                      f"{', '.join(off[:3])}")
+        if result[0]:  # R2.4: species evidence blocks derivations too
+            result = _species_consistency(sc, position)
     cache[position] = result
     return result
 
@@ -1925,10 +2068,36 @@ _STREAM_CONDITIONS = frozenset({'outlet_T', 'outlet_P', 'all_ports_state',
                                 'enthalpy', 'outlet_phases'})
 
 
-def _condition_holds(condition, sc, position, explicit):
+def _registry_params(sc, position):
+    """Constructor parameters of unit `position`'s named class: the keys of
+    its declared design-spec registry entry (_declared_registry_class: the
+    class itself, else its curated registry ancestor), or None when the
+    class is unknown or the registry lists neither."""
+    name = sc.unit_classes[position][0]
+    declared = _declared_registry_class(name, sc.registry)
+    if not declared:
+        return None
+    return set(_as_dict(_as_dict(sc.registry.get(declared))
+                        .get('design_input_spec_params')))
+
+
+def _class_attribute_default(sc, position, key):
+    """True when `key` of unit `position` is a class-level attribute default
+    (R2.8): the class is concrete and identified at confidence 1, and `key`
+    is NOT one of its constructor parameters (_registry_params; an
+    unlisted class gives no such evidence). A constructor argument with a
+    default must be stated."""
+    name, _family, confidence = sc.unit_classes[position]
+    params = _registry_params(sc, position)
+    return (bool(name) and confidence == 1.0 and params is not None
+            and key is not None and key not in params)
+
+
+def _condition_holds(condition, sc, position, explicit, key=None):
     """Evaluate one derivation / counts_if condition for unit `position`
-    (see _Req). A condition reading stream data (_STREAM_CONDITIONS) also
-    needs the unit's balances to close (_closure)."""
+    (see _Req); `key` is the specification the condition derives (needed by
+    'class_default'). A condition reading stream data (_STREAM_CONDITIONS)
+    also needs the unit's balances to close (_closure)."""
     unit = sc.units[position]
     uid = unit.get('id')
     if condition in _STREAM_CONDITIONS and not _closure(sc, position)[0]:
@@ -1944,8 +2113,7 @@ def _condition_holds(condition, sc, position, explicit):
     if condition == 'outlet_phases':
         return sc.all_outlets_phased(uid)
     if condition == 'class_default':
-        name, _family, confidence = sc.unit_classes[position]
-        return bool(name) and confidence == 1.0
+        return _class_attribute_default(sc, position, key)
     if condition == 'rigorous':
         return _as_dict(unit.get('design_input_specs')).get('rigorous') is True
     if condition.startswith('explicit:'):
@@ -1953,6 +2121,8 @@ def _condition_holds(condition, sc, position, explicit):
     if condition.startswith('design_result:'):
         name = condition.split(':', 1)[1]
         return _num(_as_dict(unit.get('design_results')).get(name)) is not None
+    if condition == 'served_agent':
+        return _serves_agent(sc, position)
     raise ValueError(f'unknown derivation condition {condition!r}')
 
 
@@ -1962,8 +2132,9 @@ def _requirement_applies(req, sc, position):
     its condition false -- inlet and outlet phase sets both known and equal
     (phase_change), rigorous = true or no phase change
     (phase_change_nonrigorous), inlet and outlet pressures all known with a
-    rise >= 1 Pa (no_pressure_rise). An unevaluable condition applies it, so
-    deleting data can only add requirements."""
+    rise >= 1 Pa (no_pressure_rise), the unit naming a class whose
+    registry entry lacks `batch` or is absent (batch_param). An unevaluable
+    condition applies it, so deleting data can only add requirements."""
     if req.when is None:
         return True
     unit = sc.units[position]
@@ -1977,6 +2148,17 @@ def _requirement_applies(req, sc, position):
     if req.when == 'no_pressure_rise':
         rise = _pressure_rise(sc, uid)
         return rise is None or rise < 1.0
+    if req.when == 'batch_param':
+        # Waived only for a class the unit itself names (not one inferred
+        # from its spec keys) whose constructor takes no `batch`.
+        name = sc.unit_classes[position][0]
+        unit_type = unit.get('unit_type')
+        stated = (_dsm_class(unit)[0],
+                  unit_type.strip() if isinstance(unit_type, str) else None)
+        if name is None or name not in stated:
+            return True
+        params = _registry_params(sc, position)
+        return params is not None and 'batch' in params
     raise ValueError(f'unknown requirement condition {req.when!r}')
 
 
@@ -1985,7 +2167,7 @@ def _counted_keys(req, sc, position, explicit):
     gates = req.counts_if or {}
     return {k for k in req.keys if k in explicit
             and (k not in gates
-                 or _condition_holds(gates[k], sc, position, explicit))}
+                 or _condition_holds(gates[k], sc, position, explicit, k))}
 
 
 def _main_outlet(streams):
@@ -2039,7 +2221,7 @@ def _requirement_score(req, sc, position, explicit):
     e = min(len(counted), req.n)
     d = sum(1 for key, conditions in req.derive.items()
             if key not in counted
-            and all(_condition_holds(c, sc, position, explicit)
+            and all(_condition_holds(c, sc, position, explicit, key)
                     for c in conditions))
     return (e + DERIVED_CREDIT * min(d, req.n - e)) / req.n
 
@@ -2190,9 +2372,12 @@ class _ScoringContext:
                          .get('flowsheet_model_package'))
         self.unit_classes = [_unit_class(u, self.registry, pinned)
                              for u in self.units]
-        self.unit_core = [_is_core_class(name, _dsm_class(u)[1])
-                          for u, (name, _f, _c) in zip(self.units,
-                                                       self.unit_classes)]
+        # The URL counts only when design_simulation_method named the class
+        # the unit resolved to (not when an abstract one fell through to it).
+        self.unit_core = [
+            _is_core_class(name, _dsm_class(u)[1]
+                           if _dsm_class(u)[0] == name else None)
+            for u, (name, _f, _c) in zip(self.units, self.unit_classes)]
         self.unit_registry_classes = [
             _registry_class(name, family, u, self.registry)
             for u, (name, family, _c) in zip(self.units, self.unit_classes)]
@@ -2204,6 +2389,7 @@ class _ScoringContext:
                                 for r in _dicts(u.get('reactions')))
                             for u in self.units]
         self.closures = {}  # _closure cache: position -> (closes, reason)
+        self.consistency = {}  # _species_consistency cache (R2.4)
         self.unit_positions = {}
         for i, u in enumerate(self.units):
             if _nonempty_str(u.get('id')):
@@ -2363,7 +2549,7 @@ def _empty_chemical_population(sc):
 def _thm_02_credit(chem, cid):
     """(credit, missing suffix or None) of one declared chemical's identity
     (R2.0/R2.3): a valid registry id 1; else an id that resolves by name
-    (never one that is itself a molecular formula) NAME_RESOLVED_CREDIT when
+    (never a formula with >= 2 carbon atoms) NAME_RESOLVED_CREDIT when
     the record's molar mass or formula matches the chemical's,
     NAME_UNVERIFIED_CREDIT when the chemical states neither; else (no name,
     or a mismatching one) FORMULA_ONLY_CREDIT when a parseable formula (or
@@ -2380,8 +2566,8 @@ def _thm_02_credit(chem, cid):
                                         'verify the match)')
     why = (' (the name resolves to a compound of another molar mass)'
            if tier == 'mismatch' else
-           ' (id is a molecular formula: isomer-ambiguous)'
-           if _formula_like(cid) else '')
+           ' (id is a molecular formula with >= 2 carbon atoms: '
+           'isomer-ambiguous)' if _isomer_ambiguous(cid) else '')
     if _valid_formula(chem.get('formula')) or _formula_like(cid):
         return FORMULA_ONLY_CREDIT, f'.registry_id (formula only){why}'
     return 0.0, f'.registry_id (no formula either; id not resolvable by name){why}'
@@ -2457,7 +2643,8 @@ def _score_thm_05(sc):  # CMP-THM-05
     # chemical still needs property data (Chemicals.compile() requires key
     # properties for every member). A chemical is database-resolvable by a
     # valid registry id or a verified/unverified name (not a mismatching or
-    # formula-like one); an undeclared referenced id is judged by its name.
+    # isomer-ambiguous one); an undeclared referenced id is judged by its
+    # name.
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
@@ -2709,14 +2896,70 @@ def _score_feed_01(sc):  # CMP-FEED-01
             missing)
 
 
+# Chemical ids (lowercase) of each utility-port material (R2.9).
+_PORT_MATERIAL_IDS = {
+    'natural gas': frozenset({'ch4', 'methane', 'naturalgas', 'natural_gas'}),
+    'lime': frozenset({'lime', 'cao', 'ca(oh)2', 'caoh2', 'calciumoxide',
+                       'calciumhydroxide', 'calciumdihydroxide'}),
+    'boiler chemicals': frozenset({'boilerchems', 'boilerchemicals',
+                                   'boiler_chemicals'}),
+    'makeup water': frozenset({'water', 'h2o'}),
+}
+PORT_MATERIAL_MIN = 0.5  # mol fraction making a feed a port's material
+
+
+def _mole_fractions(stream):
+    """{lowercase component id: mol fraction} of a non-empty stream whose
+    species flows are computable (_species_flows), else None."""
+    flows = _species_flows(stream)
+    total = sum(flows.values()) if flows else 0.0
+    if not total > 0.0:
+        return None
+    fractions = {}
+    for name, flow in flows.items():
+        key = str(name).strip().lower()
+        fractions[key] = fractions.get(key, 0.0) + flow / total
+    return fractions
+
+
+def _port_materials(sc, position):
+    """Utility-port materials of unit `position` that BioSTEAM prices itself
+    when the feed's own price is 0 (R2.9): natural gas for combustors,
+    dryers, boilers and boiler-turbogenerators (bst.stream_utility_prices);
+    lime and boiler chemicals for boilers (class-default prices); makeup
+    water for a process-water center -- or a facility of unknown kind,
+    which might be one (bst.stream_utility_prices)."""
+    family = sc.unit_classes[position][1]
+    if family in ('combustor', 'dryer'):
+        return ('natural gas',)
+    if family in ('boiler', 'boiler_turbogenerator'):
+        return ('natural gas', 'lime', 'boiler chemicals')
+    if family == 'facility' and _facility_kind(sc, position) in (
+            None, 'ProcessWaterCenter'):
+        return ('makeup water',)
+    return ()
+
+
 def _utility_port_feed(sc, position):
-    """The sink unit's label when feed `position` enters a utility-port
-    family unit (combustor, boiler-turbogenerator, dryer), else None."""
+    """(sink unit label, material) when feed `position` enters a unit with
+    utility-port materials (_port_materials) and its composition does not
+    rule them out: a feed whose composition is known (_mole_fractions) is
+    the port's material only when >= PORT_MATERIAL_MIN of it is that
+    material (natural gas: >= 50 mol% CH4); an unknown composition may be
+    (R2.13). Else None: air and other feeds are scored normally."""
     sink = sc.streams[position].get('sink_unit_id')
     unit = sc.unit_positions.get(sink) if isinstance(sink, str) else None
-    if unit is None or sc.unit_classes[unit][1] not in UTILITY_PORT_FAMILIES:
+    materials = _port_materials(sc, unit) if unit is not None else ()
+    if not materials:
         return None
-    return sc.unit_labels[unit]
+    fractions = _mole_fractions(sc.streams[position])
+    for material in materials:
+        if fractions is None or sum(
+                x for name, x in fractions.items()
+                if name in _PORT_MATERIAL_IDS[material]) >= PORT_MATERIAL_MIN:
+            return sc.unit_labels[unit], (material if fractions is not None
+                                          else '/'.join(materials) + '?')
+    return None
 
 
 def _score_feed_02(sc):  # CMP-FEED-02
@@ -2741,11 +2984,12 @@ def _score_feed_02(sc):  # CMP-FEED-02
             scores.append(0.0)
             missing.append(f'{sc.stream_labels[i]}.price')
         elif price == 0 and port:
-            # BioSTEAM prices a 0-priced fuel/air port from bst.stream_prices,
-            # which SFF cannot state.
+            # BioSTEAM prices a 0-priced utility-port material itself
+            # (bst.stream_utility_prices or a class default), which SFF
+            # cannot state.
             scores.append(0.5)
-            missing.append(f'{sc.stream_labels[i]}.price: 0 on a utility port '
-                           f'of {port} (priced from bst.stream_prices, not '
+            missing.append(f'{sc.stream_labels[i]}.price: 0 on the {port[1]} '
+                           f'port of {port[0]} (priced by BioSTEAM, not '
                            f'representable)')
         else:
             scores.append(1.0)
@@ -2764,6 +3008,14 @@ def _class_note(sc, position):
     name, family, confidence = sc.unit_classes[position]
     if confidence == 1.0:
         return None
+    named = _dsm_class(unit)
+    if name is None and named[0]:
+        why = ('is abstract' if named[0] in _ABSTRACT_CLASSES else
+               'is not a concrete core BioSTEAM class, although its URL '
+               'claims biosteam')
+        return (f"{label}.design_simulation_method: class '{named[0]}' {why}"
+                + (f" (family '{family}' only)" if family else
+                   ' (no family either)'))
     if confidence == 0.75:
         stated = name in (_dsm_class(unit)[0], unit.get('unit_type'))
         if stated:
@@ -2849,17 +3101,47 @@ def _score_uop_04(sc):  # CMP-UOP-04
     positions = sc.internal + sc.outlets
     if not positions:
         return None, 'no internal or product streams', []
-    score, missing = _state_missing(sc, sorted(positions))
-    full = sum(1 for i in positions if all(sc.stream_states[i].values()))
-    return (score, f'{full} of {len(positions)} internal/product stream(s) '
-            f'fully stated', missing)
+    # R2.4 consistency guard: the outlets of a physical-only unit whose
+    # species appear or vanish without declared reactions (or cannot be
+    # checked) do not count their composition as stated.
+    suspect = {}
+    for position, unit in enumerate(sc.units):
+        consistent, why = _species_consistency(sc, position)
+        uid = unit.get('id')
+        if not consistent and isinstance(uid, str):
+            for i in sc.unit_outlets.get(uid, []):
+                suspect.setdefault(i, (sc.unit_labels[position], why))
+    scores, missing, full = [], [], 0
+    for i in sorted(positions):
+        state = dict(sc.stream_states[i])
+        if i in suspect:
+            state['composition'] = False
+        scores.append(sum(state.values()) / len(state))
+        full += all(state.values())
+        for key, ok in state.items():
+            if ok:
+                continue
+            note = ''
+            if key == 'composition' and sc.stream_states[i][key]:
+                label, why = suspect[i]
+                note = f' (stated, but inconsistent at {label}: {why})'
+            missing.append(f'{sc.stream_labels[i]}.{_STATE_PATHS[key]}{note}')
+    return (_mean(scores), f'{full} of {len(positions)} internal/product '
+            f'stream(s) fully stated' + (f'; {len(suspect)} outlet(s) of '
+                                         f'physical-only units fail the '
+                                         f'species-consistency guard'
+                                         if suspect else ''), missing)
 
 
 def _score_uop_05(sc):  # CMP-UOP-05
-    # Derived credit needs the class at confidence 1 AND a known family: the
-    # bare base class 'Unit' has no specification conventions to imply units.
+    # Derived credit needs the class at confidence 1 AND a known family (an
+    # abstract class such as 'Unit' names none). Population: the units that
+    # need operating specifications (CMP-UOP-02) or facility settings
+    # (CMP-UOP-06), whose numeric settings (T_min_app, ...) carry no units
+    # either.
     pairs, missing = [], []
-    for position in _spec_population(sc):
+    for position in sorted(set(_spec_population(sc))
+                           | set(_facility_population(sc))):
         name, family, confidence = sc.unit_classes[position]
         known = bool(name) and confidence == 1.0 and family is not None
         pairs.append((DERIVED_CREDIT if known else 0.0,
@@ -2873,12 +3155,183 @@ def _score_uop_05(sc):  # CMP-UOP-05
     return (_wmean(pairs), f'not representable; units implied by class '
             f'conventions for {known} of {len(pairs)} unit(s)', missing)
 
+
+#%% Facility bindings and settings (CMP-UOP-06)
+
+# Facility classes that only add a cost (no binding or setting a rebuild
+# needs): excluded from CMP-UOP-06.
+_COST_ONLY_FACILITIES = frozenset({
+    'CIPpackage', 'FireWaterTank', 'AirDistributionPackage',
+    'WastewaterSystemCost', 'ChemicalCapitalInvestment',
+    'PlantAir_CIP_WasteWater_Facilities'})
+
+# A facility's served agent: stated as `agent` (or a BoilerTurbogenerator's
+# `other_agents`), else derivable when its utility results name a declared
+# heat agent (the steam it raises, the cooling or chilled water it
+# regenerates).
+_SERVED_AGENT = _Req(1, ('agent', 'other_agents'), {'agent': ('served_agent',)})
+
+# Per-class requirements (R2.5), checked against the biosteam source
+# (facilities/_boiler_turbogenerator.py, _process_water_center.py,
+# _cooling_tower.py, _chilled_water_package.py, _refrigeration_package.py)
+# and hensmith's HeatExchangerNetwork. Every one is a constructor argument
+# with a default, so it must be stated (R2.8). Stream- and unit-id lists
+# count only when non-empty and every id is declared.
+_FACILITY_RULES = {
+    'BoilerTurbogenerator': (
+        _Req(1, ('boiler_efficiency',), {}),
+        _Req(1, ('turbogenerator_efficiency',), {}),
+        _Req(1, ('satisfy_system_electricity_demand',), {}),
+        _Req(1, ('fuel_source',), {}),
+        _SERVED_AGENT),
+    'Boiler': (_Req(1, ('boiler_efficiency',), {}),),
+    'ProcessWaterCenter': (_Req(1, ('process_water_streams',), {}),
+                           _Req(1, ('makeup_water_streams',), {})),
+    'HeatExchangerNetwork': (_Req(1, ('T_min_app',), {}),
+                             _Req(1, ('units',), {})),
+    'CoolingTower': (_SERVED_AGENT,),
+    'ChilledWaterPackage': (_SERVED_AGENT,),
+    # RefrigerationPackage(ID, agent, efficiency=0.35): its efficiency too.
+    'RefrigerationPackage': (_SERVED_AGENT, _Req(1, ('efficiency',), {})),
+}
+
+# Facility kind of a class-less facility-family unit, by keyword on its
+# class name or unit_type (first match wins); 'cost_only' is excluded.
+_FACILITY_KIND_KEYWORDS = tuple((kind, re.compile(pattern)) for kind, pattern in (
+    ('BoilerTurbogenerator', r'turbo ?generator'),
+    ('Boiler', r'\bboiler\b'),
+    ('HeatExchangerNetwork', r'heat exchanger network|\bhxn\b'),
+    ('CoolingTower', r'cooling tower'),
+    ('ChilledWaterPackage', r'chilled water'),
+    ('RefrigerationPackage', r'refrigeration'),
+    ('ProcessWaterCenter', r'process water'),
+    ('cost_only', r'\bcip\b|cip ?package|fire ?water|air distribution|'
+                  r'plant air|waste ?water system cost|capital investment'),
+))
+
+# Design-spec keys naming stream / unit / agent ids.
+_STREAM_LIST_KEYS = frozenset({'process_water_streams', 'makeup_water_streams'})
+
+
+def _facility_kind(sc, position):
+    """_FACILITY_RULES key of facility-family unit `position`, 'cost_only',
+    or None (kind unknown): its class when listed, else a keyword on its
+    class name or unit_type, else its family's only class (boiler,
+    boiler_turbogenerator, heat_exchanger_network)."""
+    name, family, _confidence = sc.unit_classes[position]
+    if name in _FACILITY_RULES:
+        return name
+    if name in _COST_ONLY_FACILITIES:
+        return 'cost_only'
+    for text in (name, sc.units[position].get('unit_type')):
+        if not _nonempty_str(text):
+            continue
+        variants = _normalized_texts(text)
+        for kind, pattern in _FACILITY_KIND_KEYWORDS:
+            if any(pattern.search(v) for v in variants):
+                return kind
+    return {'boiler': 'Boiler', 'boiler_turbogenerator': 'BoilerTurbogenerator',
+            'heat_exchanger_network': 'HeatExchangerNetwork'}.get(family)
+
+
+def _facility_population(sc):
+    """Positions of the CMP-UOP-06 population (R2.5): facility-family units
+    (FACILITY_FAMILIES) except cost-only facilities."""
+    return [p for p, (_n, family, _c) in enumerate(sc.unit_classes)
+            if family in FACILITY_FAMILIES
+            and _facility_kind(sc, p) != 'cost_only']
+
+
+def _valid_id_list(value, ids):
+    """True when `value` is a non-empty list of string ids, every one in
+    `ids` (R2.5: a binding to undeclared streams or units binds nothing)."""
+    return (isinstance(value, (list, tuple)) and bool(value)
+            and all(isinstance(v, str) and v in ids for v in value))
+
+
+def _heat_agent_ids(sc):
+    """Ids of the declared heat-utility agents."""
+    return {agent['id'] for group, agent, _l in sc.agents
+            if group == 'heat_utilities' and isinstance(agent.get('id'), str)}
+
+
+def _facility_explicit(sc, position):
+    """design_input_specs keys of unit `position` stated plausibly for
+    CMP-UOP-06: _explicit_keys, with id-valued keys checked against the
+    document -- process/makeup water stream lists against the declared
+    streams, `units` against the declared units, `agent` (a heat-agent id)
+    and `other_agents` (a list of them) against the declared heat agents."""
+    specs = _as_dict(sc.units[position].get('design_input_specs'))
+    stream_ids = {s['id'] for s in sc.streams if _nonempty_str(s.get('id'))}
+    agents = _heat_agent_ids(sc)
+    explicit = set()
+    for key in _explicit_keys(sc.units[position]):
+        value = specs[key]
+        if key in _STREAM_LIST_KEYS:
+            ok = _valid_id_list(value, stream_ids)
+        elif key == 'units':
+            ok = _valid_id_list(value, sc.unit_ids)
+        elif key == 'agent':
+            ok = isinstance(value, str) and value in agents
+        elif key == 'other_agents':
+            ok = _valid_id_list(value, agents)
+        else:
+            ok = True
+        if ok:
+            explicit.add(key)
+    return explicit
+
+
+def _serves_agent(sc, position):
+    """True when unit `position`'s utility results name a declared heat
+    agent (the agent a facility raises or regenerates is then derivable)."""
+    unit = sc.units[position]
+    agents = _heat_agent_ids(sc)
+    return any(isinstance(k, str) and k in agents
+               for key in _UTILITY_RESULT_KEYS
+               for k in _as_dict(unit.get(key)))
+
+
+def _facility_unit_score(sc, position):
+    """(score, missing) of one CMP-UOP-06 unit: the mean of its facility
+    kind's requirements (_FACILITY_RULES, scored like CMP-UOP-02
+    requirements); 0 when its kind is unknown."""
+    label = sc.unit_labels[position]
+    kind = _facility_kind(sc, position)
+    rules = _FACILITY_RULES.get(kind)
+    if rules is None:
+        return 0.0, [f'{label}: facility kind unknown, so its bindings and '
+                     f'settings cannot be determined']
+    explicit = _facility_explicit(sc, position)
+    scores, missing = [], []
+    for req in rules:
+        score = _requirement_score(req, sc, position, explicit)
+        scores.append(score)
+        if score < 1.0:
+            missing.append(_requirement_locator(label, req, score))
+    return _mean(scores), missing
+
+
+def _score_uop_06(sc):  # CMP-UOP-06
+    pairs, missing = [], []
+    for position in _facility_population(sc):
+        score, gaps = _facility_unit_score(sc, position)
+        pairs.append((score, _unit_weight(sc, position)))
+        missing.extend(gaps)
+    if not pairs:
+        return None, 'no facilities with bindings or settings', []
+    full = sum(1 for score, _w in pairs if score == 1.0)
+    return (_wmean(pairs), f'{full} of {len(pairs)} facility unit(s) state '
+            f'every binding and setting (family-weighted)', missing)
+
 #%% Criteria -- reactions
 
 def _species_change(sc, unit_id):
     """Species that appear in (or vanish from) a unit's outlets relative to
-    its inlets -- evidence of reaction. Empty unless the unit has inlets and
-    outlets whose compositions are all computable."""
+    its inlets, as evidence strings ('CO2 appears'); [] when the unit lacks
+    inlets or outlets or nothing changes; None when some connected stream's
+    species flows are not computable (_species_flows), so a change cannot be
+    ruled out."""
     if not isinstance(unit_id, str):
         return []
     ins, outs = sc.unit_inlets.get(unit_id, []), sc.unit_outlets.get(unit_id, [])
@@ -2889,7 +3342,7 @@ def _species_change(sc, unit_id):
         for i in positions:
             flows = _species_flows(sc.streams[i])
             if flows is None:
-                return []
+                return None
             for name, value in flows.items():
                 acc[name] = acc.get(name, 0.0) + value
     total = max(sum(flows_in.values()), sum(flows_out.values()))
@@ -2902,30 +3355,74 @@ def _species_change(sc, unit_id):
             + [f'{n} vanishes' for n in sorted(vanish)])
 
 
+def _species_guarded(sc, position):
+    """True when unit `position` falls under the species-appearance
+    consistency guard (R2.4): a physical-only family (PHYSICAL_FAMILIES --
+    a splitter unless it names a custom, non-core class, whose code may
+    transform species) that declares no well-formed reaction. A splitter of
+    unknown class is guarded: only an identified custom class waives it."""
+    name, family, _confidence = sc.unit_classes[position]
+    if family not in PHYSICAL_FAMILIES or sc.unit_reacts[position]:
+        return False
+    return not (family == 'splitter' and name and not sc.unit_core[position])
+
+
+def _species_consistency(sc, position):
+    """(consistent, reason) of the R2.4 consistency guard for unit
+    `position`, cached per context: (True, '') unless the unit is guarded
+    (_species_guarded); a guarded unit is consistent only when every
+    connected stream's species flows are computable and no species appears
+    or vanishes. An uncomputable port leaves consistency unverified (False),
+    so deleting a stream's composition never lifts the guard."""
+    cache = sc.consistency
+    if position in cache:
+        return cache[position]
+    result = True, ''
+    if _species_guarded(sc, position):
+        change = _species_change(sc, sc.units[position].get('id'))
+        if change is None:
+            result = False, ('species flows not computable for every '
+                             'connected stream, so no undeclared reaction '
+                             'can be ruled out')
+        elif change:
+            result = False, (f"{', '.join(change[:3])} across a "
+                             f"physical-only unit without declared reactions")
+    cache[position] = result
+    return result
+
+
 def _reactive_reason(sc, position):
-    """Why a unit counts as reactive for CMP-RXN-01, or None. Families with
-    class-implied chemistry (facilities, combustors, boilers, Gibbs reactors,
-    dryers) are exempt from the species-appearance evidence: their balances
-    are fixed by the class (a process-water center discards and makes up
-    species internally), so a vanishing species there is not an undeclared
-    reaction."""
-    unit = sc.units[position]
+    """'reactor family' when unit `position` needs reactions by its family
+    (R2.4: the reactor families -- continuous, batch, aerated and gas-fed
+    bioreactors, incl. keyword reactors such as neutralizers,
+    hydrotreaters, gasifiers, pyrolysis and hydrolysis units -- minus the
+    class-implied-chemistry equilibrium reactors); else None. Declared
+    reactions and species appearance no longer make a unit reactive: a
+    population defined by data let deleting that data shrink it."""
     family = sc.unit_classes[position][1]
     if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
-    if sc.unit_reacts[position]:  # malformed reactions count as none (R2.0)
-        return 'declares reactions'
-    if family in CLASS_IMPLIED_CHEMISTRY_FAMILIES:
-        return None
-    change = _species_change(sc, unit.get('id'))
-    return ', '.join(change[:3]) if change else None
+    return None
 
 
 def _reactive_units(sc):
-    """[(position, reason)] of the reactive units (CMP-RXN-01/02/04)."""
+    """[(position, reason)] of the reactive units: the CMP-RXN-01
+    population (_reactive_reason)."""
     return [(p, reason) for p, reason in
             ((p, _reactive_reason(sc, p)) for p in range(len(sc.units)))
             if reason is not None]
+
+
+def _reaction_units(sc):
+    """[(position, reason)] whose reactions CMP-RXN-02/03/04 score (R2.4):
+    the reactive units, plus every other unit that declares reactions (a
+    non-empty list of reaction objects; reason 'declares reactions').
+    Deleting a field of a reaction never shrinks this population; deleting
+    whole reactions (list elements) can."""
+    reactive = dict(_reactive_units(sc))
+    return [(p, reactive.get(p, 'declares reactions'))
+            for p in range(len(sc.units))
+            if p in reactive or _dicts(sc.units[p].get('reactions'))]
 
 
 def _score_rxn_01(sc):  # CMP-RXN-01
@@ -2970,11 +3467,12 @@ def _reaction_completeness(sc, reaction, where):
 
 def _per_reactive_unit(sc, reaction_score):
     """(family-weighted mean, missing, n units scoring 1, n reactive units)
-    over the reactive units of each unit's mean reaction_score(sc, position,
-    index, reaction) -> (score, missing); a reactive unit without reactions
-    contributes 0. The mean is None when no unit is reactive."""
+    over the reaction units (_reaction_units) of each unit's mean
+    reaction_score(sc, position, index, reaction) -> (score, missing); a
+    reactive unit without reactions contributes 0. The mean is None when the
+    population is empty."""
     pairs, missing, full = [], [], 0
-    for position, reason in _reactive_units(sc):
+    for position, reason in _reaction_units(sc):
         label = sc.unit_labels[position]
         reactions = [(ri, r) for ri, r in
                      enumerate(_as_list(sc.units[position].get('reactions')))
@@ -2999,21 +3497,22 @@ def _score_rxn_02(sc):  # CMP-RXN-02
         sc, lambda sc, p, ri, r: _reaction_completeness(
             sc, r, f'{sc.unit_labels[p]}.reactions[{ri}]'))
     if not n:
-        return None, 'no reactive units', []
-    return (score, f'{full} of {n} reactive unit(s) define every reaction '
-            f'completely (family-weighted)', missing)
+        return None, 'no reactive units and no declared reactions', []
+    return (score, f'{full} of {n} reactive / reaction-declaring unit(s) '
+            f'define every reaction completely (family-weighted)', missing)
 
 
 def _score_rxn_03(sc):  # CMP-RXN-03
-    # Population = the reactive units (R1.0), not the units that happen to
-    # carry >= 2 reactions: deleting a unit's reactions must not turn the
+    # Population = the reaction units (R2.4: the reactive units plus every
+    # other unit declaring reactions), not the units that happen to carry
+    # >= 2 reactions: deleting a reactor's reactions must not turn the
     # criterion not-applicable. Per unit: >= 2 reactions -> 1 when every one
     # is indexed, else 0; exactly one -> 1 (no order to state); none -> 0
     # (its reaction set, and so their order, is unknown). Only well-formed
     # reactions make a reaction set (R2.0): a unit with none scores 0.
-    reactive = _reactive_units(sc)
+    reactive = _reaction_units(sc)
     if not reactive:
-        return None, 'no reactive units', []
+        return None, 'no reactive units and no declared reactions', []
     pairs, missing, multi = [], [], 0
     for position, reason in reactive:
         label = sc.unit_labels[position]
@@ -3032,8 +3531,8 @@ def _score_rxn_03(sc):  # CMP-RXN-03
         pairs.append((0.0 if unindexed else 1.0, _unit_weight(sc, position)))
         missing.extend(f'{label}.reactions[{ri}].index' for ri in unindexed)
     ok = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{ok} of {len(reactive)} reactive unit(s) state '
-            f'their reaction order ({multi} with two or more reactions; '
+    return (_wmean(pairs), f'{ok} of {len(reactive)} reactive / '
+            f'reaction-declaring unit(s) state their reaction order ({multi} with two or more reactions; '
             f'family-weighted)', missing)
 
 
@@ -3078,10 +3577,11 @@ def _has_phase_tags(equation):
 
 
 def _basis_derivable(sc, reaction):
-    """True when the reaction's basis follows from its coefficients: exactly
-    one of sum(nu*MW) ~ 0 (molar basis conserves mass) and sum(nu) ~ 0 (mass
-    basis) holds, to BASIS_RTOL relative, with every molar mass resolvable
-    (declared or from the formula, as the validator resolves it)."""
+    """True when the reaction's basis follows from its coefficients: one of
+    sum(nu*MW) ~ 0 (molar basis conserves mass) and sum(nu) ~ 0 (mass basis)
+    holds, to BASIS_RTOL relative, with every molar mass resolvable
+    (declared or from the formula, as the validator resolves it); when both
+    hold (an isomerisation) the basis is immaterial (R2.10)."""
     coeffs = _reaction_coefficients(sc, reaction)
     if not coeffs:
         return False
@@ -3092,7 +3592,9 @@ def _basis_derivable(sc, reaction):
     terms = [nu * m for nu, m in zip(nus, masses)]
     molar_basis = abs(sum(terms)) <= BASIS_RTOL * sum(abs(t) for t in terms)
     mass_basis = abs(sum(nus)) <= BASIS_RTOL * sum(abs(nu) for nu in nus)
-    return molar_basis != mass_basis
+    # Both hold for an isomerisation (A -> B of equal molar mass): the basis
+    # is then immaterial (R2.10), so it is derivable as well.
+    return molar_basis or mass_basis
 
 
 def _single_phase_ports(sc, position):
@@ -3126,10 +3628,10 @@ def _reaction_basis_phase(sc, position, ri, reaction):
 def _score_rxn_04(sc):  # CMP-RXN-04
     score, missing, _full, n = _per_reactive_unit(sc, _reaction_basis_phase)
     if not n:
-        return None, 'no reactive units', []
+        return None, 'no reactive units and no declared reactions', []
     return (score, f'not representable; basis and phase derivable '
             f'(DERIVED_CREDIT) where the data imply them, over {n} reactive '
-            f'unit(s)', missing)
+            f'/ reaction-declaring unit(s)', missing)
 
 #%% Criteria -- costing
 
@@ -3423,6 +3925,25 @@ def _heat_need(sc):
 _NO_UTILITY_NEED = 'no unit needs utilities and no agent is declared or referenced'
 
 
+def _missing_agent_kinds(sc):
+    """Locators of the synthetic missing-agent entries of CMP-UTIL-01/02
+    (R2.7), each scoring 0: a heat agent when a unit is in a heat-exchanging
+    family (HEAT_UTILITY_FAMILIES) but no heat-utility agent is declared; a
+    power utility when a unit is in a power-drawing or -delivering family
+    (POWER_UTILITY_FAMILIES) but no power utility is declared. Need is per
+    kind: a declared power utility says nothing about steam."""
+    families = {family for _n, family, _c in sc.unit_classes}
+    groups = {group for group, _a, _l in sc.agents}
+    missing = []
+    if families & HEAT_UTILITY_FAMILIES and 'heat_utilities' not in groups:
+        missing.append('utilities.heat_utilities: no heat agent declared, '
+                       'although units exchange heat')
+    if families & POWER_UTILITY_FAMILIES and 'power_utilities' not in groups:
+        missing.append('utilities.power_utilities: no power utility '
+                       'declared, although units draw or deliver electricity')
+    return missing
+
+
 def _score_util_01(sc):  # CMP-UTIL-01
     if not _utility_need(sc):
         return None, _NO_UTILITY_NEED, []
@@ -3444,9 +3965,14 @@ def _score_util_01(sc):  # CMP-UTIL-01
         size = 1 if group == 'power_utilities' else 3
         scores.append(1.0 - len(gaps) / size)
         missing.extend(f'{label}.{gap}' for gap in gaps)
+    kinds = _missing_agent_kinds(sc)
+    scores.extend(0.0 for _k in kinds)
+    missing.extend(kinds)
     full = scores.count(1.0)
     return (_mean(scores), f'{full} of {len(scores)} referenced/declared '
-            f'agent(s) resolve and are fully specified', missing)
+            f'agent(s) resolve and are fully specified'
+            + (f' ({len(kinds)} needed kind(s) missing)' if kinds else ''),
+            missing)
 
 
 # Accepted price fields per agent group, and the locator naming what to add.
@@ -3469,12 +3995,14 @@ def _score_util_02(sc):  # CMP-UTIL-02
                 if isinstance(agent.get('id'), str)}
     undeclared = [(agent_id, unit_label) for agent_id, unit_label
                   in _utility_refs(sc).items() if agent_id not in declared]
-    total = len(sc.agents) + len(undeclared)
-    if not total:
+    kinds = _missing_agent_kinds(sc)
+    total = len(sc.agents) + len(undeclared) + len(kinds)
+    if not (sc.agents or undeclared):
         return (0.0, 'utility-using units but no agent declared or referenced',
                 ['utilities: no agents declared'])
     missing = [f"utilities: no agent '{agent_id}' to price (referenced by "
                f"{unit_label})" for agent_id, unit_label in undeclared]
+    missing.extend(kinds)
     for group, agent, label in sc.agents:
         fields, locator = _PRICE_FIELDS[group]
         if not any(_num(agent.get(f)) is not None for f in fields):
@@ -3769,7 +4297,7 @@ _CRITERIA = {
     'CMP-FEED-01': _score_feed_01, 'CMP-FEED-02': _score_feed_02,
     'CMP-UOP-01': _score_uop_01, 'CMP-UOP-02': _score_uop_02,
     'CMP-UOP-03': _score_uop_03, 'CMP-UOP-04': _score_uop_04,
-    'CMP-UOP-05': _score_uop_05,
+    'CMP-UOP-05': _score_uop_05, 'CMP-UOP-06': _score_uop_06,
     'CMP-RXN-01': _score_rxn_01, 'CMP-RXN-02': _score_rxn_02,
     'CMP-RXN-03': _score_rxn_03, 'CMP-RXN-04': _score_rxn_04,
     'CMP-COST-01': _score_cost_01, 'CMP-COST-02': _score_cost_02,
