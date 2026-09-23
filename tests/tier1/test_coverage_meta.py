@@ -33,7 +33,8 @@ TIER1 = Path(__file__).resolve().parent
 MODULES = ["export/_export.py", "validate/_validate.py", "export/_quantity_units.py",
            "export/_harness.py", "export/_runner.py", "_version.py",
            "export/_regenerate_corpus.py", "export/_registry.py",
-           "export/_design_specs.py", "exceptions.py"]
+           "export/_design_specs.py", "exceptions.py",
+           "completeness/_completeness.py"]
 
 # name -> reason it needs no dedicated Tier 1 test.
 _EXEMPT = {

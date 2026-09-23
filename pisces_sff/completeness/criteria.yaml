@@ -1,0 +1,686 @@
+# Completeness criteria registry (pisces_sff/completeness/_completeness.py).
+#
+# Each criterion scores one kind of information BioSTEAM needs to rebuild an
+# SFF flowsheet as a simulable, costable biosteam.System, judged from the SFF
+# data alone. Single source of truth for criterion ids, category, title,
+# weight (points; normalized when aggregating), criticality, the SFF version
+# from which the information is representable, the rationale, and the SFF
+# paths the criterion reads. Every id maps to exactly one scoring function in
+# _completeness._CRITERIA, in the same order (pinned by a Tier 1 sync test).
+#
+# criticality:
+#   essential     -- needed to simulate at all
+#   costing       -- needed to cost the equipment and run TEA
+#   supplementary -- raises fidelity or enables verification
+#   integrity     -- derived from the validator's verdict on the file
+# representable_since:
+#   "X.Y.Z" -- first SFF version with a field that can state it ("0.0.0" =
+#              every version); a file older than this is not penalized in
+#              the representable score
+#   null    -- no SFF version can state it (a schema gap); it may still earn
+#              derived credit (DERIVED_CREDIT) when other fields imply it
+#
+# The exclusions list records information BioSTEAM uses that is deliberately
+# NOT scored: `not_capturable` items cannot practically live in static JSON;
+# `derived` items are recomputed from information other criteria already score.
+
+categories:
+  thermo: Thermodynamic basis (chemicals and property package)
+  topology: Flowsheet topology
+  feeds: Feeds and boundary streams
+  unit_ops: Unit operations
+  reactions: Reactions
+  costing: Equipment costing
+  utilities: Utility agents
+  system: System and TEA settings
+  integrity: Integrity (validator-derived)
+
+criteria:
+
+  # ------------------------------------------------------------------ thermo
+  - id: CMP-THM-01
+    category: thermo
+    title: Chemical registry covers every referenced chemical
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].id
+      - streams[].stream_properties.phases.*.composition[].component_name
+      - streams[].stream_properties.composition[].component_name
+      - utilities.*[].composition[].component_name
+      - units[].reactions[].reactant
+      - units[].reactions[].equation
+      - units[].reactions[].stoichiometry
+    rationale: >-
+      BioSTEAM compiles one Chemicals object before any stream or reaction can
+      exist: every component a stream, utility agent or reaction mentions must
+      be defined there, or constructing the Stream, UtilityAgent or Reaction
+      fails with an undefined-chemical error. A referenced but undeclared
+      component therefore blocks the rebuild outright, which makes coverage of
+      the chemical registry the first gate of any re-import.
+
+  - id: CMP-THM-02
+    category: thermo
+    title: Chemicals resolvable against a property database
+    weight: 5
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].registry_id
+      - chemicals[].formula
+    rationale: >-
+      thermosteam builds a pure-component model (vapor pressure, heat capacity,
+      heat of vaporization, molar volume, viscosity, ...) by looking the
+      chemical up in the chemicals/thermo databases. A registry id such as a
+      CAS number identifies the species unambiguously and brings every
+      correlation with it; a formula alone narrows the search but does not
+      identify an isomer (C2H6O is ethanol or dimethyl ether), so it earns half
+      credit. Without either, every property must be supplied by hand.
+
+  - id: CMP-THM-03
+    category: thermo
+    title: Molar mass available for every chemical
+    weight: 2
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].molar_mass
+      - chemicals[].formula
+    rationale: >-
+      Molar mass converts every flow between the mass and molar bases that
+      BioSTEAM uses internally, closes stoichiometric mass balances, and sizes
+      equipment costed on kg/hr. Pseudo-components such as Fiber or Protein
+      have no database entry, so their molecular weight must be stated
+      explicitly or implied by a formula.
+
+  - id: CMP-THM-04
+    category: thermo
+    title: Phase behaviour of each chemical
+    weight: 2
+    criticality: essential
+    representable_since: null
+    sff_paths:
+      - streams[].stream_properties.phases
+      - streams[].stream_properties.composition[].phase
+    rationale: >-
+      BioSTEAM distinguishes chemicals that partition between phases from
+      chemicals locked in one state (Chemical.at_state, phase_ref, default
+      phase): cellulose, ash or cell mass are fixed solids, and a flash or
+      column that treated them as volatile would fail for want of a vapor
+      pressure or partition them wrongly. No SFF field states this. Derived
+      credit is given when the stream data show a chemical in two or more
+      phases (it partitions) or only ever as a solid (it is locked).
+
+  - id: CMP-THM-05
+    category: thermo
+    title: Property data for chemicals outside the database
+    weight: 3
+    criticality: essential
+    representable_since: null
+    sff_paths:
+      - chemicals[].registry_id
+    rationale: >-
+      A chemical that cannot be resolved from a database must be created with
+      hand-supplied property models: molar volume, heat capacity, reference
+      enthalpy and entropy, heat of formation (for heats of reaction and
+      combustion), and vapor pressure, boiling point and heat of vaporization
+      when it is volatile, plus a lower heating value for combustibles burned
+      in a boiler. Thermosteam refuses to compile a chemical set with missing
+      required properties, and no SFF field can carry these models; the
+      criterion applies to every chemical without a registry id.
+
+  - id: CMP-THM-06
+    category: thermo
+    title: Thermodynamic property package stated
+    weight: 3
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].thermo_property_package.mixture
+      - units[].thermo_property_package.gamma
+      - units[].thermo_property_package.phi
+      - units[].thermo_property_package.PCF
+    rationale: >-
+      The Thermo object pairs the chemicals with a mixture model, activity
+      coefficients (ideal or Dortmund-modified UNIFAC, ...), fugacity
+      coefficients and Poynting correction factors. These decide every
+      vapor-liquid and liquid-liquid split, so the same flowsheet under a
+      different package produces different flash, column and evaporator
+      results.
+
+  - id: CMP-THM-07
+    category: thermo
+    title: Chemical-set identity in multi-thermo flowsheets
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].thermo_property_package.id
+    rationale: >-
+      When areas of a flowsheet run under different Thermo objects (a
+      subsystem with a reduced chemical set, or a different activity model),
+      the importer must know which chemical set each unit binds so streams
+      crossing the boundary can be converted. The property-package id names
+      that set; the criterion applies only when units declare more than one
+      distinct package.
+
+  # ---------------------------------------------------------------- topology
+  - id: CMP-TOP-01
+    category: topology
+    title: Stream endpoints resolve and every unit is connected
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].source_unit_id
+      - streams[].sink_unit_id
+      - units[].id
+    rationale: >-
+      Units are wired through their ins and outs, and System.from_units builds
+      the flowsheet graph from that wiring. A stream endpoint naming no unit
+      (and not the system boundary) cannot be wired, and a unit attached to no
+      stream is never reached by the simulation, so both leave the rebuilt
+      system different from the original.
+
+  - id: CMP-TOP-02
+    category: topology
+    title: Port order of multi-stream inlets and outlets
+    weight: 4
+    criticality: essential
+    representable_since: null
+    sff_paths:
+      - streams[].source_unit_id
+      - streams[].sink_unit_id
+    rationale: >-
+      BioSTEAM units address ports by position, and position carries meaning:
+      outs[0] of a Flash or BinaryDistillation is the vapor or distillate and
+      outs[1] the liquid or bottoms; a Splitter's split fractions apply to
+      outs[0]; a JetCooker expects the slurry in ins[0] and steam in ins[1].
+      SFF records which unit a stream connects to but not the port index, so a
+      unit side with several streams cannot be wired unambiguously. Sides with
+      at most one stream earn credit because their order is trivially implied.
+
+  # ------------------------------------------------------------------- feeds
+  - id: CMP-FEED-01
+    category: feeds
+    title: Feed streams fully stated
+    weight: 10
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].stream_properties.temperature
+      - streams[].stream_properties.pressure
+      - streams[].stream_properties.total_mass_flow
+      - streams[].stream_properties.total_molar_flow
+      - streams[].stream_properties.phases
+      - streams[].stream_properties.composition
+    rationale: >-
+      In BioSTEAM's sequential-modular solve the feeds are the degrees of
+      freedom: every feed's temperature, pressure, flow rate and composition
+      must be set before System.simulate, and every other stream is computed
+      from them. A flowsheet with no feed defines no problem, so it scores
+      zero; this is the heaviest single criterion.
+
+  - id: CMP-FEED-02
+    category: feeds
+    title: Boundary stream prices
+    weight: 3
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].price
+    rationale: >-
+      Stream.price on feeds and products drives the material cost and sales
+      revenue of the TEA, and therefore every minimum selling price or NPV.
+      Each non-empty boundary stream needs a price; an explicit zero is a
+      valid statement.
+
+  # ---------------------------------------------------------------- unit ops
+  - id: CMP-UOP-01
+    category: unit_ops
+    title: Unit class identity
+    weight: 8
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_simulation_method
+      - units[].unit_type
+    rationale: >-
+      Re-importing a unit means instantiating a class (Flash, HXutility, a
+      biorefinery-specific subclass, ...) because the class carries the mass
+      and energy balance, design and costing methods. Exporters state it as
+      "<Class> on <source URL>" in design_simulation_method; a unit_type that
+      exactly names a known class is equally good; a free-text unit_type only
+      suggests a family of candidate classes and earns half credit.
+
+  - id: CMP-UOP-02
+    category: unit_ops
+    title: Essential operating specifications
+    weight: 8
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_input_specs
+      - streams[].stream_properties
+      - units[].design_results
+    rationale: >-
+      Each unit class needs a minimal set of specifications before it can
+      run: an HXutility an outlet temperature, vapor fraction or duty; a Flash
+      two of T, P, V, Q, y and x; a Pump an outlet pressure; a
+      BinaryDistillation its light and heavy keys, pressure, key recoveries or
+      purities and a reflux specification; a reactor its temperature and
+      residence time; a splitter its split fractions. Explicit specifications
+      earn full credit; a specification recoverable from stream states (an
+      outlet temperature, a split implied by fully stated ports) earns derived
+      credit. Units of unknown family score zero because nothing tells the
+      importer what to specify.
+
+  - id: CMP-UOP-03
+    category: unit_ops
+    title: Full design-specification coverage
+    weight: 3
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_input_specs
+    rationale: >-
+      Beyond the essential specifications, a unit's remaining initialization
+      parameters (materials of construction, vessel type, heat-transfer
+      coefficient, number of shells, working-volume fraction, tray spacing,
+      ...) change its design and purchase cost. Left unstated, BioSTEAM
+      silently applies its own defaults, which may differ from the original
+      model. Coverage is measured against the design-spec registry for units
+      whose exact class it lists; unstated alternatives of an essential
+      requirement already met (V and H for an HXutility given T) are excused.
+
+  - id: CMP-UOP-04
+    category: unit_ops
+    title: Computed stream states stated
+    weight: 3
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].stream_properties
+    rationale: >-
+      Internal and product stream states are simulation outputs rather than
+      inputs, but they seed tear streams so recycle loops converge from a good
+      initial guess, give a re-simulated flowsheet verification targets, and
+      are the base from which missing unit specifications can be derived.
+
+  # --------------------------------------------------------------- reactions
+  - id: CMP-RXN-01
+    category: reactions
+    title: Reactive units carry their reactions
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].reactions
+    rationale: >-
+      BioSTEAM reactors apply Reaction, ParallelReaction or SeriesReaction
+      objects in their mass balance. A unit that is a reactor, or whose
+      outlets contain species its inlets lack (or the reverse), cannot be
+      reproduced without its reaction set, so every such unit must declare at
+      least one reaction.
+
+  - id: CMP-RXN-02
+    category: reactions
+    title: Reaction definitions complete
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].reactions[].equation
+      - units[].reactions[].stoichiometry
+      - units[].reactions[].reactant
+      - units[].reactions[].conversion
+    rationale: >-
+      A thermosteam Reaction is defined by its stoichiometry, the reactant on
+      which conversion is based, and the fractional conversion X (0 to 1).
+      Missing any one of the three leaves the extent of reaction undefined.
+
+  - id: CMP-RXN-03
+    category: reactions
+    title: Series or parallel reaction structure
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].reactions[].index
+    rationale: >-
+      The same list of reactions yields different outlets as a
+      ParallelReaction (every conversion based on the inlet) or a
+      SeriesReaction (each based on the previous result). When a unit carries
+      two or more reactions, an index on every reaction is the minimal signal
+      of their order.
+
+  - id: CMP-RXN-04
+    category: reactions
+    title: Reaction basis and reacting phase
+    weight: 2
+    criticality: essential
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      Reactions may be defined on a molar or mass basis (mass basis is common
+      for biomass pseudo-components) and restricted to a phase; both change
+      the computed outlet. No SFF field states either, so any flowsheet with
+      reactions scores zero here.
+
+  # ----------------------------------------------------------------- costing
+  - id: CMP-COST-01
+    category: costing
+    title: Purchase costs recorded
+    weight: 3
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].purchase_costs
+    rationale: >-
+      A unit's purchase costs per cost item are the verification target for a
+      re-costed flowsheet and the only cost information for procedurally
+      costed units. An explicit empty object states that a unit has no
+      purchased equipment.
+
+  - id: CMP-COST-02
+    category: costing
+    title: Installed costs cover every purchase-cost item
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].installed_costs
+      - units[].purchase_costs
+    rationale: >-
+      Installed cost is purchase cost times the bare-module factors (design,
+      pressure and material factors included), and the TEA's fixed capital
+      investment is built on installed equipment cost. Each purchase-cost item
+      needs its installed counterpart.
+
+  - id: CMP-COST-03
+    category: costing
+    title: Design results stated with quantity units
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_results
+      - units[].quantity_units_for_design_results
+    rationale: >-
+      Design results (area, volume, power, flow) are the sizes cost
+      correlations are evaluated at. Without their units a size cannot be
+      compared with a correlation's reference size, so each numeric result
+      needs a unit (the empty string marks a dimensionless result).
+
+  - id: CMP-COST-04
+    category: costing
+    title: Purchase-cost correlations
+    weight: 2
+    criticality: costing
+    representable_since: "0.1.2"
+    sff_paths:
+      - units[].purchase_cost_correlations
+    rationale: >-
+      BioSTEAM's @cost decorator records a power-law correlation per cost item
+      (basis, reference size and cost, exponent, reference cost index,
+      installation factor, power rate). With it a consumer can re-cost the
+      equipment at a different size or cost year; a custom_function entry only
+      records that a procedural cost model exists, so it earns half credit.
+
+  - id: CMP-COST-05
+    category: costing
+    title: Cost-index basis (target CEPCI)
+    weight: 2
+    criticality: costing
+    representable_since: null
+    sff_paths:
+      - units[].purchase_cost_correlations
+      - units[].purchase_costs
+      - units[].design_results
+    rationale: >-
+      BioSTEAM scales every correlation by the ratio of the target plant cost
+      index (bst.CE) to the correlation's reference index, so the index the
+      costs were evaluated at is needed to reproduce or escalate them. SFF has
+      no field for it, but it can be back-derived from any power-law item that
+      states its purchase cost, sizing basis and correlation constants, which
+      earns derived credit.
+
+  - id: CMP-COST-06
+    category: costing
+    title: Parallel-unit count behind correlations
+    weight: 1
+    criticality: costing
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      A cost item may be split across N identical pieces of equipment (the
+      CostItem N), which changes the cost through economies of scale. The
+      count is not stated in SFF, so a flowsheet with power-law items scores
+      zero here.
+
+  # --------------------------------------------------------------- utilities
+  - id: CMP-UTIL-01
+    category: utilities
+    title: Utility agents declared and specified
+    weight: 2
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - utilities.heat_utilities[]
+      - utilities.power_utilities[]
+      - utilities.other_utilities[]
+      - units[].utility_consumption_results
+      - units[].utility_production_results
+    rationale: >-
+      Heat utilities are satisfied by utility agents (cooling water, steam at
+      several pressures, refrigerants) that BioSTEAM selects by temperature and
+      that are defined by temperature, pressure and composition. A duty cannot
+      be assigned to an agent that is not declared, and an agent without its
+      state cannot be instantiated.
+
+  - id: CMP-UTIL-02
+    category: utilities
+    title: Utility prices
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - utilities.heat_utilities[].regeneration_price
+      - utilities.heat_utilities[].heat_transfer_price
+      - utilities.power_utilities[].electrical_energy_price
+      - utilities.other_utilities[].price
+    rationale: >-
+      Heat agents are priced per mole regenerated or per unit of heat
+      transferred, electricity per kWh, and other utilities per unit flow;
+      together they make up the utility share of the variable operating cost
+      in the TEA.
+
+  - id: CMP-UTIL-03
+    category: utilities
+    title: Heat-agent efficiency and temperature limit
+    weight: 1
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - utilities.heat_utilities[].heat_transfer_efficiency
+      - utilities.heat_utilities[].temperature_limit
+      - utilities.heat_utilities[].composition[].phase
+    rationale: >-
+      The heat-transfer efficiency and the temperature limit set how much
+      agent a duty consumes: a sensible-heat agent such as cooling water may
+      only warm up to its limit. A condensing agent (all vapor, such as steam)
+      delivers latent heat and needs no limit.
+
+  - id: CMP-UTIL-04
+    category: utilities
+    title: Utility results per unit
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].utility_consumption_results
+      - units[].utility_production_results
+    rationale: >-
+      Per-unit utility consumption and production let a re-simulated
+      flowsheet be checked against the original heat and power demands and
+      show how utilities are allocated between units.
+
+  # ------------------------------------------------------------------ system
+  - id: CMP-SYS-01
+    category: system
+    title: Annual operating hours
+    weight: 2
+    criticality: costing
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      The TEA's operating days (or hours) per year convert hourly flows into
+      annual costs and revenues. No SFF field states them.
+
+  - id: CMP-SYS-02
+    category: system
+    title: TEA parameter set
+    weight: 3
+    criticality: costing
+    representable_since: null
+    sff_paths:
+      - metadata.TEA_currency
+      - metadata.TEA_year
+    rationale: >-
+      A BioSTEAM TEA needs twelve groups of assumptions: currency, start
+      year, plant duration, internal rate of return, income tax, depreciation
+      schedule, construction schedule, startup period and fractions, working
+      capital, the fixed-operating-cost model, the capital-cost model (a Lang
+      factor or DPI/TDC/FCI factors) and financing. SFF states only the
+      currency and year, so at most two of twelve are available.
+
+  - id: CMP-SYS-03
+    category: system
+    title: Convergence settings
+    weight: 1
+    criticality: supplementary
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      The recycle-convergence method (Wegstein, Aitken, fixed-point, ...),
+      the molar and temperature tolerances and the iteration limit decide
+      whether, and to what, a recycle-heavy flowsheet converges. No SFF field
+      states them.
+
+  - id: CMP-SYS-04
+    category: system
+    title: Simulator and model provenance
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.6"
+    sff_paths:
+      - metadata.process_simulator.name
+      - metadata.process_simulator.version
+      - metadata.reproducibility.simulator_package
+      - metadata.reproducibility.flowsheet_model_package
+    rationale: >-
+      Unit models and defaults change between BioSTEAM releases, so the
+      simulator name and version, and ideally the exact commits or versions of
+      the simulator and flowsheet-model packages, identify which behaviour the
+      recorded numbers came from. Representable in full from 0.0.6, when the
+      reproducibility block added pinned packages.
+
+  # --------------------------------------------------------------- integrity
+  - id: CMP-INT-01
+    category: integrity
+    title: Schema conformance
+    weight: 2
+    criticality: integrity
+    representable_since: "0.0.0"
+    sff_paths: []
+    rationale: >-
+      A file that fails the JSON Schema may have any field above in an
+      unexpected shape, so no reader can rely on the information it appears
+      to carry.
+
+  - id: CMP-INT-02
+    category: integrity
+    title: Cross-references resolve
+    weight: 2
+    criticality: integrity
+    representable_since: "0.0.0"
+    sff_paths: []
+    rationale: >-
+      The validator's XREF-01 aggregate fails when any referential check fails
+      (a stream to an unknown unit, a component missing from the chemicals, a
+      utility result naming no agent); information behind a dangling
+      reference cannot be used.
+
+  - id: CMP-INT-03
+    category: integrity
+    title: Semantic checks pass
+    weight: 2
+    criticality: integrity
+    representable_since: "0.0.0"
+    sff_paths: []
+    rationale: >-
+      Material-balance, fraction-sum, flow-consistency and similar semantic
+      checks catch data that is present but wrong; rebuilding from it would
+      reproduce the wrong flowsheet. Executed error checks weigh 1 and
+      warnings 0.5; skipped and info checks are ignored.
+
+  - id: CMP-INT-04
+    category: integrity
+    title: Quantity units declared
+    weight: 3
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - quantity_units_global
+    rationale: >-
+      Without units every number is ambiguous (K or degC, kg/hr or kmol/hr),
+      and a re-import must convert each value into BioSTEAM's internal units.
+      Current-shape files declare units once in quantity_units_global (QU-01);
+      legacy files carry them inline on each quantity.
+
+exclusions:
+  - id: EXC-01
+    kind: not_capturable
+    title: Process specifications
+    rationale: >-
+      Specifications attached with add_specification and system-level bounded
+      specifications (adjust a flow until a titer or purity is met) are
+      arbitrary Python closures. Only the converged design-point values they
+      produced are capturable in static JSON.
+  - id: EXC-02
+    kind: not_capturable
+    title: Custom unit-class behaviour
+    rationale: >-
+      Biorefinery-specific subclasses override _run, _design and _cost with
+      arbitrary code. SFF captures them by reference (class name and source
+      URL in design_simulation_method) and through the embedded
+      reproducibility recipe, not declaratively.
+  - id: EXC-03
+    kind: not_capturable
+    title: Kinetic rate laws and property callables
+    rationale: >-
+      Kinetic reactor models and user-defined property functions (callables of
+      temperature and pressure) are code, not data, and cannot be represented
+      in static JSON.
+  - id: DER-01
+    kind: derived
+    title: Recycle structure and simulation order
+    rationale: >-
+      Recycle loops, tear streams and unit simulation order are recomputed
+      from the topology by System.from_units, so they are scored through
+      CMP-TOP-01 and CMP-TOP-02 rather than separately.
+  - id: DER-02
+    kind: derived
+    title: Facility designation
+    rationale: >-
+      Whether a unit is a facility (boiler-turbogenerator, cooling tower,
+      process-water center, ...) follows from its class, which CMP-UOP-01
+      already scores.
+  - id: DER-03
+    kind: derived
+    title: Joint bare-module factor
+    rationale: >-
+      The combined bare-module factor of a cost item is the ratio of its
+      installed to its purchase cost, both scored by CMP-COST-01 and
+      CMP-COST-02.
