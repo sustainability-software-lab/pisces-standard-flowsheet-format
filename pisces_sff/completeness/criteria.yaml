@@ -277,14 +277,19 @@ criteria:
       outs[0]; a JetCooker expects the slurry in ins[0] and steam in ins[1].
       SFF records which unit a stream connects to but not the port index, so a
       unit side with several streams cannot be wired unambiguously.
-      Order-free sides (mixer and tank inlets) and single-stream sides of
-      single-port units (pumps, valves, heat exchangers, ...) earn full
-      credit; other single-stream sides earn derived credit because
-      unexported ports may exist; multi-stream sides earn derived credit only
-      when the order follows from the data (a flash's vapor and liquid
-      outlets, a splitter with explicit split fractions) and the unit's
-      balances close (stream data that do not balance derive nothing).
-      Family-weighted.
+      Order-free sides (mixer and tank inlets) earn full credit. A side on
+      which at most one stream carries material (stated-empty streams are
+      placeholders, like unexported ports) earns full credit on a
+      single-port side (pumps, valves, heat exchangers, ...) and derived
+      credit elsewhere (unexported or empty ports may exist) -- but both
+      rest on the stream count, so only while the unit's balances close
+      (no material-carrying port is missing; detaching a stream never earns
+      credit). Sides with several material-carrying streams earn derived
+      credit only when the order follows from the data (a flash's vapor and
+      liquid outlets, a splitter with explicit split fractions) and the
+      unit's balances close. A unit without an id, whose ports no stream can
+      name, scores 0, and so do both sides of every unit id a stream
+      endpoint references but no unit declares. Family-weighted.
 
   # ------------------------------------------------------------------- feeds
   - id: CMP-FEED-01
@@ -365,17 +370,25 @@ criteria:
       concrete class: one on the scorer's static list of concrete BioSTEAM
       unit classes (enumerated from the biosteam source, facilities and the
       hensmith HeatExchangerNetwork included), or a custom (biorefinery)
-      class when the flowsheet model package is pinned to a commit or
-      version, since otherwise its code may have changed (0.75). A biosteam
-      URL alone proves nothing: a class the URL attributes to biosteam that
-      is neither on the core list nor a known custom class, and an abstract
-      class (Unit, Tank, Compressor, Distillation, HX, ... -- declared
-      isabstract in biosteam and never instantiated), identify at most a
-      family: the unit resolves as if no class were named. A class inferred
-      from the unit's design-specification keys earns 0.75; a free-text
-      unit_type only suggests a family of candidate classes and earns half
-      credit. Units are weighted by family (reactors and columns most, pumps
-      and tanks least).
+      class whose source URL lies in the repository the flowsheet model
+      package names and pins to a commit or version -- only then is its code
+      located at a fixed revision; any other custom class (unpinned, a URL
+      elsewhere, such as a tank_factory class credited to biosteam's
+      tank.py, or no URL) earns 0.75. A biosteam URL alone proves nothing: a
+      class the URL attributes to biosteam that is neither on the core list
+      nor a known custom class, and an abstract class (Unit, Tank,
+      Compressor, Distillation, HX, ... -- declared isabstract in biosteam
+      and never instantiated), identify at most a family: the unit resolves
+      as if no class were named. Without a named class, a stated family (a
+      unit_type keyword, or the named abstract class's family) takes
+      precedence: it earns 0.75 when every design-spec registry class that
+      holds the unit's specification keys belongs to that family, else half
+      credit; with no stated family, such an unambiguous key-set family
+      earns 0.75. The key set never swaps a stated family, and an inferred
+      class stays a family: only family-level rules and weights apply to
+      it. A unit id that stream endpoints reference but no unit declares
+      scores 0. Units are weighted by family (reactors and columns most,
+      pumps and tanks least).
 
   - id: CMP-UOP-02
     category: unit_ops
@@ -397,8 +410,17 @@ criteria:
       reflux and boilup; a reactor its temperature, residence time and
       working volume, and a stirred-tank reactor whose constructor takes it
       its batch flag (required too when the reactor's class is unknown); a
-      batch bioreactor also its reactor count or volume; a splitter or dryer
-      its split fractions. Boilers, boiler-turbogenerators, heat-exchanger
+      batch bioreactor also its reactor count or volume; a splitter its
+      split fractions and the moisture content of its retained solids (a
+      SolidsSeparator's moisture_content; biosteam.wastewater's
+      sludge_moisture); a drum dryer its split fractions, dried-solids
+      moisture content and drying temperature; a thermal oxidizer its fuel
+      duty per kg of feed (duty_per_kg). Such a class-knowledge requirement
+      is waived only for a class known exactly (confidence 1) that
+      affirmatively takes none of its parameters (a plain Splitter,
+      MolecularSieve or liquids centrifuge has no moisture_content); a
+      class inferred from specification keys gets its family's rules only.
+      Boilers, boiler-turbogenerators, heat-exchanger
       networks and other facilities are scored by CMP-UOP-06 instead.
       Constructor arguments with defaults (V_wf, a tank's tau, theta_O2,
       feed stages, the wastewater units' loading rates, ...) must be stated:
@@ -423,8 +445,10 @@ criteria:
       requirement (the vapor fraction on a phase change, phase0/phase1 of a
       process exchanger, dP_design) is waived only when the data show its
       condition false (both phase sets known and equal, a pressure rise of
-      at least 1 Pa); when the data cannot tell, it applies. Units of
-      unknown family score zero because nothing tells the importer what to
+      at least 1 Pa, over a unit whose balances close so no port is
+      missing); when the data cannot tell, it applies. Units of unknown
+      family, and unit ids that stream endpoints reference but no unit
+      declares, score zero because nothing tells the importer what to
       specify. Units are family-weighted.
 
   - id: CMP-UOP-03
@@ -446,11 +470,14 @@ criteria:
       of its nearest registry ancestor (a corn storage tank against
       StorageTank); unstated alternatives of an essential requirement already
       met (V and H for an HXutility given T) are excused. A parameter counts
-      as stated only with a plausible value (as for CMP-UOP-02). Such a unit
-      that no registry entry covers is left out (a gap in the scorer's
-      vocabulary, not in the file). Every other unit -- class inferred from
-      its specification keys, family only, or unknown -- scores 0 because
-      its parameter universe is unknown. Units are family-weighted.
+      as stated only with a plausible value (as for CMP-UOP-02). A core
+      BioSTEAM class known exactly that no registry entry covers is left out
+      (a gap in the scorer's vocabulary, not in the file); an exact custom
+      class that no registry entry covers scores 0 (the file states none of
+      its parameters -- the exporter writes an empty object for it). Every
+      other unit -- class inferred from its specification keys, family only,
+      or unknown -- scores 0 because its parameter universe is unknown.
+      Units are family-weighted.
 
   - id: CMP-UOP-04
     category: unit_ops

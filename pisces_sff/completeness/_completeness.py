@@ -877,7 +877,8 @@ _SPEC_PREDICATES = {
     **dict.fromkeys(('V_wf', 'eta', 'efficiency', 'boiler_efficiency',
                      'turbogenerator_efficiency', 'theta_O2', 'theta', 'Lr',
                      'Hr', 'y_top', 'x_bot'), _spec_efficiency),
-    'moisture_content': _spec_fraction,
+    **dict.fromkeys(('moisture_content', 'sludge_moisture'), _spec_fraction),
+    'duty_per_kg': _spec_positive,
     **dict.fromkeys(('split', 'solids_split', 'aqueous_split'), _spec_split),
     'LHK': _spec_lhk,
     **dict.fromkeys(('Q', 'H', 'H_lim0', 'H_lim1', 'Duty'), _spec_finite),
@@ -1372,7 +1373,7 @@ _CLASS_TABLE = {
     'ChilledWaterPackage': ('facility', None),
     'CoolingTower': ('facility', None),
     'Facility': ('facility', None),
-    'FakeSplitter': ('splitter', None),
+    'FakeSplitter': ('junction', None),  # biosteam's alias of MockSplitter
     'FireWaterTank': ('facility', None),
     'HeatExchangerNetwork': ('heat_exchanger_network', None),
     'ProcessWaterCenter': ('facility', None),
@@ -1473,13 +1474,15 @@ _NONCORE_CLASSES = frozenset({
 # The curated STATIC core list (R2.6): every concrete (not isabstract=True)
 # Unit subclass defined in biosteam -- biosteam.units, biosteam.facilities,
 # biosteam.wastewater -- plus HeatExchangerNetwork (now defined in the
-# hensmith package and re-exported by biosteam), enumerated once from the
-# biosteam 2.54 source tree and committed here, so the scorer needs no
-# biosteam import. Only these classes identify a unit at confidence 1 without
-# a pinned model package. Table entries outside it (Bioindustrial-Park
-# classes, classes made by biosteam's tank_factory inside a biorefinery, and
-# older biosteam names the corpus still carries: AdsorptionColumnTSA,
-# NRELFermentation, NRELBatchBioreactor) are custom classes.
+# hensmith package and re-exported by biosteam) and FakeSplitter (the
+# exported alias of MockSplitter), enumerated once from the biosteam 2.54
+# source tree and committed here, so the scorer needs no biosteam import.
+# Only these classes identify a unit at confidence 1 without a custom-class
+# location in the pinned model package (R3.6). Table entries outside it
+# (Bioindustrial-Park classes, classes made by biosteam's tank_factory
+# inside a biorefinery, and older biosteam names the corpus still carries:
+# AdsorptionColumnTSA, NRELFermentation, NRELBatchBioreactor) are custom
+# classes.
 _CORE_CLASSES = frozenset({
     'AdiabaticMultiStageVLEColumn', 'AeratedBioreactor',
     'AerobicDigestion', 'AirDistributionPackage', 'AmineAbsorption',
@@ -1489,7 +1492,8 @@ _CORE_CLASSES = frozenset({
     'BoilerTurbogenerator', 'CHP', 'CIPpackage', 'CO2Compression',
     'ChemicalCapitalInvestment', 'ChilledWaterPackage', 'Clarifier',
     'ConveyingBelt', 'CoolingTower', 'CrushingMill', 'DrumDryer',
-    'EnzymeTreatment', 'Evaporator', 'FacilityModule', 'FireWaterTank',
+    'EnzymeTreatment', 'Evaporator', 'FacilityModule', 'FakeSplitter',
+    'FireWaterTank',
     'Flash', 'FluidizedCatalyticCracking', 'GasFedBioreactor',
     'GibbsEquilibriumReactor', 'GroupedUnit', 'HXprocess', 'HXutilities',
     'HXutility', 'HammerMill', 'HeatExchangerNetwork',
@@ -1634,13 +1638,46 @@ def _is_core_class(class_name, source=None):
     return not _nonempty_str(source) or bool(_BIOSTEAM_URL_RE.search(source))
 
 
-def _class_confidence(class_name, source, pinned):
-    """Identity confidence of a class NAMED by a unit (R2.6): 1.0 for a
-    concrete core class (_is_core_class); None -- identifies a family at
+#   R3.6: a repository URL -- https / ssh / git / pip "git+" / scp-like
+#   "git@host:owner/name" -- up to its owner and name (".git" and any path,
+#   "@<ref>", "#fragment" or "?query" after them ignored).
+_REPO_URL_RE = re.compile(
+    r'^\s*(?:git\+)?(?:(?:https?|ssh|git)://(?:[^@/\s]+@)?([^/:\s]+)'
+    r'(?::\d+)?/|[^@/\s:]+@([^/:\s]+):)([^/\s]+)/([^/#?@\s]+?)'
+    r'(?:\.git)?(?:[/#?@]|\s*$)', re.I)
+
+
+def _repo_key(url):
+    """(host, owner, name) of the repository a URL points into (lowercase;
+    a leading 'www.' dropped), or None when `url` names no repository."""
+    match = _REPO_URL_RE.match(url) if isinstance(url, str) else None
+    if not match:
+        return None
+    host = (match.group(1) or match.group(2)).lower()
+    host = host[4:] if host.startswith('www.') else host
+    return host, match.group(3).lower(), match.group(4).lower()
+
+
+def _pinned_repository(metadata):
+    """R3.6: the repository key (_repo_key) of
+    metadata.reproducibility.flowsheet_model_package.url when that package
+    also pins a commit or version (_pinned); else None. Only a custom class
+    whose source URL lies in this repository is identified exactly."""
+    package = _as_dict(_as_dict(_as_dict(metadata).get('reproducibility'))
+                       .get('flowsheet_model_package'))
+    return _repo_key(package.get('url')) if _pinned(package) else None
+
+
+def _class_confidence(class_name, source, pinned_repo):
+    """Identity confidence of a class NAMED by a unit (R2.6, R3.6): 1.0 for
+    a concrete core class (_is_core_class); None -- identifies a family at
     most -- for an abstract class (_ABSTRACT_CLASSES) or a class a biosteam
     URL claims but that is neither on the core list nor a curated table
     entry (tank_factory and legacy biosteam classes are table entries);
-    else a custom class: 1.0 when the model package is `pinned`, 0.75."""
+    else a custom class: 1.0 only when its source URL lies in the pinned
+    model-package repository `pinned_repo` (_pinned_repository: same host,
+    owner and name, and a commit or version pinned), else 0.75 -- without
+    both, nothing locates the class's code at a fixed revision."""
     if class_name in _ABSTRACT_CLASSES:
         return None
     if _is_core_class(class_name, source):
@@ -1648,47 +1685,55 @@ def _class_confidence(class_name, source, pinned):
     if (_nonempty_str(source) and _BIOSTEAM_URL_RE.search(source)
             and class_name not in _CLASS_TABLE):
         return None
-    return 1.0 if pinned else 0.75
+    repo = _repo_key(source)
+    return 1.0 if repo is not None and repo == pinned_repo else 0.75
 
 
 def _infer_class_from_specs(unit, registry):
-    """(class name or None, family) of the design-spec registry entry whose
-    parameter set is the tightest superset of the unit's stated
-    design_input_specs keys. Equally tight entries sharing one family yield
-    that family with class None; None when the unit states no spec, nothing
-    contains the key set, or tied entries disagree on the family."""
+    """(hint, family) from the unit's valid design_input_specs key set
+    (R3.1): EVERY design-spec registry entry whose parameter set contains
+    the key set belongs to ONE (known) family, the unambiguous inference;
+    hint names the unique tightest such entry (else None) for messages only
+    -- an inferred class is never used as the unit's class. None when the
+    unit states no valid spec, no entry contains the key set, or the
+    containing entries span several families. Deleting a key can only add
+    containing entries, i.e. only add ambiguity (monotone)."""
     keys = _explicit_keys(unit)
     if not keys:
         return None
-    best, tied = None, []
+    supersets = []
     for name, entry in _as_dict(registry).items():
         params = set(_as_dict(_as_dict(entry).get('design_input_spec_params')))
-        if not keys <= params:
-            continue
-        if best is None or len(params) < best:
-            best, tied = len(params), [name]
-        elif len(params) == best:
-            tied.append(name)
-    if len(tied) == 1:
-        return tied[0], _class_family(tied[0])
-    families = {_class_family(name) for name in tied}
-    return (None, families.pop()) if len(families) == 1 else None
+        if keys <= params:
+            supersets.append((len(params), name))
+    families = {_class_family(name) for _size, name in supersets}
+    if len(families) != 1 or None in families:
+        return None
+    tightest = min(size for size, _name in supersets)
+    tied = [name for size, name in supersets if size == tightest]
+    return (tied[0] if len(tied) == 1 else None), families.pop()
 
 
-def _unit_class(unit, registry=None, pinned=False):
+def _unit_class(unit, registry=None, pinned_repo=None):
     """(class_name or None, family or None, confidence) for one unit.
 
     A class named by design_simulation_method "Class on <URL>", or by a
     unit_type that exactly names a registry/table/core class, scores
     _class_confidence: 1.0 for a concrete core BioSTEAM class, 1.0 or 0.75
-    for a custom class (model package `pinned` to a commit or version, or
-    not). An abstract class, or an unverifiable biosteam-URL claim, names no
-    class (R2.6): the unit resolves exactly as if it were not named, with
-    the named class's family as the last-resort family (so naming such a
-    class never scores above, nor below, leaving it out). Without a named
-    class, a unique tightest-superset match of the design_input_specs key
-    set against the registry infers the class (0.75); a unit_type keyword
-    (or a family-only key-set match) gives the family alone (0.5); else
+    for a custom class (source URL in the pinned model-package repository
+    `pinned_repo`, or not; R3.6). Its family is the class's own, else the
+    unit_type keyword family, else the key-set inference. An abstract
+    class, or an unverifiable biosteam-URL claim, names no class (R2.6):
+    the unit resolves as if it were not named, the named class's family
+    joining the STATED family sources.
+
+    Without a named class (R3.1), a STATED family -- the unit_type keyword
+    family, else the family of the abstract / unverifiable class named --
+    wins: the key-set inference (_infer_class_from_specs) only confirms it
+    (0.75 when the unambiguous inferred family equals it, else 0.5) and
+    never swaps it. With no stated family, the unambiguous key-set family
+    gives (None, family, 0.75). An inferred class is never returned as the
+    class (its rules, weights and class knowledge stay family-level); else
     (None, None, 0.0)."""
     unit = _as_dict(unit)
     registry = _as_dict(registry)
@@ -1702,26 +1747,31 @@ def _unit_class(unit, registry=None, pinned=False):
     for candidate, url in ((name, source), (typed, None)):
         if not candidate:
             continue
-        confidence = _class_confidence(candidate, url, pinned)
+        confidence = _class_confidence(candidate, url, pinned_repo)
         if confidence is None:
             continue
         family = _class_family(candidate)
-        if family is None and candidate not in _CLASS_TABLE and inferred:
-            family = inferred[1]
+        if family is None and candidate not in _CLASS_TABLE:
+            family = (_keyword_family(unit_type)
+                      or (inferred[1] if inferred else None))
         return candidate, family, confidence
-    if inferred and inferred[0]:
-        return inferred[0], inferred[1], 0.75
-    family = (_keyword_family(unit_type) or (inferred[1] if inferred else None)
+    stated = (_keyword_family(unit_type)
               or (_class_family(name) if name else None)
               or (_class_family(typed) if typed else None))
-    return (None, family, 0.5) if family else (None, None, 0.0)
+    if stated:
+        agrees = inferred is not None and inferred[1] == stated
+        return None, stated, (0.75 if agrees else 0.5)
+    if inferred:
+        return None, inferred[1], 0.75
+    return None, None, 0.0
 
 
 def _declared_registry_class(class_name, registry):
     """Design-spec registry entry of a named class: the class itself if
     listed, else the curated table's registry_class if listed; or None. Uses
-    no key-set inference, so it is what CMP-UOP-03 measures a unit whose
-    class is known exactly against."""
+    no key-set inference (R3.1): it is what a unit's class-level rules
+    resolve through and what CMP-UOP-03 measures a unit whose class is
+    known exactly against."""
     registry = _as_dict(registry)
     if not _nonempty_str(class_name):
         return None
@@ -1729,20 +1779,6 @@ def _declared_registry_class(class_name, registry):
         return class_name
     ancestor = _CLASS_TABLE.get(class_name, (None, None))[1]
     return ancestor if ancestor in registry else None
-
-
-def _registry_class(class_name, family, unit, registry):
-    """Design-spec registry class a unit's essential rules resolve through:
-    the exact class if listed, else the curated table's registry_class, else
-    the key-set inference when it agrees with the unit's family; or None."""
-    registry = _as_dict(registry)
-    declared = _declared_registry_class(class_name, registry)
-    if declared:
-        return declared
-    inferred = _infer_class_from_specs(unit, registry)
-    if inferred and inferred[0] and (family is None or inferred[1] == family):
-        return inferred[0]
-    return None
 
 
 def _family_weight(family):
@@ -1785,8 +1821,10 @@ def _core_class_known(sc, position):
 # One requirement: `n` of `keys` must be explicit design_input_specs.
 #   derive    -- key -> conditions (all must hold) under which its value is
 #                derivable from other data; see _condition_holds.
-#   when      -- a data condition gating the whole requirement (None: always);
-#                a condition that cannot be evaluated does not apply it.
+#   when      -- a data / class-knowledge condition gating the whole
+#                requirement (None: always); it is waived only on affirmative
+#                evidence, so an unevaluable condition applies it (R2.13;
+#                see _requirement_applies).
 #   guard     -- key -> 'T'|'P'|'T_main': an explicit value must agree with
 #                every non-empty outlet stream ('T_main': with the
 #                largest-flow outlet only) -- T within GUARD_T_ABS K, P within
@@ -1822,13 +1860,36 @@ _FEED_STAGES = _Req(1, ('feed_stages',), {})
 # list); a unit of unknown class must state it (R2.13), so identifying the
 # class can only waive it.
 _BATCH = _Req(1, ('batch',), {}, when='batch_param')
+# R3.5 class-knowledge waivers ('class_param', R2.13 principle): each of
+# these family-level requirements applies unless the unit's class is known
+# exactly (named, confidence 1) and affirmatively takes none of its keys
+# (_class_lacks_param).
+# Retentate moisture of a solids separator: SolidsSeparator's (and its
+# subclasses') moisture_content -- sludge_moisture in biosteam.wastewater's
+# SludgeHandling -- the water fraction of the solids outlet, so derivable
+# from full port states (closure-gated, R2.2). Splitter, MolecularSieve,
+# Separator, the liquids centrifuges/settlers ... take neither: waived.
+_MOISTURE = _Req(1, ('moisture_content', 'sludge_moisture'),
+                 {'moisture_content': ('all_ports_state',)},
+                 when='class_param')
+# DrumDryer: moisture_content of the dried solids (constructor default 0.15)
+# and the drying temperature T (default 343.15 K) are constructor arguments
+# with defaults, so they must be stated (R2.8); split is required. The
+# SLLE / solid-liquids centrifuges take moisture_content (default 0.5) too.
+_MOISTURE_CONTENT = _Req(1, ('moisture_content',),
+                       {'moisture_content': ('all_ports_state',)},
+                       when='class_param')
+_DRYER_T = _Req(1, ('T',), {'T': ('outlet_T',)}, when='class_param')
+# ThermalOxidizer: natural gas burned per kg of feed (duty_per_kg, default
+# 61 in the constructor), not derivable without the fuel's heating value.
+_DUTY_PER_KG = _Req(1, ('duty_per_kg',), {}, when='class_param')
 
-# Family rules (Revision 1, R1.4), checked against the biosteam source.
+# Family rules (Revision 1, R1.4; R3.5), checked against the biosteam source.
 _FAMILY_RULES = {
     'mixer': (), 'solids_handling': (), 'facility': (), 'junction': (),
-    'combustor': (),
-    'splitter': (_SPLIT,),
-    'dryer': (_SPLIT,),
+    'combustor': (_DUTY_PER_KG,),
+    'splitter': (_SPLIT, _MOISTURE),
+    'dryer': (_SPLIT, _MOISTURE_CONTENT, _DRYER_T),
     # MultiStageMixerSettlers: N_stages required, feed_stages default (0, -1);
     # the LLE split itself is computed from the thermo (or partition_data).
     'extraction': (_Req(1, ('N_stages',), {}), _FEED_STAGES),
@@ -1920,10 +1981,12 @@ _CLASS_RULES = {
     'LiquidsRatioCentrifuge': (_Req(1, ('K_chemicals',), {}),
                                _Req(1, ('Ks',), {})),
     'SLLECentrifuge': (_Req(1, ('solids_split',),
-                            {'solids_split': ('all_ports_state',)}),),
+                            {'solids_split': ('all_ports_state',)}),
+                       _MOISTURE_CONTENT),
     'SolidLiquidsSplitCentrifuge': (
         _Req(1, ('solids_split',), {'solids_split': ('all_ports_state',)}),
-        _Req(1, ('aqueous_split',), {'aqueous_split': ('all_ports_state',)})),
+        _Req(1, ('aqueous_split',), {'aqueous_split': ('all_ports_state',)}),
+        _MOISTURE_CONTENT),
     'VentScrubber': (_Req(1, ('gas',), {'gas': ('all_ports_state',)}),),
     'AmineAbsorption': (_Req(1, ('CO2_recovery',), {}),),
     'SingleComponentAdsorptionColumn': (
@@ -2072,7 +2135,8 @@ def _physical_unit(sc, position):
 def _closure(sc, position):
     """(closes, reason) of unit `position`'s balances (R2.2): the total
     mass flow in and out (every connected stream stating a valid
-    total_mass_flow) agree within CLOSURE_RTOL, and, for a physical unit
+    total_mass_flow, or a zero total flow: no mass) agree within
+    CLOSURE_RTOL, and, for a physical unit
     (_physical_unit), so does every species' molar flow (relative to the
     total molar throughput), and the R2.4 species-appearance guard finds it
     consistent (_species_consistency). reason says why not ('' when it
@@ -2084,7 +2148,9 @@ def _closure(sc, position):
     ins = sc.unit_inlets.get(uid, []) if isinstance(uid, str) else []
     outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
     result = True, ''
-    masses = [_valid_flow(_as_dict(sc.streams[i].get('stream_properties'))
+    # A stream stating a zero total flow (mass or molar) carries no mass.
+    masses = [0.0 if _is_empty_stream(sc.streams[i]) else
+              _valid_flow(_as_dict(sc.streams[i].get('stream_properties'))
                           .get('total_mass_flow')) for i in ins + outs]
     if not ins + outs:
         result = False, 'no connected streams'
@@ -2140,6 +2206,34 @@ def _registry_params(sc, position):
                         .get('design_input_spec_params')))
 
 
+# Exactly known classes the design-spec registry does not list (nor a
+# curated registry ancestor) that affirmatively lack parameters (R3.5),
+# checked against the biosteam source: biosteam.wastewater's ReverseOsmosis
+# (water_recovery / eff) and BiogasUpgrading (ratio, loss, ...) take no
+# moisture setting. (FakeSplitter, biosteam's alias of the do-nothing
+# MockSplitter, is a junction: no splitter requirement reaches it.)
+_UNLISTED_CLASS_LACKS = {
+    'ReverseOsmosis': frozenset({'moisture_content', 'sludge_moisture'}),
+    'BiogasUpgrading': frozenset({'moisture_content', 'sludge_moisture'}),
+}
+
+
+def _class_lacks_param(sc, position, keys):
+    """R3.5 class-knowledge waiver (R2.13 principle): True when unit
+    `position`'s class is known exactly (named, confidence 1) and
+    affirmatively takes none of `keys` -- its design-spec registry entry (or
+    curated registry ancestor) lists none of them, or _UNLISTED_CLASS_LACKS
+    records the class as lacking them all. An inexact or unknown class, or a
+    class without such evidence, lacks nothing (the requirement applies)."""
+    name, _family, confidence = sc.unit_classes[position]
+    if not name or confidence != 1.0:
+        return False
+    if set(keys) <= _UNLISTED_CLASS_LACKS.get(name, frozenset()):
+        return True
+    params = _registry_params(sc, position)
+    return params is not None and not set(keys) & params
+
+
 def _class_attribute_default(sc, position, key):
     """True when `key` of unit `position` is a class-level attribute default
     (R2.8): the class is concrete and identified at confidence 1, and `key`
@@ -2191,22 +2285,32 @@ def _requirement_applies(req, sc, position):
     its condition false -- inlet and outlet phase sets both known and equal
     (phase_change), rigorous = true or no phase change
     (phase_change_nonrigorous), inlet and outlet pressures all known with a
-    rise >= 1 Pa (no_pressure_rise), the unit naming a class whose
-    registry entry lacks `batch` or is absent (batch_param). An unevaluable
-    condition applies it, so deleting data can only add requirements."""
+    rise >= 1 Pa (no_pressure_rise), port evidence counting only when the
+    unit's balances close (_closure: no port missing), the unit naming a
+    class whose
+    registry entry lacks `batch` or is absent (batch_param), the unit's
+    exactly known class affirmatively taking none of the requirement's keys
+    (class_param, R3.5: _class_lacks_param). An unevaluable condition
+    applies it, so deleting data can only add requirements."""
     if req.when is None:
         return True
     unit = sc.units[position]
     uid = unit.get('id')
+    if req.when == 'class_param':
+        return not _class_lacks_param(sc, position, req.keys)
+    # Port evidence (phase sets, pressures) is affirmative only over a
+    # complete port set: the unit's balances close (R2.2), so detaching a
+    # stream's endpoint can never turn a condition false.
+    ports_complete = _closure(sc, position)[0]
     if req.when == 'phase_change':
-        return _phase_change(sc, uid) is not False
+        return not ports_complete or _phase_change(sc, uid) is not False
     if req.when == 'phase_change_nonrigorous':
         if _as_dict(unit.get('design_input_specs')).get('rigorous') is True:
             return False
-        return _phase_change(sc, uid) is not False
+        return not ports_complete or _phase_change(sc, uid) is not False
     if req.when == 'no_pressure_rise':
         rise = _pressure_rise(sc, uid)
-        return rise is None or rise < 1.0
+        return not ports_complete or rise is None or rise < 1.0
     if req.when == 'batch_param':
         # Waived only for a class the unit itself names (not one inferred
         # from its spec keys) whose constructor takes no `batch`.
@@ -2424,12 +2528,19 @@ class _ScoringContext:
         self.feeds, self.outlets = topo['feeds'], topo['outlets']
         self.isolated, self.internal = topo['isolated'], topo['internal']
         self.unit_inlets, self.unit_outlets = topo['inlets'], topo['unit_outlets']
+        # R3.8: unit ids stream endpoints reference but no unit declares.
+        # They join the unit populations of CMP-UOP-01/02 and CMP-TOP-02
+        # (scoring 0), so deleting a unit's id never sheds a need.
+        self.phantom_units = sorted(
+            {e for s in self.streams
+             for e in (s.get('source_unit_id'), s.get('sink_unit_id'))
+             if isinstance(e, str) and not _is_boundary(e)
+             and e not in self.unit_ids})
 
         # Unit class identity: (class, family, confidence) per unit, whether
         # the class is core BioSTEAM, and its design-spec registry class.
-        pinned = _pinned(_as_dict(self.metadata.get('reproducibility'))
-                         .get('flowsheet_model_package'))
-        self.unit_classes = [_unit_class(u, self.registry, pinned)
+        self.pinned_repo = _pinned_repository(self.metadata)
+        self.unit_classes = [_unit_class(u, self.registry, self.pinned_repo)
                              for u in self.units]
         # The URL counts only when design_simulation_method named the class
         # the unit resolved to (not when an abstract one fell through to it).
@@ -2437,9 +2548,10 @@ class _ScoringContext:
             _is_core_class(name, _dsm_class(u)[1]
                            if _dsm_class(u)[0] == name else None)
             for u, (name, _f, _c) in zip(self.units, self.unit_classes)]
+        # Registry class of the NAMED class only (R3.1: never inferred).
         self.unit_registry_classes = [
-            _registry_class(name, family, u, self.registry)
-            for u, (name, family, _c) in zip(self.units, self.unit_classes)]
+            _declared_registry_class(name, self.registry)
+            for name, _f, _c in self.unit_classes]
         self.reactions = [(i, j, r) for i, u in enumerate(self.units)
                           for j, r in enumerate(_as_list(u.get('reactions')))
                           if isinstance(r, dict)]
@@ -2857,18 +2969,35 @@ def _port_order_derivable(sc, position, side):
 
 def _side_credit(sc, position, side):
     """(credit, missing locator or None) for the port order of one unit side:
-    order-free -> 1; <=1 stream -> 1 on a single-port side, else
-    DERIVED_CREDIT (unexported ports may exist); several streams ->
-    DERIVED_CREDIT when derivable, else 0."""
+    order-free -> 1; a unit without an id -> 0 (R3.8: no stream can name its
+    ports). A side on which at most one stream carries material (m <= 1;
+    stated-empty streams are placeholders, like unexported MissingStream
+    ports) -> 1 on a single-port side, else DERIVED_CREDIT (unexported or
+    empty ports may exist) -- both resting on the stream COUNT, so only when
+    the unit's balances close (R2.2: no material-carrying port is missing;
+    detaching a stream's endpoint then can never raise the credit); else 0.
+    Two or more material-carrying streams -> DERIVED_CREDIT when their order
+    is derivable, else 0."""
     family, label = sc.unit_classes[position][1], sc.unit_labels[position]
-    n = len(_side_streams(sc, position, side))
+    if not _nonempty_str(sc.units[position].get('id')):
+        # R3.8: no stream can name the ports of a unit without an id (its
+        # streams, if any, dangle as an undeclared referenced id).
+        return 0.0, (f'{label}.{side}: no unit id, so no stream can state '
+                     f'its ports')
+    streams = _side_streams(sc, position, side)
+    n = len(streams)
     if (family, side) in _ORDER_FREE_SIDES:
         return 1.0, None
-    if n <= 1:
+    m = sum(1 for i in streams if not _is_empty_stream(sc.streams[i]))
+    if m <= 1:
+        closes, why = _closure(sc, position)
+        if not closes:
+            return 0.0, (f'{label}.{side}: port index not representable (no '
+                         f'port convention applies: {why})')
         if (family, side) in _SINGLE_PORT_SIDES:
             return 1.0, None
         return DERIVED_CREDIT, (f'{label}.{side}: port index not representable '
-                                f'(unexported ports may exist)')
+                                f'(unexported or empty ports may exist)')
     if _port_order_derivable(sc, position, side):
         return DERIVED_CREDIT, (f'{label}.{side}: order of {n} streams not '
                                 f'representable (derivable from stream data)')
@@ -2876,7 +3005,7 @@ def _side_credit(sc, position, side):
 
 
 def _score_top_02(sc):  # CMP-TOP-02
-    if not sc.units:
+    if not sc.units and not sc.phantom_units:
         return None, 'no units', []
     pairs, missing = [], []
     for position in range(len(sc.units)):
@@ -2886,8 +3015,12 @@ def _score_top_02(sc):  # CMP-TOP-02
             if locator:
                 missing.append(locator)
     ok = sum(1 for credit, _w in pairs if credit == 1.0)
-    return (_wmean(pairs), f'not representable; {ok} of {len(pairs)} unit '
-            f'port side(s) unambiguous by convention', missing)
+    # R3.8: both sides of an undeclared referenced unit score 0.
+    phantom_pairs, phantom_missing = _phantom_pairs(
+        sc, 'its port conventions are unknown')
+    return (_wmean(pairs + phantom_pairs * 2), f'not representable; {ok} of '
+            f'{len(pairs)} unit port side(s) unambiguous by convention'
+            + _phantom_note(sc), missing + phantom_missing)
 
 #%% Criteria -- feeds
 
@@ -3075,30 +3208,51 @@ def _class_note(sc, position):
         return (f"{label}.design_simulation_method: class '{named[0]}' {why}"
                 + (f" (family '{family}' only)" if family else
                    ' (no family either)'))
+    if confidence == 0.75 and name:
+        return (f"{label}: custom class '{name}' is not core BioSTEAM and its "
+                f"source URL is not in the repository "
+                f"metadata.reproducibility.flowsheet_model_package pins "
+                f"(url + commit|version)")
     if confidence == 0.75:
-        stated = name in (_dsm_class(unit)[0], unit.get('unit_type'))
-        if stated:
-            return (f"{label}: custom class '{name}' is not core BioSTEAM and "
-                    f"metadata.reproducibility.flowsheet_model_package pins "
-                    f"no commit|version")
-        return (f"{label}.design_simulation_method: class not stated "
-                f"('{name}' inferred from the design_input_specs keys)")
+        hint = (_infer_class_from_specs(unit, sc.registry) or (None,))[0]
+        return (f"{label}.design_simulation_method: class not stated (family "
+                f"'{family}' confirmed by every design-spec registry class "
+                f"holding its design_input_specs keys"
+                + (f"; tightest '{hint}'" if hint else '') + ')')
     if confidence == 0.5:
         return (f"{label}.design_simulation_method: class not stated (family "
-                f"'{family}' inferred from unit_type / spec keys)")
+                f"'{family}' from unit_type / a named abstract class; its "
+                f"design_input_specs keys do not confirm it unambiguously)")
     return (f"{label}: class unresolved (unit_type {unit.get('unit_type')!r} "
             f"names no known class or family)")
 
 
+def _phantom_pairs(sc, what):
+    """(pairs, missing) for the R3.8 undeclared referenced units: each
+    scores 0 at UNKNOWN_FAMILY_WEIGHT, its locator saying `what` it lacks."""
+    return ([(0.0, UNKNOWN_FAMILY_WEIGHT) for _uid in sc.phantom_units],
+            [f'units[{uid}]: referenced by a stream endpoint but not '
+             f'declared, so {what}' for uid in sc.phantom_units])
+
+
+def _phantom_note(sc):
+    """Message suffix counting the R3.8 undeclared referenced units."""
+    n = len(sc.phantom_units)
+    return (f'; {n} referenced but undeclared unit id(s) score 0' if n else '')
+
+
 def _score_uop_01(sc):  # CMP-UOP-01
-    if not sc.units:
+    if not sc.units and not sc.phantom_units:
         return None, 'no units', []
     missing = [note for note in (_class_note(sc, p) for p in range(len(sc.units)))
                if note]
     exact = sum(1 for c in sc.unit_classes if c[2] == 1.0)
     pairs = [(c[2], _unit_weight(sc, p)) for p, c in enumerate(sc.unit_classes)]
-    return (_wmean(pairs), f'{exact} of {len(sc.units)} unit(s) identify their '
-            f'class at confidence 1 (family-weighted)', missing)
+    phantom_pairs, phantom_missing = _phantom_pairs(sc, 'its class is unknown')
+    return (_wmean(pairs + phantom_pairs),
+            f'{exact} of {len(sc.units)} unit(s) identify their class at '
+            f'confidence 1 (family-weighted)' + _phantom_note(sc),
+            missing + phantom_missing)
 
 
 def _score_uop_02(sc):  # CMP-UOP-02
@@ -3109,23 +3263,29 @@ def _score_uop_02(sc):  # CMP-UOP-02
             continue
         pairs.append((score, _unit_weight(sc, position)))
         missing.extend(unit_missing)
-    if not pairs:
-        return None, 'no units that need operating specifications', []
     full = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{full} of {len(pairs)} applicable unit(s) fully '
-            f'specified (family-weighted)', missing)
+    phantom_pairs, phantom_missing = _phantom_pairs(
+        sc, 'its operating specifications are unknown')
+    if not pairs + phantom_pairs:
+        return None, 'no units that need operating specifications', []
+    return (_wmean(pairs + phantom_pairs), f'{full} of {len(pairs)} '
+            f'applicable unit(s) fully specified (family-weighted)'
+            + _phantom_note(sc), missing + phantom_missing)
 
 
 def _score_uop_03(sc):  # CMP-UOP-03
     if sc.registry_error:
         raise RuntimeError(f'design-spec registry unavailable: '
                            f'{sc.registry_error}')
-    # Population by need (R1.0): every unit, except one whose class is known
-    # exactly but that the registry does not list (a scorer vocabulary gap,
-    # not a file gap). A unit whose class is not known exactly (inferred from
-    # its spec keys, family only, unknown) scores 0: its parameter universe
-    # is unknown -- measuring it against a key-set-inferred entry let deleting
-    # design_simulation_method pick a tighter entry and raise the coverage.
+    # Population by need (R1.0): every unit, except a CORE class known
+    # exactly that the registry does not list (a scorer vocabulary gap, not
+    # a file gap; R3.6). A unit whose class is not known exactly (inferred
+    # from its spec keys, family only, unknown) scores 0: its parameter
+    # universe is unknown -- measuring it against a key-set-inferred entry
+    # let deleting design_simulation_method pick a tighter entry and raise
+    # the coverage. An exact CUSTOM class the registry does not list (nor a
+    # curated ancestor) also scores 0 (R3.6): the file states none of its
+    # parameters (the exporter emits {} for it), a real gap.
     pairs, missing, unknown = [], [], 0
     for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
         name, _family, confidence = sc.unit_classes[position]
@@ -3137,6 +3297,13 @@ def _score_uop_03(sc):  # CMP-UOP-03
                            f'so its design-spec parameter universe is unknown')
             continue
         registry_class = _declared_registry_class(name, sc.registry)
+        if registry_class is None and not sc.unit_core[position]:
+            unknown += 1
+            pairs.append((0.0, weight))
+            missing.append(f"{label}: custom class '{name}' has no "
+                           f"design-spec registry entry, so the file states "
+                           f"none of its parameters")
+            continue
         entry = _as_dict(sc.registry.get(registry_class)) if registry_class else {}
         params = list(_as_dict(entry.get('design_input_spec_params')))
         if not params:
@@ -3148,11 +3315,12 @@ def _score_uop_03(sc):  # CMP-UOP-03
         pairs.append((1.0 - len(absent) / len(needed) if needed else 1.0, weight))
         missing.extend(f'{label}.design_input_specs.{p}' for p in absent)
     if not pairs:
-        return (None, 'no units, or every unit is a known class the '
+        return (None, 'no units, or every unit is a known core class the '
                 'design-spec registry does not list', [])
     return (_wmean(pairs), f'{len(pairs) - unknown} unit(s) measured against '
-            f'their registry class, {unknown} with no class known exactly '
-            f'(score 0); {len(missing) - unknown} registry param(s) unstated '
+            f'their registry class, {unknown} with no class known exactly or '
+            f'a custom class the registry does not list (score 0); '
+            f'{len(missing) - unknown} registry param(s) unstated '
             f'(family-weighted)', missing)
 
 
