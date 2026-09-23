@@ -55,7 +55,14 @@
 # to the first occurrence, so repetition inflates nothing. A derivation from
 # stream data needs the unit's mass balance (and, for a physical unit, every
 # species' balance) to close within 1 %. A conditional requirement is waived
-# only when the data affirmatively show its condition false.
+# only when the data affirmatively show its condition false. Stream and
+# utility-agent temperatures, pressures and flows are first converted to
+# BioSTEAM's internal units (K, Pa, kg/hr, kmol/hr, m3/hr) from their stated
+# quantity units (quantity_units_global, or a legacy inline pair) by a small
+# built-in table, so a file in degC or bar scores like one in K and Pa; a
+# unit string the table does not know suspends the plausibility bounds (a
+# flow must still be >= 0) and the consistency guards for that quantity.
+# design_input_specs are read in BioSTEAM-native units.
 
 categories:
   thermo: Thermodynamic basis (chemicals and property package)
@@ -106,11 +113,21 @@ criteria:
     rationale: >-
       thermosteam builds a pure-component model (vapor pressure, heat capacity,
       heat of vaporization, molar volume, viscosity, ...) by looking the
-      chemical up in the chemicals/thermo databases. A valid registry id -- a
-      CAS number with a correct check digit (and, when the database knows it,
-      a molar mass within 2 % of the chemical's), an InChI, an InChIKey or
-      SMILES -- identifies the species unambiguously and brings every
-      correlation with it (credit 1); junk such as "x" counts as no id. An id
+      chemical up in the chemicals/thermo databases. Each chemical scores the
+      best of the tiers it reaches, so deleting one datum only removes an
+      option. A registry id -- a CAS number with a correct check digit, an
+      InChI whose formula layer parses, an InChIKey or SMILES -- that the
+      chemicals database RESOLVES (looked up as that kind of identifier:
+      "InChIKey=" and "SMILES=" prefixes, so "C" means methane, not carbon)
+      to a record whose molar mass (within 2 %) or formula agrees with the
+      chemical's, when the chemical states one, identifies the species and
+      brings the database's correlations with it (credit 1). A well-formed
+      id the database cannot resolve -- a real number it does not list, such
+      as cellulose's CAS, or an invented one with a valid check digit -- or
+      any id while the database is unavailable, brings nothing checkable and
+      earns 0.5. A malformed id ("x", "InChI=1S/x"), one whose database
+      record or InChI formula layer contradicts the chemical's molar mass or
+      formula, counts as no id. An id
       that the chemicals database resolves by name, as Chemical(ID) does,
       identifies it when the record's molar mass (or formula) matches the
       chemical's declared or formula-derived one within 1 % (verified, 0.75),
@@ -187,10 +204,14 @@ criteria:
       required properties -- for every member, so a declared but
       unreferenced chemical counts too -- and no SFF field can carry these
       models. The criterion looks at every declared and every referenced id
-      and applies to each one resolvable neither by a valid registry id nor
-      by a verified or unverified name (a mismatching or isomer-ambiguous
-      name does not count; an undeclared id is judged by its name alone),
-      and then scores 0. Such a custom chemical also lacks what
+      and applies to each one the chemicals database does not resolve --
+      neither by a registry id it finds without contradiction nor by a
+      verified or unverified name (a mismatching or isomer-ambiguous name
+      does not count; an undeclared id is judged by its name alone) -- and
+      then scores 0. A well-formed but unresolvable registry id exempts
+      nothing (an invented CAS number, or cellulose's real one, brings no
+      property data), and with the database unavailable nothing is exempt.
+      Such a custom chemical also lacks what
       phase-equilibrium models need beyond pure-component data -- UNIFAC or
       Dortmund group assignments for activity-coefficient packages and any
       binary interaction parameters -- which no SFF field carries either;
@@ -317,9 +338,16 @@ criteria:
       scores 0. Feeds weigh equally and every feed counts: one whose state
       says it is empty (total flow numerically zero, an unused placeholder
       port) scores 1, since its zero flow states all such a port needs --
-      but only when some feed states a non-zero flow; otherwise nothing sets
-      the problem's scale, and a stated zero counts as a missing flow with no
-      composition exemption (so writing zeros earns nothing). A feed whose
+      but only when some feed states a non-zero flow and the unit it enters
+      has a class known exactly (confidence 1), whose fixed ports make a
+      placeholder feed legitimate. Otherwise a stated zero counts as a
+      missing flow with no composition exemption: with no non-zero feed
+      nothing sets the problem's scale, and zero-flow feeds padding a unit of
+      unknown class state nothing (so writing zeros earns nothing). The
+      message reports how many feeds are empty and how many of those earn
+      the placeholder credit. A stream with both endpoints at the boundary
+      counts as a feed, so losing a feed's sink_unit_id never drops it. A
+      feed whose
       flow is unknown scores its stated parts (temperature, pressure,
       composition). (Leaving empty feeds out, or weighting by mass-flow
       share, let deleting a flow raise the score.)
@@ -336,8 +364,10 @@ criteria:
     rationale: >-
       Stream.price on feeds and products drives the material cost and sales
       revenue of the TEA, and therefore every minimum selling price or NPV.
-      Every boundary stream counts: an empty one (total flow numerically
-      zero) needs no price and scores 1; every other one needs a price. An
+      Every boundary stream counts (one with both endpoints at the boundary
+      too, so losing an endpoint never drops an unpriced stream): an empty
+      one (total flow numerically zero) needs no price and scores 1; every
+      other one needs a price. An
       explicit zero is a valid statement, except on a feed that is a unit's
       utility-port material, which BioSTEAM prices itself when the stream's
       price is 0 (from bst.stream_utility_prices, or a class default) in a
@@ -432,8 +462,10 @@ criteria:
       full credit only with a value plausible for the parameter (a
       temperature in (0, 1e4) K, a positive pressure or residence time, a
       working-volume fraction or efficiency in (0, 1], split fractions in
-      [0, 1], two light/heavy keys, a boolean flag, else any non-empty
-      value); a blank or out-of-range value counts as unstated. A
+      [0, 1], a column's key recoveries Lr and Hr and its y_top and x_bot
+      strictly inside (0, 1), a distillation column's reflux factor k above
+      1, two light/heavy keys, a boolean flag, else any non-empty value); a
+      blank or out-of-range value counts as unstated. A
       specification recoverable from stream states, design results or a
       class default earns derived credit, and one read from stream data
       only when the unit's mass balance -- and, for a physical unit, every
@@ -754,8 +786,10 @@ criteria:
       a cost item may be split across N identical pieces of equipment
       (CostItem.N); both change the cost through economies of scale. SFF
       states neither. Per costed unit, derived credit when a design result
-      states a count ('Number of reactors', ...) with a numeric value, else
-      0. Family-weighted.
+      states a count ('Number of reactors', ...) with a numeric value, or
+      when a power-law correlation states a positive size_upper_bound and
+      its basis has a numeric design result S (BioSTEAM then buys N =
+      ceil(S / size_upper_bound) pieces), else 0. Family-weighted.
 
   - id: CMP-COST-07
     category: costing
@@ -773,8 +807,9 @@ criteria:
       can carry one. Per costed unit: 1 when it has cost items (named by its
       purchase costs, installed costs or correlations) and every one has a
       correlation stating a lifetime; derived credit for a core BioSTEAM
-      class identified at confidence 1 (its class default applies); else 0.
-      Family-weighted.
+      class identified at confidence 1 (its class-default lifetime applies,
+      which the importer gets by instantiating the class); else 0. The
+      message counts both. Family-weighted.
 
   # --------------------------------------------------------------- utilities
   - id: CMP-UTIL-01
@@ -794,7 +829,11 @@ criteria:
       several pressures, refrigerants) that BioSTEAM selects by temperature and
       that are defined by temperature, pressure and composition. A duty cannot
       be assigned to an agent that is not declared, and an agent without its
-      state cannot be instantiated. Applicable when a unit is in a
+      state cannot be instantiated. Each part of a heat or other agent's
+      state counts only when plausible, by the same predicates as a stream's
+      (a temperature in (0, 1e4) K and a positive pressure, after conversion
+      to internal units; a composition whose entries name their components
+      and whose fractions lie in [0, 1] and sum to 1). Applicable when a unit is in a
       utility-using family (heat exchange, electricity or fuel: reactors,
       columns, heaters, pumps, compressors, agitated tanks, conveyors,
       mixer-settlers, boilers, dryers, ...), any unit records utility
@@ -822,9 +861,16 @@ criteria:
       Heat agents are priced per mole regenerated or per unit of heat
       transferred, electricity per kWh, and other utilities per unit flow;
       together they make up the utility share of the variable operating cost
-      in the TEA. Same applicability as CMP-UTIL-01; scored over declared
-      agents plus referenced but undeclared ones and the missing heat-agent
-      or power-utility kinds of CMP-UTIL-01 (all of which score 0).
+      in the TEA. A price counts only when finite, and a heat agent's
+      regeneration or heat-transfer price only when also at least zero. A
+      zero price on an other-utility agent that is a fuel (its id names
+      natural gas or a fuel, or its composition is at least 50 mol% CH4) --
+      or may be one, its composition not being plausibly stated -- earns half
+      credit: BioSTEAM then prices the fuel from bst.stream_prices, which SFF
+      cannot state (as CMP-FEED-02 treats utility-port feeds). Same
+      applicability as CMP-UTIL-01; scored over declared agents plus
+      referenced but undeclared ones and the missing heat-agent or
+      power-utility kinds of CMP-UTIL-01 (all of which score 0).
 
   - id: CMP-UTIL-03
     category: utilities
@@ -912,15 +958,21 @@ criteria:
     sff_paths:
       - metadata.TEA_currency
       - metadata.TEA_year
+      - metadata.products[].stream_id
     rationale: >-
-      A BioSTEAM TEA needs thirteen groups of assumptions: currency, start
-      year, plant duration, internal rate of return, income tax, depreciation
-      schedule, construction schedule, startup period and fractions, working
-      capital, the fixed-operating-cost model, the capital-cost model (a Lang
-      factor or DPI/TDC/FCI factors, with the OSBL units and TEA class it is
-      applied to), financing, and the price book (bst.stream_prices, which
-      also prices zero-priced utility ports). SFF states only the currency
-      and year, so at most two of thirteen are available.
+      A BioSTEAM TEA needs fourteen groups of assumptions: the currency; the
+      dollar (cost) year every price and cost is expressed in; the target
+      product whose selling price the TEA solves for; the plant's start year
+      and duration; the internal rate of return; income tax; the
+      depreciation schedule; the construction schedule; the startup period
+      and fractions; working capital; the fixed-operating-cost model; the
+      capital-cost model (a Lang factor or DPI/TDC/FCI factors, with the OSBL
+      units and TEA class it is applied to); financing; and the price book
+      (bst.stream_prices, which also prices zero-priced utility ports). SFF
+      can state three: TEA_currency, TEA_year -- the cost year, per the
+      schema, not the plant's start year -- and the target products
+      (metadata.products, non-empty, every stream_id a declared boundary
+      outlet), so at most three of fourteen are available.
 
   - id: CMP-SYS-03
     category: system
@@ -977,7 +1029,8 @@ criteria:
       The validator's XREF-01 aggregate fails when any referential check fails
       (a stream to an unknown unit, a component missing from the chemicals, a
       utility result naming no agent); information behind a dangling
-      reference cannot be used.
+      reference cannot be used. Not applicable to a document with neither
+      units nor streams.
 
   - id: CMP-INT-04
     category: integrity
@@ -994,6 +1047,7 @@ criteria:
       legacy files carry them inline on each quantity, so there the score is
       the fraction of quantities carrying units, where a bare numeric design
       result (no inline units at all) counts as a quantity without units.
+      Not applicable to a document with neither units nor streams.
 
 exclusions:
   - id: EXC-01

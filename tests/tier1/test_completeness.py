@@ -611,8 +611,13 @@ class TestReaders(unittest.TestCase):
         _valid_formula also accepts what the validator's
         parser reads. _valid_cas checks format and check digit; _smiles_like
         needs SMILES tokens, an atom, balanced branches and paired ring
-        labels ('CCO' yes; 'x', 'HP', 'CO2' no); _valid_registry_id accepts
-        CAS, InChI, InChIKey, SMILES and rejects 'x' and non-strings."""
+        labels ('CCO' yes; 'x', 'HP', 'CO2' no); _registry_query (R3.2)
+        returns (kind, database query) for a CAS number (as is), an InChI
+        whose formula layer parses (as is), an InChIKey ('InChIKey='
+        prefixed, a prefixed one accepted too) and SMILES ('SMILES='
+        prefixed, so 'C' is queried as methane), and (None, None) for 'x',
+        'InChI=1S/x' (formula layer 'x' does not parse), a bad check digit,
+        '' and non-strings."""
         self.assertEqual(C._formula_counts("C2H6O"), {"C": 2, "H": 6, "O": 1})
         self.assertEqual(C._formula_counts("CH1.61O0.56"),
                          {"C": 1, "H": 1.61, "O": 0.56})
@@ -639,12 +644,19 @@ class TestReaders(unittest.TestCase):
         self.assertTrue(C._smiles_like("[Na+].[Cl-]"))
         for text in ("x", "HP", "CO2", "C(C", "12", 5):
             self.assertFalse(C._smiles_like(text), text)
-        with name_lookup():
-            for rid in ("64-17-5", "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
-                        "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", "CCO"):
-                self.assertTrue(C._valid_registry_id({"registry_id": rid}), rid)
-            for rid in ("x", "", ["64-17-5"], "64-17-4"):
-                self.assertFalse(C._valid_registry_id({"registry_id": rid}), rid)
+        inchi = "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3"
+        key = "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
+        for rid, expected in (
+                ("64-17-5", ("CAS", "64-17-5")), (inchi, ("InChI", inchi)),
+                (key, ("InChIKey", f"InChIKey={key}")),
+                (f"InChIKey={key}", ("InChIKey", f"InChIKey={key}")),
+                ("CCO", ("SMILES", "SMILES=CCO")),
+                ("SMILES=CCO", ("SMILES", "SMILES=CCO")),
+                ("C", ("SMILES", "SMILES=C")),
+                (" 64-17-5 ", ("CAS", "64-17-5"))):
+            self.assertEqual(C._registry_query(rid), expected, rid)
+        for rid in ("x", "", ["64-17-5"], "64-17-4", "InChI=1S/x", None):
+            self.assertEqual(C._registry_query(rid), (None, None), rid)
 
     def test_total_flow_and_stream_state(self):
         """_total_flow: mass else molar; _stream_state: valid feed -> all
@@ -1802,46 +1814,67 @@ class TestThermoCriteria(unittest.TestCase):
         self.assertIsNone(C._empty_chemical_population(ctx({}))[0])
 
     def test_thm_02_credit(self):
-        """_thm_02_credit (R2.0/R2.3): a valid registry_id -> 1; a junk one
-        ('x') counts as absent; id resolvable by name with a matching molar
-        mass -> NAME_RESOLVED_CREDIT (0.75); resolvable with nothing to
-        verify it -> NAME_UNVERIFIED_CREDIT (0.5); resolvable but of another
-        molar mass -> the formula tier FORMULA_ONLY_CREDIT (0.25); an
-        isomer-ambiguous formula id (>= 2 carbon atoms, 'C2H6O') never earns
-        the name tier (0.25 via the id), while a one-carbon or carbon-free
-        formula id resolves like a name (R2.3 corrected: 'HP' mismatches
-        hematoporphyrin -> 0.25 with the molar-mass note; 'CO2' with a
-        matching molar mass -> verified 0.75); nothing -> 0; each below 1
-        with a registry_id locator suffix."""
-        with name_lookup({"Ethanol", "Starch", "HP", "C2H6O"}):
+        """_thm_02_credit (R3.2: the MAX over the tiers reached) -> (credit,
+        note, tier): a registry id the database resolves -> (1, None,
+        'registry'); a well-formed id it cannot resolve -> 0.5 'unresolved'
+        (note: unverifiable); a junk one ('x') counts as absent -> 0 with a
+        'not a well-formed' note; id resolvable by name with a matching
+        molar mass -> NAME_RESOLVED_CREDIT (0.75, 'name'); resolvable with
+        nothing to verify it -> NAME_UNVERIFIED_CREDIT (0.5, 'unverified');
+        resolvable but of another molar mass -> the formula tier
+        FORMULA_ONLY_CREDIT (0.25); an isomer-ambiguous formula id (>= 2
+        carbon atoms, 'C2H6O') never earns the name tier (0.25 via the id),
+        while a one-carbon or carbon-free formula id resolves like a name
+        (R2.3 corrected: 'HP' mismatches hematoporphyrin -> 0.25 with the
+        molar-mass note; 'CO2' with a matching molar mass -> verified 0.75);
+        nothing -> 0; each below 1 with a registry_id locator suffix."""
+        with name_lookup({"Ethanol", "Starch", "HP", "C2H6O", "64-17-5"}):
             self.assertEqual(C._thm_02_credit({"registry_id": "64-17-5"}, "X"),
-                             (1.0, None))
-            self.assertEqual(C._thm_02_credit({"registry_id": "x"}, "X")[0], 0.0)
+                             (1.0, None, "registry"))
+            credit, note, tier = C._thm_02_credit({"registry_id": "50-00-0"}, "X")
+            self.assertEqual((credit, tier), (C.REGISTRY_UNRESOLVED_CREDIT,
+                                              "unresolved"))
+            self.assertIn("does not resolve it", note)
+            credit, note, tier = C._thm_02_credit({"registry_id": "x"}, "X")
+            self.assertEqual((credit, tier), (0.0, "none"))
+            self.assertIn("not a well-formed", note)
             self.assertEqual(C._thm_02_credit({"formula": "C2H6O"}, "Ethanol")[0],
                              C.NAME_RESOLVED_CREDIT)
             self.assertEqual(C._thm_02_credit({}, "Ethanol")[0],
                              C.NAME_UNVERIFIED_CREDIT)
             self.assertEqual(C._thm_02_credit({"molar_mass": 162.14}, "Starch")[0],
                              C.NAME_UNVERIFIED_CREDIT)
-            credit, note = C._thm_02_credit({"molar_mass": 90.0}, "Ethanol")
+            credit, note, _tier = C._thm_02_credit({"molar_mass": 90.0}, "Ethanol")
             self.assertEqual(credit, 0.0)
             self.assertIn("another molar mass", note)
-            credit, note = C._thm_02_credit({"formula": "C2H6O"}, "Fiber")
+            credit, note, _tier = C._thm_02_credit({"formula": "C2H6O"}, "Fiber")
             self.assertEqual((credit, note), (C.FORMULA_ONLY_CREDIT,
                                               ".registry_id (formula only)"))
-            credit, note = C._thm_02_credit({"molar_mass": 46.07}, "C2H6O")
+            credit, note, _tier = C._thm_02_credit({"molar_mass": 46.07}, "C2H6O")
             self.assertEqual(credit, C.FORMULA_ONLY_CREDIT)
             self.assertIn("isomer-ambiguous", note)
         with name_lookup({"HP": (598.68872, "C34H38N4O6"),
                           "CO2": (44.0095, "CO2")}):
-            credit, note = C._thm_02_credit({"molar_mass": 90.08}, "HP")
+            credit, note, _tier = C._thm_02_credit({"molar_mass": 90.08}, "HP")
             self.assertEqual(credit, C.FORMULA_ONLY_CREDIT)
             self.assertIn("another molar mass", note)
             self.assertEqual(C._thm_02_credit({"molar_mass": 44.01}, "CO2")[0],
                              C.NAME_RESOLVED_CREDIT)
             self.assertEqual(C._thm_02_credit({}, None)[0], 0.0)
-        self.assertEqual((C.NAME_RESOLVED_CREDIT, C.NAME_UNVERIFIED_CREDIT,
-                          C.FORMULA_ONLY_CREDIT), (0.75, 0.5, 0.25))
+        # MAX over tiers: a verified name (0.75) beats an unresolvable id.
+        with name_lookup({"Ethanol"}):
+            self.assertEqual(C._thm_02_credit(
+                {"registry_id": "50-00-0", "formula": "C2H6O"}, "Ethanol")[::2],
+                (C.NAME_RESOLVED_CREDIT, "name"))
+        # Database unavailable: a well-formed id 0.5, and no name tier.
+        with name_lookup(search=None):
+            credit, note, tier = C._thm_02_credit(
+                {"registry_id": "64-17-5", "formula": "C2H6O"}, "Ethanol")
+            self.assertEqual((credit, tier), (0.5, "unresolved"))
+            self.assertIn("unavailable", note)
+        self.assertEqual((C.REGISTRY_UNRESOLVED_CREDIT, C.NAME_RESOLVED_CREDIT,
+                          C.NAME_UNVERIFIED_CREDIT, C.FORMULA_ONLY_CREDIT),
+                         (0.5, 0.75, 0.5, 0.25))
 
     def test_name_tier_and_record_agreement(self):
         """_name_tier: None for a non-string, formula-like or unresolvable id,
@@ -1874,31 +1907,141 @@ class TestThermoCriteria(unittest.TestCase):
         self.assertEqual(C._chemical_molar_mass({"molar_mass": -1.0,
                                                  "formula": "x"}), None)
 
-    def test_cas_contradicts(self):
-        """_cas_contradicts: a CAS whose database record's molar mass differs
-        from the chemical's by more than CAS_MW_RTOL -> True (the registry
-        id is then invalid: _valid_registry_id False); within tolerance, no
-        record, or no molar mass to compare -> False."""
-        with name_lookup({"64-17-5": (46.06844, "C2H6O")}):
-            self.assertTrue(C._cas_contradicts("64-17-5", {"molar_mass": 90.0}))
-            self.assertFalse(C._valid_registry_id(
-                {"registry_id": "64-17-5", "molar_mass": 90.0}))
-            self.assertFalse(C._cas_contradicts("64-17-5", {"molar_mass": 46.5}))
-            self.assertFalse(C._cas_contradicts("64-17-5", {}))
-            self.assertFalse(C._cas_contradicts("7732-18-5", {"molar_mass": 1.0}))
+    def test_registry_status(self):
+        """_registry_status (R3.2), with a fake database resolving CAS
+        64-17-5, 'SMILES=C' (methane) and an ethanol InChIKey: 'absent' (no
+        id, blank); 'malformed' ('x', 'InChI=1S/x', a list); 'resolved'
+        (64-17-5 with an agreeing molar mass within REGISTRY_MW_RTOL = 2 %,
+        with a matching formula, or with nothing to compare; the InChIKey
+        with or without its prefix); 'contradicted' (64-17-5 with molar
+        mass 90; 'C' = methane for a 162 g/mol starch; an InChI whose
+        formula layer C2H6O disagrees with a declared C6H10O5 -- even with
+        the database unavailable); 'unresolved' (the invented CAS
+        98765-43-6, a fake InChIKey, cellulose's real CAS 9004-34-6);
+        'unavailable' (any well-formed id when the database cannot be
+        imported). _database_resolved: True only for 'resolved' or a
+        verified/unverified name; False for every chemical when the
+        database is unavailable."""
+        key = "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
+        inchi = "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3"
+        records = {"64-17-5": (46.06844, "C2H6O"), "SMILES=C": (16.04, "CH4"),
+                   f"InChIKey={key}": (46.06844, "C2H6O"), inchi:
+                   (46.06844, "C2H6O"), "Ethanol": (46.06844, "C2H6O")}
+        status = lambda **chem: C._registry_status(chem)
+        with name_lookup(records):
+            self.assertEqual(status(), "absent")
+            self.assertEqual(status(registry_id="  "), "absent")
+            for rid in ("x", "InChI=1S/x", ["64-17-5"]):
+                self.assertEqual(status(registry_id=rid), "malformed", rid)
+            for chem in ({"molar_mass": 46.5}, {"formula": "C2H6O"}, {}):
+                self.assertEqual(status(registry_id="64-17-5", **chem),
+                                 "resolved", chem)
+            self.assertEqual(status(registry_id=key, molar_mass=46.07),
+                             "resolved")
+            self.assertEqual(status(registry_id=f"InChIKey={key}"), "resolved")
+            self.assertEqual(status(registry_id=inchi, formula="C2H6O"),
+                             "resolved")
+            self.assertEqual(status(registry_id="64-17-5", molar_mass=90.0),
+                             "contradicted")
+            self.assertEqual(status(registry_id="C", formula="C6H10O5",
+                                    molar_mass=162.14), "contradicted")
+            self.assertEqual(status(registry_id=inchi, formula="C6H10O5"),
+                             "contradicted")
+            for rid in ("98765-43-6", "ABCDEFGHIJKLMN-OPQRSTUVWX-Y",
+                        "9004-34-6"):
+                self.assertEqual(status(registry_id=rid, molar_mass=162.14),
+                                 "unresolved", rid)
+            self.assertTrue(C._database_resolved(
+                {"registry_id": "64-17-5"}, "X"))
+            self.assertTrue(C._database_resolved({}, "Ethanol"))
+            self.assertFalse(C._database_resolved(
+                {"registry_id": "9004-34-6"}, "Cellulose"))
+            self.assertFalse(C._database_resolved(None, "Cellulose"))
+        with name_lookup(search=None):
+            self.assertEqual(status(registry_id="64-17-5"), "unavailable")
+            self.assertEqual(status(registry_id=inchi, formula="C6H10O5"),
+                             "contradicted")
+            self.assertFalse(C._database_resolved(
+                {"registry_id": "64-17-5"}, "Ethanol"))
+        self.assertEqual(C.REGISTRY_MW_RTOL, 0.02)
+
+    def test_inchi_formula_layer(self):
+        """_inchi_formula: the formula layer of an InChI as element counts
+        (ethanol {C:2, H:6, O:1}; components summed with multipliers,
+        'InChI=1S/2Na.H2O4S/...' -> {Na:2, H:2, O:4, S:1}; a mobile-proton
+        layer '/p+1' adds an H: ammonium from 'InChI=1S/H3N/h1H3/p+1' ->
+        {H:4, N:1}); None for a non-InChI, an unparseable layer ('x') or a
+        non-string. _same_counts compares count maps (1e-9);
+        _counts_molar_mass gives {C:2, H:6, O:1} ~46.07 and None for {}.
+        _inchi_contradicts: layer vs the declared formula ('C2H6O' agrees,
+        'C6H10O5' contradicts); with no formula, vs the declared molar mass
+        within REGISTRY_MW_RTOL (46.5 agrees, 90 contradicts); nothing
+        comparable -> False."""
+        inchi = "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3"
+        self.assertEqual(C._inchi_formula(inchi), {"C": 2, "H": 6, "O": 1})
+        self.assertEqual(C._inchi_formula("InChI=1S/2Na.H2O4S/c;;1-5(2,3)4"),
+                         {"Na": 2, "H": 2, "O": 4, "S": 1})
+        self.assertEqual(C._inchi_formula("InChI=1S/H3N/h1H3/p+1"),
+                         {"H": 4, "N": 1})
+        for text in ("x", "InChI=1S/x", "64-17-5", None):
+            self.assertIsNone(C._inchi_formula(text), text)
+        self.assertTrue(C._same_counts({"C": 2, "H": 6}, {"H": 6.0, "C": 2}))
+        self.assertFalse(C._same_counts({"C": 2}, {"C": 2, "H": 1}))
+        self.assertFalse(C._same_counts(None, {"C": 2}))
+        self.assertAlmostEqual(C._counts_molar_mass({"C": 2, "H": 6, "O": 1}),
+                               46.07, places=1)
+        self.assertIsNone(C._counts_molar_mass({}))
+        self.assertFalse(C._inchi_contradicts(inchi, {"formula": "C2H6O"}))
+        self.assertTrue(C._inchi_contradicts(inchi, {"formula": "C6H10O5"}))
+        self.assertFalse(C._inchi_contradicts(inchi, {"molar_mass": 46.5}))
+        self.assertTrue(C._inchi_contradicts(inchi, {"molar_mass": 90.0}))
+        self.assertFalse(C._inchi_contradicts(inchi, {}))
+        self.assertFalse(C._inchi_contradicts("x", {"formula": "C2H6O"}))
+
+    def test_registry_status_real_database(self):
+        """R3.2 against the installed `chemicals` database (skipped when it
+        cannot be imported): CAS 64-17-5, the ethanol InChI, InChIKey and
+        SMILES 'CCO' resolve for ethanol (C2H6O, 46.07); 'C' resolves to
+        methane and so contradicts a 162 g/mol starch; the invented CAS
+        98765-43-6, a fake InChIKey and the real but unlisted CAS of
+        cellulose (9004-34-6) and starch (9005-25-8) are 'unresolved'."""
+        with name_lookup(search=C._chemicals_search()):
+            if C._chemicals_search() is None:
+                self.skipTest("chemicals package not importable")
+            ethanol = {"formula": "C2H6O", "molar_mass": 46.07}
+            for rid in ("64-17-5", "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
+                        "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", "CCO"):
+                self.assertEqual(C._registry_status(
+                    dict(ethanol, registry_id=rid)), "resolved", rid)
+            starch = {"formula": "C6H10O5", "molar_mass": 162.1406}
+            self.assertEqual(C._registry_status(dict(starch, registry_id="C")),
+                             "contradicted")
+            for rid in ("98765-43-6", "ABCDEFGHIJKLMN-OPQRSTUVWX-Y",
+                        "9004-34-6", "9005-25-8"):
+                self.assertEqual(C._registry_status(
+                    dict(starch, registry_id=rid)), "unresolved", rid)
 
     def test_thm_02_identity(self):
         """_score_thm_02 (CMP-THM-02): Ethanol with formula, name tier
-        unavailable -> 0.25; name-resolvable -> 0.75; registry_id -> 1.0;
-        an undeclared referenced id counts as 0 (-> 0.5 beside a registry
-        id); streams but no chemicals at all -> 0; empty doc -> None."""
+        unavailable -> 0.25; name-resolvable -> 0.75; a database-resolved
+        registry_id -> 1.0 (message counts 1 resolved id); an undeclared
+        referenced id counts as 0 (-> 0.5 beside a registry id); streams
+        but no chemicals at all -> 0; empty doc -> None; with the database
+        unavailable, a registry id -> 0.5 (counted as unresolvable)."""
         with name_lookup(search=None):
             self.assertEqual(run(C._score_thm_02, valid_doc())[0], 0.25)
-        with name_lookup({"Ethanol"}):
+            doc = valid_doc()
+            mutate(doc, "chemicals/0/registry_id", "64-17-5")
+            score, message, _missing = run(C._score_thm_02, doc)
+            self.assertEqual(score, 0.5)
+            self.assertIn("1 carry an unresolvable id", message)
+        with name_lookup({"Ethanol", "64-17-5"}):
             self.assertEqual(run(C._score_thm_02, valid_doc())[0], 0.75)
             doc = valid_doc()
             mutate(doc, "chemicals/0/registry_id", "64-17-5")
-            self.assertEqual(run(C._score_thm_02, doc)[0], 1.0)
+            score, message, _missing = run(C._score_thm_02, doc)
+            self.assertEqual(score, 1.0)
+            self.assertIn("1 of 1 chemical(s) carry a database-resolved", message)
             doc["streams"][0]["stream_properties"]["phases"]["l"][
                 "composition"].append({"component_name": "Water",
                                        "mol_fraction": 0.0})
@@ -1947,9 +2090,12 @@ class TestThermoCriteria(unittest.TestCase):
         self.assertEqual(run(C._score_thm_04, solid)[0], 0.0)
 
     def test_thm_05_non_database_property_data(self):
-        """_score_thm_05 (CMP-THM-05): a chemical resolvable neither by
-        registry id nor by name -> 0; name-resolvable or with a registry id
-        -> None; an undeclared referenced id -> 0; no chemicals at all but
+        """_score_thm_05 (CMP-THM-05, R3.2): a chemical the database
+        resolves neither by registry id nor by name -> 0; name-resolvable
+        or with a database-resolved registry id -> None; a well-formed but
+        unresolvable registry id (invented CAS 98765-43-6) exempts nothing
+        -> 0; database unavailable -> 0 even with a registry id, the message
+        saying so; an undeclared referenced id -> 0; no chemicals at all but
         streams -> 0; empty doc -> None."""
         with name_lookup():
             self.assertEqual(run(C._score_thm_05, valid_doc())[0], 0.0)
@@ -1962,13 +2108,22 @@ class TestThermoCriteria(unittest.TestCase):
             score, _m, missing = run(C._score_thm_05, doc)
             self.assertEqual((score, len(missing)), (0.0, 1))
             self.assertIn("chemicals['Water']", missing[0])
-        with name_lookup():
+        with name_lookup({"64-17-5"}):
             doc = valid_doc()
             mutate(doc, "chemicals/0/registry_id", "64-17-5")
             self.assertIsNone(run(C._score_thm_05, doc)[0])
+            invented = valid_doc()
+            mutate(invented, "chemicals/0/registry_id", "98765-43-6")
+            self.assertEqual(run(C._score_thm_05, invented)[0], 0.0)
             remove(doc, "chemicals")
             self.assertEqual(run(C._score_thm_05, doc)[0], 0.0)
             self.assertIsNone(run(C._score_thm_05, {})[0])
+        with name_lookup(search=None):
+            doc = valid_doc()
+            mutate(doc, "chemicals/0/registry_id", "64-17-5")
+            score, message, _missing = run(C._score_thm_05, doc)
+            self.assertEqual(score, 0.0)
+            self.assertIn("database is unavailable", message)
 
     def test_thm_06_property_package(self):
         """_score_thm_06 (CMP-THM-06): no package -> 0 with 4 locators; half
@@ -2170,8 +2325,9 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         flow (90 and 10 kg/h, the small one missing T -> 0.875); deleting the
         big feed's mass flow keeps the molar flow, so the score stays 0.875
         (the old mass-share weighting rose here); an EMPTY feed (total flow
-        0) stays in the population and scores 1 even without T -> 1.0 with
-        an 'empty, stated by their zero flow' note; beside a half-stated
+        0) into the exactly known Mixer stays in the population and scores
+        1 even without T -> 1.0, the message counting '1 empty feed(s) ...
+        1 credited as placeholder port(s)'; beside a half-stated
         feed it counts as 1 -> (0.5 + 1) / 2; deleting its flows makes it an
         unknown-flow feed scored by its state (lower, never higher). R2.12:
         with no feed stating a non-zero flow a stated zero counts as a
@@ -2189,7 +2345,8 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         empty["streams"][1]["stream_properties"]["total_molar_flow"] = 0.0
         score, message, _missing = run(C._score_feed_01, empty)
         self.assertEqual(score, 1.0)
-        self.assertIn("1 empty, stated by their zero flow", message)
+        self.assertIn("1 empty feed(s) (zero flow), 1 credited as placeholder "
+                      "port(s)", message)
         half = copy.deepcopy(empty)
         for key in ("temperature", "pressure"):
             del half["streams"][0]["stream_properties"][key]
@@ -3197,17 +3354,39 @@ class TestSystemCriteria(unittest.TestCase):
             self.assertTrue(missing)
 
     def test_sys_02_tea_parameters(self):
-        """_score_sys_02 (CMP-SYS-02): 13 groups incl. the price book;
-        currency + year -> 2/13; without currency -> 1/13 with a
-        metadata.TEA_currency locator; the price book is listed missing."""
-        self.assertEqual(len(C._TEA_ITEMS), 13)
-        self.assertAlmostEqual(run(C._score_sys_02, valid_doc())[0], 2 / 13)
+        """_score_sys_02 / _target_products_designated (CMP-SYS-02, R3.10):
+        14 groups incl. the dollar year and the target product; valid_doc
+        (currency, TEA_year 2020, products -> the boundary outlet 'prod') ->
+        3/14; without currency -> 2/14 with a metadata.TEA_currency locator
+        first; a product naming the FEED (not an outlet), an unknown stream,
+        an empty list or an entry without stream_id -> not designated
+        (2/14, 'metadata.products' locator); a TEA_year of 0 or a string
+        counts as unstated; the price book and the plant start year are
+        listed missing (not representable)."""
+        self.assertEqual(len(C._TEA_ITEMS), 14)
+        self.assertEqual(C._TEA_ITEMS[:3], ("currency", "dollar year (cost basis)",
+                                            "target product"))
+        self.assertAlmostEqual(run(C._score_sys_02, valid_doc())[0], 3 / 14)
+        self.assertTrue(C._target_products_designated(ctx(valid_doc())))
         doc = valid_doc()
         remove(doc, "metadata/TEA_currency")
         score, _m, missing = run(C._score_sys_02, doc)
-        self.assertAlmostEqual(score, 1 / 13)
+        self.assertAlmostEqual(score, 2 / 14)
         self.assertEqual(missing[0], "metadata.TEA_currency")
         self.assertTrue(any("stream_prices" in m for m in missing))
+        self.assertTrue(any("plant start year" in m for m in missing))
+        for products in ([{"stream_id": "feed"}], [{"stream_id": "nope"}], [],
+                         [{"display_name": "P"}], {"stream_id": "prod"}):
+            doc = valid_doc()
+            doc["metadata"]["products"] = products
+            self.assertFalse(C._target_products_designated(ctx(doc)), products)
+            score, _m, missing = run(C._score_sys_02, doc)
+            self.assertAlmostEqual(score, 2 / 14)
+            self.assertTrue(any(m.startswith("metadata.products") for m in missing))
+        for year in (0, "2020"):
+            doc = valid_doc()
+            doc["metadata"]["TEA_year"] = year
+            self.assertAlmostEqual(run(C._score_sys_02, doc)[0], 2 / 14)
 
     def test_sys_04_provenance(self):
         """_score_sys_04 / _pinned (CMP-SYS-04): simulator named, nothing
@@ -4192,7 +4371,7 @@ class TestAdversarialGaming(unittest.TestCase):
                           "C2H6O": (46.06844, "C2H6O")}):
             for chem in ({"id": "HP", "molar_mass": 90.08},
                          {"id": "C2H6O", "formula": "C2H6O"}):
-                credit, _note = C._thm_02_credit(chem, chem["id"])
+                credit, _note, _tier = C._thm_02_credit(chem, chem["id"])
                 self.assertLessEqual(credit, C.FORMULA_ONLY_CREDIT, chem)
             self.assertEqual(C._name_tier({"id": "HP", "molar_mass": 90.08},
                                           "HP"), "mismatch")
@@ -4207,7 +4386,8 @@ class TestAdversarialGaming(unittest.TestCase):
                  "NH3": (17.03052, "NH3"), "SO2": (64.0638, "O2S"),
                  "CaO": (56.0774, "CaO"), "H2SO4": (98.07848, "H2O4S"),
                  "H3PO4": (97.995182, "H3O4P"), "P4O10": (283.889048, "O10P4")}
-        with name_lookup(small):
+        # R3.2: Ethanol's CAS must resolve in the database to exempt it.
+        with name_lookup(dict(small, **{"64-17-5": (46.06844, "C2H6O")})):
             chems = [{"id": cid, "molar_mass": mw} for cid, (mw, _f) in small.items()]
             for chem in chems:
                 self.assertEqual(C._thm_02_credit(chem, chem["id"])[0],
@@ -4932,6 +5112,444 @@ class TestRevision3PartA(unittest.TestCase):
         score, _m, missing = run(C._score_uop_03, doc, registry=registry)
         self.assertEqual(score, 0.0)
         self.assertIn("parameter universe is unknown", missing[0])
+
+
+# ------------------------------------------------ Revision 3, part B
+
+# Fake `chemicals` database for the R3 documents: rich_doc's names plus the
+# CAS numbers rich_doc states (so the registry tier resolves), each with the
+# KNOWN_RECORDS molar mass and formula. Cellulose's CAS (9004-34-6) is
+# deliberately absent: well-formed but unresolvable.
+R3_RECORDS = dict({n: KNOWN_RECORDS[n] for n in RICH_NAMES},
+                  **{"7732-18-5": KNOWN_RECORDS["Water"],
+                     "50-99-7": KNOWN_RECORDS["Glucose"],
+                     "64-17-5": KNOWN_RECORDS["Ethanol"],
+                     "124-38-9": KNOWN_RECORDS["CO2"]})
+
+FIBER = {"id": "Fiber", "registry_id": "9004-34-6", "formula": "C6H10O5",
+         "molar_mass": 162.14, "included_in_thermo": True}
+
+
+def r3_rich_doc(single_thermo=False, convert=True):
+    """rich_doc() plus a declared pseudo-component 'Fiber' whose real but
+    unlisted CAS (cellulose's) the database cannot resolve (R3.2), and a
+    quantity_units_global. With `convert`, every stream and agent quantity
+    is restated in non-internal units (R3.4): temperatures (the
+    cooling-water temperature_limit included) in degC, pressures in bar,
+    mass flows in kg/s; otherwise the same document in K, Pa and kg/hr.
+    design_input_specs stay BioSTEAM-native (K, Pa) either way."""
+    doc = rich_doc(single_thermo)
+    doc["chemicals"].append(dict(FIBER))
+    units = ("degC", "bar", "kg/s") if convert else ("K", "Pa", "kg/hr")
+    doc["quantity_units_global"] = {
+        "temperature": {"aliases": ["temperature", "temperature_limit"],
+                        "quantity_units": units[0]},
+        "pressure": {"aliases": ["pressure"], "quantity_units": units[1]},
+        "mass_flow": {"aliases": ["total_mass_flow"], "quantity_units": units[2]},
+        "molar_flow": {"aliases": ["total_molar_flow"],
+                       "quantity_units": "kmol/hr"}}
+    if convert:
+        for s in doc["streams"]:
+            sp = s["stream_properties"]
+            sp["temperature"] -= 273.15
+            sp["pressure"] /= 1e5
+            sp["total_mass_flow"] /= 3600.0
+        for agent in doc["utilities"]["heat_utilities"]:
+            agent["temperature"] -= 273.15
+            agent["pressure"] /= 1e5
+            if "temperature_limit" in agent:
+                agent["temperature_limit"] -= 273.15
+    return doc
+
+
+def padded_doc(sink_fields):
+    """R3.7 review case: one feed stating only its flow (T, P and
+    composition missing: 0.25) into U1 (`sink_fields`), plus six zero-flow
+    feeds (total mass and molar flow 0, nothing else) padding U1."""
+    doc = one_unit_doc(sink_fields, ins=({"T": None, "P": None, "phases": {}},))
+    doc["streams"] += [
+        {"id": f"pad{k}", "source_unit_id": "None", "sink_unit_id": "U1",
+         "stream_properties": {"total_mass_flow": 0.0, "total_molar_flow": 0.0}}
+        for k in range(6)]
+    return doc
+
+
+class TestRevision3PartB(unittest.TestCase):
+    """Revision 3 part B: registry ids must resolve (R3.2), utility-agent
+    plausibility (R3.3), quantity-unit conversion (R3.4), empty-feed padding
+    (R3.7), fuel prices (R3.9), TEA items (R3.10) and the minor fixes of
+    R3.11, with the deletion test extended to the new branches."""
+
+    def test_registry_id_gaming_synthetic(self):
+        """R3.2 review case on a synthetic pseudo-component (fake database:
+        'SMILES=C' resolves to methane, nothing else): Starch (C6H10O5,
+        162.14) scores the formula tier 0.25 with no registry_id; 'C' (methane,
+        contradicted) and 'InChI=1S/x' (malformed) leave it at 0.25; an
+        invented valid-check-digit CAS 98765-43-6 and a fake InChIKey reach
+        only the unresolved tier 0.5 -- never 1 -- and THM-05 stays
+        applicable at 0 in every case."""
+        doc = valid_doc()
+        doc["chemicals"].append({"id": "Starch", "formula": "C6H10O5",
+                                 "molar_mass": 162.14})
+        with name_lookup({"Ethanol": KNOWN_RECORDS["Ethanol"],
+                          "SMILES=C": (16.04246, "CH4")}):
+            base = run(C._score_thm_02, doc)[0]
+            self.assertAlmostEqual(base, (0.75 + 0.25) / 2)
+            for rid, expected in (("C", 0.25), ("InChI=1S/x", 0.25),
+                                  ("98765-43-6", 0.5),
+                                  ("ABCDEFGHIJKLMN-OPQRSTUVWX-Y", 0.5)):
+                gamed = copy.deepcopy(doc)
+                gamed["chemicals"][1]["registry_id"] = rid
+                self.assertAlmostEqual(run(C._score_thm_02, gamed)[0],
+                                       (0.75 + expected) / 2, msg=rid)
+                score, _m, missing = run(C._score_thm_05, gamed)
+                self.assertEqual(score, 0.0, rid)
+                self.assertIn("chemicals[Starch]", missing[0])
+
+    def test_util_01_agent_plausibility(self):
+        """R3.3 review case: rich_doc's cooling_water with temperature -50,
+        pressure -1 and composition [{}] -> _agent_gaps names all three and
+        CMP-UTIL-01 drops from 1.0 to 2/3 (steam and grid still full); a
+        power utility only needs its id."""
+        with name_lookup(RICH_NAMES):
+            doc = rich_doc()
+            self.assertEqual(run(C._score_util_01, doc)[0], 1.0)
+            water = doc["utilities"]["heat_utilities"][1]
+            water.update(temperature=-50.0, pressure=-1.0, composition=[{}])
+            self.assertEqual(C._agent_gaps("heat_utilities", water),
+                             ["temperature", "pressure", "composition"])
+            score, _m, missing = run(C._score_util_01, doc)
+        self.assertAlmostEqual(score, 2 / 3)
+        self.assertIn("utilities.heat_utilities[cooling_water].temperature",
+                      missing)
+        self.assertEqual(C._agent_gaps("power_utilities", {"id": "grid"}), [])
+
+    def test_util_02_prices_and_fuels(self):
+        """R3.3 / R3.9: _valid_price -- a heat agent's price must be finite
+        and >= 0 (-1 and NaN -> None, 0 -> 0); a power or other price only
+        finite (-0.01 kept). _fuel_agent: an id naming natural gas or fuel,
+        a >= 50 mol% CH4 composition, or an unknown (implausible)
+        composition -> True; air (O2/N2) with a neutral id -> False.
+        CMP-UTIL-02 on rich_doc plus a natural-gas other utility priced 0
+        -> (3 + 0.5) / 4 with a 'fuel agent' locator and message; priced
+        0.2 -> 1.0; air priced 0 -> 1.0; a heat agent priced -1 -> that
+        agent scores 0."""
+        self.assertIsNone(C._valid_price("heat_utilities", -1.0))
+        self.assertIsNone(C._valid_price("heat_utilities", float("nan")))
+        self.assertEqual(C._valid_price("heat_utilities", 0), 0.0)
+        self.assertEqual(C._valid_price("power_utilities", -0.01), -0.01)
+        ch4 = [{"phase": "g", "component_name": "CH4", "mol_fraction": 1.0}]
+        air = [{"phase": "g", "component_name": "O2", "mol_fraction": 0.21},
+               {"phase": "g", "component_name": "N2", "mol_fraction": 0.79}]
+        self.assertTrue(C._fuel_agent({"id": "natural_gas", "composition": air}))
+        self.assertTrue(C._fuel_agent({"id": "Fuel oil", "composition": air}))
+        self.assertTrue(C._fuel_agent({"id": "s78", "composition": ch4}))
+        self.assertTrue(C._fuel_agent({"id": "s78", "composition": [{}]}))
+        self.assertTrue(C._fuel_agent({"id": ["x"]}))
+        self.assertFalse(C._fuel_agent({"id": "air", "composition": air}))
+        with name_lookup(RICH_NAMES):
+            doc = rich_doc()
+            gas = {"id": "natural_gas", "temperature": 298.15,
+                   "pressure": 101325.0, "price": 0.0, "composition": ch4}
+            doc["utilities"]["other_utilities"] = [gas]
+            score, message, missing = run(C._score_util_02, doc)
+            self.assertAlmostEqual(score, 3.5 / 4)
+            self.assertIn("1 fuel agent(s) priced 0", message)
+            self.assertIn("fuel agent", missing[0])
+            gas["price"] = 0.2
+            self.assertEqual(run(C._score_util_02, doc)[0], 1.0)
+            doc["utilities"]["other_utilities"] = [dict(gas, id="air", price=0.0,
+                                                        composition=air)]
+            self.assertEqual(run(C._score_util_02, doc)[0], 1.0)
+            doc["utilities"]["heat_utilities"][0]["regeneration_price"] = -1.0
+            self.assertAlmostEqual(run(C._score_util_02, doc)[0], 3 / 4)
+
+    def test_quantity_unit_helpers(self):
+        """R3.4 helpers: _unit_key strips blanks, '^' and '**' ('m^3 / hr'
+        -> 'm3/hr'; blank / non-string -> None); _quantity_unit_index maps
+        each alias to its entry's unit, '' when two entries disagree, and
+        skips entries without a string unit; _to_internal converts degC,
+        degF, R, bar, psi, kPa, kg/s, lb/hr, mol/s, L/min and gal/min to K,
+        Pa, kg/hr, kmol/hr, m3/hr, honours a legacy inline pair's own units,
+        passes a number through when no unit is stated, wraps a number in
+        an unrecognised or ambiguous unit as _Unconverted, and returns
+        non-numbers unchanged; _converted converts only quantity fields;
+        _internal_stream converts stream_properties and every phase without
+        modifying the input."""
+        self.assertEqual(C._unit_key(" m^3 / hr "), "m3/hr")
+        self.assertEqual(C._unit_key("m**3/hr"), "m3/hr")
+        self.assertIsNone(C._unit_key("  "))
+        self.assertIsNone(C._unit_key(["K"]))
+        index = C._quantity_unit_index({"quantity_units_global": {
+            "temperature": {"aliases": ["temperature", "T"], "quantity_units": "degC"},
+            "t2": {"aliases": ["T"], "quantity_units": "K"},
+            "pressure": {"aliases": ["pressure"], "quantity_units": ["bar"]}}})
+        self.assertEqual(index, {"temperature": "degC", "T": ""})
+        convert = lambda value, field, unit: C._to_internal(value, field,
+                                                            {field: unit})
+        for value, field, unit, expected in (
+                (25.0, "temperature", "degC", 298.15),
+                (77.0, "temperature", "degF", 298.15),
+                (536.67, "temperature_limit", "R", 298.15),
+                (1.01325, "pressure", "bar", 101325.0),
+                (14.6959488, "pressure", "psi", 101325.0),
+                (101.325, "pressure", "kPa", 101325.0),
+                (1.0, "total_mass_flow", "kg/s", 3600.0),
+                (1.0, "total_mass_flow", "lb/hr", 0.45359237),
+                (1.0, "total_molar_flow", "mol/s", 3.6),
+                (1.0, "total_volumetric_flow", "L/min", 0.06),
+                (1.0, "total_volumetric_flow", "gal/min", 0.2271247),
+                (300.0, "temperature", None, 300.0)):
+            self.assertAlmostEqual(convert(value, field, unit), expected,
+                                   places=2, msg=(field, unit))
+        self.assertEqual(C._to_internal({"value": 25.0, "units": "degC"},
+                                        "temperature", {}), 298.15)
+        self.assertEqual(C._to_internal({"value": 300.0, "units": ""},
+                                        "temperature", {}), 300.0)
+        odd = convert(-40.0, "temperature", "furlongs")
+        self.assertIsInstance(odd, C._Unconverted)
+        self.assertEqual(float(odd), -40.0)
+        self.assertIsInstance(convert(5.0, "temperature", ""), C._Unconverted)
+        for junk in ("hot", None, [1.0], True):
+            self.assertIs(convert(junk, "temperature", "degC"), junk)
+        self.assertEqual(C._converted({"temperature": 25.0, "price": 3.0},
+                                      {"temperature": "degC"}),
+                         {"temperature": 298.15, "price": 3.0})
+        self.assertEqual(C._converted("x", {}), "x")
+        stream = {"id": "s", "stream_properties": {
+            "temperature": 25.0, "phases": {"l": {"total_mass_flow": 1.0}}}}
+        out = C._internal_stream(stream, {"temperature": "degC",
+                                          "total_mass_flow": "kg/s"})
+        self.assertEqual(out["stream_properties"]["temperature"], 298.15)
+        self.assertEqual(out["stream_properties"]["phases"]["l"]
+                         ["total_mass_flow"], 3600.0)
+        self.assertEqual(stream["stream_properties"]["temperature"], 25.0)
+        bare = {"id": "x"}  # no stream_properties object: returned as is
+        self.assertIs(C._internal_stream(bare, {}), bare)
+
+    def test_unconverted_quantities(self):
+        """R3.4: an _Unconverted quantity (unrecognised unit) skips the
+        plausibility bounds -- _valid_T(-40) and _valid_P(-1) accept it --
+        while a flow must stay >= 0 (_valid_flow(-1) None); _stream_value
+        never returns it (no guard or pressure-rise test compares it), and
+        a one-unit doc whose outlet temperature is stated in 'furlongs'
+        keeps the HXutility's explicit T at full credit (guard skipped)
+        instead of failing the guard."""
+        self.assertEqual(C._valid_T(C._Unconverted(-40.0)), -40.0)
+        self.assertEqual(C._valid_P(C._Unconverted(-1.0)), -1.0)
+        self.assertIsNone(C._valid_flow(C._Unconverted(-1.0)))
+        self.assertEqual(C._valid_flow(C._Unconverted(2.0)), 2.0)
+        stream = {"stream_properties": {"temperature": C._Unconverted(300.0),
+                                        "pressure": 101325.0}}
+        self.assertIsNone(C._stream_value(stream, "T"))
+        self.assertEqual(C._stream_value(stream, "P"), 101325.0)
+        doc = one_unit_doc(spec_unit("HXutility", {"T": 350.0}),
+                           outs=({"T": 20.0},))
+        self.assertLess(C._unit_spec_score(ctx(doc), 0)[0], 1.0)
+        doc["quantity_units_global"]["temperature"]["quantity_units"] = "furlongs"
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], 1.0)
+
+    def test_unit_conversion_invariance(self):
+        """R3.4 review case on a synthetic flowsheet: r3_rich_doc in degC,
+        bar and kg/s scores every criterion exactly like the same document
+        in K, Pa and kg/hr (within 1e-9); deleting the temperature or the
+        pressure unit (the numbers then read as K / Pa) lowers CMP-UOP-02
+        (the guards of H1's T, R1's T and P1's P fire), so the test has
+        teeth."""
+        with name_lookup(R3_RECORDS):
+            for single_thermo in (False, True):
+                plain = criterion_results(r3_rich_doc(single_thermo, False))
+                converted_doc = r3_rich_doc(single_thermo)
+                converted = criterion_results(converted_doc)
+                for cid, result in plain.items():
+                    other = converted[cid].score
+                    with self.subTest(single_thermo=single_thermo, cid=cid):
+                        if result.score is None:
+                            self.assertIsNone(other)
+                        else:
+                            self.assertAlmostEqual(other, result.score,
+                                                   delta=1e-9)
+                for entry in ("temperature", "pressure"):
+                    reduced = deleted(converted_doc, ("quantity_units_global",
+                                                      entry, "quantity_units"))
+                    self.assertLess(criterion_results(reduced)["CMP-UOP-02"].score,
+                                    converted["CMP-UOP-02"].score, entry)
+
+    def test_empty_feed_padding(self):
+        """R3.7 review case: one feed stating only its flow (0.25) plus six
+        zero-flow feeds into a unit of unknown class ('Widget') -> each pad
+        scores as missing its flow, so CMP-FEED-01 = 0.25 / 7 (it was
+        (0.25 + 6) / 7 = 0.893), the message counting '6 empty feed(s)
+        (zero flow), 0 credited' and each pad's flow locator explaining why;
+        the same pads into an exactly known Mixer (confidence 1: fixed
+        placeholder ports) -> (0.25 + 6) / 7 with '6 credited'.
+        _placeholder_port_feed: True only for a declared sink of confidence
+        1."""
+        widget = padded_doc({"unit_type": "Widget"})
+        score, message, missing = run(C._score_feed_01, widget)
+        self.assertAlmostEqual(score, 0.25 / 7)
+        self.assertIn("6 empty feed(s) (zero flow), 0 credited", message)
+        self.assertIn("class is not known exactly", " ".join(missing))
+        self.assertFalse(C._placeholder_port_feed(ctx(widget), 2))
+        mixer = padded_doc(spec_unit("Mixer"))
+        score, message, _missing = run(C._score_feed_01, mixer)
+        self.assertAlmostEqual(score, (0.25 + 6) / 7)
+        self.assertIn("6 credited", message)
+        self.assertTrue(C._placeholder_port_feed(ctx(mixer), 2))
+        mixer["streams"][2]["sink_unit_id"] = "Ghost"
+        self.assertFalse(C._placeholder_port_feed(ctx(mixer), 2))
+
+    def test_isolated_streams_stay_in_feed_populations(self):
+        """R3.8 gap found by the extended deletion test: deleting the
+        source_unit_id of rich_doc's unpriced 'waste' product made it
+        isolated (both endpoints at the boundary) and dropped it from
+        CMP-FEED-02 (0.8 -> 1.0). Isolated streams now stay in the
+        CMP-FEED-02 and CMP-FEED-01 populations: FEED-02 stays 0.8, and a
+        feed whose sink_unit_id is deleted keeps its FEED-01 score."""
+        with name_lookup(RICH_NAMES):
+            doc = rich_doc()
+            self.assertAlmostEqual(run(C._score_feed_02, doc)[0], 0.8)
+            orphan = deleted(doc, ("streams", 1, "source_unit_id"))
+            self.assertEqual(ctx(orphan).isolated, [1])
+            self.assertAlmostEqual(run(C._score_feed_02, orphan)[0], 0.8)
+            half = one_unit_doc(spec_unit("Mixer"), ins=({}, {"T": None}))
+            before = run(C._score_feed_01, half)[0]
+            self.assertAlmostEqual(before, 0.875)
+            lost = deleted(half, ("streams", 1, "sink_unit_id"))
+            self.assertEqual(run(C._score_feed_01, lost)[0], before)
+
+    def test_distillation_spec_plausibility(self):
+        """R3.11: _spec_above_one / _spec_open_fraction; _valid_spec('k')
+        needs > 1 for the distillation family (1.0 -> False, 1.2 -> True)
+        but only > 0 elsewhere (an adsorption column's k, 0.5 -> True); Lr,
+        Hr, y_top, x_bot must lie strictly inside (0, 1) (0, 1 -> False;
+        0.99 -> True); _explicit_keys(unit, 'distillation') drops k = 1 and
+        Lr = 1 and keeps LHK."""
+        self.assertTrue(C._spec_above_one(1.2))
+        self.assertFalse(C._spec_above_one(1.0))
+        self.assertTrue(C._spec_open_fraction(0.5))
+        self.assertFalse(C._spec_open_fraction(1.0))
+        self.assertFalse(C._valid_spec("k", 1.0, "distillation"))
+        self.assertTrue(C._valid_spec("k", 1.2, "distillation"))
+        self.assertTrue(C._valid_spec("k", 0.5, None))
+        for key in ("Lr", "Hr", "y_top", "x_bot"):
+            self.assertFalse(C._valid_spec(key, 0.0), key)
+            self.assertFalse(C._valid_spec(key, 1.0), key)
+            self.assertTrue(C._valid_spec(key, 0.99), key)
+        unit = {"design_input_specs": {"k": 1.0, "Lr": 1.0, "Hr": 0.99,
+                                       "LHK": ["Ethanol", "Water"]}}
+        self.assertEqual(C._explicit_keys(unit, "distillation"), {"Hr", "LHK"})
+        self.assertEqual(C._explicit_keys(unit), {"k", "Hr", "LHK"})
+
+    def test_integrity_not_applicable_without_flowsheet(self):
+        """R3.11: CMP-INT-02 and CMP-INT-04 are not applicable to a document
+        with neither units nor streams (even with XREF-01 / QU-01 results),
+        and scored again as soon as either exists."""
+        results = (check("XREF-01", "pass"), check("QU-01", "pass"))
+        for doc in ({}, {"metadata": {"sff_version": "0.2.0"}}):
+            for scorer in (C._score_int_02, C._score_int_04):
+                score, message, _missing = run(scorer, doc, results)
+                self.assertIsNone(score)
+                self.assertIn("no units and no streams", message)
+        doc = {"units": [{"id": "U1"}]}
+        self.assertEqual(run(C._score_int_02, doc, results)[0], 1.0)
+        self.assertEqual(run(C._score_int_04, doc, results)[0], 1.0)
+
+    def test_cost_06_size_upper_bound(self):
+        """R3.11: _bounded_item names a power-law item stating a positive
+        size_upper_bound whose basis ('Volume') has a numeric design result
+        (N = ceil(S / ub) is derivable), else None (no result, ub 0, a
+        custom_function item); _count_source prefers a 'Number of ...'
+        design result; _cost_06_unit -> DERIVED_CREDIT with the source in
+        the locator, else 0."""
+        bounded = dict(POWER_LAW, size_upper_bound=10.0)
+        unit = {"purchase_cost_correlations": {"Tank": bounded},
+                "design_results": {"Volume": 25.0}}
+        self.assertEqual(C._bounded_item(unit), "Tank")
+        self.assertEqual(C._count_source(unit),
+                         "purchase_cost_correlations['Tank'].size_upper_bound")
+        for corr, results in ((bounded, {}), (dict(bounded, size_upper_bound=0),
+                                             {"Volume": 25.0}),
+                              (dict(bounded, correlation_type="custom_function"),
+                               {"Volume": 25.0})):
+            self.assertIsNone(C._bounded_item(
+                {"purchase_cost_correlations": {"Tank": corr},
+                 "design_results": results}))
+        counted = dict(unit, design_results={"Volume": 25.0, "Number of tanks": 3})
+        self.assertEqual(C._count_source(counted),
+                         "design_results['Number of tanks']")
+        self.assertIsNone(C._count_source({}))
+        doc = costed(bounded, {"Volume": 25.0})
+        score, gaps = C._cost_06_unit(ctx(doc), 0)
+        self.assertEqual(score, C.DERIVED_CREDIT)
+        self.assertIn("size_upper_bound", gaps[0])
+        self.assertEqual(C._cost_06_unit(ctx(costed(POWER_LAW, {"Volume": 25.0})),
+                                         0)[0], 0.0)
+
+    def test_cost_07_message_explains_derived_credit(self):
+        """R3.11: the CMP-COST-07 message counts the units earning derived
+        credit as exactly known core classes (class-default lifetime); a
+        core Pump without lifetimes -> '0 of 1 ... 1 more earn derived
+        credit (0.75)'."""
+        doc = unit_doc(spec_unit("Pump", {"P": 2e5}))
+        doc["units"][0]["purchase_costs"] = {"Pump": 1000.0}
+        score, message, _missing = run(C._score_cost_07, doc)
+        self.assertEqual(score, C.DERIVED_CREDIT)
+        self.assertIn("1 more earn derived credit (0.75)", message)
+        self.assertIn("class-default lifetime", message)
+
+    def test_deleting_any_value_never_raises_score_r3(self):
+        """Deletion monotonicity (R1.0) over r3_rich_doc (degC / bar / kg/s
+        quantity units, database-resolved CAS numbers, an unresolvable
+        registry id on Fiber, an empty placeholder feed into the exactly
+        known Mixer), both thermo variants, ids and stream endpoints
+        included (R3.8): deleting any value below the top level raises
+        neither the overall score nor any scored criterion; deleting a unit
+        string, Fiber's registry id, a CAS number or the Mixer's id is
+        among the paths; more than half the deletions lower the score."""
+        with name_lookup(R3_RECORDS):
+            for single_thermo in (False, True):
+                doc = r3_rich_doc(single_thermo)
+                paths = dict(deletable_paths(doc, skip=frozenset()))
+                for path in (("quantity_units_global", "temperature",
+                              "quantity_units"),
+                             ("chemicals", 4, "registry_id"),
+                             ("chemicals", 0, "registry_id"),
+                             ("units", 1, "id")):
+                    self.assertEqual(paths.get(path), "leaf", path)
+                raised, lowered, n = deletion_violations(doc, skip=frozenset())
+                with self.subTest(single_thermo=single_thermo):
+                    self.assertGreater(n, 200)
+                    self.assertEqual(raised, [])
+                    self.assertGreater(lowered, n // 2)
+
+    def test_junk_never_beats_absence_r3(self):
+        """R2.0 on r3_rich_doc: every scalar leaf replaced by '' or ['x']
+        (a quantity-unit string included: junk units state nothing, like an
+        absent one) scores no criterion above its deletion. Expected: no
+        violation."""
+        with name_lookup(R3_RECORDS):
+            doc = r3_rich_doc()
+            leaves = [p for p, kind in deletable_paths(doc) if kind == "leaf"]
+            violations = []
+            for path in leaves:
+                absent = criterion_results(deleted(doc, path))
+                sentinel = "quantity_units_for_design_results" in path
+                for junk in ((["x"],) if sentinel else ("", ["x"])):
+                    spoiled = copy.deepcopy(doc)
+                    node = spoiled
+                    for key in path[:-1]:
+                        node = node[key]
+                    node[path[-1]] = junk
+                    for cid, r in criterion_results(spoiled).items():
+                        if r.score is not None and (
+                                absent[cid].score is None
+                                or r.score > absent[cid].score + 1e-12):
+                            violations.append((path, junk, cid, r.score,
+                                               absent[cid].score))
+        self.assertIn(("quantity_units_global", "pressure", "quantity_units"),
+                      leaves)
+        self.assertEqual(violations, [])
 
 
 if __name__ == "__main__":

@@ -133,21 +133,27 @@ del _tuple, _docs, _field, _doc
 # other fields (e.g. an HXutility outlet temperature read off its outlet stream).
 DERIVED_CREDIT = 0.75
 
-# CMP-THM-02 identity tiers below a valid registry id (CAS/InChI/InChIKey/
-# SMILES, credit 1): the chemical id resolves by name in the `chemicals`
-# database (the lookup thermosteam's Chemical(ID) performs) AND the record's
-# molar mass (or formula) matches the chemical's own (verified), or resolves
-# with nothing stated to verify it against (unverified); or only a formula
+# CMP-THM-02 identity tiers, the MAXIMUM over those a chemical reaches (R3.2;
+# deleting one datum can only remove a tier): a registry id (CAS/InChI/
+# InChIKey/SMILES) the `chemicals` database resolves, not contradicted by the
+# chemical's molar mass or formula, 1; a well-formed registry id the database
+# cannot resolve (or any while the database is unavailable) -- nothing can
+# check it -- REGISTRY_UNRESOLVED_CREDIT; the chemical id resolves by name
+# (the lookup thermosteam's Chemical(ID) performs) AND the record's molar mass
+# (or formula) matches the chemical's own (verified), or resolves with
+# nothing stated to verify it against (unverified); or only a formula
 # narrows it down (R2.3).
+REGISTRY_UNRESOLVED_CREDIT = 0.5
 NAME_RESOLVED_CREDIT = 0.75
 NAME_UNVERIFIED_CREDIT = 0.5
 FORMULA_ONLY_CREDIT = 0.25
 
 # R2.3: a name-resolved record verifies the chemical when their molar masses
-# agree to NAME_MW_RTOL; R2.0: a CAS number whose database record's molar
-# mass differs from the chemical's by more than CAS_MW_RTOL is invalid.
+# agree to NAME_MW_RTOL; R2.0/R3.2: a registry id whose database record (or
+# InChI formula layer) differs from the chemical's molar mass by more than
+# REGISTRY_MW_RTOL, formulas not matching either, is invalid.
 NAME_MW_RTOL = 0.01
-CAS_MW_RTOL = 0.02
+REGISTRY_MW_RTOL = 0.02
 
 # R2.0 stream-state plausibility: temperatures in (0, T_MAX) K; the
 # fractions of one composition sum to 1 within FRACTION_SUM_TOL.
@@ -247,10 +253,12 @@ def _chemicals_search():
 
 
 def _name_record(name):
-    """The `chemicals` database record `name` (a chemical name, synonym or
-    CAS number) resolves to, or None. Cached per name, so a failed lookup
-    costs one search (the first also loads the database, ~1 s); never raises
-    -- an unavailable package or any lookup error means None."""
+    """The `chemicals` database record `name` (a chemical name, synonym,
+    CAS number, InChI, or an 'InChIKey='/'SMILES='-prefixed registry id --
+    see _registry_query) resolves to, or None. Cached per name, so a failed
+    lookup costs one search (the first also loads the database, ~1 s);
+    never raises -- an unavailable package or any lookup error means
+    None."""
     if not _nonempty_str(name):
         return None
     name = name.strip()
@@ -761,12 +769,21 @@ def _is_representable(since, version):
 # changes nothing. These predicates are the single shared set every
 # criterion uses.
 
+class _Unconverted(float):
+    """A finite stream or utility quantity whose stated unit the scorer does
+    not recognise (R3.4, _to_internal): no plausibility bound applies to it
+    (any finite number is valid; a flow must still be >= 0, which no unit
+    changes) and no consistency guard reads it (_stream_value)."""
+
+
 def _valid_number(x, lo=None, hi=None, lo_open=False, hi_open=False):
     """_num(x) when it lies within [lo, hi] (either bound open, or absent),
-    else None."""
+    else None. An _Unconverted quantity skips the bounds (R3.4)."""
     value = _num(x)
     if value is None:
         return None
+    if isinstance(x, _Unconverted):
+        return value
     if lo is not None and (value < lo or (lo_open and value == lo)):
         return None
     if hi is not None and (value > hi or (hi_open and value == hi)):
@@ -785,8 +802,10 @@ def _valid_P(x):
 
 
 def _valid_flow(x):
-    """A plausible flow: finite, >= 0; else None."""
-    return _valid_number(x, 0.0)
+    """A plausible flow: finite, >= 0 (also in an unrecognised unit: no
+    flow unit makes a negative number plausible); else None."""
+    value = _valid_number(x, 0.0)
+    return value if value is not None and value >= 0 else None
 
 
 def _valid_fraction(x):
@@ -820,6 +839,18 @@ def _spec_efficiency(x):
 
 def _spec_fraction(x):
     return _valid_fraction(x) is not None
+
+
+def _spec_open_fraction(x):
+    """A fraction strictly between 0 and 1 (R3.11: a column's light/heavy
+    key recoveries Lr/Hr and top/bottom compositions y_top/x_bot)."""
+    return _valid_number(x, 0.0, 1.0, lo_open=True, hi_open=True) is not None
+
+
+def _spec_above_one(x):
+    """A number > 1 (R3.11: a distillation column's k, the ratio of reflux
+    to minimum reflux)."""
+    return _valid_number(x, 1.0, lo_open=True) is not None
 
 
 def _spec_finite(x):
@@ -875,8 +906,9 @@ _SPEC_PREDICATES = {
     **dict.fromkeys(('tau_0', 'V'), _spec_nonnegative),
     **dict.fromkeys(('N_stages', 'n_stages'), _spec_positive_int),
     **dict.fromkeys(('V_wf', 'eta', 'efficiency', 'boiler_efficiency',
-                     'turbogenerator_efficiency', 'theta_O2', 'theta', 'Lr',
-                     'Hr', 'y_top', 'x_bot'), _spec_efficiency),
+                     'turbogenerator_efficiency', 'theta_O2', 'theta'),
+                    _spec_efficiency),
+    **dict.fromkeys(('Lr', 'Hr', 'y_top', 'x_bot'), _spec_open_fraction),
     **dict.fromkeys(('moisture_content', 'sludge_moisture'), _spec_fraction),
     'duty_per_kg': _spec_positive,
     **dict.fromkeys(('split', 'solids_split', 'aqueous_split'), _spec_split),
@@ -891,11 +923,161 @@ _SPEC_PREDICATES = {
 }
 
 
-def _valid_spec(key, value):
+# Family-specific predicates overriding _SPEC_PREDICATES (R3.11): a
+# distillation column's k is the reflux ratio over its minimum, so <= 1
+# cannot converge (an adsorption column's k is a rate constant: > 0 only).
+_FAMILY_SPEC_PREDICATES = {('distillation', 'k'): _spec_above_one}
+
+
+def _valid_spec(key, value, family=None):
     """True when design_input_specs[key] = value is plausible for the
-    parameter's role (_SPEC_PREDICATES; else any non-empty value)."""
-    predicate = _SPEC_PREDICATES.get(key) if isinstance(key, str) else None
+    parameter's role (_FAMILY_SPEC_PREDICATES for the unit's `family`, else
+    _SPEC_PREDICATES; else any non-empty value)."""
+    predicate = None
+    if isinstance(key, str):
+        predicate = (_FAMILY_SPEC_PREDICATES.get((family, key))
+                     or _SPEC_PREDICATES.get(key))
     return (predicate or _nonempty_value)(value)
+
+#%% Quantity units (R3.4: convert to BioSTEAM's internal units)
+
+# Stream and utility-agent quantities are converted to BioSTEAM's internal
+# units (K, Pa, kg/hr, kmol/hr, m3/hr) BEFORE plausibility checks, consistency
+# guards and closure tests. The unit comes from the legacy inline
+# {value, units} pair, else from the quantity_units_global entry whose
+# aliases name the field; none stated -> the value is taken as internal.
+# design_input_specs stay BioSTEAM-native (CMP-UOP-05 scores their units).
+# internal = value * scale + offset; unit strings are matched after removing
+# blanks, '^' and '**' ('m^3/hr' -> 'm3/hr').
+_QUANTITY_DIMENSIONS = {
+    'temperature': 'temperature', 'temperature_limit': 'temperature',
+    'pressure': 'pressure', 'total_mass_flow': 'mass_flow',
+    'total_molar_flow': 'molar_flow', 'total_volumetric_flow': 'volumetric_flow',
+}
+_F_SCALE = 5.0 / 9.0
+_PSI = 6894.757293168
+_GALLON = 3.785411784e-3  # m3 (US gallon)
+_UNIT_FACTORS = {
+    'temperature': {
+        **dict.fromkeys(('K', 'kelvin', 'Kelvin'), (1.0, 0.0)),
+        **dict.fromkeys(('degC', '\u00b0C', 'C', 'celsius', 'Celsius'),
+                        (1.0, 273.15)),
+        **dict.fromkeys(('degF', '\u00b0F', 'F', 'fahrenheit', 'Fahrenheit'),
+                        (_F_SCALE, 273.15 - 32.0 * _F_SCALE)),
+        **dict.fromkeys(('R', 'degR', '\u00b0R', 'rankine', 'Rankine'),
+                        (_F_SCALE, 0.0)),
+    },
+    'pressure': {
+        'Pa': (1.0, 0.0), 'hPa': (1e2, 0.0), 'kPa': (1e3, 0.0),
+        'MPa': (1e6, 0.0), 'bar': (1e5, 0.0), 'mbar': (1e2, 0.0),
+        'atm': (101325.0, 0.0), 'psi': (_PSI, 0.0), 'psia': (_PSI, 0.0),
+        'mmHg': (133.322387415, 0.0), 'torr': (101325.0 / 760.0, 0.0),
+        'Torr': (101325.0 / 760.0, 0.0),
+    },
+    'mass_flow': {
+        **dict.fromkeys(('kg/hr', 'kg/h'), (1.0, 0.0)),
+        'kg/s': (3600.0, 0.0), 'kg/min': (60.0, 0.0),
+        **dict.fromkeys(('kg/day', 'kg/d'), (1.0 / 24.0, 0.0)),
+        'g/s': (3.6, 0.0), **dict.fromkeys(('g/hr', 'g/h'), (1e-3, 0.0)),
+        **dict.fromkeys(('t/h', 't/hr', 'tonne/hr', 'tonne/h', 'tonnes/hr',
+                         'tonnes/h'), (1e3, 0.0)),
+        **dict.fromkeys(('t/d', 't/day', 'tonne/day', 'tonnes/day'),
+                        (1e3 / 24.0, 0.0)),
+        **dict.fromkeys(('lb/hr', 'lb/h'), (0.45359237, 0.0)),
+    },
+    'molar_flow': {
+        **dict.fromkeys(('kmol/hr', 'kmol/h'), (1.0, 0.0)),
+        'kmol/s': (3600.0, 0.0), 'kmol/min': (60.0, 0.0),
+        'mol/s': (3.6, 0.0), 'mol/min': (0.06, 0.0),
+        **dict.fromkeys(('mol/hr', 'mol/h'), (1e-3, 0.0)),
+        **dict.fromkeys(('lbmol/hr', 'lbmol/h'), (0.45359237, 0.0)),
+    },
+    'volumetric_flow': {
+        **dict.fromkeys(('m3/hr', 'm3/h'), (1.0, 0.0)),
+        'm3/s': (3600.0, 0.0), 'm3/min': (60.0, 0.0),
+        **dict.fromkeys(('m3/day', 'm3/d'), (1.0 / 24.0, 0.0)),
+        **dict.fromkeys(('L/hr', 'L/h', 'l/hr', 'l/h'), (1e-3, 0.0)),
+        **dict.fromkeys(('L/min', 'l/min'), (0.06, 0.0)),
+        **dict.fromkeys(('L/s', 'l/s'), (3.6, 0.0)),
+        **dict.fromkeys(('gal/min', 'gpm', 'GPM'), (_GALLON * 60.0, 0.0)),
+        **dict.fromkeys(('gal/hr', 'gal/h'), (_GALLON, 0.0)),
+        **dict.fromkeys(('ft3/hr', 'ft3/h'), (0.028316846592, 0.0)),
+        **dict.fromkeys(('ft3/min', 'cfm'), (0.028316846592 * 60.0, 0.0)),
+    },
+}
+
+
+def _unit_key(unit):
+    """A unit string with blanks, '^' and '**' removed ('m^3 / hr' ->
+    'm3/hr'), or None for a non-string or blank one (no unit stated)."""
+    if not isinstance(unit, str):
+        return None
+    key = re.sub(r'\s+', '', unit).replace('**', '').replace('^', '')
+    return key or None
+
+
+def _quantity_unit_index(doc):
+    """{field alias: unit key, or '' when the aliases of several
+    quantity_units_global entries disagree on it} over the document's
+    quantity_units_global (entries whose unit is not a non-blank string
+    state nothing)."""
+    index = {}
+    for entry in _as_dict(_as_dict(doc).get('quantity_units_global')).values():
+        entry = _as_dict(entry)
+        unit = _unit_key(entry.get('quantity_units'))
+        if unit is None:
+            continue
+        for alias in _as_list(entry.get('aliases')):
+            if isinstance(alias, str):
+                index[alias] = unit if index.get(alias, unit) == unit else ''
+    return index
+
+
+def _to_internal(value, field, index):
+    """`value` of quantity `field` in BioSTEAM's internal unit (R3.4): a
+    legacy inline {value, units} pair converts by its own units, anything
+    else by the quantity_units_global unit of the field (`index`,
+    _quantity_unit_index). No unit stated -> the number as is; a recognised
+    unit (_UNIT_FACTORS) -> the converted float; an unrecognised (or
+    ambiguous) one -> _Unconverted. A value that is not a finite number is
+    returned unchanged, so the predicates still reject it."""
+    number = _num(value)
+    if number is None:
+        return value
+    inline = _unit_key(value.get('units')) if isinstance(value, dict) else None
+    unit = inline if inline is not None else index.get(field)
+    if unit is None:
+        return number if isinstance(value, dict) else value
+    factor = _UNIT_FACTORS[_QUANTITY_DIMENSIONS[field]].get(unit)
+    if factor is None:
+        return _Unconverted(number)
+    return number * factor[0] + factor[1]
+
+
+def _converted(obj, index):
+    """Shallow copy of a dict with each quantity field (_QUANTITY_DIMENSIONS)
+    it holds converted by _to_internal; non-dicts come back unchanged."""
+    if not isinstance(obj, dict):
+        return obj
+    out = dict(obj)
+    for field in _QUANTITY_DIMENSIONS:
+        if field in out:
+            out[field] = _to_internal(out[field], field, index)
+    return out
+
+
+def _internal_stream(stream, index):
+    """Copy of a stream whose stream_properties and phases hold their
+    temperature, pressure and flows in BioSTEAM's internal units
+    (_converted); compositions are shared, the document is not modified."""
+    sp = stream.get('stream_properties')
+    if not isinstance(sp, dict):
+        return stream
+    sp = _converted(sp, index)
+    if isinstance(sp.get('phases'), dict):
+        sp['phases'] = {symbol: _converted(phase, index)
+                        for symbol, phase in sp['phases'].items()}
+    return dict(stream, stream_properties=sp)
 
 
 # The 118 element symbols (molecular-formula recognition, R2.3).
@@ -970,19 +1152,26 @@ def _record_molar_mass(record):
             if _nonempty_str(formula) else None)
 
 
-def _record_agreement(record, chem):
+def _same_counts(a, b):
+    """True when two {element: count} maps agree (counts within 1e-9)."""
+    return (a is not None and b is not None and set(a) == set(b)
+            and all(abs(a[k] - b[k]) <= 1e-9 for k in a))
+
+
+def _record_agreement(record, chem, rtol=NAME_MW_RTOL):
     """'verified' when a database record's molar mass matches the chemical's
-    (declared or formula-derived) within NAME_MW_RTOL, or their formulas
-    match; 'unverified' when either side states nothing comparable;
-    'mismatch' otherwise (R2.3)."""
+    (declared or formula-derived) within `rtol` (NAME_MW_RTOL for the name
+    tier, REGISTRY_MW_RTOL for a registry id), or their formulas match;
+    'unverified' when either side states nothing comparable; 'mismatch'
+    otherwise (R2.3, R3.2)."""
     chem = _as_dict(chem)
     mine_mw, theirs_mw = _chemical_molar_mass(chem), _record_molar_mass(record)
     mine_f = _formula_counts(chem.get('formula'))
     theirs_f = _formula_counts(getattr(record, 'formula', None))
     if mine_mw is not None and theirs_mw is not None \
-            and abs(mine_mw - theirs_mw) <= NAME_MW_RTOL * theirs_mw:
+            and abs(mine_mw - theirs_mw) <= rtol * theirs_mw:
         return 'verified'
-    if mine_f is not None and mine_f == theirs_f:
+    if _same_counts(mine_f, theirs_f):
         return 'verified'
     comparable = ((mine_mw is not None and theirs_mw is not None)
                   or (mine_f is not None and theirs_f is not None))
@@ -1001,8 +1190,13 @@ def _name_tier(chem, cid):
 
 
 _CAS_RE = re.compile(r'^(\d{2,7})-(\d{2})-(\d)$')
-_INCHI_RE = re.compile(r'^InChI=1S?/\S+$')
-_INCHIKEY_RE = re.compile(r'^[A-Z]{14}-[A-Z]{10}-[A-Z]$')
+_INCHI_RE = re.compile(r'^InChI=1S?/(\S+)$')
+# The mobile-proton layer of an InChI ('/p+1': one proton more than the
+# formula layer states).
+_INCHI_PROTON_RE = re.compile(r'/p([+-]\d+)(?=/|$)')
+_INCHI_COMPONENT_RE = re.compile(r'^(\d*)(\S+)$')
+_INCHIKEY_RE = re.compile(r'^(?:InChIKey=)?([A-Z]{14}-[A-Z]{10}-[A-Z])$')
+_SMILES_PREFIX_RE = re.compile(r'^SMILES=', re.IGNORECASE)
 # SMILES tokens: organic-subset atoms (aliphatic, aromatic), bracket atoms,
 # bonds, branches, ring-closure labels.
 _SMILES_TOKEN = (r'Cl|Br|[BCNOPSFI]|[bcnops]|\[[^\[\]]*[A-Za-z][^\[\]]*\]'
@@ -1039,30 +1233,121 @@ def _smiles_like(text):
     return depth == 0 and all(labels.count(label) % 2 == 0 for label in labels)
 
 
-def _cas_contradicts(cas, chem):
-    """True when a CAS number resolves in the `chemicals` database to a
-    record whose molar mass differs from the chemical's (declared or
-    formula-derived) by more than CAS_MW_RTOL."""
-    record = _name_record(cas)
-    if record is None:
+def _inchi_formula(inchi):
+    """{element: count} of an InChI's formula layer -- the text after
+    'InChI=1S/' up to the next '/', its dot-separated components (each with
+    an optional leading multiplier, '2Na.H2O4S') summed, plus the protons of
+    a mobile-proton layer ('/p+1') -- or None when `inchi` is no InChI or
+    its formula layer does not parse."""
+    match = _INCHI_RE.match(inchi.strip()) if isinstance(inchi, str) else None
+    if not match:
+        return None
+    body = match.group(1)
+    counts = {}
+    for component in body.split('/', 1)[0].split('.'):
+        parts = _INCHI_COMPONENT_RE.match(component)
+        element_counts = _formula_counts(parts.group(2)) if parts else None
+        multiplier = int(parts.group(1)) if parts and parts.group(1) else 1
+        if element_counts is None or multiplier < 1:
+            return None
+        for symbol, n in element_counts.items():
+            counts[symbol] = counts.get(symbol, 0) + multiplier * n
+    protons = _INCHI_PROTON_RE.search(body)
+    if protons:
+        counts['H'] = counts.get('H', 0) + int(protons.group(1))
+        if counts['H'] < 0:
+            return None
+        if counts['H'] == 0:
+            del counts['H']
+    return counts or None
+
+
+def _counts_molar_mass(counts):
+    """Molar mass of an {element: count} map (via the validator's formula
+    parser), or None."""
+    if not counts:
+        return None
+    formula = ''.join(f'{symbol}{n:g}' for symbol, n in sorted(counts.items()))
+    return _validator()._molar_mass_from_formula(formula)
+
+
+def _inchi_contradicts(inchi, chem):
+    """True when an InChI's formula layer (_inchi_formula) disagrees with
+    the chemical's own parseable formula, or -- when the chemical states no
+    parseable formula -- with its declared or formula-derived molar mass
+    beyond REGISTRY_MW_RTOL (R3.2). Nothing comparable -> False."""
+    layer = _inchi_formula(inchi)
+    chem = _as_dict(chem)
+    mine = _formula_counts(chem.get('formula'))
+    if layer is None:
         return False
-    mine, theirs = _chemical_molar_mass(chem), _record_molar_mass(record)
-    return (mine is not None and theirs is not None
-            and abs(mine - theirs) > CAS_MW_RTOL * theirs)
+    if mine is not None:
+        return not _same_counts(layer, mine)
+    mine_mw, theirs_mw = _chemical_molar_mass(chem), _counts_molar_mass(layer)
+    return (mine_mw is not None and theirs_mw is not None
+            and abs(mine_mw - theirs_mw) > REGISTRY_MW_RTOL * theirs_mw)
 
 
-def _valid_registry_id(chem):
-    """True when a chemical's registry_id is a plausible identifier: a CAS
-    number (format and check digit, not contradicted by the database's
-    molar mass), an InChI, an InChIKey or SMILES-like text (R2.0)."""
-    rid = _as_dict(chem).get('registry_id')
+def _registry_query(rid):
+    """(kind, database query) of a well-formed registry id, else (None,
+    None) (R2.0/R3.2). Kinds: 'CAS' (format and check digit), 'InChI' (its
+    formula layer parses, _inchi_formula), 'InChIKey' (14-10-1 capitals,
+    an 'InChIKey=' prefix allowed) and 'SMILES' (_smiles_like, a 'SMILES='
+    prefix allowed). The query is the string
+    `chemicals.identifiers.search_chemical` parses as that kind: CAS numbers
+    and InChIs as they are, 'InChIKey=<key>' and 'SMILES=<text>' (a bare
+    'C' would otherwise resolve to the element carbon, not methane)."""
     if not isinstance(rid, str):
-        return False
+        return None, None
     rid = rid.strip()
     if _valid_cas(rid):
-        return not _cas_contradicts(rid, chem)
-    return bool(_INCHI_RE.match(rid) or _INCHIKEY_RE.match(rid)
-                or _smiles_like(rid))
+        return 'CAS', rid
+    if _inchi_formula(rid) is not None:
+        return 'InChI', rid
+    key = _INCHIKEY_RE.match(rid)
+    if key:
+        return 'InChIKey', f'InChIKey={key.group(1)}'
+    smiles = _SMILES_PREFIX_RE.sub('', rid)
+    if _smiles_like(smiles):
+        return 'SMILES', f'SMILES={smiles}'
+    return None, None
+
+
+def _registry_status(chem):
+    """R3.2 status of a chemical's registry_id: 'absent' (none stated),
+    'malformed' (not a well-formed CAS/InChI/InChIKey/SMILES,
+    _registry_query), 'contradicted' (an InChI whose formula layer, or a
+    database record the id resolves to whose molar mass or formula,
+    disagrees with the chemical's own -- REGISTRY_MW_RTOL), 'resolved' (the
+    `chemicals` database resolves it and nothing contradicts it), 'unresolved'
+    (well-formed, but the database does not know it: a real but unlisted
+    number, or an invented one) or 'unavailable' (well-formed; the database
+    cannot be imported). Lookups are cached (_name_record); never raises."""
+    rid = _as_dict(chem).get('registry_id')
+    if rid is None or (isinstance(rid, str) and not rid.strip()):
+        return 'absent'
+    kind, query = _registry_query(rid)
+    if kind is None:
+        return 'malformed'
+    if kind == 'InChI' and _inchi_contradicts(query, chem):
+        return 'contradicted'
+    if _chemicals_search() is None:
+        return 'unavailable'
+    record = _name_record(query)
+    if record is None:
+        return 'unresolved'
+    if _record_agreement(record, chem, REGISTRY_MW_RTOL) == 'mismatch':
+        return 'contradicted'
+    return 'resolved'
+
+
+def _database_resolved(chem, cid):
+    """True when the `chemicals` database identifies the chemical (R3.2):
+    its registry id resolves without contradiction, or its id resolves by
+    name with a verified or unverified record (_name_tier). With the
+    database unavailable nothing resolves."""
+    return ((chem is not None and _registry_status(chem) == 'resolved')
+            or _name_tier(chem, cid) in ('verified', 'unverified'))
 
 
 # thermosteam model class names per property-package descriptor (enumerated
@@ -2057,20 +2342,24 @@ def _spec_population(sc):
     return [p for p in range(len(sc.units)) if _unit_rules(sc, p) != ()]
 
 
-def _explicit_keys(unit):
+def _explicit_keys(unit, family=None):
     """design_input_specs keys stated with a value plausible for their role
-    (_valid_spec; R2.0: an implausible value counts as unstated)."""
+    in a unit of `family` (_valid_spec; R2.0: an implausible value counts as
+    unstated)."""
     specs = _as_dict(_as_dict(unit).get('design_input_specs'))
-    return {k for k, v in specs.items() if _valid_spec(k, v)}
+    return {k for k, v in specs.items() if _valid_spec(k, v, family)}
 
 
 def _stream_value(stream, part):
     """Valid temperature ('T', in (0, T_MAX) K) or pressure ('P', > 0) of a
-    stream, or None."""
+    stream in BioSTEAM's internal unit, or None -- also for a quantity in an
+    unrecognised unit (_Unconverted, R3.4), which no guard or pressure-rise
+    test may compare."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
-    if part == 'T':
-        return _valid_T(sp.get('temperature'))
-    return _valid_P(sp.get('pressure'))
+    value = sp.get('temperature' if part == 'T' else 'pressure')
+    if isinstance(value, _Unconverted):
+        return None
+    return _valid_T(value) if part == 'T' else _valid_P(value)
 
 
 def _phase_set(stream):
@@ -2414,7 +2703,7 @@ def _unit_spec_score(sc, position):
     if rules is None:
         return 0.0, [f'{label}: unit family unknown, so its essential '
                      f'specifications cannot be determined']
-    explicit = _explicit_keys(unit)
+    explicit = _explicit_keys(unit, sc.unit_classes[position][1])
     scores, missing = [], []
     for req in rules:
         if not _requirement_applies(req, sc, position):
@@ -2503,7 +2792,11 @@ class _ScoringContext:
         # (UNIT-01 / STR-01 flag the defect); no criterion is inflated by
         # repetition.
         self.units = _first_by_id(_dicts(self.doc.get('units')))
-        self.streams = _first_by_id(_dicts(self.doc.get('streams')))
+        # R3.4: streams (and, below, utility agents) are read in BioSTEAM's
+        # internal units, converted from the stated quantity units.
+        self.quantity_units = _quantity_unit_index(self.doc)
+        self.streams = [_internal_stream(s, self.quantity_units) for s in
+                        _first_by_id(_dicts(self.doc.get('streams')))]
         self.chemicals = _first_by_id(_dicts(self.doc.get('chemicals')))
         self.results = list(results)
         if registry is None:
@@ -2579,7 +2872,7 @@ class _ScoringContext:
                     if aid in seen:  # R2.1: first occurrence across groups
                         continue
                     seen.add(aid)
-                agents.append((group, agent,
+                agents.append((group, _converted(agent, self.quantity_units),
                                _label(f'utilities.{group}', agent, i)))
         self.agents = agents
         self._vctx = None
@@ -2717,53 +3010,82 @@ def _empty_chemical_population(sc):
     return None, 'no chemicals declared or referenced', []
 
 
+# Why a stated registry id earned no registry-tier credit (CMP-THM-02 notes).
+_REGISTRY_FAULTS = {
+    'malformed': 'registry_id is not a well-formed CAS number, InChI, '
+                 'InChIKey or SMILES',
+    'contradicted': "registry_id contradicts the chemical's molar mass or "
+                    "formula (its database record, or its InChI formula "
+                    "layer, disagrees)",
+}
+
+
 def _thm_02_credit(chem, cid):
-    """(credit, missing suffix or None) of one declared chemical's identity
-    (R2.0/R2.3): a valid registry id 1; else an id that resolves by name
-    (never a formula with >= 2 carbon atoms) NAME_RESOLVED_CREDIT when
-    the record's molar mass or formula matches the chemical's,
-    NAME_UNVERIFIED_CREDIT when the chemical states neither; else (no name,
-    or a mismatching one) FORMULA_ONLY_CREDIT when a parseable formula (or
-    the formula-like id itself) narrows it down; else 0."""
-    if _valid_registry_id(chem):
-        return 1.0, None
+    """(credit, missing suffix or None, tier) of one declared chemical's
+    identity: the MAXIMUM over the tiers it reaches (R3.2; the first listed
+    wins a tie) -- 'registry' 1 when its registry id resolves in the
+    `chemicals` database without contradiction (_registry_status);
+    'unresolved' REGISTRY_UNRESOLVED_CREDIT for a well-formed id the database
+    cannot resolve (or any while it is unavailable); 'name'
+    NAME_RESOLVED_CREDIT when the id resolves by name (never a formula with
+    >= 2 carbon atoms) and the record's molar mass or formula matches the
+    chemical's; 'unverified' NAME_UNVERIFIED_CREDIT when the chemical states
+    neither; 'formula' FORMULA_ONLY_CREDIT when a parseable formula (or the
+    formula-like id itself) narrows it down; else 'none' 0. A malformed or
+    contradicted registry id counts as absent (R2.0), and the note says
+    so."""
+    status = _registry_status(chem)
+    if status == 'resolved':
+        return 1.0, None, 'registry'
+    fault = _REGISTRY_FAULTS.get(status)
     tier = _name_tier(chem, cid)
+    options = []
+    if status in ('unresolved', 'unavailable'):
+        options.append((REGISTRY_UNRESOLVED_CREDIT, 'unresolved', (
+            '.registry_id (well-formed, but the chemicals database does not '
+            'resolve it: unverifiable)' if status == 'unresolved' else
+            '.registry_id (well-formed; the chemicals database is unavailable '
+            'to resolve it)')))
     if tier == 'verified':
-        return NAME_RESOLVED_CREDIT, ('.registry_id (id resolvable by name '
-                                      'only; molar mass verified)')
-    if tier == 'unverified':
-        return NAME_UNVERIFIED_CREDIT, ('.registry_id (id resolvable by name '
-                                        'only; no molar mass or formula to '
-                                        'verify the match)')
+        options.append((NAME_RESOLVED_CREDIT, 'name', '.registry_id (id '
+                        'resolvable by name only; molar mass verified)'))
+    elif tier == 'unverified':
+        options.append((NAME_UNVERIFIED_CREDIT, 'unverified', '.registry_id '
+                        '(id resolvable by name only; no molar mass or formula '
+                        'to verify the match)'))
     why = (' (the name resolves to a compound of another molar mass)'
            if tier == 'mismatch' else
            ' (id is a molecular formula with >= 2 carbon atoms: '
            'isomer-ambiguous)' if _isomer_ambiguous(cid) else '')
-    if _valid_formula(chem.get('formula')) or _formula_like(cid):
-        return FORMULA_ONLY_CREDIT, f'.registry_id (formula only){why}'
-    return 0.0, f'.registry_id (no formula either; id not resolvable by name){why}'
+    if _valid_formula(_as_dict(chem).get('formula')) or _formula_like(cid):
+        options.append((FORMULA_ONLY_CREDIT, 'formula',
+                        f'.registry_id (formula only){why}'))
+    options.append((0.0, 'none', '.registry_id (no formula either; id not '
+                    f'resolvable by name){why}'))
+    credit, best, note = max(options, key=lambda option: option[0])
+    return credit, note + (f'; {fault}' if fault else ''), best
 
 
 def _score_thm_02(sc):  # CMP-THM-02
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
-    scores, missing = [], []
+    scores, missing, tiers = [], [], []
     for chem, label, cid in population:
         if chem is None:
             scores.append(0.0)
             missing.append(f'{label}: not declared')
             continue
-        credit, note = _thm_02_credit(chem, cid)
+        credit, note, tier = _thm_02_credit(chem, cid)
         scores.append(credit)
+        tiers.append(tier)
         if note:
             missing.append(label + note)
-    n_id = scores.count(1.0)
-    n_name = scores.count(NAME_RESOLVED_CREDIT)
-    n_unverified = scores.count(NAME_UNVERIFIED_CREDIT)
-    return (_mean(scores), f'{n_id} of {len(scores)} chemical(s) carry a '
-            f'valid registry id, {n_name} more resolve by a verified name, '
-            f'{n_unverified} by an unverified one', missing)
+    return (_mean(scores), f'{tiers.count("registry")} of {len(scores)} '
+            f'chemical(s) carry a database-resolved registry id, '
+            f'{tiers.count("name")} more resolve by a verified name, '
+            f'{tiers.count("unverified")} by an unverified one, '
+            f'{tiers.count("unresolved")} carry an unresolvable id', missing)
 
 
 def _score_thm_03(sc):  # CMP-THM-03
@@ -2812,24 +3134,28 @@ def _score_thm_04(sc):  # CMP-THM-04
 def _score_thm_05(sc):  # CMP-THM-05
     # Population = declared + referenced ids (R2.3): a declared, unreferenced
     # chemical still needs property data (Chemicals.compile() requires key
-    # properties for every member). A chemical is database-resolvable by a
-    # valid registry id or a verified/unverified name (not a mismatching or
-    # isomer-ambiguous one); an undeclared referenced id is judged by its
-    # name.
+    # properties for every member). Exempt only a chemical the `chemicals`
+    # database actually RESOLVES (R3.2, _database_resolved): a registry id
+    # it finds without contradiction, or a verified/unverified name (not a
+    # mismatching or isomer-ambiguous one). A well-formed id the database
+    # does not know (an invented CAS, or a real one it does not list, such
+    # as cellulose's) proves nothing, and with the database unavailable
+    # nothing is exempt. An undeclared referenced id is judged by its name.
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
     lacking = [label for chem, label, cid in population
-               if not ((chem is not None and _valid_registry_id(chem))
-                       or _name_tier(chem, cid) in ('verified', 'unverified'))]
+               if not _database_resolved(chem, cid)]
     if not lacking:
-        return (None, 'every chemical resolves against the database (registry '
-                'id or name)', [])
+        return (None, 'every chemical resolves in the chemicals database '
+                '(registry id or name)', [])
     missing = [f'{label}: property data (V, Cn, H/S reference, Hf, '
                f'Psat/Tb/Hvap, LHV) not representable' for label in lacking]
-    return (0.0, f'{len(lacking)} chemical(s) resolvable neither by registry '
-            f'id nor by name need property data no SFF field can state',
-            missing)
+    unavailable = ('; the chemicals database is unavailable, so none resolves'
+                   if _chemicals_search() is None else '')
+    return (0.0, f'{len(lacking)} chemical(s) the chemicals database resolves '
+            f'neither by registry id nor by name need property data no SFF '
+            f'field can state{unavailable}', missing)
 
 
 _TPP_KEYS = ('mixture', 'gamma', 'phi', 'PCF')
@@ -2948,7 +3274,7 @@ def _port_order_derivable(sc, position, side):
     if not _closure(sc, position)[0]:
         return False
     family = sc.unit_classes[position][1]
-    explicit = _explicit_keys(sc.units[position])
+    explicit = _explicit_keys(sc.units[position], family)
     streams = _side_streams(sc, position, side)
     if family == 'flash' and side == 'outs':
         sets = [_phase_set(sc.streams[i]) for i in streams]
@@ -3059,33 +3385,56 @@ def _score_feed_01(sc):  # CMP-FEED-01
     # composition). Deleting the only non-zero flow thus lowers the empty
     # feeds from 1 to their missing-flow score; writing zeros everywhere
     # earns nothing. (A mass-share weighting was dropped: deleting a large
-    # feed's flow switched it to equal weights.)
-    if not sc.feeds:
+    # feed's flow switched it to equal weights.) R3.7: the empty-feed credit
+    # also needs the sink unit's class known exactly (confidence 1: its
+    # fixed ports make a placeholder feed legitimate,
+    # _placeholder_port_feed); padding a unit of unknown class with
+    # zero-flow feeds earns nothing -- each scores as missing its flow.
+    # A stream with both endpoints at the boundary (isolated: a feed whose
+    # sink_unit_id was lost) stays in the population, so deleting an
+    # endpoint never sheds an incomplete feed (R3.8).
+    feeds = sorted(sc.feeds + sc.isolated)
+    if not feeds:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
                 ['streams: no feed (source_unit_id "None", sink a unit)'])
-    anchored = any(_states_flow(sc.streams[i]) for i in sc.feeds)
-    empty = [i for i in sc.feeds
-             if anchored and _is_empty_stream(sc.streams[i])]
+    anchored = any(_states_flow(sc.streams[i]) for i in feeds)
+    empties = [i for i in feeds if _is_empty_stream(sc.streams[i])]
+    credited = [i for i in empties
+                if anchored and _placeholder_port_feed(sc, i)]
     scores, missing, full = [], [], 0
-    for i in sc.feeds:
-        if i in empty:
+    for i in feeds:
+        if i in credited:
             scores.append(1.0)
             continue
-        state = _stream_state(sc.streams[i], empty_exempt=anchored)
-        if not anchored and _is_empty_stream(sc.streams[i]):
+        state = _stream_state(sc.streams[i], empty_exempt=False)
+        why = ''
+        if i in empties:
             state['flow'] = False
+            why = (' (a zero flow, while no feed states a non-zero one)'
+                   if not anchored else ' (a zero flow into a unit whose '
+                   'class is not known exactly: no fixed placeholder port)')
         scores.append(sum(state.values()) / len(state))
         full += all(state.values())
         missing.extend(f'{sc.stream_labels[i]}.{_STATE_PATHS[k]}'
-                       + (' (a zero flow, while no feed states a non-zero '
-                          'one)' if k == 'flow' and not anchored
-                          and _is_empty_stream(sc.streams[i]) else '')
+                       + (why if k == 'flow' else '')
                        for k, ok in state.items() if not ok)
-    return (_mean(scores), f'{full + len(empty)} of {len(sc.feeds)} feed(s) '
-            f'fully stated' + (f' ({len(empty)} empty, stated by their zero '
-                               f'flow)' if empty else '')
-            + ('' if anchored else '; no feed states a non-zero flow'),
-            missing)
+    message = f'{full + len(credited)} of {len(feeds)} feed(s) fully stated'
+    if empties:
+        message += (f'; {len(empties)} empty feed(s) (zero flow), '
+                    f'{len(credited)} credited as placeholder port(s) of a '
+                    f'unit of exactly known class')
+    if not anchored:
+        message += '; no feed states a non-zero flow'
+    return _mean(scores), message, missing
+
+
+def _placeholder_port_feed(sc, position):
+    """True when feed `position` enters a declared unit whose class is known
+    exactly (confidence 1): its fixed ports make an empty placeholder feed
+    legitimate (R3.7)."""
+    sink = sc.streams[position].get('sink_unit_id')
+    unit = sc.unit_positions.get(sink) if isinstance(sink, str) else None
+    return unit is not None and sc.unit_classes[unit][2] >= 1.0
 
 
 # Chemical ids (lowercase) of each utility-port material (R2.9).
@@ -3158,8 +3507,10 @@ def _score_feed_02(sc):  # CMP-FEED-02
     # Every boundary stream counts (R1.0); an EMPTY one (total flow
     # numerically 0) needs no price and scores 1, so deleting its flow (or
     # its stream_properties) can only lower its credit -- excluding it let
-    # that deletion move a priced empty stream into the population.
-    positions = sc.feeds + sc.outlets
+    # that deletion move a priced empty stream into the population. An
+    # isolated stream (both endpoints at the boundary) counts too: deleting
+    # an unpriced product's source_unit_id must not drop it (R3.8).
+    positions = sc.feeds + sc.outlets + sc.isolated
     if not positions:
         return None, 'no boundary streams', []
     feeds = set(sc.feeds)
@@ -3308,7 +3659,7 @@ def _score_uop_03(sc):  # CMP-UOP-03
         params = list(_as_dict(entry.get('design_input_spec_params')))
         if not params:
             continue
-        explicit = _explicit_keys(unit)
+        explicit = _explicit_keys(unit, sc.unit_classes[position][1])
         excused = _excused_params(sc, position, explicit)
         needed = [p for p in params if p not in excused]
         absent = [p for p in needed if p not in explicit]
@@ -3492,7 +3843,8 @@ def _facility_explicit(sc, position):
     stream_ids = {s['id'] for s in sc.streams if _nonempty_str(s.get('id'))}
     agents = _heat_agent_ids(sc)
     explicit = set()
-    for key in _explicit_keys(sc.units[position]):
+    for key in _explicit_keys(sc.units[position],
+                              sc.unit_classes[position][1]):
         value = specs[key]
         if key in _STREAM_LIST_KEYS:
             ok = _valid_id_list(value, stream_ids)
@@ -4063,15 +4415,47 @@ def _count_result_key(unit):
     return None
 
 
-def _cost_06_unit(sc, position):
-    """CMP-COST-06 of one costed unit: DERIVED_CREDIT when a design result
-    states a count ('Number of ...'), else 0 (never representable)."""
-    label = sc.unit_labels[position]
-    key = _count_result_key(sc.units[position])
+def _bounded_item(unit):
+    """The first power-law correlation item stating a positive
+    size_upper_bound whose basis has a numeric design result S, so its
+    count follows as N = ceil(S / size_upper_bound) (R3.11), or None."""
+    results = _as_dict(unit.get('design_results'))
+    for item, corr in _as_dict(unit.get('purchase_cost_correlations')).items():
+        corr = _as_dict(corr)
+        basis = corr.get('basis')
+        if (corr.get('correlation_type') == 'power_law'
+                and _valid_number(corr.get('size_upper_bound'), 0.0,
+                                  lo_open=True) is not None
+                and isinstance(basis, str)
+                and _num(results.get(basis)) is not None):
+            return item
+    return None
+
+
+def _count_source(unit):
+    """What a unit's parallel counts derive from: "design_results['<count
+    key>']" (_count_result_key), "purchase_cost_correlations['<item>']
+    size_upper_bound" (_bounded_item), or None."""
+    key = _count_result_key(unit)
     if key:
+        return f"design_results['{key}']"
+    item = _bounded_item(unit)
+    if item is not None:
+        return f"purchase_cost_correlations['{item}'].size_upper_bound"
+    return None
+
+
+def _cost_06_unit(sc, position):
+    """CMP-COST-06 of one costed unit: DERIVED_CREDIT when its counts are
+    derivable (_count_source: a count design result 'Number of ...', or a
+    power-law item's size_upper_bound over its basis' design result), else
+    0 (never representable)."""
+    label = sc.unit_labels[position]
+    source = _count_source(sc.units[position])
+    if source:
         return DERIVED_CREDIT, [f"{label}: parallel counts (Unit.parallel, "
                                 f"CostItem.N) not representable (derivable "
-                                f"from design_results['{key}'])"]
+                                f"from {source})"]
     return 0.0, [f'{label}: parallel counts (Unit.parallel, CostItem.N) not '
                  f'representable']
 
@@ -4080,9 +4464,10 @@ def _score_cost_06(sc):  # CMP-COST-06
     if not sc.costed:
         return None, _NO_COSTED_UNITS, []
     score, missing, _ok = _per_costed_unit(sc, _cost_06_unit)
-    derived = sum(1 for p in sc.costed if _count_result_key(sc.units[p]))
+    derived = sum(1 for p in sc.costed if _count_source(sc.units[p]))
     return (score, f'not representable; derivable from a count design result '
-            f'for {derived} of {len(sc.costed)} costed unit(s)', missing)
+            f'or a size upper bound for {derived} of {len(sc.costed)} costed '
+            f'unit(s)', missing)
 
 
 def _cost_07_unit(sc, position):
@@ -4106,8 +4491,12 @@ def _score_cost_07(sc):  # CMP-COST-07
     if not sc.costed:
         return None, _NO_COSTED_UNITS, []
     score, missing, ok = _per_costed_unit(sc, _cost_07_unit)
+    derived = sum(1 for p in sc.costed if _cost_07_unit(sc, p)[0]
+                  == DERIVED_CREDIT)
     return (score, f'{ok} of {len(sc.costed)} costed unit(s) state every '
-            f'lifetime (family-weighted)', missing)
+            f'lifetime; {derived} more earn derived credit ({DERIVED_CREDIT:g}) '
+            f'as core BioSTEAM classes known exactly, whose class-default '
+            f'lifetime applies (family-weighted)', missing)
 
 #%% Criteria -- utilities
 
@@ -4123,12 +4512,15 @@ def _utility_refs(sc):
 
 
 def _agent_gaps(group, agent):
-    """Unstated required fields of one declared agent (heat/other: numeric T
-    and P plus a non-empty composition; power: an id)."""
+    """Unstated or implausible required fields of one declared agent (R3.3,
+    the shared stream-state predicates: heat/other agents need a plausible
+    temperature (_valid_T) and pressure (_valid_P) and a plausible
+    composition (_composition_ok); power: an id)."""
     if group == 'power_utilities':
         return [] if _nonempty_str(agent.get('id')) else ['id']
-    gaps = [k for k in ('temperature', 'pressure') if _num(agent.get(k)) is None]
-    if not _dicts(agent.get('composition')):
+    gaps = [k for k, valid in (('temperature', _valid_T), ('pressure', _valid_P))
+            if valid(agent.get(k)) is None]
+    if not _composition_ok(agent.get('composition')):
         gaps.append('composition')
     return gaps
 
@@ -4214,6 +4606,33 @@ _PRICE_FIELDS = {
 }
 
 
+def _valid_price(group, value):
+    """A plausible utility price (R3.3): finite; for a heat agent's
+    regeneration or heat-transfer price also >= 0. Else None."""
+    return _valid_number(value, 0.0 if group == 'heat_utilities' else None)
+
+
+_FUEL_ID_RE = re.compile(r'natural[\s_-]*gas|fuel', re.IGNORECASE)
+
+
+def _fuel_agent(agent):
+    """True unless the data affirmatively show that an other-utility agent
+    is no fuel (R3.9, R2.13): its id names natural gas or a fuel, or its
+    composition is methane-dominated (>= PORT_MATERIAL_MIN), or its
+    composition is not plausibly stated (_composition_ok) -- then it may be
+    one."""
+    aid = agent.get('id')
+    if isinstance(aid, str) and _FUEL_ID_RE.search(aid):
+        return True
+    composition = agent.get('composition')
+    if not _composition_ok(composition):
+        return True
+    methane = sum(_entry_fraction(e) or 0.0 for e in _dicts(composition)
+                  if str(e.get('component_name', '')).strip().lower()
+                  in _PORT_MATERIAL_IDS['natural gas'])
+    return methane >= PORT_MATERIAL_MIN
+
+
 def _score_util_02(sc):  # CMP-UTIL-02
     if not _utility_need(sc):
         return None, _NO_UTILITY_NEED, []
@@ -4230,12 +4649,28 @@ def _score_util_02(sc):  # CMP-UTIL-02
     missing = [f"utilities: no agent '{agent_id}' to price (referenced by "
                f"{unit_label})" for agent_id, unit_label in undeclared]
     missing.extend(kinds)
+    scores = []  # declared agents; undeclared and missing kinds score 0
     for group, agent, label in sc.agents:
         fields, locator = _PRICE_FIELDS[group]
-        if not any(_num(agent.get(f)) is not None for f in fields):
+        prices = [p for p in (_valid_price(group, agent.get(f)) for f in fields)
+                  if p is not None]
+        if not prices:
+            scores.append(0.0)
             missing.append(f'{label}.{locator}')
-    ok = total - len(missing)
-    return ok / total, f'{ok} of {total} referenced/declared agent(s) priced', missing
+        elif group == 'other_utilities' and prices[0] == 0 \
+                and _fuel_agent(agent):
+            # R3.9: BioSTEAM prices a 0-priced fuel from bst.stream_prices,
+            # which SFF cannot state (as CMP-FEED-02's utility ports).
+            scores.append(0.5)
+            missing.append(f'{label}.price: 0 on a fuel agent (priced by '
+                           f'BioSTEAM, not representable)')
+        else:
+            scores.append(1.0)
+    fuels = scores.count(0.5)
+    return (sum(scores) / total, f'{scores.count(1.0)} of {total} '
+            f'referenced/declared agent(s) priced'
+            + (f' ({fuels} fuel agent(s) priced 0: half credit)' if fuels
+               else ''), missing)
 
 
 def _agent_roles(sc):
@@ -4382,9 +4817,12 @@ def _score_sys_01(sc):  # CMP-SYS-01
             ['metadata: annual operating hours (or days) not representable'])
 
 
-# The BioSTEAM TEA parameter set (CMP-SYS-02); the first two are the ones SFF
-# can state (TEA_currency, TEA_year).
-_TEA_ITEMS = ('currency', 'start year', 'plant duration', 'IRR (discount rate)',
+# The BioSTEAM TEA parameter set (CMP-SYS-02, R3.10); the first three are the
+# ones SFF can state: TEA_currency, TEA_year (the cost -- dollar -- year of
+# every price and cost, per the schema; not the plant's start year) and the
+# TEA target product (metadata.products).
+_TEA_ITEMS = ('currency', 'dollar year (cost basis)', 'target product',
+              'plant start year and duration', 'IRR (discount rate)',
               'income tax', 'depreciation schedule', 'construction schedule',
               'startup period and fractions', 'working capital',
               'fixed-operating-cost model',
@@ -4393,17 +4831,35 @@ _TEA_ITEMS = ('currency', 'start year', 'plant duration', 'IRR (discount rate)',
               'price book (bst.stream_prices, incl. utility-port prices)')
 
 
+def _target_products_designated(sc):
+    """True when metadata.products is a non-empty list whose every entry
+    names (stream_id) a declared boundary outlet: the TEA's target product
+    (R3.10)."""
+    products = sc.metadata.get('products')
+    outlet_ids = {sc.streams[i].get('id') for i in sc.outlets
+                  if _nonempty_str(sc.streams[i].get('id'))}
+    return (isinstance(products, list) and bool(products)
+            and all(isinstance(p, dict) and isinstance(p.get('stream_id'), str)
+                    and p['stream_id'] in outlet_ids for p in products))
+
+
 def _score_sys_02(sc):  # CMP-SYS-02
+    year = _num(sc.metadata.get('TEA_year'))
     stated = {'currency': _nonempty_str(sc.metadata.get('TEA_currency')),
-              'start year': _num(sc.metadata.get('TEA_year')) is not None}
-    missing = [f'metadata.{f}' for f, item in
-               (('TEA_currency', 'currency'), ('TEA_year', 'start year'))
+              'dollar year (cost basis)': year is not None and year > 0,
+              'target product': _target_products_designated(sc)}
+    missing = [f'metadata.{field}{note}' for field, item, note in
+               (('TEA_currency', 'currency', ''),
+                ('TEA_year', 'dollar year (cost basis)', ' (cost year)'),
+                ('products', 'target product', ' (non-empty; every stream_id '
+                 'a declared boundary outlet)'))
                if not stated[item]]
     missing.extend(f'metadata: {item} not representable'
                    for item in _TEA_ITEMS if item not in stated)
     n = sum(stated.values())
     return (n / len(_TEA_ITEMS), f'{n} of {len(_TEA_ITEMS)} TEA parameter '
-            f'groups stated (only currency and year are representable)', missing)
+            f'groups stated (only currency, dollar year and target product '
+            f'are representable)', missing)
 
 
 def _score_sys_03(sc):  # CMP-SYS-03
@@ -4452,7 +4908,12 @@ def _score_int_01(sc):  # CMP-INT-01
     return _gate_score(sc, 'SCHEMA')
 
 
+_NO_FLOWSHEET = 'no units and no streams: nothing to cross-reference or measure'
+
+
 def _score_int_02(sc):  # CMP-INT-02
+    if not sc.units and not sc.streams:  # R3.11
+        return None, _NO_FLOWSHEET, []
     score, message, missing = _gate_score(sc, 'XREF-01')
     if score == 0.0:  # name the failing referential checks, not the aggregate
         referential = getattr(_validator(), '_REFERENTIAL_IDS', ())
@@ -4495,6 +4956,8 @@ def _bare_design_results(sc):
 
 
 def _score_int_04(sc):  # CMP-INT-04
+    if not sc.units and not sc.streams:  # R3.11
+        return None, _NO_FLOWSHEET, []
     inline = list(_inline_quantities(sc.doc))
     if inline:
         # Legacy branch: every inline {value, units} quantity, plus every

@@ -16,6 +16,7 @@
 # its ~5,500 deletable values takes minutes; this file is sized to run in
 # ~15 s, of which ~5 s is the first call's thermosteam import).
 
+import copy
 import random
 import unittest
 from pathlib import Path
@@ -238,6 +239,81 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         self.assertTrue(all(C._species_consistency(sc, p)[0]
                             for p in range(len(sc.units))))
         self.assertEqual(by_id["CMP-UOP-04"].score, 1.0)
+
+    def test_revision_3_part_b_registry_ids_on_the_corn_file(self):
+        """R3.2 review case on SF_BST_01 with the installed `chemicals`
+        database (skipped when unavailable): the seven pseudo-components
+        (Starch, Fiber, SolubleProtein, InsolubleProtein, Yeast, Ash,
+        Cellulose) are exactly the chemicals below the name tier. Giving
+        all seven registry_id 'C' (methane: contradicted) or 'InChI=1S/x'
+        (malformed) leaves CMP-THM-02 at 13/22 = 0.591 (the review measured
+        0.841 before the fix); an invented valid-check-digit CAS
+        (98765-43-6) or a fake InChIKey reaches only the unresolved tier:
+        (1 + 14 * 0.75 + 7 * 0.5) / 22 = 0.682. CMP-THM-05 stays scored 0
+        with all seven listed in every case, including Cellulose and Starch
+        given their real but unlisted CAS numbers (9004-34-6, 9005-25-8)."""
+        if C._chemicals_search() is None:
+            self.skipTest("chemicals package not importable")
+        pseudo = {"Starch", "Fiber", "SolubleProtein", "InsolubleProtein",
+                  "Yeast", "Ash", "Cellulose"}
+        below = {c["id"] for c in self.corn["chemicals"]
+                 if C._thm_02_credit(c, c["id"])[0] < C.NAME_RESOLVED_CREDIT}
+        self.assertEqual(below, pseudo)
+
+        def gamed(ids):
+            doc = copy.deepcopy(self.corn)
+            for chem in doc["chemicals"]:
+                if chem["id"] in ids:
+                    chem["registry_id"] = ids[chem["id"]]
+            sc = C._ScoringContext(doc)
+            return C._score_thm_02(sc)[0], C._score_thm_05(sc)
+
+        for rid, expected in (("C", 13 / 22), ("InChI=1S/x", 13 / 22),
+                              ("98765-43-6", 15 / 22),
+                              ("ABCDEFGHIJKLMN-OPQRSTUVWX-Y", 15 / 22)):
+            thm02, (thm05, _m, missing) = gamed(dict.fromkeys(pseudo, rid))
+            with self.subTest(registry_id=rid):
+                self.assertAlmostEqual(thm02, expected)
+                self.assertEqual((thm05, len(missing)), (0.0, 7))
+        _thm02, (thm05, _m, missing) = gamed({"Cellulose": "9004-34-6",
+                                               "Starch": "9005-25-8"})
+        self.assertEqual((thm05, len(missing)), (0.0, 7))
+        self.assertTrue(any(m.startswith("chemicals[Cellulose]") for m in missing))
+
+    def test_revision_3_part_b_quantity_units_on_the_corn_file(self):
+        """R3.4 review case: SF_BST_01 with every stream (and phase) and
+        utility temperature restated in degC under
+        quantity_units_global.temperature = 'degC' scores exactly like the
+        original on every criterion (within 1e-9; the review measured
+        CMP-UOP-02 0.992 -> 0.912 from false T-guard hits before the fix);
+        likewise every pressure in bar, and in kPa. R3.9 / R3.10 on the
+        original: CMP-UTIL-02 = 0.8 (natural_gas and s78, CH4 agents priced
+        0, earn half credit) and CMP-SYS-02 = 3/14 (currency, dollar year,
+        target products)."""
+        base = {c.criterion_id: c.score for c in self.base.criteria}
+        for field, entry, unit, factor, offset in (
+                ("temperature", "temperature", "degC", 1.0, -273.15),
+                ("pressure", "pressure", "bar", 1e-5, 0.0),
+                ("pressure", "pressure", "kPa", 1e-3, 0.0)):
+            doc = copy.deepcopy(self.corn)
+            holders = [a for group in doc["utilities"].values() for a in group]
+            for stream in doc["streams"]:
+                sp = stream.get("stream_properties", {})
+                holders += [sp] + list((sp.get("phases") or {}).values())
+            for holder in holders:
+                if isinstance(holder.get(field), (int, float)):
+                    holder[field] = holder[field] * factor + offset
+            doc["quantity_units_global"][entry]["quantity_units"] = unit
+            report = C.score_flowsheet_completeness(doc)
+            for c in report.criteria:
+                with self.subTest(unit=unit, criterion=c.criterion_id):
+                    if base[c.criterion_id] is None:
+                        self.assertIsNone(c.score)
+                    else:
+                        self.assertAlmostEqual(c.score, base[c.criterion_id],
+                                               delta=1e-9)
+        self.assertAlmostEqual(base["CMP-UTIL-02"], 0.8)
+        self.assertAlmostEqual(base["CMP-SYS-02"], 3 / 14)
 
     def test_sample_covers_the_targeted_deletions(self):
         """sampled_paths(SF_BST_01) -> deterministic (same list twice);
