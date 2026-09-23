@@ -3394,6 +3394,119 @@ class TestFormattingAndCli(unittest.TestCase):
             self.assertIn("validation_summary", data)
 
 
+# ------------------------------------ docs rendering (criteria reference)
+
+DOCS_PAGE = (Path(__file__).resolve().parents[2] / "docs" / "validation"
+             / "completeness.md")
+BEGIN_MARKER = "<!-- BEGIN GENERATED: completeness criteria -->"
+END_MARKER = "<!-- END GENERATED: completeness criteria -->"
+REGENERATE = ("regenerate with: python pisces_sff/completeness/_completeness.py "
+              "--render-docs, and paste the output between the GENERATED "
+              "markers of docs/validation/completeness.md")
+
+
+def _criterion_entry(cid, category, since, title="T", rationale="R", weight=1):
+    return {"id": cid, "category": category, "title": title, "weight": weight,
+            "criticality": "essential", "representable_since": since,
+            "rationale": rationale, "sff_paths": ["units[]"]}
+
+
+class TestDocsRendering(unittest.TestCase):
+    def test_md_text(self):
+        """_md_text: whitespace runs (newlines included) collapse to one space;
+        markup characters are backslash-escaped; plain prose is untouched."""
+        self.assertEqual(C._md_text("a  b\n c\t"), "a b c")
+        self.assertEqual(C._md_text("Plain prose, 1.5 kg/hr (K or degC)."),
+                         "Plain prose, 1.5 kg/hr (K or degC).")
+        self.assertEqual(
+            C._md_text("x|y *z* design_input_specs <T> [a] `c` {r} $ ~ \\"),
+            r"x\|y \*z\* design\_input\_specs \<T\> \[a\] \`c\` \{r\} \$ \~ \\")
+
+    def test_render_committed_registry(self):
+        """_render_criteria_markdown() on the committed registry: deterministic,
+        LF-only, ends in exactly one newline; one table row and one rationale
+        definition per criterion, one ### heading per category, one table row
+        per exclusion, and the summary total equals the sum of the weights."""
+        registry = C.load_completeness_criteria()
+        text = C._render_criteria_markdown()
+        self.assertEqual(text, C._render_criteria_markdown(registry))
+        self.assertNotIn("\r", text)
+        self.assertTrue(text.endswith("|\n") and not text.endswith("\n\n"))
+        total = sum(c["weight"] for c in registry["criteria"].values())
+        self.assertTrue(text.startswith(
+            f"{len(registry['criteria'])} criteria in "
+            f"{len(registry['categories'])} categories, total weight {total:g}."))
+        for title in registry["categories"].values():
+            self.assertEqual(text.count(f"\n### {C._md_text(title)}\n"), 1)
+        for cid, entry in registry["criteria"].items():
+            self.assertEqual(text.count(f"| {cid} | "), 1, cid)
+            self.assertIn(f"\n{cid} -- {C._md_text(entry['title'])}\n: "
+                          f"{C._md_text(entry['rationale'])}\n", text)
+        for entry in registry["exclusions"]:
+            self.assertIn(f"| {entry['id']} | `{entry['kind']}` | "
+                          f"{C._md_text(entry['title'])} | "
+                          f"{C._md_text(entry['rationale'])} |", text)
+
+    def test_render_synthetic_registry(self):
+        """A synthetic registry: representable_since null -> 'never', '0.0.0'
+        -> 'all versions', any other version verbatim; a '|' or newline in a
+        title/rationale can add neither a column nor a row; an empty category
+        is summarized (0 criteria) but gets no heading; shares use the total
+        weight."""
+        registry = {
+            "categories": {"a": "Alpha", "b": "Beta | gamma", "c": "Empty"},
+            "criteria": {
+                "CMP-A-01": _criterion_entry("CMP-A-01", "a", None, weight=3,
+                                             rationale="Line one\nline | two"),
+                "CMP-A-02": _criterion_entry("CMP-A-02", "a", "0.0.0"),
+                "CMP-B-01": _criterion_entry("CMP-B-01", "b", "0.1.2",
+                                             title="Pipe | title")},
+            "exclusions": [{"id": "EXC-01", "kind": "derived", "title": "X",
+                            "rationale": "Why | not\nscored"}]}
+        text = C._render_criteria_markdown(registry)
+        self.assertIn("| CMP-A-01 | T | 3 | essential | never |", text)
+        self.assertIn("| CMP-A-02 | T | 1 | essential | all versions |", text)
+        self.assertIn(r"| CMP-B-01 | Pipe \| title | 1 | essential | 0.1.2 |",
+                      text)
+        self.assertIn(": Line one line \\| two\n", text)
+        self.assertIn(r"| EXC-01 | `derived` | X | Why \| not scored |", text)
+        self.assertIn("| `a` | Alpha | 2 | 4 | 80.0 % |", text)
+        self.assertIn(r"| `b` | Beta \| gamma | 1 | 1 | 20.0 % |", text)
+        self.assertIn("| `c` | Empty | 0 | 0 | 0.0 % |", text)
+        self.assertNotIn("### Empty", text)
+        # every table row keeps its column count (escaped pipes do not split)
+        for line in text.splitlines():
+            if line.startswith("| CMP-") or line.startswith("| EXC-"):
+                cells = line.replace(r"\|", "").count("|")
+                self.assertEqual(cells, 6 if line.startswith("| CMP-") else 5,
+                                 line)
+
+    def test_docs_page_block_in_sync(self):
+        """The committed docs/validation/completeness.md carries exactly one
+        GENERATED block, LF-only, and the text between its markers (one blank
+        line after BEGIN, the block, one blank line before END) byte-matches a
+        fresh _render_criteria_markdown() of the committed registry."""
+        page = DOCS_PAGE.read_bytes().decode("utf-8")
+        self.assertNotIn("\r", page)
+        self.assertEqual(page.count(BEGIN_MARKER), 1)
+        self.assertEqual(page.count(END_MARKER), 1)
+        block = page.split(BEGIN_MARKER + "\n\n", 1)[1]
+        block = block.split("\n" + END_MARKER, 1)[0]
+        self.assertEqual(block, C._render_criteria_markdown(),
+                         f"{DOCS_PAGE.name} is stale -- {REGENERATE}")
+
+    def test_main_render_docs(self):
+        """main(['--render-docs']) prints exactly the rendered block and
+        returns 0 (no FILE needed); main([]) is a usage error (SystemExit)."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(C.main(["--render-docs"]), 0)
+        self.assertEqual(out.getvalue(), C._render_criteria_markdown())
+        with contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit):
+            C.main([])
+
+
 # ------------------------------------ need-based applicability (R1.0)
 
 PASSING = (check("SCHEMA", "pass"), check("XREF-01", "pass"), check("QU-01", "pass"))

@@ -54,6 +54,7 @@ All tiers can use these fixture modules under `tests/`:
 - **New helper function** → Tier 1 (fake) **and** Tier 2 (real), unless it lives in `_harness.py`/`_runner.py` (Tier 1 only).
 - **New schema constraint** → Tier 3 (reject + accept).
 - **New validator check** → Tier 4 (end-to-end) **and** register it in `_CHECKS`.
+- **New completeness criterion** → Tier 1 (`test_completeness.py`, incl. the deletion-monotonicity and junk-vs-absence tests) **and** regenerate the criteria tables of `docs/validation/completeness.md` (`python pisces_sff/completeness/_completeness.py --render-docs`; a Tier 1 sync test pins them).
 - **New corpus file** → add to the Tier 5 outcome table.
 - **New model recipe** → Tier 6 (baseline + consistency).
 
@@ -71,7 +72,7 @@ Two forward-looking meta-tests keep the suite honest and drive coverage complete
 
 **`tests/tier1/test_coverage_meta.py`** (Tier 1 coverage, built in Phase 3)
 
-Enumerates every module-level helper in `pisces_sff/**/*.py` (via `ast`, import-light) — the modules under `pisces_sff/export/` and `pisces_sff/validate/`, plus top-level `_version.py`/`exceptions.py` — and asserts each one is named in some `tests/tier1/test_*.py` source. Exempts public entry points covered elsewhere or untested trivial wrappers (each exemption carries a one-line reason). Failing this test means a new helper lacks a Tier 1 test.
+Enumerates every module-level helper in `pisces_sff/**/*.py` (via `ast`, import-light) — the modules under `pisces_sff/export/`, `pisces_sff/validate/` and `pisces_sff/completeness/`, plus top-level `_version.py`/`exceptions.py` — and asserts each one is named in some `tests/tier1/test_*.py` source. Exempts public entry points covered elsewhere or untested trivial wrappers (each exemption carries a one-line reason). Failing this test means a new helper lacks a Tier 1 test.
 
 **`tests/tier4/test_coverage_meta.py`** (Tier 4 coverage, built in Phase 5)
 

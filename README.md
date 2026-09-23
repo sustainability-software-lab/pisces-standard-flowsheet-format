@@ -8,7 +8,7 @@
 The **Standard Flowsheet Format (SFF)** is a JSON-based standard for representing
 chemical and bioprocess flowsheets so that designs are portable across process
 simulators. A flowsheet is modeled as a **directed graph**: `units` are nodes, `streams` are edges, with `chemicals` and `utilities` as shared registries
-referenced by ID, plus `metadata` for provenance. A full BioSTEAM exporter is included out-of-box in this package. The format, BioSTEAM exporter, validator, and its reference corpus of flowsheets are consumed by [Project PISCES](https://projectpisces.org/).
+referenced by ID, plus `metadata` for provenance. A full BioSTEAM exporter is included out-of-box in this package, along with a two-layer validator that checks a file conforms to the format and a completeness scorer that measures how much of what BioSTEAM needs to rebuild the flowsheet the file actually states. The format, BioSTEAM exporter, validator, and its reference corpus of flowsheets are consumed by [Project PISCES](https://projectpisces.org/).
 
 This format captures unit operations (including design and cost results, utility demands and production, reactions, and design input specifications), streams (material flows, phases, temperature, pressure, and source and sink unit operation ports), utilities (heating, cooling, power, combustion, and others), chemicals (registry IDs and user-defined properties), and metadata for source publication, flowsheet designers, TEA parameters, and process description.
 

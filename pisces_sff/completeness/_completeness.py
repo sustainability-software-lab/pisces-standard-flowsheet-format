@@ -28,9 +28,12 @@ imported package-relatively, so Tier 1 can load this file by path. The
 validator (``../validate/_validate.py``) and the design-spec registry loader
 (``../export/_design_specs.py``) are obtained lazily -- the already-imported
 package modules when present, else loaded by file path -- and ``yaml`` is
-imported inside functions. Run as a script for a plain-text report::
+imported inside functions. Run as a script for a plain-text report
+(``--json`` for the full machine-readable report; ``--render-docs`` prints
+the generated criteria tables of ``docs/validation/completeness.md``)::
 
-    python pisces_sff/completeness/_completeness.py FILE [--json]
+    python pisces_sff/completeness/_completeness.py FILE [--json] [--max-missing N]
+    python pisces_sff/completeness/_completeness.py --render-docs
 """
 
 import argparse
@@ -57,6 +60,13 @@ CriterionResult = namedtuple(
     'CriterionResult',
     'criterion_id category criticality weight representable status score '
     'message missing')
+CriterionResult.__doc__ = """
+One scored completeness criterion.
+
+Returned in ``CompletenessReport.criteria``: one per entry of the criteria
+registry (``criteria.yaml``), in registry order. Each field is documented
+on its attribute.
+"""
 
 # The whole report. score: weighted mean over every scored criterion;
 # representable_score: the same restricted to criteria representable at the
@@ -69,6 +79,55 @@ CompletenessReport = namedtuple(
     'CompletenessReport',
     'score representable_score category_scores criticality_scores criteria '
     'sff_version is_valid validation_summary validation_results recipe')
+CompletenessReport.__doc__ = """
+The completeness report of one SFF flowsheet.
+
+Returned by :func:`score_flowsheet_completeness`; rendered as text by
+:func:`format_completeness_report`. Each field is documented on its
+attribute.
+"""
+
+# Field docstrings (shown by the API docs instead of "Alias for field number").
+for _tuple, _docs in (
+        (CriterionResult, {
+            'criterion_id': 'Criterion id from criteria.yaml, e.g. '
+                            '"CMP-THM-01".',
+            'category': 'Category key, e.g. "thermo".',
+            'criticality': 'One of "essential", "costing", "supplementary" '
+                           'or "integrity".',
+            'weight': 'Weight in points (normalized when aggregating).',
+            'representable': "True when the file's sff_version can state "
+                             "this criterion explicitly.",
+            'status': '"scored", or "not_applicable" when the flowsheet has '
+                      'no need for what the criterion measures.',
+            'score': 'Score in [0, 1], or None when not applicable.',
+            'message': 'One-line human-readable summary.',
+            'missing': 'Locators of what is absent or invalid, e.g. '
+                       '"streams[feed].stream_properties.temperature".'}),
+        (CompletenessReport, {
+            'score': 'Weighted mean over every scored criterion (None when '
+                     'none is scored).',
+            'representable_score': 'The same weighted mean over the criteria '
+                                   "the file's sff_version can state.",
+            'category_scores': '{category: weighted mean or None}.',
+            'criticality_scores': '{criticality: weighted mean or None}.',
+            'criteria': 'One CriterionResult per registry criterion, in '
+                        'registry order.',
+            'sff_version': "The file's raw metadata.sff_version (None when "
+                           "absent).",
+            'is_valid': "The validator's verdict: no schema failure and no "
+                        "error-severity fail.",
+            'validation_summary': 'Validator results counted as {severity: '
+                                  '{status: count}}; never folded into the '
+                                  'score.',
+            'validation_results': 'Every validator CheckResult (schema gate, '
+                                  'semantic checks, XREF-01, TAG-01).',
+            'recipe': 'The separate re-execution route: {"present", '
+                      '"digests_valid", "reproducible_declared"}; never '
+                      'folded into the score.'})):
+    for _field, _doc in _docs.items():
+        getattr(_tuple, _field).__doc__ = _doc
+del _tuple, _docs, _field, _doc
 
 # Credit for information the file does not state but that is derivable from
 # other fields (e.g. an HXutility outlet temperature read off its outlet stream).
@@ -4553,24 +4612,112 @@ def _report_to_jsonable(report):
                                  for r in report.validation_results]
     return out
 
+#%% Docs rendering (criteria reference of docs/validation/completeness.md)
+
+# ASCII punctuation that could open inline markup in MyST/CommonMark
+# (emphasis, code, links, raw HTML, roles, table cells). Registry text is
+# prose, never markup, so each occurrence is backslash-escaped.
+_MD_SPECIAL_RE = re.compile(r'([\\`*_\[\]{}<>|$~])')
+
+
+def _md_text(text):
+    """`text` as one line of literal MyST inline text: whitespace runs
+    (newlines included) collapsed to one space and markup characters
+    backslash-escaped, so it is safe in a table cell or a definition."""
+    return _MD_SPECIAL_RE.sub(r'\\\1', ' '.join(str(text).split()))
+
+
+def _render_criteria_markdown(registry=None):
+    """
+    Render the criteria registry as the MyST reference tables of the docs.
+
+    Parameters
+    ----------
+    registry : dict, optional
+        As returned by :func:`load_completeness_criteria`. Defaults to the
+        committed ``criteria.yaml``.
+
+    Returns
+    -------
+    str
+        MyST Markdown with LF line endings, ending in exactly one newline: a
+        summary table of the categories (criteria count, total weight and
+        share of the overall weight); per non-empty category a ``###``
+        heading, a table of its criteria (id, title, weight, criticality,
+        representable since -- ``all versions`` for ``"0.0.0"``, ``never``
+        for null) and each criterion's full rationale as a definition list;
+        then the exclusions table (id, kind, title, rationale). It is the
+        block between the ``BEGIN GENERATED`` / ``END GENERATED`` markers of
+        ``docs/validation/completeness.md`` (pinned by a Tier 1 test; print
+        it with the ``--render-docs`` CLI flag).
+    """
+    if registry is None:
+        registry = load_completeness_criteria()
+    categories = registry['categories']
+    criteria = list(registry['criteria'].values())
+    total = sum(c['weight'] for c in criteria)
+    by_category = {key: [c for c in criteria if c['category'] == key]
+                   for key in categories}
+    lines = [f'{len(criteria)} criteria in {len(categories)} categories, '
+             f'total weight {total:g}.', '',
+             '| Key | Category | Criteria | Total weight | Share of weight |',
+             '| --- | --- | ---: | ---: | ---: |']
+    for key, title in categories.items():
+        weight = sum(c['weight'] for c in by_category[key])
+        lines.append(f'| `{key}` | {_md_text(title)} | {len(by_category[key])} '
+                     f'| {weight:g} | {100 * weight / total:.1f} % |')
+    for key, title in categories.items():
+        if not by_category[key]:
+            continue
+        lines += ['', f'### {_md_text(title)}', '',
+                  '| ID | Criterion | Weight | Criticality | '
+                  'Representable since |',
+                  '| --- | --- | ---: | --- | --- |']
+        for c in by_category[key]:
+            since = c['representable_since']
+            since = ('never' if since is None else
+                     'all versions' if since == '0.0.0' else since)
+            lines.append(f"| {c['id']} | {_md_text(c['title'])} | "
+                         f"{c['weight']:g} | {c['criticality']} | {since} |")
+        for c in by_category[key]:
+            lines += ['', f"{c['id']} -- {_md_text(c['title'])}",
+                      f": {_md_text(c['rationale'])}"]
+    lines += ['', '### Exclusions (deliberately not scored)', '',
+              '| ID | Kind | Information | Why it is not scored |',
+              '| --- | --- | --- | --- |']
+    lines += [f"| {e['id']} | `{e['kind']}` | {_md_text(e['title'])} | "
+              f"{_md_text(e['rationale'])} |" for e in registry['exclusions']]
+    return '\n'.join(lines) + '\n'
+
 
 def main(argv=None):
     """CLI: print the completeness report of one SFF file (``--json`` for the
-    full machine-readable report)."""
+    full machine-readable report), or, with ``--render-docs``, the generated
+    criteria reference block of ``docs/validation/completeness.md``."""
     parser = argparse.ArgumentParser(
         prog='python pisces_sff/completeness/_completeness.py',
         description='Score how completely an SFF flowsheet states what '
                     'BioSTEAM needs to rebuild it.')
-    parser.add_argument('file', help='SFF JSON file')
+    parser.add_argument('file', nargs='?', help='SFF JSON file')
     parser.add_argument('--json', action='store_true',
                         help='print the full report as JSON')
     parser.add_argument('--max-missing', type=int, default=5,
                         help='missing locators listed per criterion (text mode)')
+    parser.add_argument('--render-docs', action='store_true',
+                        help='print the criteria reference tables (MyST) that '
+                             'docs/validation/completeness.md embeds between '
+                             'its GENERATED markers, and exit')
     args = parser.parse_args(argv)
     try:  # never die on a console that cannot encode a chemical/unit name
         sys.stdout.reconfigure(errors='backslashreplace')
     except AttributeError:
         pass  # a redirected non-console stream (e.g. io.StringIO in tests)
+    if args.render_docs:
+        print(_render_criteria_markdown(), end='')
+        return 0
+    if args.file is None:
+        parser.error('the following arguments are required: file '
+                     '(unless --render-docs is given)')
     report = score_flowsheet_completeness(args.file)
     if args.json:
         print(json.dumps(_report_to_jsonable(report), indent=2))
