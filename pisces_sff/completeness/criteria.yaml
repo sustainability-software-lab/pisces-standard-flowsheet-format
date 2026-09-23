@@ -147,7 +147,8 @@ criteria:
       coefficients and Poynting correction factors. These decide every
       vapor-liquid and liquid-liquid split, so the same flowsheet under a
       different package produces different flash, column and evaporator
-      results.
+      results. Units are family-weighted, so a column's package counts more
+      than a pump's.
 
   - id: CMP-THM-07
     category: thermo
@@ -198,8 +199,13 @@ criteria:
       outs[1] the liquid or bottoms; a Splitter's split fractions apply to
       outs[0]; a JetCooker expects the slurry in ins[0] and steam in ins[1].
       SFF records which unit a stream connects to but not the port index, so a
-      unit side with several streams cannot be wired unambiguously. Sides with
-      at most one stream earn credit because their order is trivially implied.
+      unit side with several streams cannot be wired unambiguously.
+      Order-free sides (mixer and tank inlets) and single-stream sides of
+      single-port units (pumps, valves, heat exchangers, ...) earn full
+      credit; other single-stream sides earn derived credit because
+      unexported ports may exist; multi-stream sides earn derived credit only
+      when the order follows from the data (a flash's vapor and liquid
+      outlets, a splitter with explicit split fractions). Family-weighted.
 
   # ------------------------------------------------------------------- feeds
   - id: CMP-FEED-01
@@ -220,7 +226,9 @@ criteria:
       freedom: every feed's temperature, pressure, flow rate and composition
       must be set before System.simulate, and every other stream is computed
       from them. A flowsheet with no feed defines no problem, so it scores
-      zero; this is the heaviest single criterion.
+      zero; this is the heaviest single criterion. Each feed weighs half an
+      equal share plus half its share of the total feed mass flow, so an
+      unstated main feedstock costs more than an unstated trace additive.
 
   - id: CMP-FEED-02
     category: feeds
@@ -251,8 +259,13 @@ criteria:
       biorefinery-specific subclass, ...) because the class carries the mass
       and energy balance, design and costing methods. Exporters state it as
       "<Class> on <source URL>" in design_simulation_method; a unit_type that
-      exactly names a known class is equally good; a free-text unit_type only
-      suggests a family of candidate classes and earns half credit.
+      exactly names a known class is equally good. A core BioSTEAM class earns
+      full credit; a custom (biorefinery) class does only when the flowsheet
+      model package is pinned to a commit or version, since otherwise its
+      code may have changed (0.75). A class inferred from the unit's
+      design-specification keys earns 0.75; a free-text unit_type only
+      suggests a family of candidate classes and earns half credit. Units are
+      weighted by family (reactors and columns most, pumps and tanks least).
 
   - id: CMP-UOP-02
     category: unit_ops
@@ -266,15 +279,19 @@ criteria:
       - units[].design_results
     rationale: >-
       Each unit class needs a minimal set of specifications before it can
-      run: an HXutility an outlet temperature, vapor fraction or duty; a Flash
-      two of T, P, V, Q, y and x; a Pump an outlet pressure; a
-      BinaryDistillation its light and heavy keys, pressure, key recoveries or
-      purities and a reflux specification; a reactor its temperature and
-      residence time; a splitter its split fractions. Explicit specifications
-      earn full credit; a specification recoverable from stream states (an
-      outlet temperature, a split implied by fully stated ports) earns derived
-      credit. Units of unknown family score zero because nothing tells the
-      importer what to specify.
+      run: an HXutility an outlet temperature or duty (plus a vapor fraction
+      when a non-rigorous exchanger changes phase); a Flash two of T, P, V, Q,
+      y and x; a Pump an outlet pressure (and dP_design when it raises no
+      pressure); a BinaryDistillation its keys, pressure, recoveries or
+      purities and reflux factor; a MESH column its stages, feed stages,
+      reflux and boilup; a reactor its temperature, residence time and
+      working volume; a batch bioreactor also its reactor count or volume; a
+      splitter or dryer its split fractions. Explicit specifications earn
+      full credit; a specification recoverable from stream states, design
+      results or a class default earns derived credit; an explicit T or P that
+      contradicts the unit's outlet streams earns nothing. Units of unknown
+      family score zero because nothing tells the importer what to specify.
+      Units are family-weighted.
 
   - id: CMP-UOP-03
     category: unit_ops
@@ -290,9 +307,12 @@ criteria:
       coefficient, number of shells, working-volume fraction, tray spacing,
       ...) change its design and purchase cost. Left unstated, BioSTEAM
       silently applies its own defaults, which may differ from the original
-      model. Coverage is measured against the design-spec registry for units
-      whose exact class it lists; unstated alternatives of an essential
-      requirement already met (V and H for an HXutility given T) are excused.
+      model. Coverage is measured against the design-spec registry entry of
+      the unit's class, else of its nearest registry ancestor (a corn storage
+      tank against StorageTank), else of the entry its specification keys
+      identify; unstated alternatives of an essential requirement already met
+      (V and H for an HXutility given T) are excused. Units are
+      family-weighted.
 
   - id: CMP-UOP-04
     category: unit_ops
@@ -307,6 +327,25 @@ criteria:
       inputs, but they seed tear streams so recycle loops converge from a good
       initial guess, give a re-simulated flowsheet verification targets, and
       are the base from which missing unit specifications can be derived.
+
+  - id: CMP-UOP-05
+    category: unit_ops
+    title: Units of design specifications
+    weight: 1
+    criticality: supplementary
+    representable_since: null
+    sff_paths:
+      - units[].design_input_specs
+    rationale: >-
+      design_input_specs values are bare numbers with no quantity units (the
+      schema's unit registries cover stream properties and design results,
+      not specifications), so a tau, dP_design or U can only be read in the
+      units the class's own conventions imply: hours, Pa and kW/m2/K for the
+      corresponding BioSTEAM class. That convention is available only when the
+      class itself is identified at confidence 1, which earns derived credit;
+      otherwise a re-importer cannot tell hours from seconds or bar from Pa.
+      Applies to every unit that needs operating specifications (the
+      CMP-UOP-02 population).
 
   # --------------------------------------------------------------- reactions
   - id: CMP-RXN-01

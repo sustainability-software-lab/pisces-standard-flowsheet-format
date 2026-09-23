@@ -549,55 +549,322 @@ def _is_representable(since, version):
 #%% Unit class resolution
 
 # "Class on <source URL>": the exporter's design_simulation_method convention.
-_DSM_CLASS_RE = re.compile(r'^\s*([A-Za-z_]\w*)\s+on\s+\S+')
+# The URL may be empty (the exporter writes none for a class defined outside
+# biosteam and Bioindustrial-Park).
+_DSM_CLASS_RE = re.compile(r'^\s*([A-Za-z_]\w*)\s+on\b\s*(\S*)')
 
-FAMILIES = ('mixer', 'splitter', 'flash', 'hx_utility', 'hx_process', 'pump',
-            'valve', 'compressor', 'turbine', 'distillation', 'evaporator',
-            'reactor', 'tank', 'facility', 'solids_handling')
+# A source URL inside the core BioSTEAM repository (not Bioindustrial-Park).
+_BIOSTEAM_URL_RE = re.compile(
+    r'github\.com/BioSTEAMDevelopmentGroup/biosteam(?:[/#?]|\.git|$)', re.I)
 
-# Curated class -> family, consulted before keyword matching. Only classes the
-# keywords would miss or misplace are listed (keywords handle the rest).
-_CLASS_FAMILY = {
-    'CleaningSystem': 'splitter',       # corn biorefinery: a Splitter subclass
-    'CrushingMill': 'splitter',         # splits juice from bagasse ("mill")
-    'JetCooker': 'hx_utility',          # direct steam heating to a set T
-    'EnzymeTreatment': 'reactor',       # held at T for tau
-    'FluidizedCatalyticCracking': 'reactor',
-    'ReactivePhaseStage': 'reactor',
-    'HXutility': 'hx_utility',
-    'HXutilities': 'hx_utility',
-    'HXprocess': 'hx_process',
-    'SteamMixer': 'mixer',
-    'EnzymeHydrolysateMixer': 'mixer',  # a Mixer subclass ("hydroly" misleads)
-    'BiogasUpgrading': 'splitter',      # CO2 removal from biogas
+FAMILIES = ('mixer', 'splitter', 'flash', 'hx_utility', 'hx_process',
+            'steam_injection_heater', 'pump', 'valve', 'compressor', 'turbine',
+            'distillation', 'staged_column', 'extraction', 'evaporator',
+            'reactor', 'batch_bioreactor', 'aerated_bioreactor',
+            'equilibrium_reactor', 'crystallizer', 'tank', 'combustor',
+            'dryer', 'boiler_turbogenerator', 'heat_exchanger_network',
+            'facility', 'solids_handling', 'junction')
+
+# ---- family sets shared with the costing / utility / reaction criteria ----
+REACTOR_FAMILIES = frozenset({'reactor', 'batch_bioreactor',
+                              'aerated_bioreactor', 'equilibrium_reactor'})
+# Families that consume or produce utilities in BioSTEAM (CMP-UTIL-01..03).
+UTILITY_USING_FAMILIES = REACTOR_FAMILIES | frozenset({
+    'hx_utility', 'flash', 'distillation', 'staged_column', 'evaporator',
+    'pump', 'compressor', 'turbine', 'boiler_turbogenerator',
+    'steam_injection_heater', 'dryer', 'crystallizer'})
+# Families whose chemistry is fixed by the class itself (combustion, a
+# facility's internal make-up, Gibbs minimization, drying), so a species
+# appearing or vanishing there is not evidence of an undeclared reaction.
+CLASS_IMPLIED_CHEMISTRY_FAMILIES = frozenset({
+    'combustor', 'facility', 'boiler_turbogenerator', 'equilibrium_reactor',
+    'dryer'})
+# Families with a fuel/air port BioSTEAM prices from bst.stream_prices when
+# the stream's own price is 0 (CMP-FEED-02).
+UTILITY_PORT_FAMILIES = frozenset({'combustor', 'boiler_turbogenerator',
+                                   'dryer'})
+# Families whose units carry no purchase cost by default. The class-level
+# sets refine it: COST_FREE_CLASSES are cost-free whatever their family
+# (Splitter-type splitters), _COSTED_CLASSES are costed although their family
+# is cost-free (@cost-decorated Mixer subclasses). Use _is_cost_free.
+COST_FREE_FAMILIES = frozenset({'mixer', 'junction'})
+COST_FREE_CLASSES = frozenset({'Mixer', 'MockMixer', 'BlowdownMixer',
+                               'Splitter', 'FakeSplitter', 'PhaseSplitter',
+                               'Separator'})
+_COSTED_CLASSES = frozenset({'AmmoniaMixer', 'EnzymeHydrolysateMixer',
+                             'SulfuricAcidMixer'})
+
+# Per-unit weight in every per-unit average (Revision 1, R1.6): units whose
+# specification decides most of the flowsheet weigh most.
+FAMILY_WEIGHTS = {
+    **dict.fromkeys(('reactor', 'batch_bioreactor', 'aerated_bioreactor',
+                     'equilibrium_reactor', 'distillation', 'staged_column',
+                     'evaporator', 'flash', 'extraction', 'crystallizer'),
+                    3),
+    **dict.fromkeys(('hx_utility', 'hx_process', 'splitter', 'dryer',
+                     'steam_injection_heater', 'facility', 'combustor',
+                     'boiler_turbogenerator', 'heat_exchanger_network',
+                     'compressor', 'turbine'), 2),
+    **dict.fromkeys(('pump', 'valve', 'tank', 'mixer', 'solids_handling',
+                     'junction'), 1),
+}
+UNKNOWN_FAMILY_WEIGHT = 2
+
+# Curated class -> (family, registry_class). registry_class names the nearest
+# design-spec-registry ancestor of a class the registry does not list (used by
+# CMP-UOP-03). Covers every key of export/design_specs/biosteam.yaml (pinned by
+# a Tier 1 test), the BioSTEAM facilities, and every class in the
+# Bioindustrial-Park corpus. 'Unit' (the bare base class) has no family.
+_CLASS_TABLE = {
+    # -- core biosteam units: every design-spec registry key --
+    'AbstractStirredTankReactor': ('reactor', None),
+    'AdiabaticMultiStageVLEColumn': ('staged_column', None),
+    'AeratedBioreactor': ('aerated_bioreactor', None),
+    'AmineAbsorption': ('splitter', None),
+    'AnaerobicBioreactor': ('reactor', None),
+    'BagassePelletMill': ('solids_handling', None),
+    'BatchCrystallizer': ('crystallizer', None),
+    'BinaryDistillation': ('distillation', None),
+    'CO2Compression': ('compressor', None),
+    'Clarifier': ('splitter', None),
+    'Compressor': ('compressor', None),
+    'ConveyingBelt': ('solids_handling', None),
+    'CrushingMill': ('splitter', None),
+    'DiagramOnlyStreamUnit': ('junction', None),
+    'DiagramOnlySystemUnit': ('junction', None),
+    'DiagramOnlyUnit': ('junction', None),
+    'Distillation': ('distillation', None),
+    'DrumDryer': ('dryer', None),
+    'Duplicator': ('junction', None),
+    'EnzymeTreatment': ('reactor', None),
+    'Flash': ('flash', None),
+    'FluidizedCatalyticCracking': ('reactor', None),
+    'GasFedBioreactor': ('aerated_bioreactor', None),
+    'GibbsEquilibriumReactor': ('equilibrium_reactor', None),
+    'HX': ('hx_utility', None),
+    'HXprocess': ('hx_process', None),
+    'HXutilities': ('hx_utility', None),
+    'HXutility': ('hx_utility', None),
+    'HammerMill': ('solids_handling', None),
+    'IsenthalpicValve': ('valve', None),
+    'IsentropicCompressor': ('compressor', None),
+    'IsentropicTurbine': ('turbine', None),
+    'IsothermalCompressor': ('compressor', None),
+    'JetCooker': ('steam_injection_heater', None),  # corn; registry-listed
+    'Junction': ('junction', None),
+    'LLECentrifuge': ('extraction', None),
+    'LLESettler': ('extraction', None),
+    'LLEUnit': ('extraction', None),
+    'LiquidsCentrifuge': ('splitter', None),
+    'LiquidsMixingTank': ('tank', None),
+    'LiquidsPartitionSettler': ('splitter', None),
+    'LiquidsRatioCentrifuge': ('splitter', None),
+    'LiquidsSettler': ('splitter', None),
+    'LiquidsSplitCentrifuge': ('splitter', None),
+    'LiquidsSplitSettler': ('splitter', None),
+    'MESHDistillation': ('staged_column', None),
+    'MagneticSeparator': ('splitter', None),
+    'MassBalance': ('junction', None),
+    'MixTank': ('tank', None),
+    'Mixer': ('mixer', None),
+    'MixerSettler': ('extraction', None),
+    'MockMixer': ('mixer', None),
+    'MockSplitter': ('junction', None),
+    'MolecularSieve': ('splitter', None),
+    'MultiEffectEvaporator': ('evaporator', None),
+    'MultiStageEquilibrium': ('staged_column', None),
+    'MultiStageMixerSettlers': ('extraction', None),
+    'MultistageCompressor': ('compressor', None),
+    'NRELAnaerobicBatchBioreactor': ('batch_bioreactor', None),
+    'NRELBatchBioreactor': ('batch_bioreactor', None),
+    'NRELEthanolFermentation': ('batch_bioreactor', None),
+    'PelletMill': ('solids_handling', None),
+    'PhasePartition': ('flash', None),
+    'PhaseSplitter': ('splitter', None),
+    'PolytropicCompressor': ('compressor', None),
+    'PressureFilter': ('splitter', None),
+    'Pump': ('pump', None),
+    'ReactivePhaseStage': ('reactor', None),
+    'ReversedSplitter': ('junction', None),
+    'RotaryVacuumFilter': ('splitter', None),
+    'SLLECentrifuge': ('splitter', None),
+    'Scaler': ('junction', None),
+    'ScrewFeeder': ('solids_handling', None),
+    'ScrewPress': ('splitter', None),
+    'Separator': ('splitter', None),
+    'ShortcutColumn': ('distillation', None),
+    'Shredder': ('solids_handling', None),
+    'SingleComponentAdsorptionColumn': ('splitter', None),
+    'SinglePhaseReactor': ('reactor', None),
+    'SinglePhaseStage': ('hx_utility', None),
+    'SolidLiquidsSplitCentrifuge': ('splitter', None),
+    'SolidsCentrifuge': ('splitter', None),
+    'SolidsSeparator': ('splitter', None),
+    'SplitFlash': ('flash', None),
+    'Splitter': ('splitter', None),
+    'SprayDryer': ('dryer', None),
+    'StageEquilibrium': ('flash', None),
+    'SteamMixer': ('steam_injection_heater', None),
+    'StorageTank': ('tank', None),
+    'Tank': ('tank', None),
+    'ThermalOxidizer': ('combustor', None),
+    'Turbine': ('turbine', None),
+    'Unit': (None, None),
+    'Valve': ('valve', None),
+    'VentScrubber': ('splitter', None),
+    'VibratingScreen': ('splitter', None),
+    # -- core biosteam facilities and helpers (not in the registry) --
+    'AirDistributionPackage': ('facility', None),
+    'BlowdownMixer': ('mixer', 'Mixer'),
+    'BoilerTurbogenerator': ('boiler_turbogenerator', None),
+    'CIPpackage': ('facility', None),
+    'ChilledWaterPackage': ('facility', None),
+    'CoolingTower': ('facility', None),
+    'Facility': ('facility', None),
+    'FakeSplitter': ('splitter', None),
+    'FireWaterTank': ('facility', None),
+    'HeatExchangerNetwork': ('heat_exchanger_network', None),
+    'ProcessWaterCenter': ('facility', None),
+    # -- core biosteam.wastewater and older biosteam names in the corpus --
+    'AdsorptionColumnTSA': ('splitter', None),
+    'AerobicDigestion': ('reactor', None),
+    'AnMBR': ('reactor', None),
+    'AnaerobicDigestion': ('reactor', None),
+    'BeltThickener': ('splitter', None),
+    'BiogasUpgrading': ('splitter', None),       # CO2 removal from biogas
+    'InternalCirculationRx': ('reactor', 'MixTank'),
+    'MembraneBioreactor': ('splitter', 'Splitter'),  # a Splitter subclass
+    'NRELFermentation': ('batch_bioreactor', None),
+    'PolishingFilter': ('reactor', None),        # anaerobic polishing filter
+    'ReverseOsmosis': ('splitter', None),
+    'SludgeCentrifuge': ('splitter', None),
+    'WastewaterSystemCost': ('facility', None),
+    # -- Bioindustrial-Park corn (tank_factory tanks, Splitter subclasses) --
+    'AlphaAmylaseTank': ('tank', 'StorageTank'),
+    'AmmoniaTank': ('tank', 'StorageTank'),
+    'CleaningSystem': ('splitter', 'Splitter'),
+    'CookedSlurrySurgeTank': ('tank', 'StorageTank'),
+    'CornStorage': ('tank', 'StorageTank'),
+    'DDGSCentrifuge': ('splitter', 'SolidsCentrifuge'),
+    'DDGSHandling': ('solids_handling', None),
+    'GrainHandling': ('solids_handling', None),
+    'LimeHopper': ('tank', 'StorageTank'),
+    'Liquefaction': ('reactor', 'MixTank'),     # MixTank + class-fixed reaction
+    'LiquefactionTank': ('tank', 'MixTank'),
+    'MilledCornHopper': ('tank', 'StorageTank'),
+    'MilledCornSurgeTank': ('tank', 'StorageTank'),
+    'MilledCornWeighTank': ('tank', 'StorageTank'),
+    'PlantAir_CIP_WasteWater_Facilities': ('facility', None),
+    'SimultaneousSaccharificationFermentation': ('batch_bioreactor',
+                                                 'NRELBatchBioreactor'),
+    'SlurryMixTank': ('tank', 'MixTank'),
+    'WetDDGSConveyor': ('solids_handling', None),
+    'YeastTank': ('tank', 'StorageTank'),
+    # -- other Bioindustrial-Park biorefineries (cellulosic, HP, TAL, ...) --
+    'AcidulationReactor': ('reactor', 'AbstractStirredTankReactor'),
+    'AmmoniaAdditionTank': ('tank', 'MixTank'),
+    'AmmoniaMixer': ('mixer', 'Mixer'),
+    'AmmoniaStorageTank': ('tank', None),
+    'BatchCoFermentation': ('batch_bioreactor', 'NRELAnaerobicBatchBioreactor'),
+    'BlowdownDischargePump': ('pump', None),
+    'CSLstorageTank': ('tank', None),
+    'CoFermentation': ('reactor', None),
+    'ContinuousPresaccharification': ('reactor', None),
+    'DehydrationReactor': ('reactor', 'AbstractStirredTankReactor'),
+    'EnzymeHydrolysateMixer': ('mixer', 'Mixer'),
+    'GypsumFilter': ('splitter', 'SolidsSeparator'),
+    'HPPump': ('pump', 'Pump'),
+    'HPStorageTank': ('tank', 'StorageTank'),
+    'HydrogenationReactor': ('reactor', 'AbstractStirredTankReactor'),
+    'HydrolysateHeatExchanger': ('hx_utility', 'HXutility'),
+    'HydrolyzatePump': ('pump', None),
+    'LimeStorage': ('tank', None),
+    'LimeStorageBin': ('tank', None),
+    'OligomerConversionTank': ('reactor', None),
+    'PretreatmentFlash': ('flash', 'Flash'),
+    'PretreatmentReactorSystem': ('reactor', None),
+    'RingOpeningHydrolysisReactor': ('reactor', 'AbstractStirredTankReactor'),
+    'Saccharification': ('batch_bioreactor', None),
+    'SeedHoldTank': ('tank', None),
+    'SeedTrain': ('reactor', None),
+    'SuccinicAcidCrystallizer': ('crystallizer', 'BatchCrystallizer'),
+    'SulfuricAcidMixer': ('mixer', 'Mixer'),
+    'SulfuricAcidStorage': ('tank', None),
+    'SulfuricAcidStorageTank': ('tank', None),
+    'SulfuricAcidTank': ('tank', None),
+    'TALCrystallizer': ('crystallizer', 'BatchCrystallizer'),
+    'WasteVaporCondenser': ('hx_utility', 'HXutility'),
 }
 
-# Ordered (family, pattern): the first family whose pattern matches the
-# normalized text wins, so specific families precede generic ones (facility
-# before tank for "fire water tank"; splitter before solids_handling for
-# "screw press"; tank before mixer for "mix tank").
+# Table entries defined in Bioindustrial-Park rather than in biosteam; every
+# other entry is a core biosteam class (the curated core list).
+_NONCORE_CLASSES = frozenset({
+    'JetCooker', 'AlphaAmylaseTank', 'AmmoniaTank', 'CleaningSystem',
+    'CookedSlurrySurgeTank', 'CornStorage', 'DDGSCentrifuge', 'DDGSHandling',
+    'GrainHandling', 'LimeHopper', 'Liquefaction', 'LiquefactionTank',
+    'MilledCornHopper', 'MilledCornSurgeTank', 'MilledCornWeighTank',
+    'PlantAir_CIP_WasteWater_Facilities',
+    'SimultaneousSaccharificationFermentation', 'SlurryMixTank',
+    'WetDDGSConveyor', 'YeastTank', 'AcidulationReactor',
+    'AmmoniaAdditionTank', 'AmmoniaMixer', 'AmmoniaStorageTank',
+    'BatchCoFermentation', 'BlowdownDischargePump', 'CSLstorageTank',
+    'CoFermentation', 'ContinuousPresaccharification', 'DehydrationReactor',
+    'EnzymeHydrolysateMixer', 'GypsumFilter', 'HPPump', 'HPStorageTank',
+    'HydrogenationReactor', 'HydrolysateHeatExchanger', 'HydrolyzatePump',
+    'LimeStorage', 'LimeStorageBin', 'OligomerConversionTank',
+    'PretreatmentFlash', 'PretreatmentReactorSystem',
+    'RingOpeningHydrolysisReactor', 'Saccharification', 'SeedHoldTank',
+    'SeedTrain', 'SuccinicAcidCrystallizer', 'SulfuricAcidMixer',
+    'SulfuricAcidStorage', 'SulfuricAcidStorageTank', 'SulfuricAcidTank',
+    'TALCrystallizer', 'WasteVaporCondenser'})
+_CORE_CLASSES = frozenset(_CLASS_TABLE) - _NONCORE_CLASSES
+
+# Keyword fallback, in precedence order: the first family whose pattern
+# matches the (raw or CamelCase-split) lowercase text wins, so specific
+# families precede generic ones -- junction-like before everything;
+# turbogenerator/boiler before turbine; heat exchanger network before heat
+# exchanger; facilities (fire water tank) before tank; mixer settler and
+# steam mixer before mixer; MESH/multistage/adiabatic columns and absorbers
+# before distillation; combustor/dryer/equilibrium/aerated/batch reactors
+# and crystallizers before reactor; screw press and crushing mill (splitter) before screw and
+# mill (solids handling); mix tank (tank) before mix (mixer).
 _FAMILY_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
-    ('facility', r'boiler|turbogenerator|cooling tower|chilled water|'
-                 r'process water|waste ?water|\bcip\b|cip ?package|'
-                 r'fire ?water|air distribution|heat exchanger network|'
-                 r'facilit'),
+    ('junction', r'\bjunction|\bscaler\b|duplicator|mass balance|'
+                 r'diagram only|\bmock\b'),
+    ('boiler_turbogenerator', r'turbo ?generator|\bboiler\b'),
+    ('heat_exchanger_network', r'heat exchanger network|\bhxn\b'),
+    ('facility', r'cooling tower|chilled water|process water|waste ?water|'
+                 r'\bcip\b|cip ?package|fire ?water|air distribution|'
+                 r'plant air|facilit'),
+    ('extraction', r'mixer ?settler|extract|liquid ?liquid|\blle\b'),
+    ('steam_injection_heater', r'steam ?mixer|jet ?cooker|steam injection|'
+                               r'direct steam'),
+    ('staged_column', r'\bmesh\b|multi ?stage (?:equilibrium|vle)|'
+                      r'adiabatic multi|absor(?:ber|ption column)|stripper'),
+    ('combustor', r'combust|oxidi[sz]er|furnace|incinerat|burner'),
+    ('dryer', r'dryer|drier\b|drying'),
+    ('equilibrium_reactor', r'equilibrium reactor|gibbs'),
+    ('aerated_bioreactor', r'\baerated|gas ?fed'),
+    ('batch_bioreactor', r'batch ?(?:bio)?reactor|batch ?(?:co ?)?ferment|'
+                         r'\bssf\b|simultaneous saccharification'),
     ('hx_process', r'hx ?process|interchanger|economi[sz]er'),
     ('hx_utility', r'hx ?utilit|heat exchanger|heater|cooler|condenser|'
-                   r'reboiler'),
+                   r'reboiler|\bhx\b'),
     ('pump', r'pump'),
     ('valve', r'valve'),
     ('compressor', r'compress|blower'),
     ('turbine', r'turbine'),
-    ('evaporator', r'evaporator'),
+    ('evaporator', r'evaporat'),
     ('flash', r'flash'),
-    ('reactor', r'reactor|ferment|saccharif|digest|hydroly|\bssf\b|combust|'
-                r'liquefaction|oxidi[sz]er|\brx\b|\bmbr\b|seed train'),
+    ('crystallizer', r'crystalli'),
+    ('reactor', r'reactor|ferment|saccharif|digest|hydroly|liquefaction|'
+                r'\brx\b|\bmbr\b|seed train'),
     ('splitter', r'splitter|\bsplit|centrifuge|filter|\bpress\b|screen|'
-                 r'separator|decanter|dryer|settler|sieve|scrubber|clarifier|'
-                 r'adsorp|absor|membrane|cyclone|osmosis|thickener|'
-                 r'crystalli'),
-    ('distillation', r'distillation|column|stripper|rectifier'),
-    ('tank', r'tank|storage|vessel|hopper|\bsilo'),
+                 r'separator|decanter|settler|sieve|scrubber|clarifier|'
+                 r'adsorp|absorp|membrane|cyclone|osmosis|thickener|'
+                 r'crushing mill'),
+    ('distillation', r'distillation|column|rectifier'),
+    ('tank', r'tank|storage|vessel|hopper|\bsilo|\bbin\b'),
     ('solids_handling', r'convey|\bmill|crusher|grinder|screw|grain handling|'
                         r'hammer|handling|shredder|feeder'),
     ('mixer', r'mixer|\bmix\b|blend'),
@@ -605,8 +872,8 @@ _FAMILY_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
 
 
 def _normalized_texts(text):
-    """(raw lowercase, de-camelCased spaced lowercase) variants of a name, so
-    'HXutility' and 'GrainHandling' both match their keywords."""
+    """(raw lowercase, CamelCase-split spaced lowercase) variants of a name,
+    so 'HXutility' and 'GrainHandling' both match their keywords."""
     spaced = re.sub(r'(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', ' ',
                     text)
     spaced = re.sub(r'[\s_\-/]+', ' ', spaced).strip().lower()
@@ -614,8 +881,8 @@ def _normalized_texts(text):
 
 
 def _keyword_family(text):
-    """Family whose keyword pattern matches `text` (a unit_type or a class
-    name), or None."""
+    """Family whose keyword pattern (in _FAMILY_KEYWORDS precedence order)
+    matches `text` (a unit_type or a class name), or None."""
     if not _nonempty_str(text):
         return None
     variants = _normalized_texts(text)
@@ -626,67 +893,337 @@ def _keyword_family(text):
 
 
 def _class_family(class_name):
-    """Family of a known class: curated table, then keywords on its name."""
-    return _CLASS_FAMILY.get(class_name) or _keyword_family(class_name)
+    """Family of a known class: the curated table (whose 'Unit' entry
+    deliberately has none), else keywords on the class name."""
+    if class_name in _CLASS_TABLE:
+        return _CLASS_TABLE[class_name][0]
+    return _keyword_family(class_name)
 
 
-def _unit_class(unit, known_classes=frozenset()):
-    """(class_name or None, family or None, confidence) for one unit:
-    1.0 from design_simulation_method "Class on <source>" or a unit_type that
-    exactly names a known class; 0.5 when a unit_type keyword suggests only a
-    family; else (None, None, 0.0)."""
-    unit = _as_dict(unit)
-    dsm = unit.get('design_simulation_method')
+def _dsm_class(unit):
+    """(class name, source URL) from design_simulation_method "Class on
+    <URL>" (URL may be ''), else (None, None)."""
+    dsm = _as_dict(unit).get('design_simulation_method')
     match = _DSM_CLASS_RE.match(dsm) if isinstance(dsm, str) else None
-    if match:
-        name = match.group(1)
-        return name, _class_family(name), 1.0
+    return (match.group(1), match.group(2)) if match else (None, None)
+
+
+def _is_core_class(class_name, source=None):
+    """True for a core BioSTEAM class: its source URL is under the
+    BioSTEAMDevelopmentGroup/biosteam repository, or its name is on the
+    curated core list."""
+    if not _nonempty_str(class_name):
+        return False
+    if isinstance(source, str) and _BIOSTEAM_URL_RE.search(source):
+        return True
+    return class_name in _CORE_CLASSES
+
+
+def _infer_class_from_specs(unit, registry):
+    """(class name or None, family) of the design-spec registry entry whose
+    parameter set is the tightest superset of the unit's stated
+    design_input_specs keys. Equally tight entries sharing one family yield
+    that family with class None; None when the unit states no spec, nothing
+    contains the key set, or tied entries disagree on the family."""
+    keys = _explicit_keys(unit)
+    if not keys:
+        return None
+    best, tied = None, []
+    for name, entry in _as_dict(registry).items():
+        params = set(_as_dict(_as_dict(entry).get('design_input_spec_params')))
+        if not keys <= params:
+            continue
+        if best is None or len(params) < best:
+            best, tied = len(params), [name]
+        elif len(params) == best:
+            tied.append(name)
+    if len(tied) == 1:
+        return tied[0], _class_family(tied[0])
+    families = {_class_family(name) for name in tied}
+    return (None, families.pop()) if len(families) == 1 else None
+
+
+def _unit_class(unit, registry=None, pinned=False):
+    """(class_name or None, family or None, confidence) for one unit.
+
+    A class named by design_simulation_method "Class on <URL>", or by a
+    unit_type that exactly names a registry/table class, scores 1.0 when it
+    is a core BioSTEAM class or `pinned` (the flowsheet model package pins a
+    commit or version), else 0.75. Without a named class, a unique
+    tightest-superset match of the design_input_specs key set against the
+    registry infers the class (0.75); a unit_type keyword (or a family-only
+    key-set match) gives the family alone (0.5); else (None, None, 0.0)."""
+    unit = _as_dict(unit)
+    registry = _as_dict(registry)
+    name, source = _dsm_class(unit)
     unit_type = unit.get('unit_type')
     unit_type = unit_type.strip() if isinstance(unit_type, str) else None
-    if unit_type and (unit_type in known_classes or unit_type in _CLASS_FAMILY):
-        return unit_type, _class_family(unit_type), 1.0
-    family = _keyword_family(unit_type)
-    if family:
-        return None, family, 0.5
-    return None, None, 0.0
+    if name is None and unit_type and (unit_type in registry
+                                       or unit_type in _CLASS_TABLE):
+        name = unit_type
+    inferred = _infer_class_from_specs(unit, registry)
+    if name:
+        family = _class_family(name)
+        if family is None and name not in _CLASS_TABLE and inferred:
+            family = inferred[1]
+        return name, family, 1.0 if _is_core_class(name, source) or pinned else 0.75
+    if inferred and inferred[0]:
+        return inferred[0], inferred[1], 0.75
+    family = _keyword_family(unit_type) or (inferred[1] if inferred else None)
+    return (None, family, 0.5) if family else (None, None, 0.0)
+
+
+def _registry_class(class_name, family, unit, registry):
+    """Design-spec registry class a unit is measured against (CMP-UOP-03):
+    the exact class if listed, else the curated table's registry_class, else
+    the key-set inference when it agrees with the unit's family; or None."""
+    registry = _as_dict(registry)
+    if class_name in registry:
+        return class_name
+    ancestor = _CLASS_TABLE.get(class_name, (None, None))[1]
+    if ancestor in registry:
+        return ancestor
+    inferred = _infer_class_from_specs(unit, registry)
+    if inferred and inferred[0] and (family is None or inferred[1] == family):
+        return inferred[0]
+    return None
+
+
+def _family_weight(family):
+    """Per-unit weight of a family (UNKNOWN_FAMILY_WEIGHT when unknown)."""
+    return FAMILY_WEIGHTS.get(family, UNKNOWN_FAMILY_WEIGHT)
+
+
+def _unit_weight(sc, position):
+    """Weight of unit `position` in every per-unit average (R1.6); shared by
+    the unit-operation, topology, thermo and costing criteria."""
+    return _family_weight(sc.unit_classes[position][1])
+
+
+def _wmean(pairs):
+    """Weighted mean of (value, weight) pairs; None when the weights sum to
+    zero (or there are no pairs)."""
+    pairs = list(pairs)
+    total = sum(w for _v, w in pairs)
+    return sum(v * w for v, w in pairs) / total if total else None
+
+
+def _is_cost_free(class_name, family):
+    """True when a unit of this class/family carries no purchase cost by
+    default: a COST_FREE_CLASSES class, or a COST_FREE_FAMILIES family unless
+    the class is a known @cost-decorated subclass."""
+    if class_name in COST_FREE_CLASSES:
+        return True
+    return family in COST_FREE_FAMILIES and class_name not in _COSTED_CLASSES
+
+
+def _core_class_known(sc, position):
+    """True when unit `position` is a core BioSTEAM class identified at
+    confidence 1 (BioSTEAM then supplies the class's own defaults, design and
+    cost methods)."""
+    name, _family, confidence = sc.unit_classes[position]
+    return bool(name) and confidence == 1.0 and sc.unit_core[position]
 
 #%% Essential operating-specification rules (CMP-UOP-02 / CMP-UOP-03)
 
-# One requirement: `n` of `keys` must be explicit design_input_specs. derive
-# maps a key to the conditions (all must hold) under which its value is
-# derivable from other data; see _condition_holds.
-_Req = namedtuple('_Req', 'n keys derive')
+# One requirement: `n` of `keys` must be explicit design_input_specs.
+#   derive    -- key -> conditions (all must hold) under which its value is
+#                derivable from other data; see _condition_holds.
+#   when      -- a data condition gating the whole requirement (None: always);
+#                a condition that cannot be evaluated does not apply it.
+#   guard     -- key -> 'T'|'P'|'T_main': an explicit value must agree with
+#                every non-empty outlet stream ('T_main': with the
+#                largest-flow outlet only) -- T within GUARD_T_ABS K, P within
+#                GUARD_P_RTOL relative -- or the requirement scores 0.
+#   counts_if -- key -> condition: the explicit key counts only if it holds.
+_Req = namedtuple('_Req', 'n keys derive when guard counts_if',
+                  defaults=(None, None, None))
 
-_P_FROM_OUTLET = _Req(1, ('P',), {'P': ('outlet_P',)})
+GUARD_T_ABS = 1.0    # K
+GUARD_P_RTOL = 0.01  # relative
 
+# Reactor T is checked against the main (largest-flow) outlet only: auxiliary
+# outlets such as a spent-catalyst purge are not set to T by BioSTEAM.
+_T_REQ = _Req(1, ('T',), {'T': ('outlet_T',)}, guard={'T': 'T_main'})
+# Unguarded T: BioSTEAM's NREL-type batch bioreactors mix their inlets
+# adiabatically (effluent.mix_from(ins)), so the outlets sit at the mixed-inlet
+# temperature while T only sets the heat-utility temperature.
+_T_FREE = _Req(1, ('T',), {'T': ('outlet_T',)})
+_P_REQ = _Req(1, ('P',), {'P': ('outlet_P',)}, guard={'P': 'P'})
+_P_FREE = _Req(1, ('P',), {'P': ('outlet_P',)})
+_TAU = _Req(1, ('tau',), {})
+_V_WF = _Req(1, ('V_wf',), {})
+_SPLIT = _Req(1, ('split',), {'split': ('all_ports_state',)})
+_ETA = _Req(1, ('eta',), {})
+_T_OR_Q = _Req(1, ('T', 'Q'), {'T': ('outlet_T',), 'Q': ('enthalpy',)},
+               guard={'T': 'T'})
+_FEED_STAGES_DEFAULT = _Req(1, ('feed_stages',),
+                            {'feed_stages': ('class_default',)})
+
+# Family rules (Revision 1, R1.4), checked against the biosteam source.
 _FAMILY_RULES = {
-    'mixer': (), 'facility': (), 'solids_handling': (),
-    'splitter': (_Req(1, ('split',), {'split': ('all_ports_state',)}),),
+    'mixer': (), 'solids_handling': (), 'facility': (), 'junction': (),
+    'combustor': (),
+    'splitter': (_SPLIT,),
+    'dryer': (_SPLIT,),
+    # MultiStageMixerSettlers: N_stages required, feed_stages default (0, -1);
+    # the LLE split itself is computed from the thermo (or partition_data).
+    'extraction': (_Req(1, ('N_stages',), {}), _FEED_STAGES_DEFAULT),
     'flash': (_Req(2, ('T', 'P', 'V', 'Q', 'y', 'x'),
                    {'T': ('outlet_T',), 'P': ('outlet_P',),
-                    'V': ('all_ports_state',)}),),
-    'hx_utility': (_Req(1, ('T', 'V', 'H'), {'T': ('outlet_T',)}),),
+                    'V': ('all_ports_state',), 'Q': ('enthalpy',)},
+                   guard={'T': 'T', 'P': 'P'}),),
+    # HXutility: one of T/H (V alone is a full spec only when rigorous);
+    # non-rigorous, T does not move the phase, so a phase change needs V.
+    'hx_utility': (_Req(1, ('T', 'H', 'V'), {'T': ('outlet_T',)},
+                        guard={'T': 'T'}, counts_if={'V': 'rigorous'}),
+                   _Req(1, ('V',), {'V': ('outlet_phases',)},
+                        when='phase_change_nonrigorous')),
+    # HXprocess: one of dT / T_lim / H_lim; when the phases change, the
+    # enforced outlet phases phase0 / phase1 (else a VLE decides them).
     'hx_process': (_Req(1, ('dT', 'T_lim0', 'T_lim1', 'H_lim0', 'H_lim1'),
-                        {'T_lim0': ('outlet_T',)}),),
-    'pump': (_Req(1, ('P', 'dP_design'), {'P': ('outlet_P',)}),),
-    'valve': (_P_FROM_OUTLET,),
-    'compressor': (_P_FROM_OUTLET, _Req(1, ('eta',), {})),
-    'turbine': (_P_FROM_OUTLET, _Req(1, ('eta',), {})),
+                        {'T_lim0': ('outlet_T',)}),
+                   _Req(1, ('phase0', 'phase1'), {'phase0': ('outlet_phases',)},
+                        when='phase_change')),
+    'steam_injection_heater': (_Req(1, ('T', 'P'), {'T': ('outlet_T',)}),),
+    # Pump: P None -> outlet P = inlet P, and dP_design then sizes the pump.
+    'pump': (_P_REQ, _Req(1, ('dP_design',), {}, when='no_pressure_rise')),
+    'valve': (_P_REQ,),
+    'compressor': (_P_REQ, _ETA),
+    'turbine': (_P_REQ, _ETA),
     'distillation': (
         _Req(1, ('LHK',), {}),
-        _P_FROM_OUTLET,
+        _P_FREE,
         _Req(1, ('Lr', 'y_top'), {'Lr': ('all_ports_state', 'explicit:LHK')}),
         _Req(1, ('Hr', 'x_bot'), {'Hr': ('all_ports_state', 'explicit:LHK')}),
-        _Req(1, ('k', 'Rmin'), {'k': ('design_result:Reflux',)})),
-    'evaporator': (_P_FROM_OUTLET,
+        _Req(1, ('k',), {'k': ('design_result:Reflux',
+                               'design_result:Minimum reflux')}),
+        _Req(1, ('partial_condenser',),
+             {'partial_condenser': ('outlet_phases',)})),
+    # MESHDistillation: N_stages and feed_stages required; the top needs
+    # reflux, the bottom boilup or bottoms_product_to_feed (or explicit
+    # stage_specifications for either).
+    'staged_column': (
+        _Req(1, ('N_stages',), {}),
+        _Req(1, ('feed_stages',), {}),
+        _Req(1, ('reflux', 'stage_specifications'), {}),
+        _Req(1, ('boilup', 'bottoms_product_to_feed', 'stage_specifications'),
+             {}),
+        _P_FREE),
+    'evaporator': (_Req(1, ('P',), {}),
                    _Req(1, ('V',), {'V': ('all_ports_state',)})),
-    'reactor': (_Req(1, ('T',), {'T': ('outlet_T',)}), _Req(1, ('tau',), {})),
-    'tank': (_Req(1, ('tau',), {}),),
+    'reactor': (_T_REQ, _TAU, _V_WF),
+    # NREL batch bioreactors: either N or V_max (V in older biosteam); tau_0
+    # (cleaning and unloading time) is a class attribute default; T is the
+    # heat-utility temperature, not the (adiabatic-mix) outlet temperature.
+    'batch_bioreactor': (
+        _T_FREE, _TAU,
+        _Req(1, ('N', 'V', 'V_max'),
+             {'N': ('design_result:Number of reactors',),
+              'V': ('design_result:Reactor volume',)}),
+        _Req(1, ('tau_0',), {'tau_0': ('class_default',)})),
+    # AeratedBioreactor: the O2 transfer (and so the air flow and compressor)
+    # is solved from the reactions' O2 uptake against the dissolved-O2 target
+    # theta_O2, a fraction of saturation defaulting to 0.5. Q_O2_consumption
+    # only forces the duty per O2 consumed, so it is not an alternative.
+    'aerated_bioreactor': (
+        _T_REQ, _TAU, _V_WF,
+        _Req(1, ('theta_O2',), {'theta_O2': ('class_default',)})),
+    'equilibrium_reactor': (_T_REQ, _P_FREE),
+    # BatchCrystallizer: T (default 305.15 K), tau, and N or V.
+    'crystallizer': (_T_REQ, _TAU, _Req(1, ('N', 'V'), {})),
+    'tank': (_TAU,),
+    'boiler_turbogenerator': (_Req(1, ('boiler_efficiency',), {}),
+                              _Req(1, ('turbogenerator_efficiency',), {})),
+    'heat_exchanger_network': (_Req(1, ('T_min_app',), {}),),
 }
 
-# Families that need no operating specification (excluded from CMP-UOP-02).
-_UNSPECIFIED_FAMILIES = frozenset(f for f, rules in _FAMILY_RULES.items()
-                                  if not rules)
+# Class-level rules where a class's real degrees of freedom differ from its
+# family's (looked up by class name, then by its registry class).
+_CLASS_RULES = {
+    'AdiabaticMultiStageVLEColumn': (_Req(1, ('N_stages',), {}),
+                                     _Req(1, ('solute',), {}),
+                                     _FEED_STAGES_DEFAULT, _P_FREE),
+    'MultiStageEquilibrium': (_Req(1, ('N_stages', 'stages'), {}),
+                              _FEED_STAGES_DEFAULT, _P_FREE),
+    # single-stage LLE: the split is computed from the thermo
+    'MixerSettler': (), 'LLEUnit': (), 'LLECentrifuge': (), 'LLESettler': (),
+    'LiquidsSettler': (), 'MagneticSeparator': (), 'PhaseSplitter': (),
+    'CO2Compression': (), 'FluidizedCatalyticCracking': (),
+    'LiquidsPartitionSettler': (_Req(1, ('partition_coefficients',), {}),
+                                _Req(1, ('partition_IDs',), {})),
+    'LiquidsRatioCentrifuge': (_Req(1, ('K_chemicals',), {}),
+                               _Req(1, ('Ks',), {})),
+    'SLLECentrifuge': (_Req(1, ('solids_split',),
+                            {'solids_split': ('all_ports_state',)}),),
+    'SolidLiquidsSplitCentrifuge': (
+        _Req(1, ('solids_split',), {'solids_split': ('all_ports_state',)}),
+        _Req(1, ('aqueous_split',), {'aqueous_split': ('all_ports_state',)})),
+    'VentScrubber': (_Req(1, ('gas',), {'gas': ('all_ports_state',)}),),
+    'AmineAbsorption': (_Req(1, ('CO2_recovery',), {}),),
+    'SingleComponentAdsorptionColumn': (
+        _Req(1, ('cycle_time',), {}), _Req(1, ('adsorbate',), {}),
+        _Req(1, ('isotherm_model',), {}), _Req(1, ('isotherm_args',), {})),
+    # GasFedBioreactor: gas_substrates is a required argument; the dissolved
+    # gas target theta (fraction of saturation) defaults to 0.5.
+    'GasFedBioreactor': (_T_REQ, _TAU, _V_WF,
+                         _Req(1, ('gas_substrates',), {}),
+                         _Req(1, ('theta',), {'theta': ('class_default',)})),
+    'SplitFlash': (_SPLIT, _T_OR_Q, _P_REQ),
+    'SinglePhaseStage': (_T_OR_Q,),
+    'ReactivePhaseStage': (_T_OR_Q,),
+    # StageEquilibrium: phases is required; one stage specification (T, Q/Duty,
+    # B/Boilup, Reflux or F/Flow) passed as a keyword, adiabatic (Q = 0) by
+    # default. PhasePartition is its internal partition: phases only.
+    'StageEquilibrium': (
+        _Req(1, ('phases',), {}),
+        _Req(1, ('T', 'Temperature', 'Q', 'Duty', 'B', 'Boilup', 'Reflux', 'F',
+                 'Flow'), {'T': ('outlet_T',), 'Q': ('class_default',)},
+             guard={'T': 'T'})),
+    'PhasePartition': (_Req(1, ('phases',), {}),),
+    'MultistageCompressor': (
+        _Req(1, ('pr', 'compressors'), {'pr': ('outlet_P',)}),
+        _Req(1, ('n_stages', 'compressors'), {}),
+        _Req(1, ('eta', 'compressors'), {})),
+    # SteamMixer: P required (it picks the steam agent); T optional.
+    'SteamMixer': (_Req(1, ('P',), {'P': ('outlet_P',)}),),
+    'SprayDryer': (_Req(1, ('moisture_content',),
+                        {'moisture_content': ('all_ports_state',)}),),
+    # corn Liquefaction: a MixTank with a class-fixed reaction; T is the
+    # mixed-inlet temperature, not a specification.
+    'Liquefaction': (_TAU, _V_WF),
+    # biosteam.wastewater: sized by loading rates, not tau / V_wf; digestion
+    # chemistry and splits are class defaults.
+    'AnMBR': (_Req(1, ('T',), {'T': ('outlet_T',)}),
+              _Req(1, ('reactor_type',), {'reactor_type': ('class_default',)})),
+    'PolishingFilter': (_Req(1, ('T',), {'T': ('outlet_T',)}),
+                        _Req(1, ('OLR', 'HLR'), {'OLR': ('class_default',)})),
+    'InternalCirculationRx': (
+        _Req(1, ('T',), {'T': ('outlet_T',)}),
+        _Req(1, ('OLRall',), {'OLRall': ('class_default',)}),
+        _Req(1, ('V_wf',), {'V_wf': ('class_default',)})),
+    'AnaerobicDigestion': (_Req(1, ('sludge_split',),
+                                {'sludge_split': ('class_default',)}),),
+    'AerobicDigestion': (_Req(1, ('evaporation',),
+                              {'evaporation': ('class_default',)}),),
+}
+
+
+def _unit_rules(sc, position):
+    """Essential requirements of unit `position`: class-level rules (by class,
+    then registry class), else its family's; None when the family is
+    unknown."""
+    name, family, _conf = sc.unit_classes[position]
+    for key in (name, sc.unit_registry_classes[position]):
+        if key in _CLASS_RULES:
+            return _CLASS_RULES[key]
+    return _FAMILY_RULES.get(family)
+
+
+def _spec_population(sc):
+    """Positions of units that need operating specifications (CMP-UOP-02 and
+    CMP-UOP-05): unknown family, or a non-empty rule set."""
+    return [p for p in range(len(sc.units)) if _unit_rules(sc, p) != ()]
 
 
 def _explicit_keys(unit):
@@ -695,8 +1232,67 @@ def _explicit_keys(unit):
     return {k for k, v in specs.items() if v is not None}
 
 
-def _condition_holds(condition, sc, unit, explicit):
-    """Evaluate one derivation condition for `unit` (see _FAMILY_RULES)."""
+def _stream_value(stream, part):
+    """Numeric temperature ('T') or pressure ('P') of a stream, or None."""
+    sp = _as_dict(_as_dict(stream).get('stream_properties'))
+    return _num(sp.get({'T': 'temperature', 'P': 'pressure'}[part]))
+
+
+def _phase_set(stream):
+    """Phases carrying flow in a stream (per-phase shape, or legacy flat
+    composition entries tagged with a phase); a zero-flow stream -> empty
+    set; None when the stream has no phase data."""
+    sp = _as_dict(_as_dict(stream).get('stream_properties'))
+    total = _total_flow(sp)
+    if total is not None and abs(total) <= ZERO_FLOW:
+        return frozenset()
+    phases = sp.get('phases')
+    if isinstance(phases, dict) and phases:
+        found = set()
+        for symbol, phase in phases.items():
+            phase = _as_dict(phase)
+            flow = _total_flow(phase)
+            if (flow is None and _as_list(phase.get('composition'))) \
+                    or (flow is not None and abs(flow) > ZERO_FLOW):
+                found.add(symbol)
+        return frozenset(found)
+    entries = _dicts(sp.get('composition'))
+    if entries and all(_nonempty_str(e.get('phase')) for e in entries):
+        return frozenset(e['phase'] for e in entries
+                         if (_entry_fraction(e) or 0.0) > 0.0)
+    return None
+
+
+def _phase_change(sc, unit_id):
+    """True/False: the phases present over a unit's outlets differ from those
+    over its inlets; None when a port lacks phase data or a side is empty."""
+    sides = []
+    for index in (sc.unit_inlets, sc.unit_outlets):
+        streams = index.get(unit_id, []) if isinstance(unit_id, str) else []
+        sets = [_phase_set(sc.streams[i]) for i in streams]
+        if not sets or any(s is None for s in sets):
+            return None
+        sides.append(frozenset().union(*sets))
+    return sides[0] != sides[1]
+
+
+def _pressure_rise(sc, unit_id):
+    """min outlet P - max inlet P of a unit, or None when a port states no
+    pressure or a side is empty."""
+    values = []
+    for index in (sc.unit_inlets, sc.unit_outlets):
+        streams = index.get(unit_id, []) if isinstance(unit_id, str) else []
+        ps = [_stream_value(sc.streams[i], 'P') for i in streams]
+        if not ps or any(p is None for p in ps):
+            return None
+        values.append(ps)
+    return min(values[1]) - max(values[0])
+
+
+def _condition_holds(condition, sc, position, explicit):
+    """Evaluate one derivation / counts_if condition for unit `position`
+    (see _Req)."""
+    unit = sc.units[position]
     uid = unit.get('id')
     if condition == 'outlet_T':
         return sc.all_outlets_have(uid, 'T')
@@ -704,6 +1300,15 @@ def _condition_holds(condition, sc, unit, explicit):
         return sc.all_outlets_have(uid, 'P')
     if condition == 'all_ports_state':
         return sc.all_ports_full(uid)
+    if condition == 'enthalpy':
+        return sc.all_ports_have_enthalpy(uid)
+    if condition == 'outlet_phases':
+        return sc.all_outlets_phased(uid)
+    if condition == 'class_default':
+        name, _family, confidence = sc.unit_classes[position]
+        return bool(name) and confidence == 1.0
+    if condition == 'rigorous':
+        return _as_dict(unit.get('design_input_specs')).get('rigorous') is True
     if condition.startswith('explicit:'):
         return condition.split(':', 1)[1] in explicit
     if condition.startswith('design_result:'):
@@ -712,48 +1317,131 @@ def _condition_holds(condition, sc, unit, explicit):
     raise ValueError(f'unknown derivation condition {condition!r}')
 
 
-def _requirement_score(req, sc, unit, explicit):
-    """Explicit keys earn 1 each, derivable keys DERIVED_CREDIT, up to n:
+def _requirement_applies(req, sc, position):
+    """Whether a (possibly conditional) requirement applies to unit
+    `position`; a condition not evaluable from the data does not apply it."""
+    if req.when is None:
+        return True
+    unit = sc.units[position]
+    uid = unit.get('id')
+    if req.when == 'phase_change':
+        return _phase_change(sc, uid) is True
+    if req.when == 'phase_change_nonrigorous':
+        if _as_dict(unit.get('design_input_specs')).get('rigorous') is True:
+            return False
+        return _phase_change(sc, uid) is True
+    if req.when == 'no_pressure_rise':
+        rise = _pressure_rise(sc, uid)
+        return rise is not None and rise < 1.0
+    raise ValueError(f'unknown requirement condition {req.when!r}')
+
+
+def _counted_keys(req, sc, position, explicit):
+    """Explicit keys of `req` that count (counts_if conditions hold)."""
+    gates = req.counts_if or {}
+    return {k for k in req.keys if k in explicit
+            and (k not in gates
+                 or _condition_holds(gates[k], sc, position, explicit))}
+
+
+def _main_outlet(streams):
+    """[the stream with the largest numeric total flow] (first on ties;
+    streams without a flow rank last), or [] for no streams."""
+    if not streams:
+        return []
+    flow = lambda s: _total_flow(_as_dict(s.get('stream_properties')))
+    return [max(streams, key=lambda s: (flow(s) is not None,
+                                        abs(flow(s) or 0.0)))]
+
+
+def _inconsistent_keys(req, sc, position, explicit):
+    """Guarded explicit keys whose value disagrees with a non-empty outlet
+    stream's T (> GUARD_T_ABS K) or P (> GUARD_P_RTOL relative); a 'T_main'
+    guard checks the largest-flow outlet only."""
+    if not req.guard:
+        return []
+    unit = sc.units[position]
+    specs = _as_dict(unit.get('design_input_specs'))
+    uid = unit.get('id')
+    outs = [sc.streams[i] for i in
+            (sc.unit_outlets.get(uid, []) if isinstance(uid, str) else [])
+            if not _is_empty_stream(sc.streams[i])]
+    bad = []
+    for key, part in req.guard.items():
+        value = _num(specs.get(key)) if key in explicit else None
+        if value is None or (part == 'P' and value <= 0):
+            continue
+        streams = outs
+        if part == 'T_main':
+            streams, part = _main_outlet(outs), 'T'
+        for stream in streams:
+            actual = _stream_value(stream, part)
+            if actual is None:
+                continue
+            off = abs(actual - value)
+            if off > (GUARD_T_ABS if part == 'T' else GUARD_P_RTOL * abs(value)):
+                bad.append(key)
+                break
+    return bad
+
+
+def _requirement_score(req, sc, position, explicit):
+    """0 when a guarded explicit key is inconsistent with the outlets; else
+    explicit keys earn 1 each, derivable keys DERIVED_CREDIT, up to n:
     (min(e, n) + DERIVED_CREDIT * min(d, n - min(e, n))) / n."""
-    e = min(sum(k in explicit for k in req.keys), req.n)
+    if _inconsistent_keys(req, sc, position, explicit):
+        return 0.0
+    counted = _counted_keys(req, sc, position, explicit)
+    e = min(len(counted), req.n)
     d = sum(1 for key, conditions in req.derive.items()
-            if key not in explicit
-            and all(_condition_holds(c, sc, unit, explicit) for c in conditions))
+            if key not in counted
+            and all(_condition_holds(c, sc, position, explicit)
+                    for c in conditions))
     return (e + DERIVED_CREDIT * min(d, req.n - e)) / req.n
 
 
-def _requirement_locator(label, req, score):
+def _requirement_locator(label, req, score, inconsistent=()):
     count = 'one' if req.n == 1 else str(req.n)
-    note = ' (only derivable from stream data)' if score > 0 else ''
+    if inconsistent:
+        note = (f" (inconsistent: {', '.join(inconsistent)} disagrees with "
+                f"the outlet stream)")
+    elif score > 0:
+        note = ' (only derivable)'
+    else:
+        note = ''
     return f"{label}.design_input_specs: {count} of {'|'.join(req.keys)}{note}"
 
 
 def _unit_spec_score(sc, position):
-    """(score, missing) of one unit against its family's essential rules;
-    an unknown family scores 0 (no way to know what to specify)."""
+    """(score, missing) of one unit against its essential rules; an unknown
+    family scores 0 (no way to know what to specify); (None, []) when no
+    requirement applies."""
     unit, label = sc.units[position], sc.unit_labels[position]
-    family = sc.unit_classes[position][1]
-    rules = _FAMILY_RULES.get(family)
+    rules = _unit_rules(sc, position)
     if rules is None:
         return 0.0, [f'{label}: unit family unknown, so its essential '
                      f'specifications cannot be determined']
     explicit = _explicit_keys(unit)
     scores, missing = [], []
     for req in rules:
-        score = _requirement_score(req, sc, unit, explicit)
+        if not _requirement_applies(req, sc, position):
+            continue
+        score = _requirement_score(req, sc, position, explicit)
         scores.append(score)
         if score < 1.0:
-            missing.append(_requirement_locator(label, req, score))
+            bad = _inconsistent_keys(req, sc, position, explicit)
+            missing.append(_requirement_locator(label, req, score, bad))
     return _mean(scores), missing
 
 
-def _excused_params(family, explicit):
+def _excused_params(sc, position, explicit):
     """Registry params excused for CMP-UOP-03: the unstated alternatives of
-    every family requirement already satisfied explicitly (an HXutility with T
-    set excuses V and H)."""
+    every essential requirement of unit `position` already satisfied by
+    explicit keys that count (an HXutility with T set excuses V and H; a
+    non-rigorous V alone excuses nothing)."""
     excused = set()
-    for req in _FAMILY_RULES.get(family, ()):
-        if sum(k in explicit for k in req.keys) >= req.n:
+    for req in _unit_rules(sc, position) or ():
+        if len(_counted_keys(req, sc, position, explicit)) >= req.n:
             excused.update(k for k in req.keys if k not in explicit)
     return excused
 
@@ -825,8 +1513,18 @@ class _ScoringContext:
         self.isolated, self.internal = topo['isolated'], topo['internal']
         self.unit_inlets, self.unit_outlets = topo['inlets'], topo['unit_outlets']
 
-        known = frozenset(self.registry) | frozenset(_CLASS_FAMILY)
-        self.unit_classes = [_unit_class(u, known) for u in self.units]
+        # Unit class identity: (class, family, confidence) per unit, whether
+        # the class is core BioSTEAM, and its design-spec registry class.
+        pinned = _pinned(_as_dict(self.metadata.get('reproducibility'))
+                         .get('flowsheet_model_package'))
+        self.unit_classes = [_unit_class(u, self.registry, pinned)
+                             for u in self.units]
+        self.unit_core = [_is_core_class(name, _dsm_class(u)[1])
+                          for u, (name, _f, _c) in zip(self.units,
+                                                       self.unit_classes)]
+        self.unit_registry_classes = [
+            _registry_class(name, family, u, self.registry)
+            for u, (name, family, _c) in zip(self.units, self.unit_classes)]
         self.reactions = [(i, j, r) for i, u in enumerate(self.units)
                           for j, r in enumerate(_as_list(u.get('reactions')))
                           if isinstance(r, dict)]
@@ -857,6 +1555,22 @@ class _ScoringContext:
         ports = self.unit_inlets.get(unit_id, []) + self.unit_outlets.get(unit_id, [])
         return bool(ports) and all(all(self.stream_states[i].values())
                                    for i in ports)
+
+    def all_ports_have_enthalpy(self, unit_id):
+        """Unit has >=1 connected stream and each states a numeric
+        stream_properties.enthalpy_flow."""
+        if not isinstance(unit_id, str):
+            return False
+        ports = self.unit_inlets.get(unit_id, []) + self.unit_outlets.get(unit_id, [])
+        return bool(ports) and all(
+            _num(_as_dict(self.streams[i].get('stream_properties'))
+                 .get('enthalpy_flow')) is not None for i in ports)
+
+    def all_outlets_phased(self, unit_id):
+        """Unit has >=1 outlet stream and each carries phase data."""
+        outs = self.unit_outlets.get(unit_id, []) if isinstance(unit_id, str) else []
+        return bool(outs) and all(_phase_set(self.streams[i]) is not None
+                                  for i in outs)
 
 #%% Criteria -- thermo
 
@@ -984,15 +1698,16 @@ _TPP_KEYS = ('mixture', 'gamma', 'phi', 'PCF')
 def _score_thm_06(sc):  # CMP-THM-06
     if not sc.units:
         return None, 'no units', []
-    scores, missing = [], []
-    for unit, label in zip(sc.units, sc.unit_labels):
+    pairs, missing = [], []
+    for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
         tpp = _as_dict(unit.get('thermo_property_package'))
         absent = [k for k in _TPP_KEYS if not _filled(tpp.get(k))]
-        scores.append(1.0 - len(absent) / len(_TPP_KEYS))
+        pairs.append((1.0 - len(absent) / len(_TPP_KEYS),
+                      _unit_weight(sc, position)))
         missing.extend(f'{label}.thermo_property_package.{k}' for k in absent)
-    full = scores.count(1.0)
-    return (_mean(scores), f'{full} of {len(scores)} unit(s) state a full '
-            f'property package', missing)
+    full = sum(1 for score, _w in pairs if score == 1.0)
+    return (_wmean(pairs), f'{full} of {len(pairs)} unit(s) state a full '
+            f'property package (family-weighted)', missing)
 
 
 def _score_thm_07(sc):  # CMP-THM-07
@@ -1038,21 +1753,85 @@ def _score_top_01(sc):  # CMP-TOP-01
             f'{len(sc.units)} unit(s) attached', missing)
 
 
+# Port-order conventions (Revision 1, R1.11), per (family, side). Order-free
+# sides never need an order; single-port sides hold one stream by convention.
+_ORDER_FREE_SIDES = frozenset({('mixer', 'ins'), ('tank', 'ins'),
+                               ('junction', 'ins'), ('junction', 'outs')})
+_SINGLE_PORT_SIDES = frozenset({
+    ('pump', 'ins'), ('pump', 'outs'), ('valve', 'ins'), ('valve', 'outs'),
+    ('hx_utility', 'ins'), ('hx_utility', 'outs'),
+    ('compressor', 'ins'), ('compressor', 'outs'),
+    ('turbine', 'ins'), ('turbine', 'outs'), ('tank', 'outs'),
+    ('mixer', 'outs'), ('splitter', 'ins'), ('flash', 'ins'),
+    ('steam_injection_heater', 'outs')})
+
+
+def _side_streams(sc, position, side):
+    """Stream positions on one side ('ins'/'outs') of unit `position`."""
+    uid = sc.units[position].get('id')
+    index = sc.unit_inlets if side == 'ins' else sc.unit_outlets
+    return index.get(uid, []) if isinstance(uid, str) else []
+
+
+def _port_order_derivable(sc, position, side):
+    """Whether the order of a multi-stream side follows from the data: flash
+    outs (exactly one all-vapor and one all-liquid outlet), splitter outs
+    (explicit split + full port states), distillation outs (explicit LHK +
+    outlet compositions), HXprocess sides (all four streams carry
+    composition)."""
+    family = sc.unit_classes[position][1]
+    explicit = _explicit_keys(sc.units[position])
+    streams = _side_streams(sc, position, side)
+    if family == 'flash' and side == 'outs':
+        sets = [_phase_set(sc.streams[i]) for i in streams]
+        vapor = sum(1 for s in sets if s == frozenset({'g'}))
+        liquid = sum(1 for s in sets if s and s <= {'l', 'L'})
+        return len(streams) == 2 and vapor == 1 and liquid == 1
+    if family == 'splitter' and side == 'outs':
+        return 'split' in explicit and sc.all_ports_full(sc.units[position].get('id'))
+    if family == 'distillation' and side == 'outs':
+        return 'LHK' in explicit and all(sc.stream_states[i]['composition']
+                                         for i in streams)
+    if family == 'hx_process':
+        ports = _side_streams(sc, position, 'ins') + _side_streams(sc, position, 'outs')
+        return len(ports) == 4 and all(sc.stream_states[i]['composition']
+                                       for i in ports)
+    return False
+
+
+def _side_credit(sc, position, side):
+    """(credit, missing locator or None) for the port order of one unit side:
+    order-free -> 1; <=1 stream -> 1 on a single-port side, else
+    DERIVED_CREDIT (unexported ports may exist); several streams ->
+    DERIVED_CREDIT when derivable, else 0."""
+    family, label = sc.unit_classes[position][1], sc.unit_labels[position]
+    n = len(_side_streams(sc, position, side))
+    if (family, side) in _ORDER_FREE_SIDES:
+        return 1.0, None
+    if n <= 1:
+        if (family, side) in _SINGLE_PORT_SIDES:
+            return 1.0, None
+        return DERIVED_CREDIT, (f'{label}.{side}: port index not representable '
+                                f'(unexported ports may exist)')
+    if _port_order_derivable(sc, position, side):
+        return DERIVED_CREDIT, (f'{label}.{side}: order of {n} streams not '
+                                f'representable (derivable from stream data)')
+    return 0.0, f'{label}.{side}: order of {n} streams not representable'
+
+
 def _score_top_02(sc):  # CMP-TOP-02
     if not sc.units:
         return None, 'no units', []
-    credits, missing = [], []
-    for unit, label in zip(sc.units, sc.unit_labels):
-        uid = unit.get('id')
-        for side, index in (('ins', sc.unit_inlets), ('outs', sc.unit_outlets)):
-            n = len(index.get(uid, [])) if isinstance(uid, str) else 0
-            credits.append(1.0 if n <= 1 else 0.0)
-            if n > 1:
-                missing.append(f'{label}.{side}: order of {n} streams not '
-                               f'representable')
-    ok = int(sum(credits))
-    return (_mean(credits), f'not representable; {ok} of {len(credits)} '
-            f'unit port side(s) unambiguous (<=1 stream)', missing)
+    pairs, missing = [], []
+    for position in range(len(sc.units)):
+        for side in ('ins', 'outs'):
+            credit, locator = _side_credit(sc, position, side)
+            pairs.append((credit, _unit_weight(sc, position)))
+            if locator:
+                missing.append(locator)
+    ok = sum(1 for credit, _w in pairs if credit == 1.0)
+    return (_wmean(pairs), f'not representable; {ok} of {len(pairs)} unit '
+            f'port side(s) unambiguous by convention', missing)
 
 #%% Criteria -- feeds
 
@@ -1067,13 +1846,29 @@ def _state_missing(sc, positions):
     return _mean(scores), missing
 
 
+def _feed_weights(sc):
+    """Per-feed weight 0.5 / N + 0.5 * mass-flow share (R1.6), in sc.feeds
+    order; the shares are equal unless every feed states a numeric
+    total_mass_flow with a positive sum."""
+    n = len(sc.feeds)
+    flows = [_num(_as_dict(sc.streams[i].get('stream_properties'))
+                  .get('total_mass_flow')) for i in sc.feeds]
+    total = (sum(abs(f) for f in flows)
+             if all(f is not None for f in flows) else 0.0)
+    shares = [abs(f) / total for f in flows] if total > 0 else [1.0 / n] * n
+    return [0.5 / n + 0.5 * share for share in shares]
+
+
 def _score_feed_01(sc):  # CMP-FEED-01
     if not sc.feeds:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
                 ['streams: no feed (source_unit_id "None", sink a unit)'])
-    score, missing = _state_missing(sc, sc.feeds)
+    _score, missing = _state_missing(sc, sc.feeds)
+    pairs = [(sum(sc.stream_states[i].values()) / len(sc.stream_states[i]), w)
+             for i, w in zip(sc.feeds, _feed_weights(sc))]
     full = sum(1 for i in sc.feeds if all(sc.stream_states[i].values()))
-    return score, f'{full} of {len(sc.feeds)} feed(s) fully stated', missing
+    return (_wmean(pairs), f'{full} of {len(sc.feeds)} feed(s) fully stated '
+            f'(flow-weighted)', missing)
 
 
 def _is_empty_stream(stream):
@@ -1095,58 +1890,75 @@ def _score_feed_02(sc):  # CMP-FEED-02
 
 #%% Criteria -- unit operations
 
+def _class_note(sc, position):
+    """Why unit `position` did not identify its class at confidence 1, as a
+    missing locator, or None when it did."""
+    unit, label = sc.units[position], sc.unit_labels[position]
+    name, family, confidence = sc.unit_classes[position]
+    if confidence == 1.0:
+        return None
+    if confidence == 0.75:
+        stated = name in (_dsm_class(unit)[0], unit.get('unit_type'))
+        if stated:
+            return (f"{label}: custom class '{name}' is not core BioSTEAM and "
+                    f"metadata.reproducibility.flowsheet_model_package pins "
+                    f"no commit|version")
+        return (f"{label}.design_simulation_method: class not stated "
+                f"('{name}' inferred from the design_input_specs keys)")
+    if confidence == 0.5:
+        return (f"{label}.design_simulation_method: class not stated (family "
+                f"'{family}' inferred from unit_type / spec keys)")
+    return (f"{label}: class unresolved (unit_type {unit.get('unit_type')!r} "
+            f"names no known class or family)")
+
+
 def _score_uop_01(sc):  # CMP-UOP-01
     if not sc.units:
         return None, 'no units', []
-    missing = []
-    for (name, family, confidence), unit, label in zip(
-            sc.unit_classes, sc.units, sc.unit_labels):
-        if confidence == 0.5:
-            missing.append(f"{label}.design_simulation_method: class not "
-                           f"stated (family '{family}' inferred from unit_type)")
-        elif confidence == 0.0:
-            missing.append(f"{label}: class unresolved (unit_type "
-                           f"{unit.get('unit_type')!r} names no known class or "
-                           f"family)")
+    missing = [note for note in (_class_note(sc, p) for p in range(len(sc.units)))
+               if note]
     exact = sum(1 for c in sc.unit_classes if c[2] == 1.0)
-    return (_mean(c[2] for c in sc.unit_classes),
-            f'{exact} of {len(sc.units)} unit(s) identify an exact class', missing)
+    pairs = [(c[2], _unit_weight(sc, p)) for p, c in enumerate(sc.unit_classes)]
+    return (_wmean(pairs), f'{exact} of {len(sc.units)} unit(s) identify their '
+            f'class at confidence 1 (family-weighted)', missing)
 
 
 def _score_uop_02(sc):  # CMP-UOP-02
-    scores, missing = [], []
-    for position, (_name, family, _conf) in enumerate(sc.unit_classes):
-        if family in _UNSPECIFIED_FAMILIES:
-            continue
+    pairs, missing = [], []
+    for position in _spec_population(sc):
         score, unit_missing = _unit_spec_score(sc, position)
-        scores.append(score)
+        if score is None:
+            continue
+        pairs.append((score, _unit_weight(sc, position)))
         missing.extend(unit_missing)
-    if not scores:
+    if not pairs:
         return None, 'no units that need operating specifications', []
-    full = scores.count(1.0)
-    return (_mean(scores), f'{full} of {len(scores)} applicable unit(s) fully '
-            f'specified', missing)
+    full = sum(1 for score, _w in pairs if score == 1.0)
+    return (_wmean(pairs), f'{full} of {len(pairs)} applicable unit(s) fully '
+            f'specified (family-weighted)', missing)
 
 
 def _score_uop_03(sc):  # CMP-UOP-03
     if sc.registry_error:
         raise RuntimeError(f'design-spec registry unavailable: '
                            f'{sc.registry_error}')
-    scores, missing = [], []
-    for unit, label, (name, family, _conf) in zip(sc.units, sc.unit_labels,
-                                                    sc.unit_classes):
-        entry = _as_dict(sc.registry.get(name)) if name else {}
+    pairs, missing = [], []
+    for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
+        registry_class = sc.unit_registry_classes[position]
+        entry = _as_dict(sc.registry.get(registry_class)) if registry_class else {}
         params = list(_as_dict(entry.get('design_input_spec_params')))
         if not params:
             continue
         explicit = _explicit_keys(unit)
-        needed = [p for p in params if p not in _excused_params(family, explicit)]
+        excused = _excused_params(sc, position, explicit)
+        needed = [p for p in params if p not in excused]
         absent = [p for p in needed if p not in explicit]
-        scores.append(1.0 - len(absent) / len(needed) if needed else 1.0)
+        pairs.append((1.0 - len(absent) / len(needed) if needed else 1.0,
+                      _unit_weight(sc, position)))
         missing.extend(f'{label}.design_input_specs.{p}' for p in absent)
-    if not scores:
-        return None, 'no unit has an exact design-spec registry class', []
-    return (_mean(scores), f'{len(scores)} unit(s) with a registry class; '
+    if not pairs:
+        return None, 'no unit resolves to a design-spec registry class', []
+    return (_wmean(pairs), f'{len(pairs)} unit(s) with a registry class; '
             f'{len(missing)} registry param(s) unstated', missing)
 
 
@@ -1158,6 +1970,25 @@ def _score_uop_04(sc):  # CMP-UOP-04
     full = sum(1 for i in positions if all(sc.stream_states[i].values()))
     return (score, f'{full} of {len(positions)} internal/product stream(s) '
             f'fully stated', missing)
+
+
+def _score_uop_05(sc):  # CMP-UOP-05
+    # Derived credit needs the class at confidence 1 AND a known family: the
+    # bare base class 'Unit' has no specification conventions to imply units.
+    pairs, missing = [], []
+    for position in _spec_population(sc):
+        name, family, confidence = sc.unit_classes[position]
+        known = bool(name) and confidence == 1.0 and family is not None
+        pairs.append((DERIVED_CREDIT if known else 0.0,
+                      _unit_weight(sc, position)))
+        missing.append(f'{sc.unit_labels[position]}.design_input_specs: '
+                       f'quantity units not representable'
+                       + (' (fixed by class conventions)' if known else ''))
+    if not pairs:
+        return None, 'no units that need operating specifications', []
+    known = sum(1 for credit, _w in pairs if credit)
+    return (_wmean(pairs), f'not representable; units implied by class '
+            f'conventions for {known} of {len(pairs)} unit(s)', missing)
 
 #%% Criteria -- reactions
 
@@ -1189,17 +2020,19 @@ def _species_change(sc, unit_id):
 
 
 def _reactive_reason(sc, position):
-    """Why a unit counts as reactive for CMP-RXN-01, or None. Facilities are
-    exempt from the species-appearance evidence: their balances are not
-    process balances (a process-water center or boiler discards and makes up
-    species internally), so a vanishing species there is not a reaction."""
+    """Why a unit counts as reactive for CMP-RXN-01, or None. Families with
+    class-implied chemistry (facilities, combustors, boilers, Gibbs reactors,
+    dryers) are exempt from the species-appearance evidence: their balances
+    are fixed by the class (a process-water center discards and makes up
+    species internally), so a vanishing species there is not an undeclared
+    reaction."""
     unit = sc.units[position]
     family = sc.unit_classes[position][1]
-    if family == 'reactor':
+    if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
     if _dicts(unit.get('reactions')):
         return 'declares reactions'
-    if family == 'facility':
+    if family in CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return None
     change = _species_change(sc, unit.get('id'))
     return ', '.join(change[:3]) if change else None
@@ -1616,6 +2449,7 @@ _CRITERIA = {
     'CMP-FEED-01': _score_feed_01, 'CMP-FEED-02': _score_feed_02,
     'CMP-UOP-01': _score_uop_01, 'CMP-UOP-02': _score_uop_02,
     'CMP-UOP-03': _score_uop_03, 'CMP-UOP-04': _score_uop_04,
+    'CMP-UOP-05': _score_uop_05,
     'CMP-RXN-01': _score_rxn_01, 'CMP-RXN-02': _score_rxn_02,
     'CMP-RXN-03': _score_rxn_03, 'CMP-RXN-04': _score_rxn_04,
     'CMP-COST-01': _score_cost_01, 'CMP-COST-02': _score_cost_02,
