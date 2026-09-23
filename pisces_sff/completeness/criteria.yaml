@@ -30,7 +30,13 @@
 # it is not applicable) follows from structure -- units and their families,
 # streams, referenced chemicals, reactive units -- and absent data within the
 # population scores 0, so deleting a value from a consistent document does not
-# raise the score (pinned by a Tier 1 deletion-monotonicity test).
+# raise the score. Favorable treatment (full or derived credit, exclusion
+# from a population) follows the same rule: it may rest on data only when
+# deleting that data leaves the unit or stream in the population with no
+# more credit than before (a core class at confidence 1 stays in CMP-COST-04
+# and scores 1; an empty feed stays in CMP-FEED-01 and scores 1). Pinned by
+# deletion-monotonicity tests on a synthetic document (Tier 1) and on the
+# corpus (Tier 5).
 
 categories:
   thermo: Thermodynamic basis (chemicals and property package)
@@ -185,8 +191,12 @@ criteria:
       subsystem with a reduced chemical set, or a different activity model),
       the importer must know which chemical set each unit binds so streams
       crossing the boundary can be converted. The property-package id names
-      that set; the criterion applies only when units declare more than one
-      distinct package.
+      that set. Applies whenever the flowsheet has units (whether it is
+      multi-thermo is itself data a deletion could remove): per unit, 1 when
+      its package states an id; derived credit when every unit states a full
+      package (mixture, gamma, phi and PCF) and all of them are identical,
+      which is single-thermo evidence implying one chemical set; else 0.
+      Family-weighted.
 
   # ---------------------------------------------------------------- topology
   - id: CMP-TOP-01
@@ -247,12 +257,15 @@ criteria:
       In BioSTEAM's sequential-modular solve the feeds are the degrees of
       freedom: every feed's temperature, pressure, flow rate and composition
       must be set before System.simulate, and every other stream is computed
-      from them. A flowsheet with no feed defines no problem, so it scores
-      zero; this is the heaviest single criterion. Feeds weigh equally; a
-      feed whose state says it is empty (total flow numerically zero, an
-      unused placeholder port) is not counted, while a feed whose flow is
-      unknown is. (Weighting by mass-flow share was dropped: deleting a large
-      feed's flow switched to equal weights and could raise the score.)
+      from them. A flowsheet with no feed, or none of whose feeds states a
+      non-zero flow, defines no problem (nothing sets its scale), so it
+      scores zero whether the flows are stated as zero or not stated; this is
+      the heaviest single criterion. Feeds weigh equally and every feed
+      counts: one whose state says it is empty (total flow numerically zero,
+      an unused placeholder port) scores 1, since its zero flow states all
+      such a port needs, and a feed whose flow is unknown scores its stated
+      parts. (Leaving empty feeds out, or weighting by mass-flow share, let
+      deleting a flow raise the score.)
 
   - id: CMP-FEED-02
     category: feeds
@@ -266,8 +279,10 @@ criteria:
     rationale: >-
       Stream.price on feeds and products drives the material cost and sales
       revenue of the TEA, and therefore every minimum selling price or NPV.
-      Each non-empty boundary stream needs a price; an explicit zero is a
-      valid statement, except on a feed into a utility port (the fuel or air
+      Every boundary stream counts: an empty one (total flow numerically
+      zero) needs no price and scores 1; every other one needs a price. An
+      explicit zero is a valid statement, except on a feed into a utility
+      port (the fuel or air
       inlet of a combustor, boiler-turbogenerator or dryer): BioSTEAM prices
       a zero-priced port from bst.stream_prices, which SFF cannot state, so
       it earns half credit.
@@ -335,12 +350,15 @@ criteria:
       coefficient, number of shells, working-volume fraction, tray spacing,
       ...) change its design and purchase cost. Left unstated, BioSTEAM
       silently applies its own defaults, which may differ from the original
-      model. Coverage is measured against the design-spec registry entry of
-      the unit's class, else of its nearest registry ancestor (a corn storage
-      tank against StorageTank), else of the entry its specification keys
-      identify; unstated alternatives of an essential requirement already met
-      (V and H for an HXutility given T) are excused. Units are
-      family-weighted.
+      model. A unit whose class is known exactly (identified at confidence 1)
+      is measured against the design-spec registry entry of its class, else
+      of its nearest registry ancestor (a corn storage tank against
+      StorageTank); unstated alternatives of an essential requirement already
+      met (V and H for an HXutility given T) are excused. Such a unit that no
+      registry entry covers is left out (a gap in the scorer's vocabulary,
+      not in the file). Every other unit -- class inferred from its
+      specification keys, family only, or unknown -- scores 0 because its
+      parameter universe is unknown. Units are family-weighted.
 
   - id: CMP-UOP-04
     category: unit_ops
@@ -422,9 +440,12 @@ criteria:
     rationale: >-
       The same list of reactions yields different outlets as a
       ParallelReaction (every conversion based on the inlet) or a
-      SeriesReaction (each based on the previous result). When a unit carries
-      two or more reactions, an index on every reaction is the minimal signal
-      of their order.
+      SeriesReaction (each based on the previous result). Scored per
+      reactive unit (as CMP-RXN-01 defines them, family-weighted): with two
+      or more reactions, an index on every reaction is the minimal signal of
+      their order (1, else 0); a single reaction has no order to state (1);
+      a reactive unit without reactions scores 0, since its reaction set and
+      so their order are unknown.
 
   - id: CMP-RXN-04
     category: reactions
@@ -477,9 +498,10 @@ criteria:
     rationale: >-
       Installed cost is purchase cost times the bare-module factors (design,
       pressure and material factors included), and the TEA's fixed capital
-      investment is built on installed equipment cost. Each purchase-cost item
-      of a costed unit needs its installed counterpart; a costed unit with no
-      items scores 0. Family-weighted.
+      investment is built on installed equipment cost. Each cost item of a
+      costed unit (every item named by its purchase costs, installed costs or
+      correlations) needs its installed cost; a costed unit with no items
+      scores 0. Family-weighted.
 
   - id: CMP-COST-03
     category: costing
@@ -512,11 +534,12 @@ criteria:
       installation factor, power rate). With it a consumer can re-cost the
       equipment at a different size or cost year; a custom_function entry only
       records that a procedural cost model exists, so it earns half credit.
-      Needed only where BioSTEAM cannot re-cost the unit itself: scored over
-      the cost items of costed units whose class is not a core BioSTEAM
-      class identified at confidence 1 (a core class recomputes its costs
-      from its design results); such a unit with no cost items scores 0.
-      Family-weighted.
+      Scored per costed unit: a core BioSTEAM class identified at confidence
+      1 scores 1, because BioSTEAM re-derives its cost from its class and
+      design results; any other costed unit scores the mean credit over its
+      cost items (every item named by its purchase costs, installed costs or
+      correlations, so deleting one entry never drops an item), and 0 when it
+      has none. Family-weighted.
 
   - id: CMP-COST-05
     category: costing
@@ -565,9 +588,10 @@ criteria:
       (Unit.equipment_lifetime, or a per-item lifetime set with @cost), and
       the TEA charges the replacement purchases, so lifetimes change the
       capital schedule. SFF has no unit-level field; only a correlation item
-      can carry one. Per costed unit: 1 when it has correlation items and
-      every one states a lifetime; derived credit for a core BioSTEAM class
-      identified at confidence 1 (its class default applies); else 0.
+      can carry one. Per costed unit: 1 when it has cost items (named by its
+      purchase costs, installed costs or correlations) and every one has a
+      correlation stating a lifetime; derived credit for a core BioSTEAM
+      class identified at confidence 1 (its class default applies); else 0.
       Family-weighted.
 
   # --------------------------------------------------------------- utilities

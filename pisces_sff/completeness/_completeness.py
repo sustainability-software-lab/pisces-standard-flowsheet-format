@@ -1041,16 +1041,28 @@ def _unit_class(unit, registry=None, pinned=False):
     return (None, family, 0.5) if family else (None, None, 0.0)
 
 
-def _registry_class(class_name, family, unit, registry):
-    """Design-spec registry class a unit is measured against (CMP-UOP-03):
-    the exact class if listed, else the curated table's registry_class, else
-    the key-set inference when it agrees with the unit's family; or None."""
+def _declared_registry_class(class_name, registry):
+    """Design-spec registry entry of a named class: the class itself if
+    listed, else the curated table's registry_class if listed; or None. Uses
+    no key-set inference, so it is what CMP-UOP-03 measures a unit whose
+    class is known exactly against."""
     registry = _as_dict(registry)
+    if not _nonempty_str(class_name):
+        return None
     if class_name in registry:
         return class_name
     ancestor = _CLASS_TABLE.get(class_name, (None, None))[1]
-    if ancestor in registry:
-        return ancestor
+    return ancestor if ancestor in registry else None
+
+
+def _registry_class(class_name, family, unit, registry):
+    """Design-spec registry class a unit's essential rules resolve through:
+    the exact class if listed, else the curated table's registry_class, else
+    the key-set inference when it agrees with the unit's family; or None."""
+    registry = _as_dict(registry)
+    declared = _declared_registry_class(class_name, registry)
+    if declared:
+        return declared
     inferred = _infer_class_from_specs(unit, registry)
     if inferred and inferred[0] and (family is None or inferred[1] == family):
         return inferred[0]
@@ -1847,19 +1859,39 @@ def _score_thm_06(sc):  # CMP-THM-06
             f'property package (family-weighted)', missing)
 
 
+def _single_full_package(packages):
+    """True when every package states all of _TPP_KEYS and all of them agree
+    on those descriptors: single-thermo evidence, so one chemical set is
+    implied even where no package names it (CMP-THM-07)."""
+    return bool(packages) and all(
+        all(_filled(p.get(k)) for k in _TPP_KEYS) for p in packages) and len(
+        {tuple(str(p.get(k)) for k in _TPP_KEYS) for p in packages}) == 1
+
+
 def _score_thm_07(sc):  # CMP-THM-07
-    declaring = [(unit, label) for unit, label in zip(sc.units, sc.unit_labels)
-                 if any(_filled(_as_dict(unit.get('thermo_property_package')).get(k))
-                        for k in _TPP_KEYS)]
-    packages = {tuple(str(_as_dict(u.get('thermo_property_package')).get(k))
-                      for k in _TPP_KEYS) for u, _l in declaring}
-    if len(packages) <= 1:
-        return None, 'units do not declare more than one property package', []
-    missing = [f'{label}.thermo_property_package.id' for unit, label in declaring
-               if not _filled(_as_dict(unit.get('thermo_property_package')).get('id'))]
-    ok = len(declaring) - len(missing)
-    return (ok / len(declaring), f'{len(packages)} distinct packages; {ok} of '
-            f'{len(declaring)} unit(s) name their chemical set', missing)
+    # Applicable whenever units exist (R1.0): whether the flowsheet is
+    # multi-thermo is itself data a deletion could remove, so it only decides
+    # the derived credit, never the population.
+    if not sc.units:
+        return None, 'no units', []
+    packages = [_as_dict(u.get('thermo_property_package')) for u in sc.units]
+    single = _single_full_package(packages)
+    pairs, missing = [], []
+    for position, (package, label) in enumerate(zip(packages, sc.unit_labels)):
+        if _filled(package.get('id')):
+            credit = 1.0
+        else:
+            credit = DERIVED_CREDIT if single else 0.0
+            missing.append(f'{label}.thermo_property_package.id'
+                           + (' (one full package shared by every unit: '
+                              'a single chemical set is implied)'
+                              if single else ''))
+        pairs.append((credit, _unit_weight(sc, position)))
+    named = sum(1 for p in packages if _filled(p.get('id')))
+    return (_wmean(pairs), f'{named} of {len(packages)} unit(s) name their '
+            f'chemical set' + ('; every unit shares one full property package '
+                               '(single thermo implied)' if single else '')
+            + ' (family-weighted)', missing)
 
 #%% Criteria -- topology
 
@@ -1989,26 +2021,38 @@ def _is_empty_stream(stream):
     return total is not None and abs(total) <= ZERO_FLOW
 
 
+def _states_flow(stream):
+    """True when a stream states a numeric total flow that is not zero."""
+    total = _total_flow(_as_dict(stream.get('stream_properties')))
+    return total is not None and abs(total) > ZERO_FLOW
+
+
 def _score_feed_01(sc):  # CMP-FEED-01
-    # Equal weights. Feeds whose state says they are EMPTY (total flow
-    # numerically 0: unused placeholder ports) are left out; a feed whose
-    # flow is unknown stays in. (A mass-share weighting was dropped: deleting
-    # a large feed's flow switched it to equal weights and could raise the
-    # score.)
+    # Equal weights; every feed counts (R1.0). A feed whose state says it is
+    # EMPTY (total flow numerically 0: an unused placeholder port) scores 1 --
+    # the zero flow states all such a port needs -- so deleting that flow can
+    # only lower its credit (excluding it instead let the deletion move it
+    # into the population and raise the score). With no feed stating a
+    # non-zero flow nothing sets the problem's scale: 0 whether the flows
+    # are stated zero or unstated, so neither writing zeros nor deleting
+    # them can raise the score. (A mass-share weighting was dropped too:
+    # deleting a large feed's flow switched it to equal weights.)
     if not sc.feeds:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
                 ['streams: no feed (source_unit_id "None", sink a unit)'])
-    feeds = [i for i in sc.feeds if not _is_empty_stream(sc.streams[i])]
-    if not feeds:
-        return (0.0, f'all {len(sc.feeds)} feed(s) are empty (zero flow): '
-                f'nothing defines the degrees of freedom',
-                ['streams: no non-empty feed'])
-    score, missing = _state_missing(sc, feeds)
-    full = sum(1 for i in feeds if all(sc.stream_states[i].values()))
-    skipped = len(sc.feeds) - len(feeds)
-    return (score, f'{full} of {len(feeds)} non-empty feed(s) fully stated'
-            + (f' ({skipped} empty feed(s) not counted)' if skipped else ''),
-            missing)
+    if not any(_states_flow(sc.streams[i]) for i in sc.feeds):
+        return (0.0, f'none of {len(sc.feeds)} feed(s) states a non-zero '
+                f'flow: nothing defines the degrees of freedom',
+                ['streams: no feed with a non-zero total_mass_flow|'
+                 'total_molar_flow'])
+    empty = [i for i in sc.feeds if _is_empty_stream(sc.streams[i])]
+    stated = [i for i in sc.feeds if i not in empty]
+    score, missing = _state_missing(sc, stated)
+    score = (score * len(stated) + len(empty)) / len(sc.feeds)
+    full = sum(1 for i in stated if all(sc.stream_states[i].values()))
+    return (score, f'{full + len(empty)} of {len(sc.feeds)} feed(s) fully '
+            f'stated' + (f' ({len(empty)} empty, stated by their zero flow)'
+                         if empty else ''), missing)
 
 
 def _utility_port_feed(sc, position):
@@ -2022,13 +2066,21 @@ def _utility_port_feed(sc, position):
 
 
 def _score_feed_02(sc):  # CMP-FEED-02
-    positions = [i for i in sc.feeds + sc.outlets
-                 if not _is_empty_stream(sc.streams[i])]
+    # Every boundary stream counts (R1.0); an EMPTY one (total flow
+    # numerically 0) needs no price and scores 1, so deleting its flow (or
+    # its stream_properties) can only lower its credit -- excluding it let
+    # that deletion move a priced empty stream into the population.
+    positions = sc.feeds + sc.outlets
     if not positions:
-        return None, 'no non-empty boundary streams', []
+        return None, 'no boundary streams', []
     feeds = set(sc.feeds)
     scores, missing = [], []
+    empty = 0
     for i in positions:
+        if _is_empty_stream(sc.streams[i]):
+            empty += 1
+            scores.append(1.0)
+            continue
         price = _num(sc.streams[i].get('price'))
         port = _utility_port_feed(sc, i) if i in feeds else None
         if price is None:
@@ -2043,9 +2095,11 @@ def _score_feed_02(sc):  # CMP-FEED-02
                            f'representable)')
         else:
             scores.append(1.0)
-    ok = scores.count(1.0)
-    return (_mean(scores), f'{ok} of {len(positions)} non-empty boundary '
-            f'stream(s) priced', missing)
+    ok = scores.count(1.0) - empty
+    return (_mean(scores), f'{ok} of {len(positions) - empty} non-empty '
+            f'boundary stream(s) priced' + (f' ({empty} empty, needing no '
+                                            f'price)' if empty else ''),
+            missing)
 
 #%% Criteria -- unit operations
 
@@ -2101,9 +2155,23 @@ def _score_uop_03(sc):  # CMP-UOP-03
     if sc.registry_error:
         raise RuntimeError(f'design-spec registry unavailable: '
                            f'{sc.registry_error}')
-    pairs, missing = [], []
+    # Population by need (R1.0): every unit, except one whose class is known
+    # exactly but that the registry does not list (a scorer vocabulary gap,
+    # not a file gap). A unit whose class is not known exactly (inferred from
+    # its spec keys, family only, unknown) scores 0: its parameter universe
+    # is unknown -- measuring it against a key-set-inferred entry let deleting
+    # design_simulation_method pick a tighter entry and raise the coverage.
+    pairs, missing, unknown = [], [], 0
     for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
-        registry_class = sc.unit_registry_classes[position]
+        name, _family, confidence = sc.unit_classes[position]
+        weight = _unit_weight(sc, position)
+        if not (name and confidence == 1.0):
+            unknown += 1
+            pairs.append((0.0, weight))
+            missing.append(f'{label}: class not identified at confidence 1, '
+                           f'so its design-spec parameter universe is unknown')
+            continue
+        registry_class = _declared_registry_class(name, sc.registry)
         entry = _as_dict(sc.registry.get(registry_class)) if registry_class else {}
         params = list(_as_dict(entry.get('design_input_spec_params')))
         if not params:
@@ -2112,13 +2180,15 @@ def _score_uop_03(sc):  # CMP-UOP-03
         excused = _excused_params(sc, position, explicit)
         needed = [p for p in params if p not in excused]
         absent = [p for p in needed if p not in explicit]
-        pairs.append((1.0 - len(absent) / len(needed) if needed else 1.0,
-                      _unit_weight(sc, position)))
+        pairs.append((1.0 - len(absent) / len(needed) if needed else 1.0, weight))
         missing.extend(f'{label}.design_input_specs.{p}' for p in absent)
     if not pairs:
-        return None, 'no unit resolves to a design-spec registry class', []
-    return (_wmean(pairs), f'{len(pairs)} unit(s) with a registry class; '
-            f'{len(missing)} registry param(s) unstated', missing)
+        return (None, 'no units, or every unit is a known class the '
+                'design-spec registry does not list', [])
+    return (_wmean(pairs), f'{len(pairs) - unknown} unit(s) measured against '
+            f'their registry class, {unknown} with no class known exactly '
+            f'(score 0); {len(missing) - unknown} registry param(s) unstated '
+            f'(family-weighted)', missing)
 
 
 def _score_uop_04(sc):  # CMP-UOP-04
@@ -2271,22 +2341,34 @@ def _score_rxn_02(sc):  # CMP-RXN-02
 
 
 def _score_rxn_03(sc):  # CMP-RXN-03
-    multi = [p for p, u in enumerate(sc.units)
-             if len(_dicts(u.get('reactions'))) >= 2]
-    if not multi:
-        return None, 'no unit carries two or more reactions', []
-    pairs, missing = [], []
-    for position in multi:
+    # Population = the reactive units (R1.0), not the units that happen to
+    # carry >= 2 reactions: deleting a unit's reactions must not turn the
+    # criterion not-applicable. Per unit: >= 2 reactions -> 1 when every one
+    # is indexed, else 0; exactly one -> 1 (no order to state); none -> 0
+    # (its reaction set, and so their order, is unknown).
+    reactive = _reactive_units(sc)
+    if not reactive:
+        return None, 'no reactive units', []
+    pairs, missing, multi = [], [], 0
+    for position, reason in reactive:
         label = sc.unit_labels[position]
-        unindexed = [ri for ri, r in enumerate(_dicts(sc.units[position]
-                                                      .get('reactions')))
-                     if isinstance(r.get('index'), bool)
-                     or not isinstance(r.get('index'), int)]
+        reactions = _dicts(sc.units[position].get('reactions'))
+        if not reactions:
+            pairs.append((0.0, _unit_weight(sc, position)))
+            missing.append(f'{label}.reactions: none declared ({reason}), so '
+                           f'their series/parallel order is unknown')
+            continue
+        multi += len(reactions) >= 2
+        unindexed = [ri for ri, r in enumerate(reactions)
+                     if len(reactions) >= 2 and (
+                         isinstance(r.get('index'), bool)
+                         or not isinstance(r.get('index'), int))]
         pairs.append((0.0 if unindexed else 1.0, _unit_weight(sc, position)))
         missing.extend(f'{label}.reactions[{ri}].index' for ri in unindexed)
     ok = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{ok} of {len(multi)} multi-reaction unit(s) '
-            f'index every reaction', missing)
+    return (_wmean(pairs), f'{ok} of {len(reactive)} reactive unit(s) state '
+            f'their reaction order ({multi} with two or more reactions; '
+            f'family-weighted)', missing)
 
 
 def _reaction_coefficients(sc, reaction):
@@ -2385,6 +2467,24 @@ def _correlation(unit, item):
     return _as_dict(_as_dict(unit.get('purchase_cost_correlations')).get(item))
 
 
+_COST_ITEM_KEYS = ('purchase_costs', 'installed_costs',
+                   'purchase_cost_correlations')
+
+
+def _unit_cost_items(unit):
+    """Cost items of one unit: the keys of purchase_costs, installed_costs
+    and purchase_cost_correlations, first occurrence first. The per-item
+    populations of CMP-COST-02/04/07 use this union (R1.0): deleting an item
+    from one object (say, a poorly correlated item's purchase cost) leaves it
+    in the population instead of dropping it and raising the unit's mean."""
+    items = []
+    for key in _COST_ITEM_KEYS:
+        for item in _as_dict(unit.get(key)):
+            if item not in items:
+                items.append(item)
+    return items
+
+
 _NO_COSTED_UNITS = 'no costed units (no units, or all are cost-free mixers/splitters)'
 
 
@@ -2419,10 +2519,10 @@ def _score_cost_01(sc):  # CMP-COST-01
 
 
 def _cost_02_unit(sc, position):
-    """CMP-COST-02 of one costed unit: fraction of its purchase-cost items
-    with a numeric installed cost; no items -> 0."""
+    """CMP-COST-02 of one costed unit: fraction of its cost items
+    (_unit_cost_items) with a numeric installed cost; no items -> 0."""
     unit, label = sc.units[position], sc.unit_labels[position]
-    items = list(_as_dict(unit.get('purchase_costs')))
+    items = _unit_cost_items(unit)
     if not items:
         return 0.0, [f'{label}.purchase_costs: no items (so no installed costs)']
     installed = _as_dict(unit.get('installed_costs'))
@@ -2475,11 +2575,15 @@ _CORRELATION_CREDIT = {'power_law': 1.0, 'custom_function': 0.5}
 
 
 def _cost_04_unit(sc, position):
-    """CMP-COST-04 of one costed unit: mean correlation credit over its
-    purchase-cost items (power_law 1, custom_function 0.5, none 0); no items
+    """CMP-COST-04 of one costed unit: 1 for a core BioSTEAM class identified
+    at confidence 1 (BioSTEAM re-derives its cost from its class and design
+    results); else the mean correlation credit over its cost items
+    (_unit_cost_items; power_law 1, custom_function 0.5, none 0); no items
     -> 0."""
+    if _core_class_known(sc, position):
+        return 1.0, []
     unit, label = sc.units[position], sc.unit_labels[position]
-    items = list(_as_dict(unit.get('purchase_costs')))
+    items = _unit_cost_items(unit)
     if not items:
         return 0.0, [f'{label}.purchase_costs: no items to correlate']
     scores, missing = [], []
@@ -2494,17 +2598,19 @@ def _cost_04_unit(sc, position):
 
 
 def _score_cost_04(sc):  # CMP-COST-04
-    # Only units BioSTEAM cannot re-cost itself: a core class identified at
-    # confidence 1 recomputes its costs from its design results.
-    positions = [p for p in sc.costed if not _core_class_known(sc, p)]
-    if not positions:
-        return (None, 'every costed unit is a core BioSTEAM class (costs '
-                'recomputed from design results)' if sc.costed
-                else _NO_COSTED_UNITS, [])
-    score, missing, ok = _per_costed_unit(sc, _cost_04_unit, positions)
-    return (score, f'{ok} of {len(positions)} costed unit(s) outside core '
-            f'BioSTEAM carry power-law correlations for every item '
-            f'(family-weighted)', missing)
+    # Every costed unit (R1.0). A core class identified at confidence 1 stays
+    # in the population and scores 1 -- BioSTEAM re-derives its cost from its
+    # class and design results -- so deleting the statement that identifies
+    # it (design_simulation_method) can only lower its credit; excluding it
+    # instead let that deletion move it into the population and raise the
+    # score.
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
+    score, missing, ok = _per_costed_unit(sc, _cost_04_unit)
+    core = sum(1 for p in sc.costed if _core_class_known(sc, p))
+    return (score, f'{ok} of {len(sc.costed)} costed unit(s) re-costable: '
+            f'{core} core BioSTEAM class(es) at confidence 1, the rest by '
+            f'power-law correlations for every item (family-weighted)', missing)
 
 
 def _back_derivable(unit, item, cost):
@@ -2566,14 +2672,14 @@ def _score_cost_06(sc):  # CMP-COST-06
 
 
 def _cost_07_unit(sc, position):
-    """CMP-COST-07 of one costed unit: 1 when it has correlation items and
-    every one states a numeric lifetime; else DERIVED_CREDIT for a core class
-    at confidence 1 (class default lifetime); else 0."""
+    """CMP-COST-07 of one costed unit: 1 when it has cost items
+    (_unit_cost_items) and every one has a correlation stating a numeric
+    lifetime; else DERIVED_CREDIT for a core class at confidence 1 (class
+    default lifetime); else 0."""
     unit, label = sc.units[position], sc.unit_labels[position]
-    correlations = [_as_dict(c) for c in
-                    _as_dict(unit.get('purchase_cost_correlations')).values()]
-    if correlations and all(_num(c.get('lifetime')) is not None
-                            for c in correlations):
+    items = _unit_cost_items(unit)
+    if items and all(_num(_correlation(unit, item).get('lifetime')) is not None
+                     for item in items):
         return 1.0, []
     if _core_class_known(sc, position):
         return DERIVED_CREDIT, [f'{label}: equipment lifetime not stated '

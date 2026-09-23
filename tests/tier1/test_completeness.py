@@ -1479,18 +1479,46 @@ class TestThermoCriteria(unittest.TestCase):
                         dict(spec_unit("Pump"), id="P1")]
         self.assertEqual(run(C._score_thm_06, doc)[0], 0.75)
 
-    def test_thm_07_multi_thermo_identity(self):
-        """_score_thm_07 (CMP-THM-07): one package -> None; two distinct
-        packages, one unit naming its id -> 0.5."""
+    def test_single_full_package(self):
+        """_single_full_package: every package full (mixture, gamma, phi,
+        PCF) and identical -> True; a differing descriptor, a blank or
+        missing one, or no packages -> False; ids are ignored."""
+        full = {k: "x" for k in C._TPP_KEYS}
+        self.assertTrue(C._single_full_package([full, dict(full, id="a")]))
+        self.assertFalse(C._single_full_package([full, dict(full, gamma="y")]))
+        self.assertFalse(C._single_full_package([full, dict(full, PCF=" ")]))
+        partial = dict(full)
+        del partial["phi"]
+        self.assertFalse(C._single_full_package([partial, partial]))
+        self.assertFalse(C._single_full_package([]))
+
+    def test_thm_07_chemical_set_identity(self):
+        """_score_thm_07 (CMP-THM-07), applicable whenever units exist: no
+        units -> None; two pumps sharing one full package without ids ->
+        DERIVED_CREDIT each (single thermo implied, 2 locators); P1 naming
+        its id -> (1 + 0.75) / 2; a descriptor deleted from P2 (single-thermo
+        evidence gone) -> (1 + 0) / 2 with P2's id as the only locator; two
+        distinct full packages, neither with an id -> 0 (not N/A); a unit
+        without any package -> 0."""
+        self.assertIsNone(run(C._score_thm_07, {})[0])
+        full = {k: "x" for k in C._TPP_KEYS}
         doc = valid_doc()
-        doc["units"][0]["thermo_property_package"] = {"mixture": "a"}
-        self.assertIsNone(run(C._score_thm_07, doc)[0])
-        doc["units"].append({"id": "U2", "unit_type": "Mixer",
-                             "thermo_property_package": {"mixture": "b",
-                                                         "id": "set2"}})
+        doc["units"] = [dict(spec_unit("Pump"), id=uid,
+                             thermo_property_package=dict(full))
+                        for uid in ("P1", "P2")]
+        score, message, missing = run(C._score_thm_07, doc)
+        self.assertEqual((score, len(missing)), (C.DERIVED_CREDIT, 2))
+        self.assertIn("single thermo implied", message)
+        doc["units"][0]["thermo_property_package"]["id"] = "set1"
+        self.assertEqual(run(C._score_thm_07, doc)[0], 0.875)
+        del doc["units"][1]["thermo_property_package"]["phi"]
         score, _m, missing = run(C._score_thm_07, doc)
-        self.assertEqual(score, 0.5)
-        self.assertEqual(missing, ["units[U1].thermo_property_package.id"])
+        self.assertEqual((score, missing),
+                         (0.5, ["units[P2].thermo_property_package.id"]))
+        doc["units"][0]["thermo_property_package"] = dict(full)
+        doc["units"][1]["thermo_property_package"] = dict(full, gamma="y")
+        self.assertEqual(run(C._score_thm_07, doc)[0], 0.0)
+        self.assertEqual(run(C._score_thm_07, valid_doc())[0], 0.0)
 
 
 # ----------------------------------------------- topology + feed criteria
@@ -1581,13 +1609,25 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         mutate(doc, "streams/0/source_unit_id", "U1")
         self.assertEqual(run(C._score_feed_01, doc)[0], 0.0)
 
+    def test_states_flow(self):
+        """_states_flow: a non-zero total mass (else molar) flow -> True; a
+        zero flow, no flow or no stream_properties -> False."""
+        self.assertTrue(C._states_flow(stream("s", "None", "U1")))
+        self.assertFalse(C._states_flow(stream("s", "None", "U1", mass=0.0)))
+        self.assertFalse(C._states_flow({"stream_properties": {}}))
+        self.assertFalse(C._states_flow({}))
+
     def test_feed_01_equal_weights_and_empty_feeds(self):
         """_score_feed_01 (CMP-FEED-01): feeds weigh equally whatever their
         flow (90 and 10 kg/h, the small one missing T -> 0.875); deleting the
         big feed's mass flow keeps the molar flow, so the score stays 0.875
         (the old mass-share weighting rose here); an EMPTY feed (total flow
-        0) is left out -> 1.0 with an 'empty feed(s) not counted' note; a
-        feed with unknown flow stays in; every feed empty -> 0."""
+        0) stays in the population and scores 1 even without T -> 1.0 with
+        an 'empty, stated by their zero flow' note; beside a half-stated
+        feed it counts as 1 -> (0.5 + 1) / 2; deleting its flows makes it an
+        unknown-flow feed scored by its state (lower, never higher); no feed
+        stating a non-zero flow -> 0, whether the flows are zero or
+        unstated."""
         doc = one_unit_doc(spec_unit("Mixer"), ins=({"mass": 90.0},
                                                     {"mass": 10.0, "T": None}))
         self.assertAlmostEqual(run(C._score_feed_01, doc)[0], 0.875)
@@ -1598,12 +1638,21 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         empty["streams"][1]["stream_properties"]["total_molar_flow"] = 0.0
         score, message, _missing = run(C._score_feed_01, empty)
         self.assertEqual(score, 1.0)
-        self.assertIn("1 empty feed(s) not counted", message)
-        unknown = copy.deepcopy(empty)
+        self.assertIn("1 empty, stated by their zero flow", message)
+        half = copy.deepcopy(empty)
+        for key in ("temperature", "pressure"):
+            del half["streams"][0]["stream_properties"][key]
+        self.assertEqual(run(C._score_feed_01, half)[0], 0.75)
+        unknown = copy.deepcopy(half)
         for key in ("total_mass_flow", "total_molar_flow"):
             del unknown["streams"][1]["stream_properties"][key]
-        self.assertLess(run(C._score_feed_01, unknown)[0], 1.0)
+        self.assertLess(run(C._score_feed_01, unknown)[0], 0.75)
         del empty["streams"][0]
+        score, _m, missing = run(C._score_feed_01, empty)
+        self.assertEqual(score, 0.0)
+        self.assertIn("no feed with a non-zero", missing[0])
+        for key in ("total_mass_flow", "total_molar_flow"):
+            del empty["streams"][0]["stream_properties"][key]
         self.assertEqual(run(C._score_feed_01, empty)[0], 0.0)
 
     def test_utility_port_feed(self):
@@ -1618,8 +1667,11 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         """_score_feed_02 / _is_empty_stream (CMP-FEED-02): unpriced boundary
         streams -> 0; both priced (0 counts) -> 1; a 0 price on a feed into a
         utility port (DrumDryer) -> 0.5 for it (0.75 overall), while a 0
-        price on a product of that dryer stays 1; zero-flow boundary streams
-        only -> None."""
+        price on a product of that dryer stays 1; an EMPTY (zero-flow)
+        boundary stream stays in the population and scores 1 without a
+        price (unpriced empty feed beside an unpriced product -> 0.5);
+        deleting its stream_properties makes it an unpriced non-empty stream
+        -> 0 (lower, never higher); no boundary streams -> None."""
         doc = valid_doc()
         self.assertEqual(run(C._score_feed_02, doc)[0], 0.0)
         mutate(doc, "streams/0/price", 0.5)
@@ -1632,9 +1684,16 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         self.assertEqual(score, 0.75)
         self.assertIn("streams[feed].price: 0 on a utility port of units[U1]",
                       missing[0])
-        for s in doc["streams"]:
-            s["stream_properties"]["total_mass_flow"] = 0.0
-        self.assertTrue(C._is_empty_stream(doc["streams"][0]))
+        empty = valid_doc()
+        empty["streams"][0]["stream_properties"]["total_mass_flow"] = 0.0
+        self.assertTrue(C._is_empty_stream(empty["streams"][0]))
+        score, message, missing = run(C._score_feed_02, empty)
+        self.assertEqual((score, missing), (0.5, ["streams[prod].price"]))
+        self.assertIn("1 empty, needing no price", message)
+        del empty["streams"][0]["stream_properties"]
+        self.assertEqual(run(C._score_feed_02, empty)[0], 0.0)
+        mutate(doc, "streams/0/source_unit_id", "U1")
+        mutate(doc, "streams/1/sink_unit_id", "U1")
         self.assertIsNone(run(C._score_feed_02, doc)[0])
 
 
@@ -1690,20 +1749,45 @@ class TestUnitOpCriteria(unittest.TestCase):
         self.assertIn("one of T|H|V (only derivable", missing[0])
         self.assertEqual(run(C._score_uop_02, unit_doc({"unit_type": "Widget"}))[0], 0.0)
 
+    def test_declared_registry_class(self):
+        """_declared_registry_class: a listed class -> itself; a curated
+        table class -> its registry_class (CornStorage -> StorageTank); an
+        unlisted class, None or '' -> None (never key-set inference)."""
+        registry = C._design_spec_registry()[0]
+        self.assertEqual(C._declared_registry_class("HXutility", registry),
+                         "HXutility")
+        self.assertEqual(C._declared_registry_class("CornStorage", registry),
+                         "StorageTank")
+        for name in ("NoSuchClass", None, ""):
+            self.assertIsNone(C._declared_registry_class(name, registry), name)
+
     def test_uop_03_full_coverage(self):
-        """_score_uop_03 (CMP-UOP-03): registry HXutility {T, V, H, U} with T
-        set -> V and H excused, U missing -> 0.5; a class absent from the
-        registry -> None; a registry load error -> RuntimeError (driver turns
-        it into score 0)."""
+        """_score_uop_03 (CMP-UOP-03): a core HXutility (confidence 1) against
+        registry HXutility {T, V, H, U} with T set -> V and H excused, U
+        missing -> 0.5; a class known exactly but unlisted (Mixer here) ->
+        left out, so None when it is the only unit; the same unit with its
+        class NOT known exactly -> 0 with a 'parameter universe unknown'
+        locator, whether the class is inferred from the spec keys (the
+        tightest-superset entry is never used), only the family is known, or
+        nothing is; a registry load error -> RuntimeError (driver turns it
+        into score 0)."""
         registry = {"HXutility": {"line": "HX", "design_input_spec_params": {
             p: {"accessors": [p]} for p in ("T", "V", "H", "U")}}}
         doc = unit_doc(cls("HXutility"), {"T": 350.0})
         score, _m, missing = run(C._score_uop_03, doc, registry=registry)
         self.assertEqual(score, 0.5)
         self.assertEqual(missing, ["units[U1].design_input_specs.U"])
-        self.assertIsNone(run(C._score_uop_03, unit_doc(cls("Other")),
+        self.assertIsNone(run(C._score_uop_03, unit_doc(cls("Mixer")),
                               registry=registry)[0])
-        sc = ctx(doc, registry=registry)
+        for unit_type, specs in (("Heat exchanger", {"T": 350.0, "U": 1.0}),
+                                 ("Heat exchanger", {}), ("Gizmo", {})):
+            doc = unit_doc({"unit_type": unit_type}, specs)
+            confidence = ctx(doc, registry=registry).unit_classes[0][2]
+            self.assertLess(confidence, 1.0)
+            score, _m, missing = run(C._score_uop_03, doc, registry=registry)
+            self.assertEqual(score, 0.0, (unit_type, specs))
+            self.assertIn("parameter universe is unknown", missing[0])
+        sc = ctx(unit_doc(cls("HXutility")), registry=registry)
         sc.registry_error = "boom"
         with self.assertRaises(RuntimeError):
             C._score_uop_03(sc)
@@ -1862,14 +1946,23 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertIsNone(run(C._score_rxn_02, valid_doc())[0])
 
     def test_rxn_03_series_parallel(self):
-        """_score_rxn_03 (CMP-RXN-03): two indexed reactions -> 1; one index
-        missing -> 0; a single reaction -> None."""
+        """_score_rxn_03 (CMP-RXN-03) over the reactive units: two indexed
+        reactions -> 1; one index missing -> 0; a single (unindexed) reaction
+        -> 1 (no order to state); a reactor-family unit whose reactions are
+        deleted -> 0 with a 'none declared' locator (applicable, not N/A);
+        no reactive unit -> None."""
         two = [reaction(index=0), reaction(index=1)]
         self.assertEqual(run(C._score_rxn_03, unit_doc({"reactions": two}))[0], 1.0)
         del two[1]["index"]
         score, _m, missing = run(C._score_rxn_03, unit_doc({"reactions": two}))
         self.assertEqual((score, missing), (0.0, ["units[U1].reactions[1].index"]))
-        self.assertIsNone(run(C._score_rxn_03, unit_doc({"reactions": [reaction()]}))[0])
+        self.assertEqual(run(C._score_rxn_03, unit_doc({"reactions": [reaction()]}))[0], 1.0)
+        doc = unit_doc(spec_unit("SinglePhaseReactor"))
+        score, _m, missing = run(C._score_rxn_03, doc)
+        self.assertEqual(score, 0.0)
+        self.assertIn("units[U1].reactions: none declared (reactor family)",
+                      missing[0])
+        self.assertIsNone(run(C._score_rxn_03, valid_doc())[0])
 
     def test_reaction_coefficients(self):
         """_reaction_coefficients: stoichiometry by id -> its coefficients;
@@ -1983,6 +2076,34 @@ class TestCostingCriteria(unittest.TestCase):
         self.assertEqual(C._correlation(unit, item)["exponent"], 0.6)
         self.assertEqual(C._correlation(unit, "Other"), {})
 
+    def test_unit_cost_items_union(self):
+        """_unit_cost_items: the union of purchase_costs, installed_costs and
+        purchase_cost_correlations keys, first occurrence first; nothing ->
+        []. So deleting a poorly correlated item's purchase cost keeps it in
+        CMP-COST-04's per-item population (0.75 stays 0.75, it does not rise
+        to 1), and deleting its correlation instead drops the unit to 0.5
+        on COST-04 and to 0 on COST-07 (the other item keeps its
+        lifetime)."""
+        self.assertEqual(C._unit_cost_items({}), [])
+        unit = {"purchase_costs": {"A": 1.0}, "installed_costs": {"B": 2.0},
+                "purchase_cost_correlations": {"C": {}, "A": {}}}
+        self.assertEqual(C._unit_cost_items(unit), ["A", "B", "C"])
+        doc = costed({"correlation_type": "custom_function", "lifetime": 5},
+                     name="CustomTank", url=CUSTOM_URL,
+                     costs={"Tank": 1000.0, "Agitator": 50.0})
+        unit = doc["units"][0]
+        unit["installed_costs"]["Agitator"] = 100.0
+        unit["purchase_cost_correlations"]["Agitator"] = dict(POWER_LAW,
+                                                              lifetime=5)
+        self.assertEqual(run(C._score_cost_04, doc)[0], 0.75)
+        self.assertEqual(run(C._score_cost_07, doc)[0], 1.0)
+        dropped = copy.deepcopy(doc)
+        del dropped["units"][0]["purchase_costs"]["Tank"]
+        self.assertEqual(run(C._score_cost_04, dropped)[0], 0.75)
+        del unit["purchase_cost_correlations"]["Tank"]
+        self.assertEqual(run(C._score_cost_04, doc)[0], 0.5)
+        self.assertEqual(run(C._score_cost_07, doc)[0], 0.0)
+
     def test_per_costed_unit(self):
         """_per_costed_unit: family-weighted over sc.costed (a reactor, weight
         3, scoring 1 beside a pump, weight 1, scoring 0 -> 0.75, one full);
@@ -2017,7 +2138,7 @@ class TestCostingCriteria(unittest.TestCase):
         self.assertEqual(run(C._score_cost_02, costed())[0], 1.0)
         score, _m, missing = run(C._score_cost_02, costed(installed=False))
         self.assertEqual((score, missing), (0.0, ["units[U1].installed_costs['Tank']"]))
-        self.assertEqual(C._cost_02_unit(ctx(costed(costs={})), 0)[0], 0.0)
+        self.assertEqual(C._cost_02_unit(ctx(costed(costs={}, installed=False)), 0)[0], 0.0)
         self.assertIsNone(run(C._score_cost_02, valid_doc())[0])
 
     def test_cost_03_design_result_units(self):
@@ -2038,20 +2159,33 @@ class TestCostingCriteria(unittest.TestCase):
         self.assertIsNone(run(C._score_cost_03, valid_doc())[0])
 
     def test_cost_04_correlations(self):
-        """_cost_04_unit / _score_cost_04 (CMP-COST-04) over costed units
-        outside core BioSTEAM: power_law -> 1; custom_function -> 0.5; none
-        -> 0; no cost items -> 0; a core StorageTank alone -> None (BioSTEAM
-        re-costs it); no costed units -> None."""
+        """_cost_04_unit / _score_cost_04 (CMP-COST-04) over EVERY costed
+        unit: a custom class scores its items -- power_law -> 1,
+        custom_function -> 0.5, none -> 0, no cost items -> 0; a core
+        StorageTank identified at confidence 1 stays in the population and
+        scores 1 without any correlation (BioSTEAM re-derives its cost); the
+        same tank with a descriptive unit_type and no
+        design_simulation_method (class no longer known) -> scored by its
+        items, 0 without correlations (so that deletion lowers, never
+        raises); no costed units -> None."""
         custom = dict(name="CustomTank", url=CUSTOM_URL)
         self.assertEqual(run(C._score_cost_04, costed(POWER_LAW, **custom))[0], 1.0)
         self.assertEqual(run(C._score_cost_04, costed(
             {"correlation_type": "custom_function"}, **custom))[0], 0.5)
         self.assertEqual(run(C._score_cost_04, costed(**custom))[0], 0.0)
-        self.assertEqual(C._cost_04_unit(ctx(costed(costs={}, **custom)), 0),
+        bare = costed(costs={}, installed=False, **custom)
+        self.assertEqual(C._cost_04_unit(ctx(bare), 0),
                          (0.0, ["units[U1].purchase_costs: no items to correlate"]))
-        score, message, _m = run(C._score_cost_04, costed())
-        self.assertIsNone(score)
-        self.assertIn("core BioSTEAM", message)
+        self.assertEqual(C._cost_04_unit(ctx(costed()), 0), (1.0, []))
+        score, message, missing = run(C._score_cost_04, costed())
+        self.assertEqual((score, missing), (1.0, []))
+        self.assertIn("1 core BioSTEAM class", message)
+        doc = costed()
+        del doc["units"][0]["design_simulation_method"]
+        doc["units"][0]["unit_type"] = "Storage tank"
+        score, _m, missing = run(C._score_cost_04, doc)
+        self.assertEqual((score, missing),
+                         (0.0, ["units[U1].purchase_cost_correlations['Tank']"]))
         self.assertIsNone(run(C._score_cost_04, valid_doc())[0])
 
     def test_cost_05_cepci_back_derivation(self):
@@ -2561,6 +2695,20 @@ def overall(doc):
     return C._weighted_mean(C._evaluate_criteria(ctx(doc, PASSING), criteria, None))
 
 
+def criterion_results(doc):
+    """{criterion id: CriterionResult} of `doc`, validator replaced as in
+    overall()."""
+    criteria = C.load_completeness_criteria()["criteria"]
+    return {r.criterion_id: r for r in
+            C._evaluate_criteria(ctx(doc, PASSING), criteria, None)}
+
+
+# Descriptive unit_type of each rich_doc() class (corpus style).
+UNIT_TYPES = {"CleaningSystem": "Cleaning system", "Mixer": "Mixer",
+              "Pump": "Pump", "HXutility": "Heat exchanger",
+              "SinglePhaseReactor": "Fermentation"}
+
+
 def _liquid(flows):
     """Stream properties of a single-liquid-phase stream with the given
     {component: kmol/h} flows."""
@@ -2572,27 +2720,40 @@ def _liquid(flows):
                 "total_molar_flow": total, "composition": comp}}}
 
 
-def rich_doc():
+def rich_doc(single_thermo=False):
     """A consistent, richly stated flowsheet: feedA -> C1 (CleaningSystem,
-    pinned Bioindustrial-Park class) -> s0 + waste; s0 + feedB -> M1 (Mixer)
-    -> P1 (Pump) -> H1 (HXutility, steam) -> R1 (SinglePhaseReactor, cooling
-    water, Glucose -> 2 Ethanol + 2 CO2) -> prod. Every unit names its class
-    by both unit_type and design_simulation_method, costed units carry costs,
-    power-law correlations with lifetimes and unit-annotated design
-    results; two distinct property packages, each with an id."""
+    pinned Bioindustrial-Park class: custom, non-core) -> s0 + waste
+    (unpriced); s0 + feedB -> M1 (Mixer) -> P1 (Pump) -> H1 (HXutility,
+    steam) -> R1 (SinglePhaseReactor, cooling water, two indexed series
+    passes of Glucose -> 2 Ethanol + 2 CO2) -> prod. unit_types are
+    DESCRIPTIVE ('Cleaning system', 'Heat exchanger',
+    'Fermentation', ...), as in the corpus, so the class lives only in
+    design_simulation_method ('<Class> on <url>'; 'Mixer' and 'Pump' happen
+    to name their class exactly). Costed units carry costs, power-law
+    (@cost-style) correlations with lifetimes and unit-annotated design
+    results; the custom C1 has a second, custom_function item (so its
+    CMP-COST-04 credit is 0.75 and a core unit leaving the core-class path
+    with a power-law item would out-score it). An empty, priced placeholder
+    feed ('spare', zero flow) enters M1. Thermo: C1, M1, P1 and H1 share one
+    full package with an id; R1 alone runs a second one without an id;
+    `single_thermo` instead gives every unit the same full package WITHOUT
+    an id (the CMP-THM-07 derived-credit case)."""
     wg = {"Water": 90.0, "Glucose": 10.0}
     sugar = {"Water": 99.0, "Glucose": 1.0, "Ethanol": 9.0, "CO2": 9.0}
     edges = [("feedA", "None", "C1", wg, 300.0, 101325.0, 0.05),
-             ("waste", "C1", "None", wg, 300.0, 101325.0, 0.0),
+             ("waste", "C1", "None", wg, 300.0, 101325.0, None),
              ("s0", "C1", "M1", wg, 300.0, 101325.0, None),
              ("feedB", "None", "M1", {"Water": 50.0}, 300.0, 101325.0, 0.001),
+             ("spare", "None", "M1", {}, 300.0, 101325.0, 0.02),
              ("s1", "M1", "P1", wg, 300.0, 101325.0, None),
              ("s2", "P1", "H1", wg, 300.0, 300000.0, None),
              ("s3", "H1", "R1", wg, 305.0, 300000.0, None),
              ("prod", "R1", "None", sugar, 305.0, 300000.0, 0.7)]
     streams = []
     for sid, source, sink, flows, T, P, price in edges:
-        sp = _liquid(flows)
+        sp = (_liquid(flows) if flows else
+              {"total_molar_flow": 0.0, "total_mass_flow": 0.0,
+               "enthalpy_flow": 0.0, "phases": {}})
         sp.update(temperature=T, pressure=P)
         stream = {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
                   "stream_properties": sp}
@@ -2602,11 +2763,15 @@ def rich_doc():
 
     pkg_a = {"id": "set_a", "mixture": "IdealMixture", "gamma": "Dortmund",
              "phi": "IdealFugacity", "PCF": "IdealPoynting"}
-    pkg_b = dict(pkg_a, id="set_b", gamma="UNIFAC")
+    pkg_b = {k: v for k, v in pkg_a.items() if k != "id"}
+    pkg_b["gamma"] = "UNIFAC"
+    if single_thermo:
+        pkg_a = {k: v for k, v in pkg_a.items() if k != "id"}
+        pkg_b = pkg_a
 
     def unit(uid, name, url, specs, item, results, pkg, cons=None, prod=None):
         corr = dict(POWER_LAW, basis="Volume", lifetime=20)
-        return {"id": uid, "unit_type": name,
+        return {"id": uid, "unit_type": UNIT_TYPES[name],
                 "design_simulation_method": f"{name} on {url}",
                 "design_input_specs": specs,
                 "design_results": dict(results, Volume=12.0),
@@ -2625,7 +2790,7 @@ def rich_doc():
              {"Flow": 5.0}, pkg_a, cons={"grid": 1.0}),
         unit("M1", "Mixer", BST_URL, {}, None, {}, pkg_a),
         unit("P1", "Pump", BST_URL, {"P": 300000.0}, "Pump",
-             {"Power": 2.0}, pkg_b, cons={"grid": 2.0}),
+             {"Power": 2.0}, pkg_a, cons={"grid": 2.0}),
         unit("H1", "HXutility", BST_URL, {"T": 305.0}, "Double pipe",
              {"Area": 3.0}, pkg_a, cons={"steam": 500.0}),
         unit("R1", "SinglePhaseReactor", BST_URL,
@@ -2637,6 +2802,13 @@ def rich_doc():
         "index": 0, "equation": "Glucose -> 2 Ethanol + 2 CO2",
         "stoichiometry": {"Glucose": -1.0, "Ethanol": 2.0, "CO2": 2.0},
         "reactant": "Glucose", "conversion": 0.9}]
+    units[4]["reactions"].append(dict(units[4]["reactions"][0], index=1,
+                                      conversion=0.5))
+    c1 = units[0]
+    c1["purchase_costs"]["Conveyor"] = 400.0
+    c1["installed_costs"]["Conveyor"] = 800.0
+    c1["purchase_cost_correlations"]["Conveyor"] = {
+        "correlation_type": "custom_function", "lifetime": 10}
 
     chemicals = [{"id": n, "registry_id": cas, "formula": f, "molar_mass": mw,
                   "included_in_thermo": True}
@@ -2677,16 +2849,24 @@ _STRUCTURAL_KEYS = frozenset({"id", "source_unit_id", "sink_unit_id",
                               "component_name", "stream_id"})
 
 
-def scalar_leaves(node, path=()):
-    """Yield the path (tuple of keys / indices) of every scalar value held
-    under a dict key, skipping _STRUCTURAL_KEYS."""
+def deletable_paths(node, path=()):
+    """Yield (path, kind) for every value held under a dict key, skipping
+    _STRUCTURAL_KEYS: kind 'leaf' for a scalar, 'sub' for a whole dict or
+    list (a unit's design_input_specs or thermo_property_package, a stream's
+    stream_properties, one phase, a composition list, a correlation, ...,
+    up to a top-level section). List elements are recursed into, never
+    deleted themselves (that removes a unit, stream or reaction)."""
     items = (node.items() if isinstance(node, dict)
              else enumerate(node) if isinstance(node, list) else ())
     for key, value in items:
+        if isinstance(node, dict) and key in _STRUCTURAL_KEYS:
+            continue
         if isinstance(value, (dict, list)):
-            yield from scalar_leaves(value, path + (key,))
-        elif isinstance(node, dict) and key not in _STRUCTURAL_KEYS:
-            yield path + (key,)
+            if isinstance(node, dict):
+                yield path + (key,), "sub"
+            yield from deletable_paths(value, path + (key,))
+        elif isinstance(node, dict):
+            yield path + (key,), "leaf"
 
 
 def deleted(doc, path):
@@ -2728,40 +2908,100 @@ class TestNeedBasedApplicability(unittest.TestCase):
                 self.assertGreaterEqual(overall(doc), before, fields)
 
     def test_rich_doc_is_rich(self):
-        """rich_doc(): every family-need criterion applies (no RXN/COST/UTIL
-        criterion is not_applicable except COST-04's core-only units -- here
-        C1 is custom, so it applies too), and the overall score is high but
-        below 1 (non-representable criteria)."""
+        """rich_doc(): every need-based criterion applies (only THM-05 is
+        not_applicable: every chemical resolves), and the overall score is
+        high but below 1 (non-representable criteria)."""
         with name_lookup(RICH_NAMES):
             results = {r.criterion_id: r for r in C._evaluate_criteria(
                 ctx(rich_doc(), PASSING),
                 C.load_completeness_criteria()["criteria"], None)}
             score = overall(rich_doc())
         na = {cid for cid, r in results.items() if r.status == "not_applicable"}
-        self.assertEqual(na, {"CMP-THM-05", "CMP-RXN-03"})
+        self.assertEqual(na, {"CMP-THM-05"})
         self.assertEqual(results["CMP-FEED-01"].score, 1.0)
-        self.assertEqual(results["CMP-COST-04"].score, 1.0)
+        # 'waste' unpriced; the empty 'spare' feed counts as 1 (4 of 5).
+        self.assertEqual(results["CMP-FEED-02"].score, 0.8)
+        self.assertEqual(results["CMP-RXN-03"].score, 1.0)
+        # C1 (custom, splitter weight 2) 0.75; P1, H1, R1 core -> 1.
+        self.assertAlmostEqual(results["CMP-COST-04"].score, 7.5 / 8)
         self.assertEqual(results["CMP-COST-07"].score, 1.0)
-        self.assertEqual(results["CMP-THM-07"].score, 1.0)
+        # R1 (reactor weight 3) names no chemical set; 6 of 9 weight do.
+        self.assertAlmostEqual(results["CMP-THM-07"].score, 6 / 9)
         self.assertTrue(0.8 < score < 1.0, score)
 
     def test_deleting_any_value_never_raises_score(self):
-        """Deletion monotonicity: for every scalar leaf of rich_doc() (bar
-        ids and references, see _STRUCTURAL_KEYS), deleting it leaves
-        overall() <= the full document's score; and some deletions lower it
-        (the test has teeth)."""
+        """Deletion monotonicity: for every value of rich_doc() -- each
+        scalar leaf AND each whole sub-object (bar ids and references, see
+        _STRUCTURAL_KEYS) -- in both thermo variants, deleting it leaves the
+        overall score <= the full document's, AND leaves every scored
+        criterion scored with a score <= its full-document score (so a
+        per-criterion rise cannot hide behind a compensating drop
+        elsewhere). A whole top-level section (all units, all streams) is
+        held to the overall bound only: removing it removes the structure
+        the populations are defined on. Exercised on purpose: every unit's
+        design_simulation_method (descriptive unit_types, so the class is
+        lost or only inferred -- CMP-COST-04 / CMP-UOP-03), C1's @cost and
+        custom_function correlations, core units' correlations, package
+        descriptors, ids and whole packages (CMP-THM-07), the empty priced
+        feed's flow and stream_properties (CMP-FEED-01/02), R1's reactions
+        (CMP-RXN-03), whole design_input_specs / stream_properties /
+        phases. Also: >150 paths, and more than half of the deletions lower
+        the overall score (the test has teeth). Expected: no violation."""
         with name_lookup(RICH_NAMES):
-            doc = rich_doc()
-            base = overall(doc)
-            raised, lowered, paths = [], 0, list(scalar_leaves(doc))
-            for path in paths:
-                score = overall(deleted(doc, path))
-                if score > base + 1e-12:
-                    raised.append((path, score - base))
-                lowered += score < base - 1e-12
-        self.assertGreater(len(paths), 150)
-        self.assertEqual(raised, [])
-        self.assertGreater(lowered, len(paths) // 2)
+            for single_thermo in (False, True):
+                doc = rich_doc(single_thermo)
+                base = criterion_results(doc)
+                base_score = C._weighted_mean(list(base.values()))
+                raised, lowered = [], 0
+                paths = [p for p, _kind in deletable_paths(doc)]
+                for path in paths:
+                    after = criterion_results(deleted(doc, path))
+                    score = C._weighted_mean(list(after.values()))
+                    if score > base_score + 1e-12:
+                        raised.append((path, "overall", score - base_score))
+                    lowered += score < base_score - 1e-12
+                    if len(path) == 1:
+                        continue
+                    for cid, before in base.items():
+                        now = after[cid]
+                        if before.status == "scored" and (
+                                now.status != "scored"
+                                or now.score > before.score + 1e-12):
+                            raised.append((path, cid, now.status, now.score))
+                with self.subTest(single_thermo=single_thermo):
+                    self.assertGreater(len(paths), 150)
+                    self.assertEqual(raised, [])
+                    self.assertGreater(lowered, len(paths) // 2)
+
+    def test_deletion_paths_cover_the_known_defects(self):
+        """deletable_paths(rich_doc()) includes the deletions behind the
+        fixed monotonicity defects (a core and the custom unit's
+        design_simulation_method, C1's correlations, a package descriptor,
+        R1's id-less package and its reactions, the empty feed's flow and
+        stream_properties) and whole sub-objects (design_input_specs,
+        thermo_property_package, stream_properties, a phase) but no id;
+        and deleting H1's or R1's design_simulation_method really loses the
+        exact class (confidence < 1), so the monotonicity test exercises the
+        class-unknown branches."""
+        doc = rich_doc()
+        paths = dict(deletable_paths(doc))
+        for path, kind in (
+                (("units", 4, "design_simulation_method"), "leaf"),
+                (("units", 0, "design_simulation_method"), "leaf"),
+                (("units", 0, "purchase_cost_correlations", "System"), "sub"),
+                (("units", 0, "purchase_cost_correlations", "Conveyor"), "sub"),
+                (("units", 1, "thermo_property_package", "gamma"), "leaf"),
+                (("units", 4, "thermo_property_package"), "sub"),
+                (("units", 4, "reactions"), "sub"),
+                (("units", 3, "design_input_specs"), "sub"),
+                (("streams", 4, "stream_properties", "total_mass_flow"), "leaf"),
+                (("streams", 4, "stream_properties"), "sub"),
+                (("streams", 7, "stream_properties", "phases", "l"), "sub")):
+            self.assertEqual(paths.get(path), kind, path)
+        self.assertNotIn(("units", 0, "id"), paths)
+        for position in (3, 4):
+            reduced = deleted(doc, ("units", position, "design_simulation_method"))
+            self.assertLess(ctx(reduced).unit_classes[position][2], 1.0)
 
 
 if __name__ == "__main__":
