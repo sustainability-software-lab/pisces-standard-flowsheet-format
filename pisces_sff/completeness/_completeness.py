@@ -60,16 +60,29 @@ CriterionResult = namedtuple(
 
 # The whole report. score: weighted mean over every scored criterion;
 # representable_score: the same restricted to criteria representable at the
-# file's sff_version; recipe: the separate re-execution route (embedded load
-# script + pinned environment), deliberately NOT folded into the score.
+# file's sff_version; validation_summary: the validator results counted by
+# severity and status, {severity: {status: count}}, reported beside is_valid
+# (never folded into the score); recipe: the separate re-execution route
+# (embedded load script + pinned environment), deliberately NOT folded into
+# the score either.
 CompletenessReport = namedtuple(
     'CompletenessReport',
     'score representable_score category_scores criticality_scores criteria '
-    'sff_version is_valid validation_results recipe')
+    'sff_version is_valid validation_summary validation_results recipe')
 
 # Credit for information the file does not state but that is derivable from
 # other fields (e.g. an HXutility outlet temperature read off its outlet stream).
 DERIVED_CREDIT = 0.75
+
+# CMP-THM-02 identity tiers below a registry id (CAS/SMILES, credit 1): the
+# chemical id resolves by name in the `chemicals` database (the lookup
+# thermosteam's Chemical(ID) performs), or only a formula narrows it down.
+NAME_RESOLVED_CREDIT = 0.75
+FORMULA_ONLY_CREDIT = 0.25
+
+# CMP-RXN-04: relative tolerance of the mass balance sum(nu*MW) (molar basis)
+# and of sum(nu) (mass basis) when deriving a reaction's basis.
+BASIS_RTOL = 1e-3
 
 # Same absolute zero-flow threshold as the validator's ZERO_FLOW (STR-13);
 # duplicated to stay import-light, equality pinned by a Tier 1 test.
@@ -133,6 +146,42 @@ def _design_spec_registry():
             _REGISTRY_CACHE = ({}, f'{type(exc).__name__}: {exc}')
     return _REGISTRY_CACHE
 
+
+# [search function or None], filled on first use; {name: bool} of lookups.
+_CHEMICALS_SEARCH = []
+_NAME_LOOKUP = {}
+
+
+def _chemicals_search():
+    """``chemicals.identifiers.search_chemical`` -- the lookup thermosteam's
+    ``Chemical(ID)`` performs (names, synonyms, formulas, CAS, SMILES) --
+    imported lazily once; None when the package cannot be imported (the
+    CMP-THM-02 name tier is then unavailable)."""
+    if not _CHEMICALS_SEARCH:
+        try:
+            from chemicals.identifiers import search_chemical
+        except Exception:
+            search_chemical = None
+        _CHEMICALS_SEARCH.append(search_chemical)
+    return _CHEMICALS_SEARCH[0]
+
+
+def _name_resolvable(name):
+    """True when chemical id `name` resolves in the `chemicals` database
+    (CMP-THM-02 name tier). Cached per name, so a failed lookup costs one
+    search (the first also loads the database, ~1 s); never raises -- an
+    unavailable package or any lookup error means False."""
+    if not _nonempty_str(name):
+        return False
+    name = name.strip()
+    if name not in _NAME_LOOKUP:
+        search = _chemicals_search()
+        try:
+            _NAME_LOOKUP[name] = search is not None and search(name) is not None
+        except Exception:
+            _NAME_LOOKUP[name] = False
+    return _NAME_LOOKUP[name]
+
 #%% Criteria registry (criteria.yaml)
 
 _CRITERIA_CACHE = None
@@ -140,7 +189,7 @@ _TOP_KEYS = frozenset({'categories', 'criteria', 'exclusions'})
 _CRITERION_KEYS = frozenset({'id', 'category', 'title', 'weight', 'criticality',
                              'representable_since', 'rationale', 'sff_paths'})
 _EXCLUSION_KEYS = frozenset({'id', 'kind', 'title', 'rationale'})
-_EXCLUSION_KINDS = ('not_capturable', 'derived')
+_EXCLUSION_KINDS = ('not_capturable', 'derived', 'out_of_scope')
 _CRITERION_ID_RE = re.compile(r'^CMP-[A-Z]+-\d{2}$')
 _EXCLUSION_ID_RE = re.compile(r'^(EXC|DER)-\d{2}$')
 
@@ -463,17 +512,22 @@ def _species_flows(stream):
     return flows
 
 
+# A thermosteam phase tag on a reaction species: 'Glucose,l', 'CO2, g'.
+_PHASE_TAG_RE = re.compile(r'\s*,\s*[A-Za-z]\s*$')
+
+
 def _equation_species(equation, declared=frozenset()):
     """Species named in a reaction equation 'A + 2 B -> 3 C'. A leading
     coefficient must be separated by whitespace ('3 HP'); a glued one ('2H2O')
     is stripped only when that yields a declared chemical id, so names that
-    start with a digit survive."""
+    start with a digit survive. A thermosteam phase tag ('CO2,g') is not part
+    of the name."""
     if not isinstance(equation, str) or '->' not in equation:
         return []
     names = []
     for side in equation.split('->', 1):
         for term in side.split('+'):
-            term = term.strip()
+            term = _PHASE_TAG_RE.sub('', term.strip())
             if not term:
                 continue
             name = re.sub(r'^\d+(?:\.\d+)?(?:[eE][-+]?\d+)?\s+', '', term)
@@ -568,11 +622,25 @@ FAMILIES = ('mixer', 'splitter', 'flash', 'hx_utility', 'hx_process',
 # ---- family sets shared with the costing / utility / reaction criteria ----
 REACTOR_FAMILIES = frozenset({'reactor', 'batch_bioreactor',
                               'aerated_bioreactor', 'equilibrium_reactor'})
-# Families that consume or produce utilities in BioSTEAM (CMP-UTIL-01..03).
+# Families that consume or produce utilities in BioSTEAM (CMP-UTIL-01/02):
+# heat agents, electricity (pumps, compressors, agitated tanks, conveyors,
+# mixer-settlers) or fuel.
 UTILITY_USING_FAMILIES = REACTOR_FAMILIES | frozenset({
     'hx_utility', 'flash', 'distillation', 'staged_column', 'evaporator',
     'pump', 'compressor', 'turbine', 'boiler_turbogenerator',
-    'steam_injection_heater', 'dryer', 'crystallizer'})
+    'steam_injection_heater', 'dryer', 'crystallizer', 'tank',
+    'solids_handling', 'extraction'})
+# The subset that exchanges heat with a heat-utility agent (steam, cooling
+# water, refrigerants): the need behind CMP-UTIL-03 and CMP-UTIL-05.
+HEAT_UTILITY_FAMILIES = REACTOR_FAMILIES | frozenset({
+    'hx_utility', 'flash', 'distillation', 'staged_column', 'evaporator',
+    'boiler_turbogenerator', 'steam_injection_heater', 'crystallizer'})
+# Families that regenerate agents for the rest of the plant (a boiler raising
+# steam, a cooling tower, a heat-exchanger network): BioSTEAM records their
+# heat utilities with reversed duty, so they are no evidence of whether an
+# agent heats or cools (CMP-UTIL-03).
+AGENT_REGENERATOR_FAMILIES = frozenset({'facility', 'boiler_turbogenerator',
+                                        'heat_exchanger_network'})
 # Families whose chemistry is fixed by the class itself (combustion, a
 # facility's internal make-up, Gibbs minimization, drying), so a species
 # appearing or vanishing there is not evidence of an undeclared reaction.
@@ -1528,12 +1596,29 @@ class _ScoringContext:
         self.reactions = [(i, j, r) for i, u in enumerate(self.units)
                           for j, r in enumerate(_as_list(u.get('reactions')))
                           if isinstance(r, dict)]
+        self.unit_positions = {}
+        for i, u in enumerate(self.units):
+            if _nonempty_str(u.get('id')):
+                self.unit_positions.setdefault(u['id'], i)
+        # Costed population (R1.8): units whose class/family carries a
+        # purchase cost by default.
+        self.costed = [i for i, (name, family, _c) in enumerate(self.unit_classes)
+                       if not _is_cost_free(name, family)]
 
         utilities = _as_dict(self.doc.get('utilities'))
         self.agents = [(group, agent, _label(f'utilities.{group}', agent, i))
                        for group in ('heat_utilities', 'power_utilities',
                                      'other_utilities')
                        for i, agent in enumerate(_dicts(utilities.get(group)))]
+        self._vctx = None
+
+    @property
+    def vctx(self):
+        """The validator's _Context over the same document (molar masses,
+        stoichiometry resolution), built on first use."""
+        if self._vctx is None:
+            self._vctx = _validator()._Context(self.doc)
+        return self._vctx
 
     def check_result(self, check_id):
         """The first validator CheckResult with this id, or None."""
@@ -1626,30 +1711,74 @@ def _score_thm_01(sc):  # CMP-THM-01
             f'{covered} of {len(refs)} referenced chemical(s) declared', missing)
 
 
+def _chemical_population(sc):
+    """[(chemical dict or None, label, id or None)]: the CMP-THM-02..05
+    population (R1.1) -- every declared chemical, then every referenced but
+    undeclared id (chemical None; it scores 0 on every per-chemical
+    criterion)."""
+    population = [(chem, label, chem['id'] if _nonempty_str(chem.get('id'))
+                   else None)
+                  for chem, label in zip(sc.chemicals, sc.chem_labels)]
+    population += [(None, f"chemicals['{name}'] (undeclared; referenced by "
+                          f"{where})", name)
+                   for name, where in _chemical_references(sc).items()
+                   if name not in sc.chem_ids]
+    return population
+
+
+def _empty_chemical_population(sc):
+    """(score, message, missing) of a CMP-THM-02..05 criterion whose
+    population is empty: 0 when the flowsheet has streams or units (they
+    need chemicals), else not applicable."""
+    if sc.streams or sc.units:
+        return (0.0, 'no chemicals declared or referenced although the '
+                'flowsheet has streams/units', ['chemicals: empty'])
+    return None, 'no chemicals declared or referenced', []
+
+
+def _thm_02_credit(chem, cid):
+    """(credit, missing suffix or None) of one declared chemical's identity:
+    registry id 1; id resolvable by name NAME_RESOLVED_CREDIT; formula only
+    FORMULA_ONLY_CREDIT; else 0."""
+    if _filled(chem.get('registry_id')):
+        return 1.0, None
+    if _name_resolvable(cid):
+        return NAME_RESOLVED_CREDIT, '.registry_id (id resolvable by name only)'
+    if _filled(chem.get('formula')):
+        return FORMULA_ONLY_CREDIT, '.registry_id (formula only)'
+    return 0.0, '.registry_id (no formula either; id not resolvable by name)'
+
+
 def _score_thm_02(sc):  # CMP-THM-02
-    if not sc.chemicals:
-        return None, 'no chemicals declared', []
+    population = _chemical_population(sc)
+    if not population:
+        return _empty_chemical_population(sc)
     scores, missing = [], []
-    for chem, label in zip(sc.chemicals, sc.chem_labels):
-        if _filled(chem.get('registry_id')):
-            scores.append(1.0)
-        elif _filled(chem.get('formula')):
-            scores.append(0.5)
-            missing.append(f'{label}.registry_id (formula only)')
-        else:
+    for chem, label, cid in population:
+        if chem is None:
             scores.append(0.0)
-            missing.append(f'{label}.registry_id (no formula either)')
+            missing.append(f'{label}: not declared')
+            continue
+        credit, note = _thm_02_credit(chem, cid)
+        scores.append(credit)
+        if note:
+            missing.append(label + note)
     n_id = scores.count(1.0)
+    n_name = scores.count(NAME_RESOLVED_CREDIT)
     return (_mean(scores), f'{n_id} of {len(scores)} chemical(s) carry a '
-            f'registry id', missing)
+            f'registry id, {n_name} more resolve by name', missing)
 
 
 def _score_thm_03(sc):  # CMP-THM-03
-    if not sc.chemicals:
-        return None, 'no chemicals declared', []
+    population = _chemical_population(sc)
+    if not population:
+        return _empty_chemical_population(sc)
     derive = _validator()._molar_mass_from_formula  # same rule as _Context.molar_mass
     ok, missing = 0, []
-    for chem, label in zip(sc.chemicals, sc.chem_labels):
+    for chem, label, _cid in population:
+        if chem is None:
+            missing.append(f'{label}: not declared')
+            continue
         declared = _num(chem.get('molar_mass'))
         formula = chem.get('formula')
         if (declared is not None and declared > 0) or (
@@ -1657,39 +1786,47 @@ def _score_thm_03(sc):  # CMP-THM-03
             ok += 1
         else:
             missing.append(f'{label}.molar_mass (or a parseable formula)')
-    return (ok / len(sc.chemicals),
-            f'{ok} of {len(sc.chemicals)} chemical(s) have a molar mass', missing)
+    return (ok / len(population),
+            f'{ok} of {len(population)} chemical(s) have a molar mass', missing)
 
 
 def _score_thm_04(sc):  # CMP-THM-04
-    if not sc.chemicals:
-        return None, 'no chemicals declared', []
+    population = _chemical_population(sc)
+    if not population:
+        return _empty_chemical_population(sc)
     phases = _chemical_phases(sc)
     derived, missing = 0, []
-    for chem, label in zip(sc.chemicals, sc.chem_labels):
-        seen = phases.get(chem.get('id'), set()) if _nonempty_str(chem.get('id')) else set()
+    for chem, label, cid in population:
+        if chem is None:
+            missing.append(f'{label}: not declared')
+            continue
+        seen = phases.get(cid, set()) if cid else set()
         if len(seen) >= 2 or seen == {'s'}:
             derived += 1
         else:
             shown = ','.join(sorted(seen)) or 'none'
             missing.append(f'{label}: phase behaviour (locked state / '
                            f'phase_ref) not stated; stream phases seen: {shown}')
-    return (DERIVED_CREDIT * derived / len(sc.chemicals),
+    return (DERIVED_CREDIT * derived / len(population),
             f'not representable; derivable from stream data for {derived} of '
-            f'{len(sc.chemicals)} chemical(s)', missing)
+            f'{len(population)} chemical(s)', missing)
 
 
 def _score_thm_05(sc):  # CMP-THM-05
-    if not sc.chemicals:
-        return None, 'no chemicals declared', []
-    lacking = [label for chem, label in zip(sc.chemicals, sc.chem_labels)
-               if not _filled(chem.get('registry_id'))]
+    population = _chemical_population(sc)
+    if not population:
+        return _empty_chemical_population(sc)
+    lacking = [label for chem, label, cid in population
+               if chem is None or not (_filled(chem.get('registry_id'))
+                                       or _name_resolvable(cid))]
     if not lacking:
-        return None, 'every chemical carries a registry id (database-resolvable)', []
+        return (None, 'every chemical resolves against the database (registry '
+                'id or name)', [])
     missing = [f'{label}: property data (V, Cn, H/S reference, Hf, '
                f'Psat/Tb/Hvap, LHV) not representable' for label in lacking]
-    return (0.0, f'{len(lacking)} chemical(s) without a registry id need '
-            f'property data no SFF field can state', missing)
+    return (0.0, f'{len(lacking)} chemical(s) resolvable neither by registry '
+            f'id nor by name need property data no SFF field can state',
+            missing)
 
 
 _TPP_KEYS = ('mixture', 'gamma', 'phi', 'PCF')
@@ -1846,35 +1983,42 @@ def _state_missing(sc, positions):
     return _mean(scores), missing
 
 
-def _feed_weights(sc):
-    """Per-feed weight 0.5 / N + 0.5 * mass-flow share (R1.6), in sc.feeds
-    order; the shares are equal unless every feed states a numeric
-    total_mass_flow with a positive sum."""
-    n = len(sc.feeds)
-    flows = [_num(_as_dict(sc.streams[i].get('stream_properties'))
-                  .get('total_mass_flow')) for i in sc.feeds]
-    total = (sum(abs(f) for f in flows)
-             if all(f is not None for f in flows) else 0.0)
-    shares = [abs(f) / total for f in flows] if total > 0 else [1.0 / n] * n
-    return [0.5 / n + 0.5 * share for share in shares]
-
-
-def _score_feed_01(sc):  # CMP-FEED-01
-    if not sc.feeds:
-        return (0.0, 'no feed streams: nothing defines the degrees of freedom',
-                ['streams: no feed (source_unit_id "None", sink a unit)'])
-    _score, missing = _state_missing(sc, sc.feeds)
-    pairs = [(sum(sc.stream_states[i].values()) / len(sc.stream_states[i]), w)
-             for i, w in zip(sc.feeds, _feed_weights(sc))]
-    full = sum(1 for i in sc.feeds if all(sc.stream_states[i].values()))
-    return (_wmean(pairs), f'{full} of {len(sc.feeds)} feed(s) fully stated '
-            f'(flow-weighted)', missing)
-
-
 def _is_empty_stream(stream):
     """True when a stream states a total flow that is numerically zero."""
     total = _total_flow(_as_dict(stream.get('stream_properties')))
     return total is not None and abs(total) <= ZERO_FLOW
+
+
+def _score_feed_01(sc):  # CMP-FEED-01
+    # Equal weights. Feeds whose state says they are EMPTY (total flow
+    # numerically 0: unused placeholder ports) are left out; a feed whose
+    # flow is unknown stays in. (A mass-share weighting was dropped: deleting
+    # a large feed's flow switched it to equal weights and could raise the
+    # score.)
+    if not sc.feeds:
+        return (0.0, 'no feed streams: nothing defines the degrees of freedom',
+                ['streams: no feed (source_unit_id "None", sink a unit)'])
+    feeds = [i for i in sc.feeds if not _is_empty_stream(sc.streams[i])]
+    if not feeds:
+        return (0.0, f'all {len(sc.feeds)} feed(s) are empty (zero flow): '
+                f'nothing defines the degrees of freedom',
+                ['streams: no non-empty feed'])
+    score, missing = _state_missing(sc, feeds)
+    full = sum(1 for i in feeds if all(sc.stream_states[i].values()))
+    skipped = len(sc.feeds) - len(feeds)
+    return (score, f'{full} of {len(feeds)} non-empty feed(s) fully stated'
+            + (f' ({skipped} empty feed(s) not counted)' if skipped else ''),
+            missing)
+
+
+def _utility_port_feed(sc, position):
+    """The sink unit's label when feed `position` enters a utility-port
+    family unit (combustor, boiler-turbogenerator, dryer), else None."""
+    sink = sc.streams[position].get('sink_unit_id')
+    unit = sc.unit_positions.get(sink) if isinstance(sink, str) else None
+    if unit is None or sc.unit_classes[unit][1] not in UTILITY_PORT_FAMILIES:
+        return None
+    return sc.unit_labels[unit]
 
 
 def _score_feed_02(sc):  # CMP-FEED-02
@@ -1882,10 +2026,25 @@ def _score_feed_02(sc):  # CMP-FEED-02
                  if not _is_empty_stream(sc.streams[i])]
     if not positions:
         return None, 'no non-empty boundary streams', []
-    missing = [f'{sc.stream_labels[i]}.price' for i in positions
-               if _num(sc.streams[i].get('price')) is None]
-    ok = len(positions) - len(missing)
-    return (ok / len(positions), f'{ok} of {len(positions)} non-empty boundary '
+    feeds = set(sc.feeds)
+    scores, missing = [], []
+    for i in positions:
+        price = _num(sc.streams[i].get('price'))
+        port = _utility_port_feed(sc, i) if i in feeds else None
+        if price is None:
+            scores.append(0.0)
+            missing.append(f'{sc.stream_labels[i]}.price')
+        elif price == 0 and port:
+            # BioSTEAM prices a 0-priced fuel/air port from bst.stream_prices,
+            # which SFF cannot state.
+            scores.append(0.5)
+            missing.append(f'{sc.stream_labels[i]}.price: 0 on a utility port '
+                           f'of {port} (priced from bst.stream_prices, not '
+                           f'representable)')
+        else:
+            scores.append(1.0)
+    ok = scores.count(1.0)
+    return (_mean(scores), f'{ok} of {len(positions)} non-empty boundary '
             f'stream(s) priced', missing)
 
 #%% Criteria -- unit operations
@@ -2038,64 +2197,180 @@ def _reactive_reason(sc, position):
     return ', '.join(change[:3]) if change else None
 
 
+def _reactive_units(sc):
+    """[(position, reason)] of the reactive units (CMP-RXN-01/02/04)."""
+    return [(p, reason) for p, reason in
+            ((p, _reactive_reason(sc, p)) for p in range(len(sc.units)))
+            if reason is not None]
+
+
 def _score_rxn_01(sc):  # CMP-RXN-01
-    reactive, missing = 0, []
-    for position, unit in enumerate(sc.units):
-        reason = _reactive_reason(sc, position)
-        if reason is None:
-            continue
-        reactive += 1
-        if not _dicts(unit.get('reactions')):
-            missing.append(f'{sc.unit_labels[position]}.reactions: none '
-                           f'declared ({reason})')
+    reactive = _reactive_units(sc)
     if not reactive:
         return None, 'no reactive units', []
-    ok = reactive - len(missing)
-    return ok / reactive, f'{ok} of {reactive} reactive unit(s) carry reactions', missing
+    pairs, missing = [], []
+    for position, reason in reactive:
+        carries = bool(_dicts(sc.units[position].get('reactions')))
+        pairs.append((1.0 if carries else 0.0, _unit_weight(sc, position)))
+        if not carries:
+            missing.append(f'{sc.unit_labels[position]}.reactions: none '
+                           f'declared ({reason})')
+    ok = len(reactive) - len(missing)
+    return (_wmean(pairs), f'{ok} of {len(reactive)} reactive unit(s) carry '
+            f'reactions (family-weighted)', missing)
+
+
+def _reaction_completeness(reaction, where):
+    """(score, missing) of one reaction's definition: mean of {equation or
+    stoichiometry, reactant, conversion numeric in [0, 1]}."""
+    conversion = _num(reaction.get('conversion'))
+    parts = {
+        'equation|stoichiometry': _filled(reaction.get('equation'))
+        or _filled(reaction.get('stoichiometry')),
+        'reactant': _nonempty_str(reaction.get('reactant')),
+        'conversion (0..1)': conversion is not None and 0.0 <= conversion <= 1.0,
+    }
+    return (sum(parts.values()) / len(parts),
+            [f'{where}.{k}' for k, ok in parts.items() if not ok])
+
+
+def _per_reactive_unit(sc, reaction_score):
+    """(family-weighted mean, missing, n units scoring 1, n reactive units)
+    over the reactive units of each unit's mean reaction_score(sc, position,
+    index, reaction) -> (score, missing); a reactive unit without reactions
+    contributes 0. The mean is None when no unit is reactive."""
+    pairs, missing, full = [], [], 0
+    for position, reason in _reactive_units(sc):
+        label = sc.unit_labels[position]
+        reactions = [(ri, r) for ri, r in
+                     enumerate(_as_list(sc.units[position].get('reactions')))
+                     if isinstance(r, dict)]
+        if not reactions:
+            pairs.append((0.0, _unit_weight(sc, position)))
+            missing.append(f'{label}.reactions: none declared ({reason})')
+            continue
+        scores = []
+        for ri, reaction in reactions:
+            score, gaps = reaction_score(sc, position, ri, reaction)
+            scores.append(score)
+            missing.extend(gaps)
+        unit_score = _mean(scores)
+        full += unit_score == 1.0
+        pairs.append((unit_score, _unit_weight(sc, position)))
+    return _wmean(pairs), missing, full, len(pairs)
 
 
 def _score_rxn_02(sc):  # CMP-RXN-02
-    if not sc.reactions:
-        return None, 'no reactions', []
-    scores, missing = [], []
-    for ui, ri, reaction in sc.reactions:
-        where = f'{sc.unit_labels[ui]}.reactions[{ri}]'
-        conversion = _num(reaction.get('conversion'))
-        parts = {
-            'equation|stoichiometry': _filled(reaction.get('equation'))
-            or _filled(reaction.get('stoichiometry')),
-            'reactant': _nonempty_str(reaction.get('reactant')),
-            'conversion (0..1)': conversion is not None and 0.0 <= conversion <= 1.0,
-        }
-        scores.append(sum(parts.values()) / len(parts))
-        missing.extend(f'{where}.{k}' for k, ok in parts.items() if not ok)
-    full = scores.count(1.0)
-    return _mean(scores), f'{full} of {len(scores)} reaction(s) complete', missing
+    score, missing, full, n = _per_reactive_unit(
+        sc, lambda sc, p, ri, r: _reaction_completeness(
+            r, f'{sc.unit_labels[p]}.reactions[{ri}]'))
+    if not n:
+        return None, 'no reactive units', []
+    return (score, f'{full} of {n} reactive unit(s) define every reaction '
+            f'completely (family-weighted)', missing)
 
 
 def _score_rxn_03(sc):  # CMP-RXN-03
-    multi = [(u, label) for u, label in zip(sc.units, sc.unit_labels)
+    multi = [p for p, u in enumerate(sc.units)
              if len(_dicts(u.get('reactions'))) >= 2]
     if not multi:
         return None, 'no unit carries two or more reactions', []
-    ok, missing = 0, []
-    for unit, label in multi:
-        unindexed = [ri for ri, r in enumerate(_dicts(unit.get('reactions')))
+    pairs, missing = [], []
+    for position in multi:
+        label = sc.unit_labels[position]
+        unindexed = [ri for ri, r in enumerate(_dicts(sc.units[position]
+                                                      .get('reactions')))
                      if isinstance(r.get('index'), bool)
                      or not isinstance(r.get('index'), int)]
-        ok += not unindexed
+        pairs.append((0.0 if unindexed else 1.0, _unit_weight(sc, position)))
         missing.extend(f'{label}.reactions[{ri}].index' for ri in unindexed)
-    return (ok / len(multi), f'{ok} of {len(multi)} multi-reaction unit(s) '
+    ok = sum(1 for score, _w in pairs if score == 1.0)
+    return (_wmean(pairs), f'{ok} of {len(multi)} multi-reaction unit(s) '
             f'index every reaction', missing)
 
 
+def _reaction_coefficients(sc, reaction):
+    """{chemical id: signed coefficient} of a reaction -- from its
+    stoichiometry, else its equation (phase tags stripped) -- resolved by the
+    validator's helpers; None when neither resolves."""
+    validator = _validator()
+    try:
+        stoichiometry = reaction.get('stoichiometry')
+        if _filled(stoichiometry):
+            coeffs, _reason = validator._stoich_to_coeffs(stoichiometry, sc.vctx)
+            if coeffs:
+                return coeffs
+        equation = reaction.get('equation')
+        if isinstance(equation, str) and '->' in equation:
+            sides = [' + '.join(_PHASE_TAG_RE.sub('', t.strip())
+                                for t in side.split('+'))
+                     for side in equation.split('->', 1)]
+            return validator._parse_equation(' -> '.join(sides), sc.vctx) or None
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _has_phase_tags(equation):
+    """True when every species of a reaction equation carries a thermosteam
+    phase tag ('Glucose,l -> 2 Ethanol,l + 2 CO2,g')."""
+    if not isinstance(equation, str) or '->' not in equation:
+        return False
+    terms = [t.strip() for side in equation.split('->', 1)
+             for t in side.split('+') if t.strip()]
+    return bool(terms) and all(_PHASE_TAG_RE.search(t) for t in terms)
+
+
+def _basis_derivable(sc, reaction):
+    """True when the reaction's basis follows from its coefficients: exactly
+    one of sum(nu*MW) ~ 0 (molar basis conserves mass) and sum(nu) ~ 0 (mass
+    basis) holds, to BASIS_RTOL relative, with every molar mass resolvable
+    (declared or from the formula, as the validator resolves it)."""
+    coeffs = _reaction_coefficients(sc, reaction)
+    if not coeffs:
+        return False
+    masses = [sc.vctx.molar_mass(cid) for cid in coeffs]
+    if any(m is None for m in masses):
+        return False
+    nus = list(coeffs.values())
+    terms = [nu * m for nu, m in zip(nus, masses)]
+    molar_basis = abs(sum(terms)) <= BASIS_RTOL * sum(abs(t) for t in terms)
+    mass_basis = abs(sum(nus)) <= BASIS_RTOL * sum(abs(nu) for nu in nus)
+    return molar_basis != mass_basis
+
+
+def _single_phase_ports(sc, position):
+    """True when unit `position` has >=1 connected stream and every one
+    carries phase data with at most one phase."""
+    uid = sc.units[position].get('id')
+    if not isinstance(uid, str):
+        return False
+    ports = sc.unit_inlets.get(uid, []) + sc.unit_outlets.get(uid, [])
+    sets = [_phase_set(sc.streams[i]) for i in ports]
+    return bool(sets) and all(s is not None and len(s) <= 1 for s in sets)
+
+
+def _reaction_basis_phase(sc, position, ri, reaction):
+    """(score, missing) of one reaction for CMP-RXN-04: mean of {basis,
+    phase}, each DERIVED_CREDIT when derivable (neither is representable)."""
+    where = f'{sc.unit_labels[position]}.reactions[{ri}]'
+    basis = _basis_derivable(sc, reaction)
+    phase = (_has_phase_tags(reaction.get('equation'))
+             or _single_phase_ports(sc, position))
+    missing = [f'{where}: basis (mol|wt) not representable'
+               + (' (derivable from the mass balance)' if basis else ''),
+               f'{where}: reacting phase not representable'
+               + (' (derivable)' if phase else '')]
+    return DERIVED_CREDIT * (basis + phase) / 2, missing
+
+
 def _score_rxn_04(sc):  # CMP-RXN-04
-    labels = sorted({sc.unit_labels[ui] for ui, _ri, _r in sc.reactions})
-    if not labels:
-        return None, 'no reactions', []
-    return (0.0, 'reaction basis (mol/wt) and reacting phase not representable',
-            [f'{label}.reactions: basis (mol|wt) and phase not representable'
-             for label in labels])
+    score, missing, _full, n = _per_reactive_unit(sc, _reaction_basis_phase)
+    if not n:
+        return None, 'no reactive units', []
+    return (score, f'not representable; basis and phase derivable '
+            f'(DERIVED_CREDIT) where the data imply them, over {n} reactive '
+            f'unit(s)', missing)
 
 #%% Criteria -- costing
 
@@ -2110,27 +2385,58 @@ def _correlation(unit, item):
     return _as_dict(_as_dict(unit.get('purchase_cost_correlations')).get(item))
 
 
+_NO_COSTED_UNITS = 'no costed units (no units, or all are cost-free mixers/splitters)'
+
+
+def _per_costed_unit(sc, unit_score, positions=None):
+    """(family-weighted mean or None, missing, n units scoring 1) over the
+    costed units (or `positions`) of unit_score(sc, position) -> (score,
+    missing locators)."""
+    pairs, missing = [], []
+    for position in sc.costed if positions is None else positions:
+        score, gaps = unit_score(sc, position)
+        pairs.append((score, _unit_weight(sc, position)))
+        missing.extend(gaps)
+    full = sum(1 for score, _w in pairs if score == 1.0)
+    return _wmean(pairs), missing, full
+
+
+def _cost_01_unit(sc, position):
+    """CMP-COST-01 of one costed unit: a non-empty purchase_costs -> 1."""
+    costs = sc.units[position].get('purchase_costs')
+    if isinstance(costs, dict) and costs:
+        return 1.0, []
+    note = ' (empty)' if isinstance(costs, dict) else ''
+    return 0.0, [f'{sc.unit_labels[position]}.purchase_costs{note}']
+
+
 def _score_cost_01(sc):  # CMP-COST-01
-    if not sc.units:
-        return None, 'no units', []
-    missing = [f'{label}.purchase_costs' for unit, label
-               in zip(sc.units, sc.unit_labels)
-               if not isinstance(unit.get('purchase_costs'), dict)]
-    ok = len(sc.units) - len(missing)
-    return (ok / len(sc.units), f'{ok} of {len(sc.units)} unit(s) record '
-            f'purchase costs', missing)
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
+    score, missing, ok = _per_costed_unit(sc, _cost_01_unit)
+    return (score, f'{ok} of {len(sc.costed)} costed unit(s) record purchase '
+            f'costs (family-weighted)', missing)
+
+
+def _cost_02_unit(sc, position):
+    """CMP-COST-02 of one costed unit: fraction of its purchase-cost items
+    with a numeric installed cost; no items -> 0."""
+    unit, label = sc.units[position], sc.unit_labels[position]
+    items = list(_as_dict(unit.get('purchase_costs')))
+    if not items:
+        return 0.0, [f'{label}.purchase_costs: no items (so no installed costs)']
+    installed = _as_dict(unit.get('installed_costs'))
+    missing = [f"{label}.installed_costs['{item}']" for item in items
+               if _num(installed.get(item)) is None]
+    return 1.0 - len(missing) / len(items), missing
 
 
 def _score_cost_02(sc):  # CMP-COST-02
-    items = _cost_items(sc)
-    if not items:
-        return None, 'no purchase-cost items', []
-    missing = [f"{label}.installed_costs['{item}']"
-               for unit, label, item, _cost in items
-               if _num(_as_dict(unit.get('installed_costs')).get(item)) is None]
-    ok = len(items) - len(missing)
-    return (ok / len(items), f'{ok} of {len(items)} cost item(s) have an '
-            f'installed cost', missing)
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
+    score, missing, ok = _per_costed_unit(sc, _cost_02_unit)
+    return (score, f'{ok} of {len(sc.costed)} costed unit(s) have an installed '
+            f'cost for every item (family-weighted)', missing)
 
 
 def _has_quantity_unit(value, declared):
@@ -2141,44 +2447,64 @@ def _has_quantity_unit(value, declared):
     return isinstance(declared, str)
 
 
+def _cost_03_unit(sc, position):
+    """CMP-COST-03 of one costed unit: design results absent or empty -> 0;
+    some numeric result without a quantity unit -> 0.5; else 1."""
+    unit, label = sc.units[position], sc.unit_labels[position]
+    results = unit.get('design_results')
+    if not isinstance(results, dict) or not results:
+        note = ' (empty)' if isinstance(results, dict) else ''
+        return 0.0, [f'{label}.design_results{note}']
+    units_map = _as_dict(unit.get('quantity_units_for_design_results'))
+    unitless = [k for k, v in results.items() if _num(v) is not None
+                and not _has_quantity_unit(v, units_map.get(k))]
+    return (0.5 if unitless else 1.0,
+            [f"{label}.quantity_units_for_design_results['{k}']"
+             for k in unitless])
+
+
 def _score_cost_03(sc):  # CMP-COST-03
-    if not sc.units:
-        return None, 'no units', []
-    scores, missing = [], []
-    for unit, label in zip(sc.units, sc.unit_labels):
-        results = unit.get('design_results')
-        if not isinstance(results, dict):
-            scores.append(0.0)
-            missing.append(f'{label}.design_results')
-            continue
-        units_map = _as_dict(unit.get('quantity_units_for_design_results'))
-        unitless = [k for k, v in results.items() if _num(v) is not None
-                    and not _has_quantity_unit(v, units_map.get(k))]
-        scores.append(0.5 if unitless else 1.0)
-        missing.extend(f"{label}.quantity_units_for_design_results['{k}']"
-                       for k in unitless)
-    full = scores.count(1.0)
-    return (_mean(scores), f'{full} of {len(scores)} unit(s) state design '
-            f'results with units', missing)
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
+    score, missing, ok = _per_costed_unit(sc, _cost_03_unit)
+    return (score, f'{ok} of {len(sc.costed)} costed unit(s) state design '
+            f'results with units (family-weighted)', missing)
 
 
 _CORRELATION_CREDIT = {'power_law': 1.0, 'custom_function': 0.5}
 
 
-def _score_cost_04(sc):  # CMP-COST-04
-    items = _cost_items(sc)
+def _cost_04_unit(sc, position):
+    """CMP-COST-04 of one costed unit: mean correlation credit over its
+    purchase-cost items (power_law 1, custom_function 0.5, none 0); no items
+    -> 0."""
+    unit, label = sc.units[position], sc.unit_labels[position]
+    items = list(_as_dict(unit.get('purchase_costs')))
     if not items:
-        return None, 'no purchase-cost items', []
+        return 0.0, [f'{label}.purchase_costs: no items to correlate']
     scores, missing = [], []
-    for unit, label, item, _cost in items:
+    for item in items:
         kind = _correlation(unit, item).get('correlation_type')
         scores.append(_CORRELATION_CREDIT.get(kind, 0.0))
         if kind != 'power_law':
-            note = ' (custom_function: not re-derivable)' if kind == 'custom_function' else ''
+            note = (' (custom_function: not re-derivable)'
+                    if kind == 'custom_function' else '')
             missing.append(f"{label}.purchase_cost_correlations['{item}']{note}")
-    power = scores.count(1.0)
-    return (_mean(scores), f'{power} of {len(items)} cost item(s) carry a '
-            f'power-law correlation', missing)
+    return _mean(scores), missing
+
+
+def _score_cost_04(sc):  # CMP-COST-04
+    # Only units BioSTEAM cannot re-cost itself: a core class identified at
+    # confidence 1 recomputes its costs from its design results.
+    positions = [p for p in sc.costed if not _core_class_known(sc, p)]
+    if not positions:
+        return (None, 'every costed unit is a core BioSTEAM class (costs '
+                'recomputed from design results)' if sc.costed
+                else _NO_COSTED_UNITS, [])
+    score, missing, ok = _per_costed_unit(sc, _cost_04_unit, positions)
+    return (score, f'{ok} of {len(positions)} costed unit(s) outside core '
+            f'BioSTEAM carry power-law correlations for every item '
+            f'(family-weighted)', missing)
 
 
 def _back_derivable(unit, item, cost):
@@ -2197,26 +2523,71 @@ def _back_derivable(unit, item, cost):
 
 
 def _score_cost_05(sc):  # CMP-COST-05
-    items = _cost_items(sc)
-    if not items:
-        return None, 'no purchase-cost items', []
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
     missing = ['metadata: target cost index (CEPCI) of the costs not representable']
     source = next((f"{label}.purchase_costs['{item}']" for unit, label, item, cost
-                   in items if _back_derivable(unit, item, cost)), None)
+                   in _cost_items(sc) if _back_derivable(unit, item, cost)), None)
     if source:
         return (DERIVED_CREDIT, f'not representable; back-derivable from '
                 f'{source}', missing)
     return 0.0, 'not representable and no power-law item allows back-derivation', missing
 
 
+def _count_result_key(unit):
+    """The first design_results key naming a count ('Number of reactors'),
+    or None."""
+    for key in _as_dict(unit.get('design_results')):
+        if isinstance(key, str) and key.strip().lower().startswith('number of'):
+            return key
+    return None
+
+
+def _cost_06_unit(sc, position):
+    """CMP-COST-06 of one costed unit: DERIVED_CREDIT when a design result
+    states a count ('Number of ...'), else 0 (never representable)."""
+    label = sc.unit_labels[position]
+    key = _count_result_key(sc.units[position])
+    if key:
+        return DERIVED_CREDIT, [f"{label}: parallel counts (Unit.parallel, "
+                                f"CostItem.N) not representable (derivable "
+                                f"from design_results['{key}'])"]
+    return 0.0, [f'{label}: parallel counts (Unit.parallel, CostItem.N) not '
+                 f'representable']
+
+
 def _score_cost_06(sc):  # CMP-COST-06
-    power = [(label, item) for unit, label, item, _c in _cost_items(sc)
-             if _correlation(unit, item).get('correlation_type') == 'power_law']
-    if not power:
-        return None, 'no power-law cost items', []
-    return (0.0, 'parallel-unit count (CostItem.N) not representable',
-            [f"{label}.purchase_cost_correlations['{item}']: parallel-unit "
-             f"count N not representable" for label, item in power])
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
+    score, missing, _ok = _per_costed_unit(sc, _cost_06_unit)
+    derived = sum(1 for p in sc.costed if _count_result_key(sc.units[p]))
+    return (score, f'not representable; derivable from a count design result '
+            f'for {derived} of {len(sc.costed)} costed unit(s)', missing)
+
+
+def _cost_07_unit(sc, position):
+    """CMP-COST-07 of one costed unit: 1 when it has correlation items and
+    every one states a numeric lifetime; else DERIVED_CREDIT for a core class
+    at confidence 1 (class default lifetime); else 0."""
+    unit, label = sc.units[position], sc.unit_labels[position]
+    correlations = [_as_dict(c) for c in
+                    _as_dict(unit.get('purchase_cost_correlations')).values()]
+    if correlations and all(_num(c.get('lifetime')) is not None
+                            for c in correlations):
+        return 1.0, []
+    if _core_class_known(sc, position):
+        return DERIVED_CREDIT, [f'{label}: equipment lifetime not stated '
+                                f'(class default applies)']
+    return 0.0, [f'{label}: equipment lifetime not stated '
+                 f'(purchase_cost_correlations[*].lifetime)']
+
+
+def _score_cost_07(sc):  # CMP-COST-07
+    if not sc.costed:
+        return None, _NO_COSTED_UNITS, []
+    score, missing, ok = _per_costed_unit(sc, _cost_07_unit)
+    return (score, f'{ok} of {len(sc.costed)} costed unit(s) state every '
+            f'lifetime (family-weighted)', missing)
 
 #%% Criteria -- utilities
 
@@ -2242,13 +2613,35 @@ def _agent_gaps(group, agent):
     return gaps
 
 
+def _utility_need(sc):
+    """True when the flowsheet needs utility agents (R1.9): a unit in a
+    utility-using family, any unit utility result, or any declared agent."""
+    return (any(family in UTILITY_USING_FAMILIES
+                for _name, family, _c in sc.unit_classes)
+            or bool(_utility_refs(sc)) or bool(sc.agents))
+
+
+def _heat_need(sc):
+    """True when the flowsheet needs heat-utility agents: a unit in a
+    heat-exchanging family, or a declared heat agent."""
+    return (any(family in HEAT_UTILITY_FAMILIES
+                for _name, family, _c in sc.unit_classes)
+            or any(group == 'heat_utilities' for group, _a, _l in sc.agents))
+
+
+_NO_UTILITY_NEED = 'no unit needs utilities and no agent is declared or referenced'
+
+
 def _score_util_01(sc):  # CMP-UTIL-01
+    if not _utility_need(sc):
+        return None, _NO_UTILITY_NEED, []
     refs = _utility_refs(sc)
     declared = {agent.get('id'): (group, agent, label)
                 for group, agent, label in sc.agents
                 if isinstance(agent.get('id'), str)}
     if not refs and not sc.agents:
-        return None, 'no utility agents referenced or declared', []
+        return (0.0, 'utility-using units but no agent declared or referenced',
+                ['utilities: no agents declared'])
     scores, missing = [], []
     for agent_id, unit_label in refs.items():
         if agent_id not in declared:
@@ -2278,33 +2671,90 @@ _PRICE_FIELDS = {
 
 
 def _score_util_02(sc):  # CMP-UTIL-02
-    if not sc.agents:
-        return None, 'no utility agents declared', []
-    missing = []
+    if not _utility_need(sc):
+        return None, _NO_UTILITY_NEED, []
+    declared = {agent.get('id') for _g, agent, _l in sc.agents}
+    undeclared = [(agent_id, unit_label) for agent_id, unit_label
+                  in _utility_refs(sc).items() if agent_id not in declared]
+    total = len(sc.agents) + len(undeclared)
+    if not total:
+        return (0.0, 'utility-using units but no agent declared or referenced',
+                ['utilities: no agents declared'])
+    missing = [f"utilities: no agent '{agent_id}' to price (referenced by "
+               f"{unit_label})" for agent_id, unit_label in undeclared]
     for group, agent, label in sc.agents:
         fields, locator = _PRICE_FIELDS[group]
         if not any(_num(agent.get(f)) is not None for f in fields):
             missing.append(f'{label}.{locator}')
-    ok = len(sc.agents) - len(missing)
-    return ok / len(sc.agents), f'{ok} of {len(sc.agents)} agent(s) priced', missing
+    ok = total - len(missing)
+    return ok / total, f'{ok} of {total} referenced/declared agent(s) priced', missing
+
+
+def _agent_roles(sc):
+    """{agent id: {'heating', 'cooling'}} from the sign of the duties units
+    record for it (the exporter files duty > 0 under consumption and duty <=
+    0 under production; only the sign is read). Agent-regenerating families
+    (boilers, cooling towers, heat-exchanger networks) record reversed duties
+    and are ignored."""
+    roles = {}
+    for unit, (_name, family, _c) in zip(sc.units, sc.unit_classes):
+        if family in AGENT_REGENERATOR_FAMILIES:
+            continue
+        for key in ('utility_consumption_results', 'utility_production_results'):
+            for agent_id, value in _as_dict(unit.get(key)).items():
+                duty = _num(value)
+                if duty:
+                    roles.setdefault(agent_id, set()).add(
+                        'heating' if duty > 0 else 'cooling')
+    return roles
+
+
+def _water_dominated(composition):
+    """True when water is at least half of an agent composition (by the
+    stated mol, else mass, fraction)."""
+    water = sum(_entry_fraction(e) or 0.0 for e in _dicts(composition)
+                if str(e.get('component_name', '')).strip().lower()
+                in ('water', 'h2o'))
+    return water >= 0.5
+
+
+def _phase_change_agent(agent, roles):
+    """True when a heat agent delivers latent heat, so it needs no
+    temperature limit: an all-vapor agent that is not recorded as cooling
+    only (a condensing heating agent such as steam), or an all-liquid agent
+    that is not water-dominated and is recorded as cooling only (an
+    evaporating refrigerant). Liquid water-based agents (cooling or chilled
+    water, brine) and liquid heating agents are sensible-heat agents."""
+    phases = [e.get('phase') for e in _dicts(agent.get('composition'))]
+    if not phases:
+        return False
+    role = next(iter(roles)) if len(roles) == 1 else None
+    if all(p == 'g' for p in phases):
+        return role != 'cooling'
+    if all(p == 'l' for p in phases):
+        return role == 'cooling' and not _water_dominated(agent.get('composition'))
+    return False
 
 
 def _score_util_03(sc):  # CMP-UTIL-03
+    if not _heat_need(sc):
+        return None, 'no unit exchanges heat with a heat-utility agent', []
     heat = [(agent, label) for group, agent, label in sc.agents
             if group == 'heat_utilities']
     if not heat:
-        return None, 'no heat-utility agents declared', []
+        return (0.0, 'heat-exchanging units but no heat-utility agent declared',
+                ['utilities.heat_utilities: none declared'])
+    roles = _agent_roles(sc)
     scores, missing = [], []
     for agent, label in heat:
         efficiency = _num(agent.get('heat_transfer_efficiency')) is not None
-        phases = [e.get('phase') for e in _dicts(agent.get('composition'))]
-        condensing = bool(phases) and all(p == 'g' for p in phases)
-        limit = _num(agent.get('temperature_limit')) is not None or condensing
+        limit = (_num(agent.get('temperature_limit')) is not None
+                 or _phase_change_agent(agent, roles.get(agent.get('id'), set())))
         scores.append(0.5 * efficiency + 0.5 * limit)
         if not efficiency:
             missing.append(f'{label}.heat_transfer_efficiency')
         if not limit:
-            missing.append(f'{label}.temperature_limit (not a condensing agent)')
+            missing.append(f'{label}.temperature_limit (sensible-heat agent)')
     full = scores.count(1.0)
     return _mean(scores), f'{full} of {len(heat)} heat agent(s) fully bounded', missing
 
@@ -2312,15 +2762,23 @@ def _score_util_03(sc):  # CMP-UTIL-03
 def _score_util_04(sc):  # CMP-UTIL-04
     if not sc.units:
         return None, 'no units', []
-    scores, missing = [], []
-    for unit, label in zip(sc.units, sc.unit_labels):
+    pairs, missing = [], []
+    for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
         keys = ('utility_consumption_results', 'utility_production_results')
         absent = [k for k in keys if not isinstance(unit.get(k), dict)]
-        scores.append(1.0 - len(absent) / 2)
+        pairs.append((1.0 - len(absent) / 2, _unit_weight(sc, position)))
         missing.extend(f'{label}.{k}' for k in absent)
-    full = scores.count(1.0)
-    return (_mean(scores), f'{full} of {len(scores)} unit(s) record utility '
-            f'results', missing)
+    full = sum(1 for score, _w in pairs if score == 1.0)
+    return (_wmean(pairs), f'{full} of {len(pairs)} unit(s) record utility '
+            f'results (family-weighted)', missing)
+
+
+def _score_util_05(sc):  # CMP-UTIL-05
+    if not _heat_need(sc):
+        return None, 'no unit exchanges heat with a heat-utility agent', []
+    return (0.0, 'agent selection parameters not representable',
+            ['utilities.heat_utilities: agent approach dT, isfuel and the '
+             'global HeatUtility.dT not representable'])
 
 #%% Criteria -- system & TEA
 
@@ -2335,7 +2793,9 @@ _TEA_ITEMS = ('currency', 'start year', 'plant duration', 'IRR (discount rate)',
               'income tax', 'depreciation schedule', 'construction schedule',
               'startup period and fractions', 'working capital',
               'fixed-operating-cost model',
-              'capital-cost model (Lang or DPI/TDC/FCI factors)', 'financing')
+              'capital-cost model (Lang or DPI/TDC/FCI factors, OSBL units, '
+              'TEA class)', 'financing',
+              'price book (bst.stream_prices, incl. utility-port prices)')
 
 
 def _score_sys_02(sc):  # CMP-SYS-02
@@ -2347,8 +2807,8 @@ def _score_sys_02(sc):  # CMP-SYS-02
     missing.extend(f'metadata: {item} not representable'
                    for item in _TEA_ITEMS if item not in stated)
     n = sum(stated.values())
-    return (n / len(_TEA_ITEMS), f'{n} of {len(_TEA_ITEMS)} TEA parameters '
-            f'stated (only currency and year are representable)', missing)
+    return (n / len(_TEA_ITEMS), f'{n} of {len(_TEA_ITEMS)} TEA parameter '
+            f'groups stated (only currency and year are representable)', missing)
 
 
 def _score_sys_03(sc):  # CMP-SYS-03
@@ -2405,23 +2865,27 @@ def _score_int_02(sc):  # CMP-INT-02
     return score, message, missing
 
 
-_NON_SEMANTIC_IDS = frozenset({'SCHEMA', 'XREF-01', 'TAG-01'})
-_SEVERITY_WEIGHT = {'error': 1.0, 'warning': 0.5}
+_SEVERITY_ORDER = ('error', 'warning', 'info')
+_STATUS_ORDER = ('pass', 'fail', 'skip')
 
 
-def _score_int_03(sc):  # CMP-INT-03
-    executed = [r for r in sc.results if r.check_id not in _NON_SEMANTIC_IDS
-                and r.severity in _SEVERITY_WEIGHT and r.status != 'skip']
-    if not executed:
-        return None, 'no semantic checks executed', []
-    total = sum(_SEVERITY_WEIGHT[r.severity] for r in executed)
-    passed = sum(_SEVERITY_WEIGHT[r.severity] for r in executed
-                 if r.status == 'pass')
-    missing = [_clip(f'{r.check_id} ({r.severity}) at {r.path}: {r.message}')
-               for r in executed if r.status != 'pass']
-    n_pass = sum(1 for r in executed if r.status == 'pass')
-    return (passed / total, f'{n_pass} of {len(executed)} executed semantic '
-            f'check(s) pass', missing)
+def _validation_summary(results):
+    """{severity: {status: count}} over validator results, severities and
+    statuses in their canonical order (unknown ones after, sorted). Reported
+    beside is_valid instead of a semantic-check criterion: scoring the pass
+    fraction rewarded deleting data (a failing check turns into a skip)."""
+    counts = {}
+    for r in results:
+        severity, status = getattr(r, 'severity', None), getattr(r, 'status', None)
+        counts.setdefault(str(severity), {}).setdefault(str(status), 0)
+        counts[str(severity)][str(status)] += 1
+
+    def order(keys, canonical):
+        return ([k for k in canonical if k in keys]
+                + sorted(k for k in keys if k not in canonical))
+
+    return {sev: {st: counts[sev][st] for st in order(counts[sev], _STATUS_ORDER)}
+            for sev in order(counts, _SEVERITY_ORDER)}
 
 
 def _score_int_04(sc):  # CMP-INT-04
@@ -2455,12 +2919,14 @@ _CRITERIA = {
     'CMP-COST-01': _score_cost_01, 'CMP-COST-02': _score_cost_02,
     'CMP-COST-03': _score_cost_03, 'CMP-COST-04': _score_cost_04,
     'CMP-COST-05': _score_cost_05, 'CMP-COST-06': _score_cost_06,
+    'CMP-COST-07': _score_cost_07,
     'CMP-UTIL-01': _score_util_01, 'CMP-UTIL-02': _score_util_02,
     'CMP-UTIL-03': _score_util_03, 'CMP-UTIL-04': _score_util_04,
+    'CMP-UTIL-05': _score_util_05,
     'CMP-SYS-01': _score_sys_01, 'CMP-SYS-02': _score_sys_02,
     'CMP-SYS-03': _score_sys_03, 'CMP-SYS-04': _score_sys_04,
     'CMP-INT-01': _score_int_01, 'CMP-INT-02': _score_int_02,
-    'CMP-INT-03': _score_int_03, 'CMP-INT-04': _score_int_04,
+    'CMP-INT-04': _score_int_04,
 }
 
 #%% Driver + aggregation
@@ -2581,7 +3047,10 @@ def score_flowsheet_completeness(flowsheet, schema_file=None):
         the schema's version), per-category and per-criticality scores (None
         when nothing in the group was scored), one :class:`CriterionResult`
         per criterion, the file's raw ``sff_version``, the validator verdict
-        and results, and the ``recipe`` route summary.
+        (``is_valid``), its results counted as ``validation_summary``
+        (``{severity: {status: count}}``) and listed in full, and the
+        ``recipe`` route summary. Neither the validator summary nor the
+        recipe is folded into the score.
 
     Raises
     ------
@@ -2614,6 +3083,7 @@ def score_flowsheet_completeness(flowsheet, schema_file=None):
                                       registry['categories']),
         criticality_scores=_group_scores(criteria, 'criticality', CRITICALITIES),
         criteria=criteria, sff_version=raw_version, is_valid=is_valid,
+        validation_summary=_validation_summary(results),
         validation_results=results, recipe=_recipe_route(sc))
 
 #%% Report formatting + CLI
@@ -2632,6 +3102,16 @@ def _fmt_recipe(recipe):
     return f'embedded load script + environment; {digests}; {declared}'
 
 
+def _fmt_validation(summary):
+    """'error 30 pass / 1 fail; warning 4 pass' from a validation summary;
+    'no validator results' when empty."""
+    if not summary:
+        return 'no validator results'
+    return '; '.join(f'{severity} ' + ' / '.join(f'{n} {status}'
+                                                  for status, n in counts.items())
+                     for severity, counts in summary.items())
+
+
 def format_completeness_report(report, max_missing=5):
     """
     Render a :class:`CompletenessReport` as a plain-text table.
@@ -2647,7 +3127,8 @@ def format_completeness_report(report, max_missing=5):
     Returns
     -------
     str
-        Header (scores, validity, recipe route), per-category and
+        Header (scores, validity, validator summary, recipe route),
+        per-category and
         per-criticality scores, then one row per criterion followed by its
         first `max_missing` missing locators.
     """
@@ -2657,6 +3138,7 @@ def format_completeness_report(report, max_missing=5):
         'SFF completeness report',
         f'  sff_version         : {version}   (valid: '
         f"{'yes' if report.is_valid else 'no'})",
+        f'  validator checks    : {_fmt_validation(report.validation_summary)}',
         f'  overall score       : {_fmt(report.score)}   (all scored criteria)',
         f'  representable score : {_fmt(report.representable_score)}   '
         f'(criteria this sff_version can state)',
