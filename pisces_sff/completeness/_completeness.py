@@ -74,11 +74,31 @@ CompletenessReport = namedtuple(
 # other fields (e.g. an HXutility outlet temperature read off its outlet stream).
 DERIVED_CREDIT = 0.75
 
-# CMP-THM-02 identity tiers below a registry id (CAS/SMILES, credit 1): the
-# chemical id resolves by name in the `chemicals` database (the lookup
-# thermosteam's Chemical(ID) performs), or only a formula narrows it down.
+# CMP-THM-02 identity tiers below a valid registry id (CAS/InChI/InChIKey/
+# SMILES, credit 1): the chemical id resolves by name in the `chemicals`
+# database (the lookup thermosteam's Chemical(ID) performs) AND the record's
+# molar mass (or formula) matches the chemical's own (verified), or resolves
+# with nothing stated to verify it against (unverified); or only a formula
+# narrows it down (R2.3).
 NAME_RESOLVED_CREDIT = 0.75
+NAME_UNVERIFIED_CREDIT = 0.5
 FORMULA_ONLY_CREDIT = 0.25
+
+# R2.3: a name-resolved record verifies the chemical when their molar masses
+# agree to NAME_MW_RTOL; R2.0: a CAS number whose database record's molar
+# mass differs from the chemical's by more than CAS_MW_RTOL is invalid.
+NAME_MW_RTOL = 0.01
+CAS_MW_RTOL = 0.02
+
+# R2.0 stream-state plausibility: temperatures in (0, T_MAX) K; the
+# fractions of one composition sum to 1 within FRACTION_SUM_TOL.
+T_MAX = 1.0e4
+FRACTION_SUM_TOL = 1e-3
+
+# R2.2: a derivation from stream data needs the unit's total mass balance
+# (and, for a physical unit, every species' molar balance) to close within
+# CLOSURE_RTOL of the throughput.
+CLOSURE_RTOL = 0.01
 
 # CMP-RXN-04: relative tolerance of the mass balance sum(nu*MW) (molar basis)
 # and of sum(nu) (mass basis) when deriving a reaction's basis.
@@ -147,7 +167,8 @@ def _design_spec_registry():
     return _REGISTRY_CACHE
 
 
-# [search function or None], filled on first use; {name: bool} of lookups.
+# [search function or None], filled on first use; {name: database record or
+# None} of lookups.
 _CHEMICALS_SEARCH = []
 _NAME_LOOKUP = {}
 
@@ -166,21 +187,27 @@ def _chemicals_search():
     return _CHEMICALS_SEARCH[0]
 
 
-def _name_resolvable(name):
-    """True when chemical id `name` resolves in the `chemicals` database
-    (CMP-THM-02 name tier). Cached per name, so a failed lookup costs one
-    search (the first also loads the database, ~1 s); never raises -- an
-    unavailable package or any lookup error means False."""
+def _name_record(name):
+    """The `chemicals` database record `name` (a chemical name, synonym or
+    CAS number) resolves to, or None. Cached per name, so a failed lookup
+    costs one search (the first also loads the database, ~1 s); never raises
+    -- an unavailable package or any lookup error means None."""
     if not _nonempty_str(name):
-        return False
+        return None
     name = name.strip()
     if name not in _NAME_LOOKUP:
         search = _chemicals_search()
         try:
-            _NAME_LOOKUP[name] = search is not None and search(name) is not None
+            _NAME_LOOKUP[name] = search(name) if search is not None else None
         except Exception:
-            _NAME_LOOKUP[name] = False
+            _NAME_LOOKUP[name] = None
     return _NAME_LOOKUP[name]
+
+
+def _name_resolvable(name):
+    """True when chemical id `name` resolves in the `chemicals` database
+    (CMP-THM-02 name tier; see _name_record)."""
+    return _name_record(name) is not None
 
 #%% Criteria registry (criteria.yaml)
 
@@ -409,56 +436,86 @@ def _label(kind, obj, position):
 
 
 def _entry_fraction(entry):
-    """Numeric mol_fraction (else mass_fraction) of a composition entry."""
+    """Valid (numeric, in [0, 1]) mol_fraction, else valid mass_fraction, of
+    a composition entry; None when neither is valid (R2.0)."""
     if not isinstance(entry, dict):
         return None
-    x = _num(entry.get('mol_fraction'))
-    return x if x is not None else _num(entry.get('mass_fraction'))
+    x = _valid_fraction(entry.get('mol_fraction'))
+    return x if x is not None else _valid_fraction(entry.get('mass_fraction'))
 
 
 def _composition_ok(composition):
-    """Non-empty composition list whose every entry has a numeric fraction."""
-    return (isinstance(composition, list) and bool(composition)
-            and all(_entry_fraction(e) is not None for e in composition))
-
-
-def _phases_ok(phases):
-    """Every phase states a numeric total_molar_flow and a complete
-    composition; a zero-flow phase may be empty (the exporter serializes a
-    phase with F_mol <= ZERO_FLOW as empty -- see STR-13)."""
-    if not isinstance(phases, dict) or not phases:
+    """A plausible composition (R2.0): a non-empty list of entries, each
+    naming its component (non-empty string), whose mol fractions -- or else
+    mass fractions -- are all in [0, 1] and sum to 1 within
+    FRACTION_SUM_TOL per phase (entries of the legacy flat shape are
+    grouped by their phase tag: each phase's fractions sum to 1). Whether
+    the names resolve is CMP-THM-01's and CMP-INT-02's job, not this
+    one's."""
+    if not isinstance(composition, list) or not composition or not all(
+            isinstance(e, dict) and _nonempty_str(e.get('component_name'))
+            for e in composition):
         return False
-    for phase in phases.values():
-        flow = _num(phase.get('total_molar_flow')) \
-            if isinstance(phase, dict) else None
-        if flow is None:
-            return False
-        if abs(flow) > ZERO_FLOW and not _composition_ok(phase.get('composition')):
+    groups = {}
+    for entry in composition:
+        tag = entry.get('phase')
+        groups.setdefault(tag if isinstance(tag, str) else None, []).append(entry)
+    for group in groups.values():
+        sums = [[_valid_fraction(e.get(key)) for e in group]
+                for key in ('mol_fraction', 'mass_fraction')]
+        if not any(all(v is not None for v in values)
+                   and abs(sum(values) - 1.0) <= FRACTION_SUM_TOL
+                   for values in sums):
             return False
     return True
 
 
+def _phases_ok(phases):
+    """Every phase states a valid (>= 0) total_molar_flow and at least one
+    carries flow; each phase with flow has a plausible composition
+    (_composition_ok), while a zero-flow phase is exempt and may be empty
+    (the exporter serializes a phase with F_mol <= ZERO_FLOW as empty -- see
+    STR-13)."""
+    if not isinstance(phases, dict) or not phases:
+        return False
+    populated = False
+    for phase in phases.values():
+        flow = _valid_flow(phase.get('total_molar_flow')) \
+            if isinstance(phase, dict) else None
+        if flow is None:
+            return False
+        if flow > ZERO_FLOW:
+            if not _composition_ok(phase.get('composition')):
+                return False
+            populated = True
+    return populated
+
+
 def _total_flow(sp):
-    """First numeric total flow (mass, else molar) of a stream_properties."""
+    """First valid (finite, >= 0) total flow -- mass, else molar -- of a
+    stream_properties; an invalid one counts as absent (R2.0)."""
     for key in ('total_mass_flow', 'total_molar_flow'):
-        value = _num(sp.get(key))
+        value = _valid_flow(_as_dict(sp).get(key))
         if value is not None:
             return value
     return None
 
 
-def _stream_state(stream):
+def _stream_state(stream, empty_exempt=True):
     """Booleans {T, P, flow, composition}: which parts of a stream's state are
-    stated. Composition accepts the per-phase shape (0.0.9+) or the legacy
-    flat ``stream_properties.composition``; a zero-flow stream satisfies it.
-    Missing stream_properties -> all False."""
+    stated with a plausible value (R2.0: temperature in (0, T_MAX) K,
+    pressure > 0, total flow >= 0, composition per _phases_ok -- per-phase
+    shape, 0.0.9+ -- or _composition_ok on the legacy flat
+    ``stream_properties.composition``). With `empty_exempt`, a stream stating
+    a zero total flow satisfies composition. Missing stream_properties -> all
+    False."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
-    composition = ((total is not None and abs(total) <= ZERO_FLOW)
+    composition = ((empty_exempt and total is not None and total <= ZERO_FLOW)
                    or _phases_ok(sp.get('phases'))
                    or _composition_ok(sp.get('composition')))
-    return {'T': _num(sp.get('temperature')) is not None,
-            'P': _num(sp.get('pressure')) is not None,
+    return {'T': _valid_T(sp.get('temperature')) is not None,
+            'P': _valid_P(sp.get('pressure')) is not None,
             'flow': total is not None,
             'composition': bool(composition)}
 
@@ -486,29 +543,42 @@ def _phase_entries(stream):
 
 
 def _species_flows(stream):
-    """{component: molar flow} of a stream, or None when not computable (no
-    molar flow basis or incomplete composition). A zero-flow stream -> {}."""
+    """{component: molar flow} of a stream, or None when not computable from
+    valid data (no valid molar flow basis, an implausible composition, an
+    entry without a valid mol fraction, or a legacy flat composition over
+    several phases, whose phase split is unknown). A zero-flow stream ->
+    {}; so is a per-phase stream whose every phase states a zero flow."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
-    if total is not None and abs(total) <= ZERO_FLOW:
+    if total is not None and total <= ZERO_FLOW:
         return {}
     phases = sp.get('phases')
     if isinstance(phases, dict) and phases:
-        if not _phases_ok(phases):
-            return None
-        blocks = [(_num(p.get('total_molar_flow')), _as_list(p.get('composition')))
-                  for p in phases.values()]
+        blocks = []
+        for phase in phases.values():
+            phase = _as_dict(phase)
+            flow = _valid_flow(phase.get('total_molar_flow'))
+            if flow is None:
+                return None
+            if flow > ZERO_FLOW:
+                if not _composition_ok(phase.get('composition')):
+                    return None
+                blocks.append((flow, phase['composition']))
     elif _composition_ok(sp.get('composition')) \
-            and _num(sp.get('total_molar_flow')) is not None:
-        blocks = [(_num(sp.get('total_molar_flow')), sp['composition'])]
+            and _valid_flow(sp.get('total_molar_flow')) is not None \
+            and len({e.get('phase') if isinstance(e.get('phase'), str) else None
+                     for e in sp['composition']}) == 1:
+        blocks = [(_valid_flow(sp.get('total_molar_flow')), sp['composition'])]
     else:
         return None
     flows = {}
     for molar_flow, composition in blocks:
-        for entry in _dicts(composition):
-            name, x = entry.get('component_name'), _num(entry.get('mol_fraction'))
-            if _nonempty_str(name) and x is not None:
-                flows[name] = flows.get(name, 0.0) + molar_flow * x
+        for entry in composition:
+            x = _valid_fraction(entry.get('mol_fraction'))
+            if x is None:
+                return None
+            name = entry['component_name']
+            flows[name] = flows.get(name, 0.0) + molar_flow * x
     return flows
 
 
@@ -516,16 +586,19 @@ def _species_flows(stream):
 _PHASE_TAG_RE = re.compile(r'\s*,\s*[A-Za-z]\s*$')
 
 
-def _equation_species(equation, declared=frozenset()):
-    """Species named in a reaction equation 'A + 2 B -> 3 C'. A leading
+def _equation_sides(equation, declared=frozenset()):
+    """([consumed], [produced]) species of a reaction equation
+    'A + 2 B -> 3 C'; ([], []) when it is not a string with '->'. A leading
     coefficient must be separated by whitespace ('3 HP'); a glued one ('2H2O')
     is stripped only when that yields a declared chemical id, so names that
     start with a digit survive. A thermosteam phase tag ('CO2,g') is not part
-    of the name."""
+    of the name, and a term without a letter (a bare number) names no
+    species."""
     if not isinstance(equation, str) or '->' not in equation:
-        return []
-    names = []
+        return [], []
+    sides = []
     for side in equation.split('->', 1):
+        names = []
         for term in side.split('+'):
             term = _PHASE_TAG_RE.sub('', term.strip())
             if not term:
@@ -534,8 +607,17 @@ def _equation_species(equation, declared=frozenset()):
             if name not in declared:
                 glued = re.sub(r'^\d+(?:\.\d+)?', '', name).strip()
                 name = glued if glued in declared else name
-            names.append(name)
-    return names
+            if re.search(r'[A-Za-z]', name):
+                names.append(name)
+        sides.append(names)
+    return sides[0], sides[1]
+
+
+def _equation_species(equation, declared=frozenset()):
+    """Species named in a reaction equation, consumed then produced (see
+    _equation_sides)."""
+    consumed, produced = _equation_sides(equation, declared)
+    return consumed + produced
 
 
 def _int_or_none(x):
@@ -547,27 +629,39 @@ def _int_or_none(x):
         return None
 
 
-def _stoichiometry_species(stoichiometry, declared, chem_by_index):
-    """Species with a nonzero coefficient in a stoichiometry: an object keyed
-    by chemical id or index, or an index-ordered array. Unresolvable indices
-    come back as 'index <n>'."""
+def _stoichiometry_sides(stoichiometry, declared, chem_by_index):
+    """([consumed], [produced]) species of a stoichiometry -- an object keyed
+    by chemical id or index, or an index-ordered array -- by the sign of each
+    nonzero numeric coefficient. Unresolvable indices come back as
+    'index <n>'; a species that resolves to no non-empty name is dropped."""
     if isinstance(stoichiometry, dict):
         items = stoichiometry.items()
     elif isinstance(stoichiometry, list):
         items = enumerate(stoichiometry)
     else:
-        return []
-    names = []
+        return [], []
+    consumed, produced = [], []
     for key, value in items:
-        if not _num(value):
+        nu = _num(value)
+        if not nu:
             continue
         if isinstance(key, str) and key in declared:
-            names.append(key)
-            continue
-        index = _int_or_none(key)
-        names.append(chem_by_index.get(index, f'index {key}')
-                     if index is not None else str(key))
-    return names
+            name = key
+        else:
+            index = _int_or_none(key)
+            name = (chem_by_index.get(index, f'index {key}')
+                    if index is not None else str(key))
+        if _nonempty_str(name):
+            (consumed if nu < 0 else produced).append(name)
+    return consumed, produced
+
+
+def _stoichiometry_species(stoichiometry, declared, chem_by_index):
+    """Species with a nonzero coefficient in a stoichiometry, consumed then
+    produced (see _stoichiometry_sides)."""
+    consumed, produced = _stoichiometry_sides(stoichiometry, declared,
+                                              chem_by_index)
+    return consumed + produced
 
 
 def _inline_quantities(obj, path=''):
@@ -599,6 +693,389 @@ def _is_representable(since, version):
     if since is None:
         return False
     return version is None or version >= _version_tuple(since)
+
+#%% Validity predicates (R2.0: INVALID == MISSING)
+
+# A value earns credit only if it is plausible for its role; an implausible
+# value is scored exactly like an absent one, so replacing junk by nothing
+# changes nothing. These predicates are the single shared set every
+# criterion uses.
+
+def _valid_number(x, lo=None, hi=None, lo_open=False, hi_open=False):
+    """_num(x) when it lies within [lo, hi] (either bound open, or absent),
+    else None."""
+    value = _num(x)
+    if value is None:
+        return None
+    if lo is not None and (value < lo or (lo_open and value == lo)):
+        return None
+    if hi is not None and (value > hi or (hi_open and value == hi)):
+        return None
+    return value
+
+
+def _valid_T(x):
+    """A plausible temperature: finite, in (0, T_MAX) K; else None."""
+    return _valid_number(x, 0.0, T_MAX, lo_open=True, hi_open=True)
+
+
+def _valid_P(x):
+    """A plausible pressure: finite, > 0; else None."""
+    return _valid_number(x, 0.0, lo_open=True)
+
+
+def _valid_flow(x):
+    """A plausible flow: finite, >= 0; else None."""
+    return _valid_number(x, 0.0)
+
+
+def _valid_fraction(x):
+    """A plausible fraction: finite, in [0, 1]; else None."""
+    return _valid_number(x, 0.0, 1.0)
+
+
+def _nonempty_value(x):
+    """A stated value of unknown role: not None, '', [], {} or NaN."""
+    if isinstance(x, float) and not math.isfinite(x):
+        return False
+    return _filled(x)
+
+
+def _nonempty_scalar(x):
+    """A non-blank string or a finite number (a version, a commit)."""
+    return _nonempty_str(x) or _num(x) is not None
+
+
+def _spec_positive(x):
+    return _valid_number(x, 0.0, lo_open=True) is not None
+
+
+def _spec_nonnegative(x):
+    return _valid_number(x, 0.0) is not None
+
+
+def _spec_efficiency(x):
+    return _valid_number(x, 0.0, 1.0, lo_open=True) is not None
+
+
+def _spec_fraction(x):
+    return _valid_fraction(x) is not None
+
+
+def _spec_finite(x):
+    return _num(x) is not None
+
+
+def _spec_temperature(x):
+    return _valid_T(x) is not None
+
+
+def _spec_pressure(x):
+    """A pressure > 0, or a non-empty list of them (evaporator effects)."""
+    if isinstance(x, list):
+        return bool(x) and all(_valid_P(p) is not None for p in x)
+    return _valid_P(x) is not None
+
+
+def _spec_positive_int(x):
+    value = _valid_number(x, 0.0, lo_open=True)
+    return value is not None and value == int(value)
+
+
+def _spec_split(x):
+    """A split: a fraction, or a non-empty list / object of fractions."""
+    if isinstance(x, list):
+        return bool(x) and all(_valid_fraction(v) is not None for v in x)
+    if isinstance(x, dict):
+        return bool(x) and all(_valid_fraction(v) is not None
+                               for v in x.values())
+    return _valid_fraction(x) is not None
+
+
+def _spec_lhk(x):
+    """Light and heavy keys: exactly two non-empty strings."""
+    return (isinstance(x, (list, tuple)) and len(x) == 2
+            and all(_nonempty_str(k) for k in x))
+
+
+def _spec_flag(x):
+    return isinstance(x, bool)
+
+
+# Plausibility of each design_input_specs parameter with a known role; any
+# other parameter only needs a non-empty value (_nonempty_value). V is >= 0:
+# it is a vapor fraction (flash, HXutility, evaporator; 0 = bubble point or
+# total condensation) or a volume (batch bioreactors), and the key alone does
+# not say which.
+_SPEC_PREDICATES = {
+    **dict.fromkeys(('T', 'T_lim0', 'T_lim1'), _spec_temperature),
+    'P': _spec_pressure,
+    **dict.fromkeys(('tau', 'N', 'V_max', 'k', 'dT', 'T_min_app', 'dP_design',
+                     'pr', 'reflux', 'boilup'), _spec_positive),
+    **dict.fromkeys(('tau_0', 'V'), _spec_nonnegative),
+    **dict.fromkeys(('N_stages', 'n_stages'), _spec_positive_int),
+    **dict.fromkeys(('V_wf', 'eta', 'boiler_efficiency',
+                     'turbogenerator_efficiency', 'theta_O2', 'theta', 'Lr',
+                     'Hr', 'y_top', 'x_bot'), _spec_efficiency),
+    'moisture_content': _spec_fraction,
+    **dict.fromkeys(('split', 'solids_split', 'aqueous_split'), _spec_split),
+    'LHK': _spec_lhk,
+    **dict.fromkeys(('Q', 'H', 'H_lim0', 'H_lim1', 'Duty'), _spec_finite),
+    **dict.fromkeys(('partial_condenser', 'full_condenser', 'batch',
+                     'rigorous', 'approx_duty', 'conserve_phases', 'flash',
+                     'heat_only', 'ignore_NPSH', 'is_divided'), _spec_flag),
+}
+
+
+def _valid_spec(key, value):
+    """True when design_input_specs[key] = value is plausible for the
+    parameter's role (_SPEC_PREDICATES; else any non-empty value)."""
+    predicate = _SPEC_PREDICATES.get(key) if isinstance(key, str) else None
+    return (predicate or _nonempty_value)(value)
+
+
+# The 118 element symbols (molecular-formula recognition, R2.3).
+_ELEMENTS = frozenset((
+    'H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co '
+    'Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb '
+    'Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os '
+    'Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm '
+    'Md No Lr Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl Mc Lv Ts Og').split())
+_FORMULA_RE = re.compile(r'(?:[A-Z][a-z]?(?:\d+(?:\.\d+)?)?)+')
+_FORMULA_TOKEN_RE = re.compile(r'([A-Z][a-z]?)(\d+(?:\.\d+)?)?')
+
+
+def _formula_counts(text):
+    """{element: count} of a plain molecular formula ('C2H6O', 'H3O4P',
+    'CH1.61O0.56'), or None when `text` is not one (every token must be an
+    element symbol; parentheses and charges are not parsed)."""
+    if not isinstance(text, str) or not _FORMULA_RE.fullmatch(text.strip()):
+        return None
+    counts = {}
+    for symbol, count in _FORMULA_TOKEN_RE.findall(text.strip()):
+        if symbol not in _ELEMENTS:
+            return None
+        counts[symbol] = counts.get(symbol, 0) + (float(count) if count else 1)
+    return counts
+
+
+def _formula_like(cid):
+    """True when a chemical id is itself a molecular formula ('C2H6O', 'HP',
+    'CO2'): isomer-ambiguous, so it earns no name-tier credit (R2.3)."""
+    return _formula_counts(cid) is not None
+
+
+def _valid_formula(formula):
+    """A formula that parses: plain (_formula_counts) or by the validator's
+    `chemicals`-based parser (parentheses, ...)."""
+    return _nonempty_str(formula) and (
+        _formula_counts(formula) is not None
+        or _validator()._molar_mass_from_formula(formula) is not None)
+
+
+def _chemical_molar_mass(chem):
+    """A chemical's declared molar mass (> 0), else the one derived from its
+    formula, else None."""
+    chem = _as_dict(chem)
+    declared = _valid_number(chem.get('molar_mass'), 0.0, lo_open=True)
+    if declared is not None:
+        return declared
+    formula = chem.get('formula')
+    return (_validator()._molar_mass_from_formula(formula)
+            if _nonempty_str(formula) else None)
+
+
+def _record_molar_mass(record):
+    """Molar mass of a `chemicals` database record: its MW, else derived
+    from its formula; None when it carries neither."""
+    mw = _valid_number(getattr(record, 'MW', None), 0.0, lo_open=True)
+    if mw is not None:
+        return mw
+    formula = getattr(record, 'formula', None)
+    return (_validator()._molar_mass_from_formula(formula)
+            if _nonempty_str(formula) else None)
+
+
+def _record_agreement(record, chem):
+    """'verified' when a database record's molar mass matches the chemical's
+    (declared or formula-derived) within NAME_MW_RTOL, or their formulas
+    match; 'unverified' when either side states nothing comparable;
+    'mismatch' otherwise (R2.3)."""
+    chem = _as_dict(chem)
+    mine_mw, theirs_mw = _chemical_molar_mass(chem), _record_molar_mass(record)
+    mine_f = _formula_counts(chem.get('formula'))
+    theirs_f = _formula_counts(getattr(record, 'formula', None))
+    if mine_mw is not None and theirs_mw is not None \
+            and abs(mine_mw - theirs_mw) <= NAME_MW_RTOL * theirs_mw:
+        return 'verified'
+    if mine_f is not None and mine_f == theirs_f:
+        return 'verified'
+    comparable = ((mine_mw is not None and theirs_mw is not None)
+                  or (mine_f is not None and theirs_f is not None))
+    return 'mismatch' if comparable else 'unverified'
+
+
+def _name_tier(chem, cid):
+    """CMP-THM-02 name tier of chemical id `cid` (chem: its declared entry,
+    or None): None when the id is not a string, is itself a molecular
+    formula (_formula_like), or does not resolve by name; else the
+    _record_agreement of the resolved record with the chemical."""
+    if not _nonempty_str(cid) or _formula_like(cid):
+        return None
+    record = _name_record(cid)
+    return None if record is None else _record_agreement(record, chem)
+
+
+_CAS_RE = re.compile(r'^(\d{2,7})-(\d{2})-(\d)$')
+_INCHI_RE = re.compile(r'^InChI=1S?/\S+$')
+_INCHIKEY_RE = re.compile(r'^[A-Z]{14}-[A-Z]{10}-[A-Z]$')
+# SMILES tokens: organic-subset atoms (aliphatic, aromatic), bracket atoms,
+# bonds, branches, ring-closure labels.
+_SMILES_TOKEN = (r'Cl|Br|[BCNOPSFI]|[bcnops]|\[[^\[\]]*[A-Za-z][^\[\]]*\]'
+                 r'|[-=#$:/\\.()]|%\d{2}|\d')
+_SMILES_RE = re.compile(rf'(?:{_SMILES_TOKEN})+')
+_SMILES_ATOM_RE = re.compile(r'Cl|Br|[BCNOPSFI]|[bcnops]|\[')
+
+
+def _valid_cas(text):
+    """A CAS registry number: 2-7, 2 and 1 digits with a correct check
+    digit."""
+    match = _CAS_RE.match(text) if isinstance(text, str) else None
+    if not match:
+        return False
+    digits = (match.group(1) + match.group(2))[::-1]
+    check = sum((i + 1) * int(d) for i, d in enumerate(digits)) % 10
+    return check == int(match.group(3))
+
+
+def _smiles_like(text):
+    """SMILES-shaped text: only SMILES tokens, at least one atom, balanced
+    branches and paired ring-closure labels."""
+    if not isinstance(text, str) or not _SMILES_RE.fullmatch(text):
+        return False
+    if not _SMILES_ATOM_RE.search(text):
+        return False
+    bare = re.sub(r'\[[^\]]*\]', '', text)
+    depth = 0
+    for char in bare:
+        depth += (char == '(') - (char == ')')
+        if depth < 0:
+            return False
+    labels = re.findall(r'%\d{2}|\d', bare)
+    return depth == 0 and all(labels.count(label) % 2 == 0 for label in labels)
+
+
+def _cas_contradicts(cas, chem):
+    """True when a CAS number resolves in the `chemicals` database to a
+    record whose molar mass differs from the chemical's (declared or
+    formula-derived) by more than CAS_MW_RTOL."""
+    record = _name_record(cas)
+    if record is None:
+        return False
+    mine, theirs = _chemical_molar_mass(chem), _record_molar_mass(record)
+    return (mine is not None and theirs is not None
+            and abs(mine - theirs) > CAS_MW_RTOL * theirs)
+
+
+def _valid_registry_id(chem):
+    """True when a chemical's registry_id is a plausible identifier: a CAS
+    number (format and check digit, not contradicted by the database's
+    molar mass), an InChI, an InChIKey or SMILES-like text (R2.0)."""
+    rid = _as_dict(chem).get('registry_id')
+    if not isinstance(rid, str):
+        return False
+    rid = rid.strip()
+    if _valid_cas(rid):
+        return not _cas_contradicts(rid, chem)
+    return bool(_INCHI_RE.match(rid) or _INCHIKEY_RE.match(rid)
+                or _smiles_like(rid))
+
+
+# thermosteam model class names per property-package descriptor (enumerated
+# from the thermosteam source: thermosteam.mixture, and the activity-,
+# fugacity- and Poynting-correction modules of thermosteam.equilibrium,
+# including their EOS-generated subclasses). The exporter writes the Poynting
+# classes with the corrected spelling 'Poynting'; both spellings are accepted.
+_THERMO_MODEL_CLASSES = {
+    'mixture': frozenset((
+        'Mixture', 'IdealMixture', 'EOSMixture', 'APISRKMixture', 'IGMixture',
+        'MSRKTranslatedMixture', 'PR78Mixture', 'PRMixture', 'PRSV2Mixture',
+        'PRSVMixture', 'PRTranslatedConsistentMixture', 'PRTranslatedMixture',
+        'PRTranslatedPPJPMixture', 'PSRKMixture', 'RKMixture', 'SRKMixture',
+        'SRKTranslatedConsistentMixture', 'SRKTranslatedMixture',
+        'TWUPRMixture', 'TWUSRKMixture', 'VDWMixture')),
+    'gamma': frozenset((
+        'ActivityCoefficients', 'IdealActivityCoefficients',
+        'GroupActivityCoefficients', 'UNIFACActivityCoefficients',
+        'DortmundActivityCoefficients', 'NISTActivityCoefficients',
+        'GCEOSActivityCoefficients', 'APISRKActivityCoefficients',
+        'IGActivityCoefficients', 'MSRKMIXTranslaActivityCoefficients',
+        'PActivityCoefficients', 'PR78ActivityCoefficients',
+        'PRActivityCoefficients', 'PRMIXTranslaActivityCoefficients',
+        'PRMIXTranslatedConsistActivityCoefficients',
+        'PRMIXTranslatedPActivityCoefficients', 'PRSV2ActivityCoefficients',
+        'PRSVActivityCoefficients', 'RKActivityCoefficients',
+        'SRKActivityCoefficients', 'SRKMIXTranslaActivityCoefficients',
+        'SRKMIXTranslatedConsistActivityCoefficients',
+        'TWUPRActivityCoefficients', 'TWUSRKActivityCoefficients',
+        'VDWActivityCoefficients')),
+    'phi': frozenset((
+        'FugacityCoefficients', 'IdealFugacityCoefficients',
+        'GCEOSFugacityCoefficients', 'APISRKFugacityCoefficients',
+        'IGFugacityCoefficients', 'MSRKTranslatedFugacityCoefficients',
+        'PR78FugacityCoefficients', 'PRFugacityCoefficients',
+        'PRSV2FugacityCoefficients', 'PRSVFugacityCoefficients',
+        'PRTranslatedConsistentFugacityCoefficients',
+        'PRTranslatedFugacityCoefficients',
+        'PRTranslatedPPJPFugacityCoefficients', 'PSRKFugacityCoefficients',
+        'RKFugacityCoefficients', 'SRKFugacityCoefficients',
+        'SRKTranslatedConsistentFugacityCoefficients',
+        'SRKTranslatedFugacityCoefficients', 'TWUPRFugacityCoefficients',
+        'TWUSRKFugacityCoefficients', 'VDWFugacityCoefficients')),
+    'PCF': frozenset((
+        'PoyintingCorrectionFactors', 'MockPoyintingCorrectionFactors',
+        'IdealGasPoyintingCorrectionFactors')),
+}
+_LEADING_IDENTIFIER_RE = re.compile(r'^\s*<?\s*([A-Za-z_]\w*)')
+
+
+def _valid_package_descriptor(key, value):
+    """True when thermo_property_package[key] names, by its leading
+    identifier ('IdealMixture(include_excess_energies=False)' ->
+    'IdealMixture'), a thermosteam model class of that role
+    (_THERMO_MODEL_CLASSES)."""
+    names = _THERMO_MODEL_CLASSES.get(key) if isinstance(key, str) else None
+    match = _LEADING_IDENTIFIER_RE.match(value) \
+        if names and isinstance(value, str) else None
+    return bool(match) and match.group(1).replace(
+        'Poynting', 'Poyinting') in names
+
+
+def _reaction_sides(reaction, declared=frozenset(), chem_by_index=None):
+    """(consumed, produced) species sets of a reaction: the union over its
+    equation and its stoichiometry, each counted only when it names >= 1
+    consumed and >= 1 produced species (both empty when neither does)."""
+    reaction = _as_dict(reaction)
+    consumed, produced = set(), set()
+    for left, right in (
+            _equation_sides(reaction.get('equation'), declared),
+            _stoichiometry_sides(reaction.get('stoichiometry'), declared,
+                                 chem_by_index or {})):
+        if left and right:
+            consumed.update(left)
+            produced.update(right)
+    return consumed, produced
+
+
+def _well_formed(reaction, declared=frozenset(), chem_by_index=None):
+    """True when a reaction's equation or stoichiometry names >= 1 consumed
+    and >= 1 produced species with non-empty names (R2.0)."""
+    return bool(_reaction_sides(reaction, declared, chem_by_index)[0])
+
+
+def _valid_cost(x):
+    """A plausible cost: finite, >= 0; else None."""
+    return _valid_number(x, 0.0)
 
 #%% Unit class resolution
 
@@ -647,6 +1124,18 @@ AGENT_REGENERATOR_FAMILIES = frozenset({'facility', 'boiler_turbogenerator',
 CLASS_IMPLIED_CHEMISTRY_FAMILIES = frozenset({
     'combustor', 'facility', 'boiler_turbogenerator', 'equilibrium_reactor',
     'dryer'})
+# Physical-only families (R2.2): absent declared reactions, every species
+# balances one by one across such a unit, so a derivation from its stream
+# data also needs every species' balance to close.
+PHYSICAL_FAMILIES = frozenset({
+    'mixer', 'hx_utility', 'hx_process', 'pump', 'valve', 'compressor',
+    'turbine', 'flash', 'distillation', 'evaporator',
+    'steam_injection_heater', 'tank', 'splitter'})
+# Families whose units always draw a utility (CMP-UTIL-04, R2.0): power for
+# pumps and compressors, heat for utility exchangers, columns, evaporators
+# and flashes (a flash is waived only when stated adiabatic, Q = 0).
+ALWAYS_DRAW_FAMILIES = frozenset({'pump', 'hx_utility', 'compressor',
+                                  'distillation', 'evaporator', 'flash'})
 # Families with a fuel/air port BioSTEAM prices from bst.stream_prices when
 # the stream's own price is 0 (CMP-FEED-02).
 UTILITY_PORT_FAMILIES = frozenset({'combustor', 'boiler_turbogenerator',
@@ -1307,15 +1796,19 @@ def _spec_population(sc):
 
 
 def _explicit_keys(unit):
-    """design_input_specs keys stated with a non-null value."""
+    """design_input_specs keys stated with a value plausible for their role
+    (_valid_spec; R2.0: an implausible value counts as unstated)."""
     specs = _as_dict(_as_dict(unit).get('design_input_specs'))
-    return {k for k, v in specs.items() if v is not None}
+    return {k for k, v in specs.items() if _valid_spec(k, v)}
 
 
 def _stream_value(stream, part):
-    """Numeric temperature ('T') or pressure ('P') of a stream, or None."""
+    """Valid temperature ('T', in (0, T_MAX) K) or pressure ('P', > 0) of a
+    stream, or None."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
-    return _num(sp.get({'T': 'temperature', 'P': 'pressure'}[part]))
+    if part == 'T':
+        return _valid_T(sp.get('temperature'))
+    return _valid_P(sp.get('pressure'))
 
 
 def _phase_set(stream):
@@ -1369,11 +1862,77 @@ def _pressure_rise(sc, unit_id):
     return min(values[1]) - max(values[0])
 
 
+def _physical_unit(sc, position):
+    """True when unit `position` is in a physical-only family
+    (PHYSICAL_FAMILIES) and declares no well-formed reaction: its species
+    must then balance one by one (R2.2)."""
+    return (sc.unit_classes[position][1] in PHYSICAL_FAMILIES
+            and not sc.unit_reacts[position])
+
+
+def _closure(sc, position):
+    """(closes, reason) of unit `position`'s balances (R2.2): the total
+    mass flow in and out (every connected stream stating a valid
+    total_mass_flow) agree within CLOSURE_RTOL, and, for a physical unit
+    (_physical_unit), so does every species' molar flow (relative to the
+    total molar throughput). reason says why not ('' when it closes). Cached
+    per context."""
+    cache = sc.closures
+    if position in cache:
+        return cache[position]
+    uid = sc.units[position].get('id')
+    ins = sc.unit_inlets.get(uid, []) if isinstance(uid, str) else []
+    outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
+    result = True, ''
+    masses = [_valid_flow(_as_dict(sc.streams[i].get('stream_properties'))
+                          .get('total_mass_flow')) for i in ins + outs]
+    if not ins + outs:
+        result = False, 'no connected streams'
+    elif any(m is None for m in masses):
+        result = False, 'a connected stream states no valid total_mass_flow'
+    else:
+        m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
+        if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
+            result = False, (f'mass balance does not close (in {m_in:.6g}, '
+                             f'out {m_out:.6g})')
+        elif _physical_unit(sc, position):
+            sides = []
+            for streams in (ins, outs):
+                acc = {}
+                for i in streams:
+                    flows = _species_flows(sc.streams[i])
+                    if flows is None:
+                        result = False, ('species flows not computable for a '
+                                         'physical unit')
+                        break
+                    for name, value in flows.items():
+                        acc[name] = acc.get(name, 0.0) + value
+                sides.append(acc)
+            if result[0]:
+                total = max(sum(sides[0].values()), sum(sides[1].values()))
+                off = sorted(n for n in set(sides[0]) | set(sides[1])
+                             if abs(sides[0].get(n, 0.0) - sides[1].get(n, 0.0))
+                             > CLOSURE_RTOL * total)
+                if off:
+                    result = False, (f"species balance does not close for "
+                                     f"{', '.join(off[:3])}")
+    cache[position] = result
+    return result
+
+
+# Derivation conditions that read stream data (R2.2: need _closure).
+_STREAM_CONDITIONS = frozenset({'outlet_T', 'outlet_P', 'all_ports_state',
+                                'enthalpy', 'outlet_phases'})
+
+
 def _condition_holds(condition, sc, position, explicit):
     """Evaluate one derivation / counts_if condition for unit `position`
-    (see _Req)."""
+    (see _Req). A condition reading stream data (_STREAM_CONDITIONS) also
+    needs the unit's balances to close (_closure)."""
     unit = sc.units[position]
     uid = unit.get('id')
+    if condition in _STREAM_CONDITIONS and not _closure(sc, position)[0]:
+        return False
     if condition == 'outlet_T':
         return sc.all_outlets_have(uid, 'T')
     if condition == 'outlet_P':
@@ -1393,26 +1952,31 @@ def _condition_holds(condition, sc, position, explicit):
         return condition.split(':', 1)[1] in explicit
     if condition.startswith('design_result:'):
         name = condition.split(':', 1)[1]
-        return _as_dict(unit.get('design_results')).get(name) is not None
+        return _num(_as_dict(unit.get('design_results')).get(name)) is not None
     raise ValueError(f'unknown derivation condition {condition!r}')
 
 
 def _requirement_applies(req, sc, position):
     """Whether a (possibly conditional) requirement applies to unit
-    `position`; a condition not evaluable from the data does not apply it."""
+    `position` (R2.13): it is waived only when the data affirmatively show
+    its condition false -- inlet and outlet phase sets both known and equal
+    (phase_change), rigorous = true or no phase change
+    (phase_change_nonrigorous), inlet and outlet pressures all known with a
+    rise >= 1 Pa (no_pressure_rise). An unevaluable condition applies it, so
+    deleting data can only add requirements."""
     if req.when is None:
         return True
     unit = sc.units[position]
     uid = unit.get('id')
     if req.when == 'phase_change':
-        return _phase_change(sc, uid) is True
+        return _phase_change(sc, uid) is not False
     if req.when == 'phase_change_nonrigorous':
         if _as_dict(unit.get('design_input_specs')).get('rigorous') is True:
             return False
-        return _phase_change(sc, uid) is True
+        return _phase_change(sc, uid) is not False
     if req.when == 'no_pressure_rise':
         rise = _pressure_rise(sc, uid)
-        return rise is not None and rise < 1.0
+        return rise is None or rise < 1.0
     raise ValueError(f'unknown requirement condition {req.when!r}')
 
 
@@ -1480,7 +2044,9 @@ def _requirement_score(req, sc, position, explicit):
     return (e + DERIVED_CREDIT * min(d, req.n - e)) / req.n
 
 
-def _requirement_locator(label, req, score, inconsistent=()):
+def _requirement_locator(label, req, score, inconsistent=(), blocked=''):
+    """Missing locator of one unmet requirement; `blocked` names why a
+    derivation from stream data was unavailable (_closure)."""
     count = 'one' if req.n == 1 else str(req.n)
     if inconsistent:
         note = (f" (inconsistent: {', '.join(inconsistent)} disagrees with "
@@ -1489,6 +2055,8 @@ def _requirement_locator(label, req, score, inconsistent=()):
         note = ' (only derivable)'
     else:
         note = ''
+    if blocked:
+        note += f' (derivation from stream data unavailable: {blocked})'
     return f"{label}.design_input_specs: {count} of {'|'.join(req.keys)}{note}"
 
 
@@ -1510,7 +2078,12 @@ def _unit_spec_score(sc, position):
         scores.append(score)
         if score < 1.0:
             bad = _inconsistent_keys(req, sc, position, explicit)
-            missing.append(_requirement_locator(label, req, score, bad))
+            closes, why = _closure(sc, position)
+            streamed = any(set(conditions) & _STREAM_CONDITIONS
+                           for conditions in req.derive.values())
+            missing.append(_requirement_locator(
+                label, req, score, bad,
+                blocked='' if closes or not streamed else why))
     return _mean(scores), missing
 
 
@@ -1534,6 +2107,21 @@ def _mean(values):
 
 def _dicts(x):
     return [e for e in _as_list(x) if isinstance(e, dict)]
+
+
+def _first_by_id(elements):
+    """`elements` without every later element whose non-empty string id an
+    earlier one already carries (R2.1); elements without such an id are all
+    kept."""
+    kept, seen = [], set()
+    for element in elements:
+        eid = element.get('id')
+        if _nonempty_str(eid):
+            if eid in seen:
+                continue
+            seen.add(eid)
+        kept.append(element)
+    return kept
 
 
 def _topology(streams, unit_ids):
@@ -1566,9 +2154,12 @@ class _ScoringContext:
     def __init__(self, doc, results=(), registry=None):
         self.doc = doc if isinstance(doc, dict) else {}
         self.metadata = _as_dict(self.doc.get('metadata'))
-        self.units = _dicts(self.doc.get('units'))
-        self.streams = _dicts(self.doc.get('streams'))
-        self.chemicals = _dicts(self.doc.get('chemicals'))
+        # R2.1: elements sharing an id are collapsed to the first occurrence
+        # (UNIT-01 / STR-01 flag the defect); no criterion is inflated by
+        # repetition.
+        self.units = _first_by_id(_dicts(self.doc.get('units')))
+        self.streams = _first_by_id(_dicts(self.doc.get('streams')))
+        self.chemicals = _first_by_id(_dicts(self.doc.get('chemicals')))
         self.results = list(results)
         if registry is None:
             self.registry, self.registry_error = _design_spec_registry()
@@ -1608,6 +2199,11 @@ class _ScoringContext:
         self.reactions = [(i, j, r) for i, u in enumerate(self.units)
                           for j, r in enumerate(_as_list(u.get('reactions')))
                           if isinstance(r, dict)]
+        # Per unit: declares >= 1 well-formed reaction (R2.0).
+        self.unit_reacts = [any(self.well_formed(r)
+                                for r in _dicts(u.get('reactions')))
+                            for u in self.units]
+        self.closures = {}  # _closure cache: position -> (closes, reason)
         self.unit_positions = {}
         for i, u in enumerate(self.units):
             if _nonempty_str(u.get('id')):
@@ -1618,11 +2214,27 @@ class _ScoringContext:
                        if not _is_cost_free(name, family)]
 
         utilities = _as_dict(self.doc.get('utilities'))
-        self.agents = [(group, agent, _label(f'utilities.{group}', agent, i))
-                       for group in ('heat_utilities', 'power_utilities',
-                                     'other_utilities')
-                       for i, agent in enumerate(_dicts(utilities.get(group)))]
+        agents, seen = [], set()
+        for group in ('heat_utilities', 'power_utilities', 'other_utilities'):
+            for i, agent in enumerate(_dicts(utilities.get(group))):
+                aid = agent.get('id')
+                if _nonempty_str(aid):
+                    if aid in seen:  # R2.1: first occurrence across groups
+                        continue
+                    seen.add(aid)
+                agents.append((group, agent,
+                               _label(f'utilities.{group}', agent, i)))
+        self.agents = agents
         self._vctx = None
+
+    def well_formed(self, reaction):
+        """_well_formed against this document's chemical ids and indices."""
+        return _well_formed(reaction, self.chem_ids, self.chem_by_index)
+
+    def reaction_sides(self, reaction):
+        """_reaction_sides against this document's chemical ids and
+        indices."""
+        return _reaction_sides(reaction, self.chem_ids, self.chem_by_index)
 
     @property
     def vctx(self):
@@ -1749,16 +2361,30 @@ def _empty_chemical_population(sc):
 
 
 def _thm_02_credit(chem, cid):
-    """(credit, missing suffix or None) of one declared chemical's identity:
-    registry id 1; id resolvable by name NAME_RESOLVED_CREDIT; formula only
-    FORMULA_ONLY_CREDIT; else 0."""
-    if _filled(chem.get('registry_id')):
+    """(credit, missing suffix or None) of one declared chemical's identity
+    (R2.0/R2.3): a valid registry id 1; else an id that resolves by name
+    (never one that is itself a molecular formula) NAME_RESOLVED_CREDIT when
+    the record's molar mass or formula matches the chemical's,
+    NAME_UNVERIFIED_CREDIT when the chemical states neither; else (no name,
+    or a mismatching one) FORMULA_ONLY_CREDIT when a parseable formula (or
+    the formula-like id itself) narrows it down; else 0."""
+    if _valid_registry_id(chem):
         return 1.0, None
-    if _name_resolvable(cid):
-        return NAME_RESOLVED_CREDIT, '.registry_id (id resolvable by name only)'
-    if _filled(chem.get('formula')):
-        return FORMULA_ONLY_CREDIT, '.registry_id (formula only)'
-    return 0.0, '.registry_id (no formula either; id not resolvable by name)'
+    tier = _name_tier(chem, cid)
+    if tier == 'verified':
+        return NAME_RESOLVED_CREDIT, ('.registry_id (id resolvable by name '
+                                      'only; molar mass verified)')
+    if tier == 'unverified':
+        return NAME_UNVERIFIED_CREDIT, ('.registry_id (id resolvable by name '
+                                        'only; no molar mass or formula to '
+                                        'verify the match)')
+    why = (' (the name resolves to a compound of another molar mass)'
+           if tier == 'mismatch' else
+           ' (id is a molecular formula: isomer-ambiguous)'
+           if _formula_like(cid) else '')
+    if _valid_formula(chem.get('formula')) or _formula_like(cid):
+        return FORMULA_ONLY_CREDIT, f'.registry_id (formula only){why}'
+    return 0.0, f'.registry_id (no formula either; id not resolvable by name){why}'
 
 
 def _score_thm_02(sc):  # CMP-THM-02
@@ -1777,8 +2403,10 @@ def _score_thm_02(sc):  # CMP-THM-02
             missing.append(label + note)
     n_id = scores.count(1.0)
     n_name = scores.count(NAME_RESOLVED_CREDIT)
+    n_unverified = scores.count(NAME_UNVERIFIED_CREDIT)
     return (_mean(scores), f'{n_id} of {len(scores)} chemical(s) carry a '
-            f'registry id, {n_name} more resolve by name', missing)
+            f'valid registry id, {n_name} more resolve by a verified name, '
+            f'{n_unverified} by an unverified one', missing)
 
 
 def _score_thm_03(sc):  # CMP-THM-03
@@ -1825,12 +2453,17 @@ def _score_thm_04(sc):  # CMP-THM-04
 
 
 def _score_thm_05(sc):  # CMP-THM-05
+    # Population = declared + referenced ids (R2.3): a declared, unreferenced
+    # chemical still needs property data (Chemicals.compile() requires key
+    # properties for every member). A chemical is database-resolvable by a
+    # valid registry id or a verified/unverified name (not a mismatching or
+    # formula-like one); an undeclared referenced id is judged by its name.
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
     lacking = [label for chem, label, cid in population
-               if chem is None or not (_filled(chem.get('registry_id'))
-                                       or _name_resolvable(cid))]
+               if not ((chem is not None and _valid_registry_id(chem))
+                       or _name_tier(chem, cid) in ('verified', 'unverified'))]
     if not lacking:
         return (None, 'every chemical resolves against the database (registry '
                 'id or name)', [])
@@ -1847,10 +2480,13 @@ _TPP_KEYS = ('mixture', 'gamma', 'phi', 'PCF')
 def _score_thm_06(sc):  # CMP-THM-06
     if not sc.units:
         return None, 'no units', []
+    # A descriptor counts only when it names a thermosteam model class of its
+    # role (R2.0; _valid_package_descriptor).
     pairs, missing = [], []
     for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
         tpp = _as_dict(unit.get('thermo_property_package'))
-        absent = [k for k in _TPP_KEYS if not _filled(tpp.get(k))]
+        absent = [k for k in _TPP_KEYS
+                  if not _valid_package_descriptor(k, tpp.get(k))]
         pairs.append((1.0 - len(absent) / len(_TPP_KEYS),
                       _unit_weight(sc, position)))
         missing.extend(f'{label}.thermo_property_package.{k}' for k in absent)
@@ -1860,11 +2496,13 @@ def _score_thm_06(sc):  # CMP-THM-06
 
 
 def _single_full_package(packages):
-    """True when every package states all of _TPP_KEYS and all of them agree
-    on those descriptors: single-thermo evidence, so one chemical set is
-    implied even where no package names it (CMP-THM-07)."""
+    """True when every package states all of _TPP_KEYS validly
+    (_valid_package_descriptor) and all of them agree on those descriptors:
+    single-thermo evidence, so one chemical set is implied even where no
+    package names it (CMP-THM-07)."""
     return bool(packages) and all(
-        all(_filled(p.get(k)) for k in _TPP_KEYS) for p in packages) and len(
+        all(_valid_package_descriptor(k, p.get(k)) for k in _TPP_KEYS)
+        for p in packages) and len(
         {tuple(str(p.get(k)) for k in _TPP_KEYS) for p in packages}) == 1
 
 
@@ -1878,7 +2516,7 @@ def _score_thm_07(sc):  # CMP-THM-07
     single = _single_full_package(packages)
     pairs, missing = [], []
     for position, (package, label) in enumerate(zip(packages, sc.unit_labels)):
-        if _filled(package.get('id')):
+        if _nonempty_str(package.get('id')):
             credit = 1.0
         else:
             credit = DERIVED_CREDIT if single else 0.0
@@ -1887,7 +2525,7 @@ def _score_thm_07(sc):  # CMP-THM-07
                               'a single chemical set is implied)'
                               if single else ''))
         pairs.append((credit, _unit_weight(sc, position)))
-    named = sum(1 for p in packages if _filled(p.get('id')))
+    named = sum(1 for p in packages if _nonempty_str(p.get('id')))
     return (_wmean(pairs), f'{named} of {len(packages)} unit(s) name their '
             f'chemical set' + ('; every unit shares one full property package '
                                '(single thermo implied)' if single else '')
@@ -1947,7 +2585,10 @@ def _port_order_derivable(sc, position, side):
     outs (exactly one all-vapor and one all-liquid outlet), splitter outs
     (explicit split + full port states), distillation outs (explicit LHK +
     outlet compositions), HXprocess sides (all four streams carry
-    composition)."""
+    composition). Every one reads stream data, so the unit's balances must
+    close (R2.2, _closure)."""
+    if not _closure(sc, position)[0]:
+        return False
     family = sc.unit_classes[position][1]
     explicit = _explicit_keys(sc.units[position])
     streams = _side_streams(sc, position, side)
@@ -2028,31 +2669,44 @@ def _states_flow(stream):
 
 
 def _score_feed_01(sc):  # CMP-FEED-01
-    # Equal weights; every feed counts (R1.0). A feed whose state says it is
-    # EMPTY (total flow numerically 0: an unused placeholder port) scores 1 --
-    # the zero flow states all such a port needs -- so deleting that flow can
-    # only lower its credit (excluding it instead let the deletion move it
-    # into the population and raise the score). With no feed stating a
-    # non-zero flow nothing sets the problem's scale: 0 whether the flows
-    # are stated zero or unstated, so neither writing zeros nor deleting
-    # them can raise the score. (A mass-share weighting was dropped too:
-    # deleting a large feed's flow switched it to equal weights.)
+    # Equal weights; every feed counts (R1.0); every part of a feed's state
+    # must be plausible (R2.0: T in (0, T_MAX) K, P > 0, flow >= 0, a
+    # composition whose fractions sum to 1). A feed whose state says it is
+    # EMPTY (total flow numerically 0: an unused placeholder port) scores 1
+    # -- the zero flow states all such a port needs -- but ONLY IF some feed
+    # states a non-zero flow (R2.12); otherwise nothing sets the problem's
+    # scale and a stated zero counts as a missing flow, with no composition
+    # exemption. Feeds with unknown flow keep partial credit (T, P,
+    # composition). Deleting the only non-zero flow thus lowers the empty
+    # feeds from 1 to their missing-flow score; writing zeros everywhere
+    # earns nothing. (A mass-share weighting was dropped: deleting a large
+    # feed's flow switched it to equal weights.)
     if not sc.feeds:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
                 ['streams: no feed (source_unit_id "None", sink a unit)'])
-    if not any(_states_flow(sc.streams[i]) for i in sc.feeds):
-        return (0.0, f'none of {len(sc.feeds)} feed(s) states a non-zero '
-                f'flow: nothing defines the degrees of freedom',
-                ['streams: no feed with a non-zero total_mass_flow|'
-                 'total_molar_flow'])
-    empty = [i for i in sc.feeds if _is_empty_stream(sc.streams[i])]
-    stated = [i for i in sc.feeds if i not in empty]
-    score, missing = _state_missing(sc, stated)
-    score = (score * len(stated) + len(empty)) / len(sc.feeds)
-    full = sum(1 for i in stated if all(sc.stream_states[i].values()))
-    return (score, f'{full + len(empty)} of {len(sc.feeds)} feed(s) fully '
-            f'stated' + (f' ({len(empty)} empty, stated by their zero flow)'
-                         if empty else ''), missing)
+    anchored = any(_states_flow(sc.streams[i]) for i in sc.feeds)
+    empty = [i for i in sc.feeds
+             if anchored and _is_empty_stream(sc.streams[i])]
+    scores, missing, full = [], [], 0
+    for i in sc.feeds:
+        if i in empty:
+            scores.append(1.0)
+            continue
+        state = _stream_state(sc.streams[i], empty_exempt=anchored)
+        if not anchored and _is_empty_stream(sc.streams[i]):
+            state['flow'] = False
+        scores.append(sum(state.values()) / len(state))
+        full += all(state.values())
+        missing.extend(f'{sc.stream_labels[i]}.{_STATE_PATHS[k]}'
+                       + (' (a zero flow, while no feed states a non-zero '
+                          'one)' if k == 'flow' and not anchored
+                          and _is_empty_stream(sc.streams[i]) else '')
+                       for k, ok in state.items() if not ok)
+    return (_mean(scores), f'{full + len(empty)} of {len(sc.feeds)} feed(s) '
+            f'fully stated' + (f' ({len(empty)} empty, stated by their zero '
+                               f'flow)' if empty else '')
+            + ('' if anchored else '; no feed states a non-zero flow'),
+            missing)
 
 
 def _utility_port_feed(sc, position):
@@ -2259,7 +2913,7 @@ def _reactive_reason(sc, position):
     family = sc.unit_classes[position][1]
     if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
-    if _dicts(unit.get('reactions')):
+    if sc.unit_reacts[position]:  # malformed reactions count as none (R2.0)
         return 'declares reactions'
     if family in CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return None
@@ -2278,27 +2932,37 @@ def _score_rxn_01(sc):  # CMP-RXN-01
     reactive = _reactive_units(sc)
     if not reactive:
         return None, 'no reactive units', []
+    # A unit carries reactions only with >= 1 well-formed one (R2.0).
     pairs, missing = [], []
     for position, reason in reactive:
-        carries = bool(_dicts(sc.units[position].get('reactions')))
+        carries = sc.unit_reacts[position]
         pairs.append((1.0 if carries else 0.0, _unit_weight(sc, position)))
         if not carries:
             missing.append(f'{sc.unit_labels[position]}.reactions: none '
-                           f'declared ({reason})')
+                           f'well-formed declared ({reason})')
     ok = len(reactive) - len(missing)
     return (_wmean(pairs), f'{ok} of {len(reactive)} reactive unit(s) carry '
             f'reactions (family-weighted)', missing)
 
 
-def _reaction_completeness(reaction, where):
-    """(score, missing) of one reaction's definition: mean of {equation or
-    stoichiometry, reactant, conversion numeric in [0, 1]}."""
-    conversion = _num(reaction.get('conversion'))
+_MALFORMED_REACTION = (': not well-formed (its equation|stoichiometry names '
+                       'no consumed and produced species)')
+
+
+def _reaction_completeness(sc, reaction, where):
+    """(score, missing) of one reaction's definition (R2.0): 0 unless it is
+    well-formed (_well_formed); else the mean of {well-formed, reactant among
+    the consumed species, conversion numeric in [0, 1]}."""
+    consumed, _produced = sc.reaction_sides(reaction)
+    if not consumed:
+        return 0.0, [where + _MALFORMED_REACTION]
+    reactant = reaction.get('reactant')
     parts = {
-        'equation|stoichiometry': _filled(reaction.get('equation'))
-        or _filled(reaction.get('stoichiometry')),
-        'reactant': _nonempty_str(reaction.get('reactant')),
-        'conversion (0..1)': conversion is not None and 0.0 <= conversion <= 1.0,
+        'equation|stoichiometry': True,
+        'reactant (a consumed species)': (isinstance(reactant, str)
+                                          and reactant.strip() in consumed),
+        'conversion (0..1)': _valid_fraction(reaction.get('conversion'))
+        is not None,
     }
     return (sum(parts.values()) / len(parts),
             [f'{where}.{k}' for k, ok in parts.items() if not ok])
@@ -2333,7 +2997,7 @@ def _per_reactive_unit(sc, reaction_score):
 def _score_rxn_02(sc):  # CMP-RXN-02
     score, missing, full, n = _per_reactive_unit(
         sc, lambda sc, p, ri, r: _reaction_completeness(
-            r, f'{sc.unit_labels[p]}.reactions[{ri}]'))
+            sc, r, f'{sc.unit_labels[p]}.reactions[{ri}]'))
     if not n:
         return None, 'no reactive units', []
     return (score, f'{full} of {n} reactive unit(s) define every reaction '
@@ -2345,7 +3009,8 @@ def _score_rxn_03(sc):  # CMP-RXN-03
     # carry >= 2 reactions: deleting a unit's reactions must not turn the
     # criterion not-applicable. Per unit: >= 2 reactions -> 1 when every one
     # is indexed, else 0; exactly one -> 1 (no order to state); none -> 0
-    # (its reaction set, and so their order, is unknown).
+    # (its reaction set, and so their order, is unknown). Only well-formed
+    # reactions make a reaction set (R2.0): a unit with none scores 0.
     reactive = _reactive_units(sc)
     if not reactive:
         return None, 'no reactive units', []
@@ -2353,10 +3018,11 @@ def _score_rxn_03(sc):  # CMP-RXN-03
     for position, reason in reactive:
         label = sc.unit_labels[position]
         reactions = _dicts(sc.units[position].get('reactions'))
-        if not reactions:
+        if not sc.unit_reacts[position]:
             pairs.append((0.0, _unit_weight(sc, position)))
-            missing.append(f'{label}.reactions: none declared ({reason}), so '
-                           f'their series/parallel order is unknown')
+            missing.append(f'{label}.reactions: none well-formed declared '
+                           f'({reason}), so their series/parallel order is '
+                           f'unknown')
             continue
         multi += len(reactions) >= 2
         unindexed = [ri for ri, r in enumerate(reactions)
@@ -2378,6 +3044,14 @@ def _reaction_coefficients(sc, reaction):
     validator = _validator()
     try:
         stoichiometry = reaction.get('stoichiometry')
+        # A non-numeric coefficient counts as absent (R2.0), exactly as if
+        # its entry were deleted.
+        if isinstance(stoichiometry, dict):
+            stoichiometry = {k: v for k, v in stoichiometry.items()
+                             if _num(v) is not None}
+        elif isinstance(stoichiometry, list):
+            stoichiometry = [v if _num(v) is not None else 0.0
+                             for v in stoichiometry]
         if _filled(stoichiometry):
             coeffs, _reason = validator._stoich_to_coeffs(stoichiometry, sc.vctx)
             if coeffs:
@@ -2388,7 +3062,7 @@ def _reaction_coefficients(sc, reaction):
                                 for t in side.split('+'))
                      for side in equation.split('->', 1)]
             return validator._parse_equation(' -> '.join(sides), sc.vctx) or None
-    except (TypeError, ValueError):
+    except Exception:  # malformed document values: no coefficients
         return None
     return None
 
@@ -2434,8 +3108,11 @@ def _single_phase_ports(sc, position):
 
 def _reaction_basis_phase(sc, position, ri, reaction):
     """(score, missing) of one reaction for CMP-RXN-04: mean of {basis,
-    phase}, each DERIVED_CREDIT when derivable (neither is representable)."""
+    phase}, each DERIVED_CREDIT when derivable (neither is representable); 0
+    for a reaction that is not well-formed (R2.0)."""
     where = f'{sc.unit_labels[position]}.reactions[{ri}]'
+    if not sc.well_formed(reaction):
+        return 0.0, [where + _MALFORMED_REACTION]
     basis = _basis_derivable(sc, reaction)
     phase = (_has_phase_tags(reaction.get('equation'))
              or _single_phase_ports(sc, position))
@@ -2502,11 +3179,14 @@ def _per_costed_unit(sc, unit_score, positions=None):
 
 
 def _cost_01_unit(sc, position):
-    """CMP-COST-01 of one costed unit: a non-empty purchase_costs -> 1."""
+    """CMP-COST-01 of one costed unit: purchase_costs holding >= 1 valid
+    (numeric, >= 0) cost -> 1, else 0 (R2.0)."""
     costs = sc.units[position].get('purchase_costs')
-    if isinstance(costs, dict) and costs:
+    if isinstance(costs, dict) and any(_valid_cost(v) is not None
+                                       for v in costs.values()):
         return 1.0, []
-    note = ' (empty)' if isinstance(costs, dict) else ''
+    note = (' (no numeric cost >= 0)' if isinstance(costs, dict) and costs
+            else ' (empty)' if isinstance(costs, dict) else '')
     return 0.0, [f'{sc.unit_labels[position]}.purchase_costs{note}']
 
 
@@ -2527,7 +3207,7 @@ def _cost_02_unit(sc, position):
         return 0.0, [f'{label}.purchase_costs: no items (so no installed costs)']
     installed = _as_dict(unit.get('installed_costs'))
     missing = [f"{label}.installed_costs['{item}']" for item in items
-               if _num(installed.get(item)) is None]
+               if _valid_cost(installed.get(item)) is None]
     return 1.0 - len(missing) / len(items), missing
 
 
@@ -2540,20 +3220,23 @@ def _score_cost_02(sc):  # CMP-COST-02
 
 
 def _has_quantity_unit(value, declared):
-    """A numeric design result has a unit: legacy inline units, or a string in
-    quantity_units_for_design_results ('' is the dimensionless sentinel)."""
-    if isinstance(value, dict):
-        return isinstance(value.get('units'), str)
-    return isinstance(declared, str)
+    """A numeric design result has a unit: legacy inline units, or the entry
+    in quantity_units_for_design_results -- a non-blank string, or exactly
+    '' (the schema's documented dimensionless sentinel)."""
+    units = value.get('units') if isinstance(value, dict) else declared
+    return units == '' or _nonempty_str(units)
 
 
 def _cost_03_unit(sc, position):
-    """CMP-COST-03 of one costed unit: design results absent or empty -> 0;
-    some numeric result without a quantity unit -> 0.5; else 1."""
+    """CMP-COST-03 of one costed unit: no numeric design result (absent,
+    empty, or only non-numeric values; R2.0) -> 0; some numeric result
+    without a quantity unit -> 0.5; else 1."""
     unit, label = sc.units[position], sc.unit_labels[position]
     results = unit.get('design_results')
-    if not isinstance(results, dict) or not results:
-        note = ' (empty)' if isinstance(results, dict) else ''
+    if not isinstance(results, dict) or not any(
+            _num(v) is not None for v in results.values()):
+        note = (' (no numeric result)' if isinstance(results, dict) and results
+                else ' (empty)' if isinstance(results, dict) else '')
         return 0.0, [f'{label}.design_results{note}']
     units_map = _as_dict(unit.get('quantity_units_for_design_results'))
     unitless = [k for k, v in results.items() if _num(v) is not None
@@ -2589,6 +3272,7 @@ def _cost_04_unit(sc, position):
     scores, missing = [], []
     for item in items:
         kind = _correlation(unit, item).get('correlation_type')
+        kind = kind if isinstance(kind, str) else None  # unhashable-safe
         scores.append(_CORRELATION_CREDIT.get(kind, 0.0))
         if kind != 'power_law':
             note = (' (custom_function: not re-derivable)'
@@ -2641,10 +3325,11 @@ def _score_cost_05(sc):  # CMP-COST-05
 
 
 def _count_result_key(unit):
-    """The first design_results key naming a count ('Number of reactors'),
-    or None."""
-    for key in _as_dict(unit.get('design_results')):
-        if isinstance(key, str) and key.strip().lower().startswith('number of'):
+    """The first design_results key naming a count ('Number of reactors')
+    with a numeric value (R2.0), or None."""
+    for key, value in _as_dict(unit.get('design_results')).items():
+        if isinstance(key, str) and key.strip().lower().startswith(
+                'number of') and _num(value) is not None:
             return key
     return None
 
@@ -2712,7 +3397,7 @@ def _agent_gaps(group, agent):
     """Unstated required fields of one declared agent (heat/other: numeric T
     and P plus a non-empty composition; power: an id)."""
     if group == 'power_utilities':
-        return [] if _filled(agent.get('id')) else ['id']
+        return [] if _nonempty_str(agent.get('id')) else ['id']
     gaps = [k for k in ('temperature', 'pressure') if _num(agent.get(k)) is None]
     if not _dicts(agent.get('composition')):
         gaps.append('composition')
@@ -2779,7 +3464,9 @@ _PRICE_FIELDS = {
 def _score_util_02(sc):  # CMP-UTIL-02
     if not _utility_need(sc):
         return None, _NO_UTILITY_NEED, []
-    declared = {agent.get('id') for _g, agent, _l in sc.agents}
+    # String ids only: a list-valued id must not raise (unhashable, R2.0).
+    declared = {agent.get('id') for _g, agent, _l in sc.agents
+                if isinstance(agent.get('id'), str)}
     undeclared = [(agent_id, unit_label) for agent_id, unit_label
                   in _utility_refs(sc).items() if agent_id not in declared]
     total = len(sc.agents) + len(undeclared)
@@ -2825,18 +3512,20 @@ def _water_dominated(composition):
 
 
 def _phase_change_agent(agent, roles):
-    """True when a heat agent delivers latent heat, so it needs no
-    temperature limit: an all-vapor agent that is not recorded as cooling
-    only (a condensing heating agent such as steam), or an all-liquid agent
-    that is not water-dominated and is recorded as cooling only (an
-    evaporating refrigerant). Liquid water-based agents (cooling or chilled
-    water, brine) and liquid heating agents are sensible-heat agents."""
+    """True when a heat agent affirmatively delivers latent heat, so it
+    needs no temperature limit (R2.13): an all-vapor agent recorded as
+    heating only, with positive duty (a condensing heating agent such as
+    steam), or an all-liquid agent that is not water-dominated and is
+    recorded as cooling only (an evaporating refrigerant). An agent no unit
+    records a duty for is not exempt. Liquid water-based agents (cooling or
+    chilled water, brine) and liquid heating agents are sensible-heat
+    agents."""
     phases = [e.get('phase') for e in _dicts(agent.get('composition'))]
     if not phases:
         return False
     role = next(iter(roles)) if len(roles) == 1 else None
     if all(p == 'g' for p in phases):
-        return role != 'cooling'
+        return role == 'heating'
     if all(p == 'l' for p in phases):
         return role == 'cooling' and not _water_dominated(agent.get('composition'))
     return False
@@ -2853,9 +3542,12 @@ def _score_util_03(sc):  # CMP-UTIL-03
     roles = _agent_roles(sc)
     scores, missing = [], []
     for agent, label in heat:
-        efficiency = _num(agent.get('heat_transfer_efficiency')) is not None
-        limit = (_num(agent.get('temperature_limit')) is not None
-                 or _phase_change_agent(agent, roles.get(agent.get('id'), set())))
+        aid = agent.get('id')
+        efficiency = _spec_efficiency(agent.get('heat_transfer_efficiency'))
+        limit = (_valid_T(agent.get('temperature_limit')) is not None
+                 or _phase_change_agent(
+                     agent, roles.get(aid, set()) if isinstance(aid, str)
+                     else set()))
         scores.append(0.5 * efficiency + 0.5 * limit)
         if not efficiency:
             missing.append(f'{label}.heat_transfer_efficiency')
@@ -2865,15 +3557,57 @@ def _score_util_03(sc):  # CMP-UTIL-03
     return _mean(scores), f'{full} of {len(heat)} heat agent(s) fully bounded', missing
 
 
+_UTILITY_RESULT_KEYS = ('utility_consumption_results',
+                        'utility_production_results')
+
+
+def _draws_utility(sc, position):
+    """True when unit `position` always draws a utility (R2.0,
+    ALWAYS_DRAW_FAMILIES). Waived only on affirmative evidence (R2.13): an
+    idle unit, every connected stream stating a zero total flow, draws
+    nothing; a flash whose specs state it adiabatic (a valid Q of 0) draws
+    no heat."""
+    family = sc.unit_classes[position][1]
+    if family not in ALWAYS_DRAW_FAMILIES:
+        return False
+    uid = sc.units[position].get('id')
+    ports = (sc.unit_inlets.get(uid, []) + sc.unit_outlets.get(uid, [])
+             if isinstance(uid, str) else [])
+    if ports and all(_is_empty_stream(sc.streams[i]) for i in ports):
+        return False
+    if family == 'flash':
+        q = _as_dict(sc.units[position].get('design_input_specs')).get('Q')
+        return _num(q) != 0.0
+    return True
+
+
+def _util_04_unit(sc, position):
+    """(score, missing) of one unit for CMP-UTIL-04: 0.5 per results object
+    present (an object; entries without a numeric value count as absent,
+    R2.0); 0 when the unit always draws a utility (_draws_utility) but
+    neither object holds a numeric entry."""
+    unit, label = sc.units[position], sc.unit_labels[position]
+    objects = [unit.get(k) for k in _UTILITY_RESULT_KEYS]
+    absent = [k for k, obj in zip(_UTILITY_RESULT_KEYS, objects)
+              if not isinstance(obj, dict)]
+    numeric = any(_num(v) is not None for obj in objects
+                  if isinstance(obj, dict) for v in obj.values())
+    if _draws_utility(sc, position) and not numeric:
+        return 0.0, [f'{label}.{_UTILITY_RESULT_KEYS[0]}|'
+                     f'{_UTILITY_RESULT_KEYS[1]} (no numeric result, although '
+                     f'a {sc.unit_classes[position][1]} unit always draws a '
+                     f'utility)']
+    return 1.0 - len(absent) / 2, [f'{label}.{k}' for k in absent]
+
+
 def _score_util_04(sc):  # CMP-UTIL-04
     if not sc.units:
         return None, 'no units', []
     pairs, missing = [], []
-    for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
-        keys = ('utility_consumption_results', 'utility_production_results')
-        absent = [k for k in keys if not isinstance(unit.get(k), dict)]
-        pairs.append((1.0 - len(absent) / 2, _unit_weight(sc, position)))
-        missing.extend(f'{label}.{k}' for k in absent)
+    for position in range(len(sc.units)):
+        score, gaps = _util_04_unit(sc, position)
+        pairs.append((score, _unit_weight(sc, position)))
+        missing.extend(gaps)
     full = sum(1 for score, _w in pairs if score == 1.0)
     return (_wmean(pairs), f'{full} of {len(pairs)} unit(s) record utility '
             f'results (family-weighted)', missing)
@@ -2925,12 +3659,14 @@ def _score_sys_03(sc):  # CMP-SYS-03
 
 def _pinned(package):
     package = _as_dict(package)
-    return _filled(package.get('commit')) or _filled(package.get('version'))
+    return (_nonempty_scalar(package.get('commit'))
+            or _nonempty_scalar(package.get('version')))
 
 
 def _score_sys_04(sc):  # CMP-SYS-04
     simulator = _as_dict(sc.metadata.get('process_simulator'))
-    named = _filled(simulator.get('name')) and _filled(simulator.get('version'))
+    named = (_nonempty_str(simulator.get('name'))
+             and _nonempty_scalar(simulator.get('version')))
     repro = _as_dict(sc.metadata.get('reproducibility'))
     pinned = any(_pinned(repro.get(k))
                  for k in ('simulator_package', 'flowsheet_model_package'))
@@ -2994,12 +3730,26 @@ def _validation_summary(results):
             for sev in order(counts, _SEVERITY_ORDER)}
 
 
+def _bare_design_results(sc):
+    """Locators of the bare numeric design results (no inline units) of a
+    legacy-shape document: unitless quantities for CMP-INT-04 (R2.10)."""
+    return [f'{label}.design_results.{key}'
+            for unit, label in zip(sc.units, sc.unit_labels)
+            for key, value in _as_dict(unit.get('design_results')).items()
+            if not isinstance(value, dict) and _num(value) is not None]
+
+
 def _score_int_04(sc):  # CMP-INT-04
     inline = list(_inline_quantities(sc.doc))
     if inline:
+        # Legacy branch: every inline {value, units} quantity, plus every
+        # bare numeric design result, which carries no units at all.
         missing = [f'{path}.units' for path, q in inline if not _filled(q.get('units'))]
-        ok = len(inline) - len(missing)
-        return (ok / len(inline), f'legacy inline shape: {ok} of {len(inline)} '
+        missing += [f'{path} (bare number, no units)'
+                    for path in _bare_design_results(sc)]
+        total = len(inline) + len(_bare_design_results(sc))
+        ok = total - len(missing)
+        return (ok / total, f'legacy inline shape: {ok} of {total} '
                 f'quantities carry units', missing)
     result = sc.check_result('QU-01')
     if result is None or result.status == 'skip':

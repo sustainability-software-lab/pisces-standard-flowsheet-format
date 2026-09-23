@@ -106,15 +106,33 @@ def unitless_doc():
     return doc
 
 
+# (MW, formula) of the database records the fake name search returns.
+KNOWN_RECORDS = {"Water": (18.01528, "H2O"), "Ethanol": (46.06844, "C2H6O"),
+                 "Glucose": (180.15588, "C6H12O6"), "CO2": (44.0095, "CO2")}
+
+# A full property package of real thermosteam model class names (as the
+# exporter writes them), and a second one differing in gamma.
+FULL_PKG = {"mixture": "IdealMixture(include_excess_energies=False)",
+            "gamma": "DortmundActivityCoefficients",
+            "phi": "IdealFugacityCoefficients",
+            "PCF": "MockPoyntingCorrectionFactors"}
+UNIFAC_PKG = dict(FULL_PKG, gamma="UNIFACActivityCoefficients")
+
+
 @contextlib.contextmanager
 def name_lookup(resolvable=(), search="fake"):
     """Replace the `chemicals` name search (CMP-THM-02 name tier) with a fake
     that resolves exactly `resolvable` (search=None: package unavailable),
-    with an empty lookup cache; restores both afterwards."""
+    with an empty lookup cache; restores both afterwards. A resolved name
+    returns a record with the MW / formula of KNOWN_RECORDS (None / None
+    for others), or of `resolvable[name]` when `resolvable` is a dict of
+    (MW, formula)."""
     if search == "fake":
         def search(name):
             if name in resolvable:
-                return name
+                mw, formula = (resolvable[name] if isinstance(resolvable, dict)
+                               else KNOWN_RECORDS.get(name, (None, None)))
+                return types.SimpleNamespace(MW=mw, formula=formula)
             raise ValueError(f"Chemical name ({name}) not recognized")
     saved_search = list(C._CHEMICALS_SEARCH)
     saved_cache = dict(C._NAME_LOOKUP)
@@ -452,20 +470,145 @@ class TestReaders(unittest.TestCase):
         self.assertEqual(C._label("units", {}, 3), "units[#3]")
 
     def test_fractions_and_compositions(self):
-        """_entry_fraction: mol_fraction, else mass_fraction, else None;
-        _composition_ok: non-empty with numeric fractions; _phases_ok: a
-        zero-flow empty phase is fine, a missing phase molar flow is not."""
+        """_entry_fraction: valid mol_fraction, else valid mass_fraction,
+        else None (1.5 is no fraction). _composition_ok (R2.0): named entries
+        whose mol -- or else mass -- fractions lie in [0, 1] and sum to 1
+        within FRACTION_SUM_TOL -> True; an unnamed entry, a sum of 0.5, an
+        out-of-range fraction or [] -> False. _phases_ok: a zero-flow empty
+        phase beside a populated one is fine; a missing or negative phase
+        molar flow is not, nor are phases that all carry zero flow."""
         self.assertEqual(C._entry_fraction({"mol_fraction": 0.2}), 0.2)
         self.assertEqual(C._entry_fraction({"mass_fraction": 0.3}), 0.3)
+        self.assertEqual(C._entry_fraction({"mol_fraction": 1.5,
+                                            "mass_fraction": 0.3}), 0.3)
         self.assertIsNone(C._entry_fraction({"component_name": "A"}))
-        self.assertTrue(C._composition_ok([{"mol_fraction": 1.0}]))
+        a = {"component_name": "A", "mol_fraction": 1.0}
+        self.assertTrue(C._composition_ok([a]))
+        self.assertTrue(C._composition_ok([
+            {"component_name": "A", "mol_fraction": 0.5, "mass_fraction": 0.4},
+            {"component_name": "B", "mass_fraction": 0.6}]))
+        self.assertFalse(C._composition_ok([{"mol_fraction": 1.0}]))
+        self.assertFalse(C._composition_ok([dict(a, mol_fraction=0.5)]))
+        self.assertFalse(C._composition_ok([dict(a, mol_fraction=1.2)]))
+        self.assertTrue(C._composition_ok([
+            dict(a, mol_fraction=0.4995),
+            {"component_name": "B", "mol_fraction": 0.5}]))
         self.assertFalse(C._composition_ok([]))
-        good = {"total_molar_flow": 1.0, "composition": [{"mol_fraction": 1.0}]}
-        self.assertTrue(C._phases_ok({"l": good,
-                                      "g": {"total_molar_flow": 0.0,
-                                            "composition": []}}))
-        self.assertFalse(C._phases_ok({"l": {"composition": [{"mol_fraction": 1}]}}))
+        # legacy flat shape: fractions sum to 1 within each phase tag
+        two_phase = [dict(a, phase="l"), {"phase": "s", "component_name": "B",
+                                          "mol_fraction": 1.0}]
+        self.assertTrue(C._composition_ok(two_phase))
+        self.assertFalse(C._composition_ok(two_phase + [dict(a, phase="g",
+                                                             mol_fraction=0.5)]))
+        self.assertIsNone(C._species_flows({"stream_properties": {
+            "total_molar_flow": 2.0, "composition": two_phase}}))
+        good = {"total_molar_flow": 1.0, "composition": [a]}
+        empty = {"total_molar_flow": 0.0, "composition": []}
+        self.assertTrue(C._phases_ok({"l": good, "g": empty}))
+        self.assertFalse(C._phases_ok({"g": empty}))
+        self.assertFalse(C._phases_ok({"l": dict(good, total_molar_flow=-1.0)}))
+        self.assertFalse(C._phases_ok({"l": {"composition": [a]}}))
         self.assertFalse(C._phases_ok({}))
+
+    def test_validity_predicates(self):
+        """R2.0 shared predicates: _valid_number bounds (open / closed, None
+        when outside or non-numeric); _valid_T in (0, T_MAX) K; _valid_P > 0;
+        _valid_flow >= 0; _valid_fraction in [0, 1]; _valid_cost >= 0;
+        _nonempty_value rejects None, '', [], {} and NaN but keeps False and
+        0; _nonempty_scalar accepts a non-blank string or a finite number
+        only (a version '2.54' or 2, never ['x'])."""
+        self.assertTrue(C._nonempty_scalar("2.54") and C._nonempty_scalar(2))
+        for value in (["x"], "", None, True):
+            self.assertFalse(C._nonempty_scalar(value), value)
+        self.assertEqual(C._valid_number(5, 0, 10), 5.0)
+        self.assertIsNone(C._valid_number(0, 0, lo_open=True))
+        self.assertIsNone(C._valid_number(10, 0, 10, hi_open=True))
+        self.assertIsNone(C._valid_number("5", 0, 10))
+        self.assertIsNone(C._valid_T(-50.0))
+        self.assertIsNone(C._valid_T(0.0))
+        self.assertIsNone(C._valid_T(C.T_MAX))
+        self.assertEqual(C._valid_T(300), 300.0)
+        self.assertIsNone(C._valid_P(0.0))
+        self.assertEqual(C._valid_P({"value": 101325, "units": "Pa"}), 101325.0)
+        self.assertIsNone(C._valid_flow(-3.0))
+        self.assertEqual(C._valid_flow(0.0), 0.0)
+        self.assertIsNone(C._valid_fraction(1.01))
+        self.assertIsNone(C._valid_cost(-1.0))
+        self.assertEqual(C._valid_cost(0), 0.0)
+        for value in (None, "", " ", [], {}, float("nan")):
+            self.assertFalse(C._nonempty_value(value), value)
+        for value in (False, 0, "x", [0]):
+            self.assertTrue(C._nonempty_value(value), value)
+
+    def test_spec_predicates(self):
+        """_valid_spec by parameter role: temperatures (_spec_temperature),
+        pressures or effect-pressure lists (_spec_pressure), positive
+        (_spec_positive: tau, N, k, ...), non-negative (_spec_nonnegative:
+        V, tau_0), positive integers (_spec_positive_int: N_stages),
+        efficiencies in (0, 1] (_spec_efficiency: V_wf, eta, Lr, ...),
+        fractions (_spec_fraction), splits (_spec_split: number, list or
+        object of fractions), LHK pairs (_spec_lhk), finite numbers
+        (_spec_finite: Q, H), booleans for flags (_spec_flag); any other key
+        needs a non-empty value. Expected: plausible values True, the
+        reviewer's '' and out-of-range values False."""
+        good = {"T": 300.0, "P": [101325.0, 5e4], "tau": 4, "V": 0.0,
+                "tau_0": 0, "N_stages": 12, "V_wf": 0.9, "eta": 1.0,
+                "moisture_content": 0.0, "split": {"A": 0.2},
+                "LHK": ["Ethanol", "Water"], "Q": -5.0, "rigorous": False,
+                "material": "Carbon steel"}
+        for key, value in good.items():
+            self.assertTrue(C._valid_spec(key, value), (key, value))
+        bad = {"T": "", "tau": "", "P": [], "V": -1.0, "N_stages": 2.5,
+               "V_wf": 0.0, "eta": 1.2, "split": [0.5, 2.0], "LHK": ["A"],
+               "Q": "x", "rigorous": "yes", "material": ""}
+        for key, value in bad.items():
+            self.assertFalse(C._valid_spec(key, value), (key, value))
+        self.assertTrue(C._spec_temperature(305.0))
+        self.assertTrue(C._spec_pressure(1e5) and not C._spec_pressure(-1.0))
+        self.assertTrue(C._spec_positive(1e-3) and not C._spec_positive(0))
+        self.assertTrue(C._spec_nonnegative(0) and not C._spec_nonnegative(-1))
+        self.assertTrue(C._spec_positive_int(3.0))
+        self.assertTrue(C._spec_efficiency(0.5) and not C._spec_efficiency(0))
+        self.assertTrue(C._spec_fraction(0) and not C._spec_fraction(1.5))
+        self.assertTrue(C._spec_split(0.9) and not C._spec_split({}))
+        self.assertTrue(C._spec_lhk(("A", "B")) and not C._spec_lhk(["A", ""]))
+        self.assertTrue(C._spec_finite(-1e9) and not C._spec_finite(None))
+        self.assertTrue(C._spec_flag(True) and not C._spec_flag(1))
+
+    def test_formula_and_registry_id_predicates(self):
+        """_formula_counts parses plain formulas into element counts (None for
+        names, non-element tokens, parentheses); _formula_like marks
+        formula-looking ids ('C2H6O', 'HP', 'CO2' yes; 'Water', 'Ash',
+        'Cellulose' no); _valid_formula also accepts what the validator's
+        parser reads. _valid_cas checks format and check digit; _smiles_like
+        needs SMILES tokens, an atom, balanced branches and paired ring
+        labels ('CCO' yes; 'x', 'HP', 'CO2' no); _valid_registry_id accepts
+        CAS, InChI, InChIKey, SMILES and rejects 'x' and non-strings."""
+        self.assertEqual(C._formula_counts("C2H6O"), {"C": 2, "H": 6, "O": 1})
+        self.assertEqual(C._formula_counts("CH1.61O0.56"),
+                         {"C": 1, "H": 1.61, "O": 0.56})
+        for text in ("Water", "Ash", "Cellulose", "Ca(OH)2", "Xy2", None):
+            self.assertIsNone(C._formula_counts(text), text)
+        for cid in ("C2H6O", "HP", "CO2", "NaOH"):
+            self.assertTrue(C._formula_like(cid), cid)
+        for cid in ("Water", "Ethanol", "TriOlein", "Yeast"):
+            self.assertFalse(C._formula_like(cid), cid)
+        self.assertTrue(C._valid_formula("H2O"))
+        self.assertFalse(C._valid_formula("x"))
+        self.assertTrue(C._valid_cas("7732-18-5"))
+        self.assertFalse(C._valid_cas("7732-18-4"))
+        self.assertFalse(C._valid_cas("x"))
+        self.assertTrue(C._smiles_like("CCO"))
+        self.assertTrue(C._smiles_like("c1ccccc1"))
+        self.assertTrue(C._smiles_like("[Na+].[Cl-]"))
+        for text in ("x", "HP", "CO2", "C(C", "12", 5):
+            self.assertFalse(C._smiles_like(text), text)
+        with name_lookup():
+            for rid in ("64-17-5", "InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3",
+                        "LFQSCWFLJHTTHZ-UHFFFAOYSA-N", "CCO"):
+                self.assertTrue(C._valid_registry_id({"registry_id": rid}), rid)
+            for rid in ("x", "", ["64-17-5"], "64-17-4"):
+                self.assertFalse(C._valid_registry_id({"registry_id": rid}), rid)
 
     def test_total_flow_and_stream_state(self):
         """_total_flow: mass else molar; _stream_state: valid feed -> all
@@ -505,6 +648,19 @@ class TestReaders(unittest.TestCase):
         # _PHASE_TAG_RE: a thermosteam phase tag is not part of the name
         self.assertEqual(C._equation_species("Glucose,l -> 2 CO2, g"),
                          ["Glucose", "CO2"])
+
+    def test_equation_and_stoichiometry_sides(self):
+        """_equation_sides splits consumed / produced species ('A + 2 B ->
+        C' -> ([A, B], [C])); a bare number names no species; no arrow ->
+        ([], []). _stoichiometry_sides splits by coefficient sign; a species
+        resolving to no name is dropped."""
+        self.assertEqual(C._equation_sides("A + 2 B -> C"), (["A", "B"], ["C"]))
+        self.assertEqual(C._equation_sides("2 -> C"), ([], ["C"]))
+        self.assertEqual(C._equation_sides("x"), ([], []))
+        self.assertEqual(C._stoichiometry_sides({"A": -1, "B": 2, "C": 0},
+                                                {"A", "B"}, {}), (["A"], ["B"]))
+        self.assertEqual(C._stoichiometry_sides([-1, 1], set(), {0: ["x"]}),
+                         ([], ["index 1"]))
 
     def test_stoichiometry_species(self):
         """_stoichiometry_species: id keys, index keys resolved by index,
@@ -577,13 +733,25 @@ def stream(sid, source, sink, T=300.0, P=101325.0, phases=None, mass=46.07,
 
 def one_unit_doc(unit, ins=({},), outs=({},), pinned=False):
     """valid_doc with a single unit U1 (fields `unit`) wired to boundary feeds
-    `ins` and products `outs` (each a dict of stream() keyword arguments)."""
+    `ins` and products `outs` (each a dict of stream() keyword arguments).
+    Balanced (R2.2): every product not given its own `mass` carries
+    len(ins) / len(outs) times the default flows (mass, molar and each
+    phase's molar flow), so the default one-species balances close."""
     doc = valid_doc()
     doc["units"] = [dict(unit, id="U1")]
+    products = [stream(f"out{k}", "U1", "None", **kw)
+                for k, kw in enumerate(outs)]
+    factor = len(ins) / len(outs) if outs else 1.0
+    for kw, product in zip(outs, products):
+        if "mass" in kw:
+            continue
+        sp = product["stream_properties"]
+        for key in ("total_mass_flow", "total_molar_flow"):
+            sp[key] *= factor
+        for phase in sp["phases"].values():
+            phase["total_molar_flow"] *= factor
     doc["streams"] = ([stream(f"in{k}", "None", "U1", **kw)
-                       for k, kw in enumerate(ins)]
-                      + [stream(f"out{k}", "U1", "None", **kw)
-                         for k, kw in enumerate(outs)])
+                       for k, kw in enumerate(ins)] + products)
     if pinned:
         doc["metadata"]["reproducibility"] = {
             "flowsheet_model_package": {"commit": "abc123"}}
@@ -1007,12 +1175,14 @@ class TestSpecRules(unittest.TestCase):
             C._condition_holds("bogus", sc, 0, set())
 
     def test_requirement_applies(self):
-        """_requirement_applies: unconditional -> True; the HXutility V
-        requirement applies on a non-rigorous phase change only; the
-        HXprocess phase0|phase1 requirement on any phase change (rigorous or
-        not); the pump dP_design requirement applies only when P does not
-        rise; an unevaluable condition does not apply; unknown ->
-        ValueError."""
+        """_requirement_applies (R2.13: waived only on affirmative evidence):
+        unconditional -> True; the HXutility V requirement is waived when
+        rigorous or when inlet and outlet phase sets are known and equal;
+        the HXprocess phase0|phase1 requirement when they are known and
+        equal (rigorous or not); the pump dP_design requirement when inlet
+        and outlet P are known with a rise >= 1 Pa; an unevaluable condition
+        (an outlet without P or without phase data) APPLIES the requirement;
+        unknown -> ValueError."""
         v_req = C._FAMILY_RULES["hx_utility"][1]
         phase_req = C._FAMILY_RULES["hx_process"][1]
         dp_req = C._FAMILY_RULES["pump"][1]
@@ -1031,7 +1201,11 @@ class TestSpecRules(unittest.TestCase):
         rise = ctx(one_unit_doc(spec_unit("Pump"), outs=({"P": 3e5},)))
         self.assertFalse(C._requirement_applies(dp_req, rise, 0))
         nop = ctx(one_unit_doc(spec_unit("Pump"), outs=({"P": None},)))
-        self.assertFalse(C._requirement_applies(dp_req, nop, 0))
+        self.assertTrue(C._requirement_applies(dp_req, nop, 0))
+        unphased = ctx(one_unit_doc(spec_unit("HXutility"),
+                                    outs=({"phases": {}},)))
+        self.assertTrue(C._requirement_applies(v_req, unphased, 0))
+        self.assertTrue(C._requirement_applies(phase_req, unphased, 0))
         with self.assertRaises(ValueError):
             C._requirement_applies(C._Req(1, ("x",), {}, when="bogus"), flat, 0)
 
@@ -1358,21 +1532,79 @@ class TestThermoCriteria(unittest.TestCase):
         self.assertIsNone(C._empty_chemical_population(ctx({}))[0])
 
     def test_thm_02_credit(self):
-        """_thm_02_credit: registry_id -> 1; id resolvable by name ->
-        NAME_RESOLVED_CREDIT (0.75); formula only -> FORMULA_ONLY_CREDIT
-        (0.25); nothing -> 0; each below 1 with a registry_id locator
-        suffix."""
-        with name_lookup({"Ethanol"}):
+        """_thm_02_credit (R2.0/R2.3): a valid registry_id -> 1; a junk one
+        ('x') counts as absent; id resolvable by name with a matching molar
+        mass -> NAME_RESOLVED_CREDIT (0.75); resolvable with nothing to
+        verify it -> NAME_UNVERIFIED_CREDIT (0.5); resolvable but of another
+        molar mass -> the formula tier FORMULA_ONLY_CREDIT (0.25); a
+        formula-looking id never earns the name tier (0.25 via the id);
+        nothing -> 0; each below 1 with a registry_id locator suffix."""
+        with name_lookup({"Ethanol", "Starch", "HP"}):
             self.assertEqual(C._thm_02_credit({"registry_id": "64-17-5"}, "X"),
                              (1.0, None))
+            self.assertEqual(C._thm_02_credit({"registry_id": "x"}, "X")[0], 0.0)
             self.assertEqual(C._thm_02_credit({"formula": "C2H6O"}, "Ethanol")[0],
                              C.NAME_RESOLVED_CREDIT)
+            self.assertEqual(C._thm_02_credit({}, "Ethanol")[0],
+                             C.NAME_UNVERIFIED_CREDIT)
+            self.assertEqual(C._thm_02_credit({"molar_mass": 162.14}, "Starch")[0],
+                             C.NAME_UNVERIFIED_CREDIT)
+            credit, note = C._thm_02_credit({"molar_mass": 90.0}, "Ethanol")
+            self.assertEqual(credit, 0.0)
+            self.assertIn("another molar mass", note)
             credit, note = C._thm_02_credit({"formula": "C2H6O"}, "Fiber")
             self.assertEqual((credit, note), (C.FORMULA_ONLY_CREDIT,
                                               ".registry_id (formula only)"))
+            credit, note = C._thm_02_credit({"molar_mass": 90.08}, "HP")
+            self.assertEqual(credit, C.FORMULA_ONLY_CREDIT)
+            self.assertIn("isomer-ambiguous", note)
             self.assertEqual(C._thm_02_credit({}, None)[0], 0.0)
-        self.assertEqual((C.NAME_RESOLVED_CREDIT, C.FORMULA_ONLY_CREDIT),
-                         (0.75, 0.25))
+        self.assertEqual((C.NAME_RESOLVED_CREDIT, C.NAME_UNVERIFIED_CREDIT,
+                          C.FORMULA_ONLY_CREDIT), (0.75, 0.5, 0.25))
+
+    def test_name_tier_and_record_agreement(self):
+        """_name_tier: None for a non-string, formula-like or unresolvable id,
+        else _record_agreement of the record: 'verified' when the molar
+        masses agree within NAME_MW_RTOL (declared, or derived by
+        _chemical_molar_mass from the formula; the record's by
+        _record_molar_mass) or the formulas match; 'unverified' when either
+        side has nothing comparable; 'mismatch' otherwise. _name_record
+        returns the record itself (cached)."""
+        with name_lookup({"Ethanol"}):
+            self.assertEqual(C._name_record("Ethanol").MW, 46.06844)
+            self.assertIsNone(C._name_record("Fiber"))
+            self.assertEqual(C._name_tier({"molar_mass": 46.07}, "Ethanol"),
+                             "verified")
+            self.assertEqual(C._name_tier({"formula": "C2H6O"}, "Ethanol"),
+                             "verified")
+            self.assertEqual(C._name_tier(None, "Ethanol"), "unverified")
+            self.assertEqual(C._name_tier({"molar_mass": 50.0}, "Ethanol"),
+                             "mismatch")
+            self.assertIsNone(C._name_tier({}, "C2H6O"))
+            self.assertIsNone(C._name_tier({}, ["Ethanol"]))
+        record = types.SimpleNamespace(MW=None, formula="H2O")
+        self.assertAlmostEqual(C._record_molar_mass(record), 18.015, places=2)
+        self.assertEqual(C._record_agreement(record, {"formula": "H2O"}),
+                         "verified")
+        self.assertEqual(C._record_agreement(types.SimpleNamespace(),
+                                             {"molar_mass": 5.0}), "unverified")
+        self.assertAlmostEqual(C._chemical_molar_mass({"formula": "H2O"}),
+                               18.015, places=2)
+        self.assertEqual(C._chemical_molar_mass({"molar_mass": -1.0,
+                                                 "formula": "x"}), None)
+
+    def test_cas_contradicts(self):
+        """_cas_contradicts: a CAS whose database record's molar mass differs
+        from the chemical's by more than CAS_MW_RTOL -> True (the registry
+        id is then invalid: _valid_registry_id False); within tolerance, no
+        record, or no molar mass to compare -> False."""
+        with name_lookup({"64-17-5": (46.06844, "C2H6O")}):
+            self.assertTrue(C._cas_contradicts("64-17-5", {"molar_mass": 90.0}))
+            self.assertFalse(C._valid_registry_id(
+                {"registry_id": "64-17-5", "molar_mass": 90.0}))
+            self.assertFalse(C._cas_contradicts("64-17-5", {"molar_mass": 46.5}))
+            self.assertFalse(C._cas_contradicts("64-17-5", {}))
+            self.assertFalse(C._cas_contradicts("7732-18-5", {"molar_mass": 1.0}))
 
     def test_thm_02_identity(self):
         """_score_thm_02 (CMP-THM-02): Ethanol with formula, name tier
@@ -1459,20 +1691,45 @@ class TestThermoCriteria(unittest.TestCase):
 
     def test_thm_06_property_package(self):
         """_score_thm_06 (CMP-THM-06): no package -> 0 with 4 locators; half
-        stated -> 0.5; full -> 1; no units -> None."""
+        stated -> 0.5; full -> 1; descriptors that name no thermosteam model
+        class of their role ('x', 'NRTL', a fugacity class as gamma) count
+        as absent -> 0; no units -> None."""
         score, _m, missing = run(C._score_thm_06, valid_doc())
         self.assertEqual((score, len(missing)), (0.0, 4))
         doc = valid_doc()
-        doc["units"][0]["thermo_property_package"] = {"mixture": "m", "gamma": "g"}
+        package = doc["units"][0]["thermo_property_package"] = {
+            k: FULL_PKG[k] for k in ("mixture", "gamma")}
         self.assertEqual(run(C._score_thm_06, doc)[0], 0.5)
-        doc["units"][0]["thermo_property_package"].update(phi="p", PCF="c")
+        package.update(phi=FULL_PKG["phi"], PCF=FULL_PKG["PCF"])
         self.assertEqual(run(C._score_thm_06, doc)[0], 1.0)
+        package.update(mixture="x", gamma="NRTL", phi="x",
+                       PCF="IdealFugacityCoefficients")
+        self.assertEqual(run(C._score_thm_06, doc)[0], 0.0)
         self.assertIsNone(run(C._score_thm_06, {})[0])
+
+    def test_valid_package_descriptor(self):
+        """_valid_package_descriptor: the leading identifier must be a
+        thermosteam model class of the key's role (_THERMO_MODEL_CLASSES):
+        'IdealMixture(...)' as mixture, 'PRActivityCoefficients' as gamma,
+        '<PRFugacityCoefficients([...])>' as phi, both Poynting spellings as
+        PCF -> True; 'x', 'NRTL', a gamma class as phi, a non-string or an
+        unknown key -> False."""
+        for key, value in (("mixture", FULL_PKG["mixture"]),
+                           ("gamma", "PRActivityCoefficients"),
+                           ("phi", "<PRFugacityCoefficients([Water])>"),
+                           ("PCF", "MockPoyntingCorrectionFactors"),
+                           ("PCF", "MockPoyintingCorrectionFactors")):
+            self.assertTrue(C._valid_package_descriptor(key, value), value)
+        for key, value in (("mixture", "x"), ("gamma", "NRTL"),
+                           ("phi", "DortmundActivityCoefficients"),
+                           ("gamma", ["DortmundActivityCoefficients"]),
+                           ("id", "IdealMixture")):
+            self.assertFalse(C._valid_package_descriptor(key, value), value)
 
     def test_thm_06_family_weighted(self):
         """_score_thm_06 (CMP-THM-06) is family-weighted: a reactor (weight 3)
         with a full package beside a pump (weight 1) with none -> 3/4."""
-        full = {k: "x" for k in C._TPP_KEYS}
+        full = dict(FULL_PKG)
         doc = valid_doc()
         doc["units"] = [dict(spec_unit("SinglePhaseReactor"), id="R1",
                              thermo_property_package=full),
@@ -1483,9 +1740,9 @@ class TestThermoCriteria(unittest.TestCase):
         """_single_full_package: every package full (mixture, gamma, phi,
         PCF) and identical -> True; a differing descriptor, a blank or
         missing one, or no packages -> False; ids are ignored."""
-        full = {k: "x" for k in C._TPP_KEYS}
+        full = dict(FULL_PKG)
         self.assertTrue(C._single_full_package([full, dict(full, id="a")]))
-        self.assertFalse(C._single_full_package([full, dict(full, gamma="y")]))
+        self.assertFalse(C._single_full_package([full, dict(UNIFAC_PKG)]))
         self.assertFalse(C._single_full_package([full, dict(full, PCF=" ")]))
         partial = dict(full)
         del partial["phi"]
@@ -1501,7 +1758,7 @@ class TestThermoCriteria(unittest.TestCase):
         distinct full packages, neither with an id -> 0 (not N/A); a unit
         without any package -> 0."""
         self.assertIsNone(run(C._score_thm_07, {})[0])
-        full = {k: "x" for k in C._TPP_KEYS}
+        full = dict(FULL_PKG)
         doc = valid_doc()
         doc["units"] = [dict(spec_unit("Pump"), id=uid,
                              thermo_property_package=dict(full))
@@ -1516,7 +1773,7 @@ class TestThermoCriteria(unittest.TestCase):
         self.assertEqual((score, missing),
                          (0.5, ["units[P2].thermo_property_package.id"]))
         doc["units"][0]["thermo_property_package"] = dict(full)
-        doc["units"][1]["thermo_property_package"] = dict(full, gamma="y")
+        doc["units"][1]["thermo_property_package"] = dict(UNIFAC_PKG)
         self.assertEqual(run(C._score_thm_07, doc)[0], 0.0)
         self.assertEqual(run(C._score_thm_07, valid_doc())[0], 0.0)
 
@@ -1625,9 +1882,12 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         0) stays in the population and scores 1 even without T -> 1.0 with
         an 'empty, stated by their zero flow' note; beside a half-stated
         feed it counts as 1 -> (0.5 + 1) / 2; deleting its flows makes it an
-        unknown-flow feed scored by its state (lower, never higher); no feed
-        stating a non-zero flow -> 0, whether the flows are zero or
-        unstated."""
+        unknown-flow feed scored by its state (lower, never higher). R2.12:
+        with no feed stating a non-zero flow a stated zero counts as a
+        missing flow with no composition exemption, so the lone zero feed
+        (T missing, P and a liquid phase stated) scores 0.5 -- exactly what
+        it scores with its flows unstated -- and deleting the only non-zero
+        flow lowers the doc from 1.0 to (0.75 + 0.5) / 2."""
         doc = one_unit_doc(spec_unit("Mixer"), ins=({"mass": 90.0},
                                                     {"mass": 10.0, "T": None}))
         self.assertAlmostEqual(run(C._score_feed_01, doc)[0], 0.875)
@@ -1647,13 +1907,19 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         for key in ("total_mass_flow", "total_molar_flow"):
             del unknown["streams"][1]["stream_properties"][key]
         self.assertLess(run(C._score_feed_01, unknown)[0], 0.75)
+        unanchored = copy.deepcopy(empty)
+        for key in ("total_mass_flow", "total_molar_flow"):
+            del unanchored["streams"][0]["stream_properties"][key]
+        self.assertEqual(run(C._score_feed_01, unanchored)[0], 0.625)
         del empty["streams"][0]
-        score, _m, missing = run(C._score_feed_01, empty)
-        self.assertEqual(score, 0.0)
-        self.assertIn("no feed with a non-zero", missing[0])
+        score, message, missing = run(C._score_feed_01, empty)
+        self.assertEqual(score, 0.5)
+        self.assertIn("no feed states a non-zero flow", message)
+        self.assertIn("(a zero flow, while no feed states a non-zero one)",
+                      " ".join(missing))
         for key in ("total_mass_flow", "total_molar_flow"):
             del empty["streams"][0]["stream_properties"][key]
-        self.assertEqual(run(C._score_feed_01, empty)[0], 0.0)
+        self.assertEqual(run(C._score_feed_01, empty)[0], 0.5)
 
     def test_utility_port_feed(self):
         """_utility_port_feed: a feed into a DrumDryer (dryer family) -> the
@@ -1888,9 +2154,36 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertIsNone(run(C._score_rxn_01, valid_doc())[0])
         score, _m, missing = run(C._score_rxn_01, self._appearing_doc())
         self.assertEqual(score, 0.0)
-        self.assertIn("none declared (CO2 appears)", missing[0])
+        self.assertIn("none well-formed declared (CO2 appears)", missing[0])
         doc = self._appearing_doc({"reactions": [reaction()]})
         self.assertEqual(run(C._score_rxn_01, doc)[0], 1.0)
+        doc = self._appearing_doc({"reactions": [{}, reaction(equation="x")]})
+        self.assertEqual(run(C._score_rxn_01, doc)[0], 0.0)
+
+    def test_reaction_sides_and_well_formed(self):
+        """_reaction_sides: union of the equation's and the stoichiometry's
+        (consumed, produced) sets, each counted only when both of its sides
+        name a species; _well_formed (and the context's well_formed /
+        reaction_sides, which resolve against the document's chemicals):
+        'A -> B' or {A: -1, B: 1} -> True; 'x', 'A ->', {A: -1}, {} ->
+        False. unit_reacts flags units declaring a well-formed reaction."""
+        self.assertEqual(C._reaction_sides({"equation": "A + B -> C",
+                                            "stoichiometry": {"D": -1, "C": 1}},
+                                           {"D"}),
+                         ({"A", "B", "D"}, {"C"}))
+        self.assertEqual(C._reaction_sides({"equation": "A ->"}), (set(), set()))
+        self.assertTrue(C._well_formed({"equation": "A -> B"}))
+        self.assertTrue(C._well_formed({"stoichiometry": {"A": -1, "B": 1}},
+                                       {"A", "B"}))
+        for bad in ({"equation": "x"}, {"equation": "A ->"},
+                    {"stoichiometry": {"A": -1}}, {}, "junk"):
+            self.assertFalse(C._well_formed(bad), bad)
+        sc = ctx(rxn_doc([{"stoichiometry": [-1, 1]}]))
+        self.assertTrue(sc.well_formed(sc.units[0]["reactions"][0]))
+        self.assertEqual(sc.reaction_sides({"equation": "Glucose -> CO2"}),
+                         ({"Glucose"}, {"CO2"}))
+        self.assertEqual(sc.unit_reacts, [True])
+        self.assertEqual(ctx(rxn_doc([{}])).unit_reacts, [False])
 
     def test_reactive_units(self):
         """_reactive_units: the valid mixer -> []; a reactor-family unit ->
@@ -1911,12 +2204,26 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertEqual(len(C._reactive_units(sc)), 2)
 
     def test_reaction_completeness(self):
-        """_reaction_completeness: complete -> (1.0, []); conversion 1.5 ->
-        2/3 with a conversion locator under the given prefix."""
-        self.assertEqual(C._reaction_completeness(reaction(), "r"), (1.0, []))
-        score, missing = C._reaction_completeness(reaction(conversion=1.5), "r")
+        """_reaction_completeness (R2.0): complete -> (1.0, []); conversion
+        1.5 -> 2/3 with a conversion locator under the given prefix; a
+        reactant that is not among the consumed species -> 2/3; a reaction
+        that is not well-formed (equation 'x', or none at all) -> 0 whatever
+        its reactant and conversion, with a 'not well-formed' locator."""
+        sc = ctx(valid_doc())
+        self.assertEqual(C._reaction_completeness(sc, reaction(), "r"), (1.0, []))
+        score, missing = C._reaction_completeness(sc, reaction(conversion=1.5),
+                                                  "r")
         self.assertAlmostEqual(score, 2 / 3)
         self.assertEqual(missing, ["r.conversion (0..1)"])
+        score, missing = C._reaction_completeness(
+            sc, reaction(equation="A -> Ethanol"), "r")
+        self.assertAlmostEqual(score, 2 / 3)
+        self.assertEqual(missing, ["r.reactant (a consumed species)"])
+        for bad in (reaction(equation="x"), {"reactant": "Ethanol",
+                                             "conversion": 0.5}):
+            score, missing = C._reaction_completeness(sc, bad, "r")
+            self.assertEqual(score, 0.0)
+            self.assertIn("not well-formed", missing[0])
 
     def test_per_reactive_unit(self):
         """_per_reactive_unit: a reactor with one reaction scored 0.5 -> (0.5,
@@ -1949,7 +2256,8 @@ class TestReactionCriteria(unittest.TestCase):
         """_score_rxn_03 (CMP-RXN-03) over the reactive units: two indexed
         reactions -> 1; one index missing -> 0; a single (unindexed) reaction
         -> 1 (no order to state); a reactor-family unit whose reactions are
-        deleted -> 0 with a 'none declared' locator (applicable, not N/A);
+        deleted -> 0 with a "none well-formed declared" locator (applicable,
+        not N/A); a unit carrying only a malformed reaction ([{}]) -> 0;
         no reactive unit -> None."""
         two = [reaction(index=0), reaction(index=1)]
         self.assertEqual(run(C._score_rxn_03, unit_doc({"reactions": two}))[0], 1.0)
@@ -1960,8 +2268,10 @@ class TestReactionCriteria(unittest.TestCase):
         doc = unit_doc(spec_unit("SinglePhaseReactor"))
         score, _m, missing = run(C._score_rxn_03, doc)
         self.assertEqual(score, 0.0)
-        self.assertIn("units[U1].reactions: none declared (reactor family)",
-                      missing[0])
+        self.assertIn("units[U1].reactions: none well-formed declared "
+                      "(reactor family)", missing[0])
+        doc["units"][0]["reactions"] = [{}]
+        self.assertEqual(run(C._score_rxn_03, doc)[0], 0.0)
         self.assertIsNone(run(C._score_rxn_03, valid_doc())[0])
 
     def test_reaction_coefficients(self):
@@ -2327,16 +2637,18 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertFalse(C._water_dominated([]))
 
     def test_phase_change_agent(self):
-        """_phase_change_agent: all-vapor steam -> True unless recorded as
-        cooling only; an all-liquid refrigerant -> True only when recorded
-        as cooling; liquid water used for cooling -> False (sensible); no
-        composition -> False."""
+        """_phase_change_agent (R2.13: exempt only on affirmative evidence):
+        all-vapor steam -> True only when recorded as heating only (positive
+        duty); unrecorded, mixed or cooling roles -> False; an all-liquid
+        refrigerant -> True only when recorded as cooling; liquid water used
+        for cooling -> False (sensible); no composition -> False."""
         propane = dict(STEAM, composition=[{"phase": "l", "component_name":
                                             "Propane", "mol_fraction": 1.0}])
         water = dict(STEAM, composition=[{"phase": "l", "component_name":
                                           "Water", "mol_fraction": 1.0}])
-        self.assertTrue(C._phase_change_agent(STEAM, set()))
-        self.assertTrue(C._phase_change_agent(STEAM, {"heating", "cooling"}))
+        self.assertTrue(C._phase_change_agent(STEAM, {"heating"}))
+        self.assertFalse(C._phase_change_agent(STEAM, set()))
+        self.assertFalse(C._phase_change_agent(STEAM, {"heating", "cooling"}))
         self.assertFalse(C._phase_change_agent(STEAM, {"cooling"}))
         self.assertTrue(C._phase_change_agent(propane, {"cooling"}))
         self.assertFalse(C._phase_change_agent(propane, set()))
@@ -2345,11 +2657,23 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertFalse(C._phase_change_agent({"composition": []}, set()))
 
     def test_util_03_heat_agent_limits(self):
-        """_score_util_03 (CMP-UTIL-03): condensing steam + efficiency -> 1;
-        liquid cooling water without temperature_limit -> 0.5; a propane
-        refrigerant recorded as cooling -> 1; an HXutility with no heat
-        agent -> 0; no heat need -> None."""
-        self.assertEqual(run(C._score_util_03, with_agents([STEAM]))[0], 1.0)
+        """_score_util_03 (CMP-UTIL-03): condensing steam recorded as heating
+        + efficiency -> 1; the same steam no unit records a duty for -> 0.5
+        (the limit exemption needs affirmative evidence, R2.13); an
+        efficiency outside (0, 1] or a junk temperature_limit counts as
+        absent; liquid cooling water without temperature_limit -> 0.5; a
+        propane refrigerant recorded as cooling -> 1; an HXutility with no
+        heat agent -> 0; no heat need -> None; a list-valued agent id does
+        not raise."""
+        heating = with_agents([STEAM], consumption={"steam": 5.0})
+        self.assertEqual(run(C._score_util_03, heating)[0], 1.0)
+        self.assertEqual(run(C._score_util_03, with_agents([STEAM]))[0], 0.5)
+        junk = with_agents([dict(STEAM, heat_transfer_efficiency=1.5,
+                                 temperature_limit=-1.0)],
+                           consumption={"steam": 5.0})
+        self.assertEqual(run(C._score_util_03, junk)[0], 0.5)
+        listed = with_agents([dict(STEAM, id=["steam"])])
+        self.assertEqual(run(C._score_util_03, listed)[0], 0.5)
         water = dict(STEAM, composition=[{"phase": "l", "component_name": "Water",
                                           "mol_fraction": 1.0}])
         score, _m, missing = run(C._score_util_03, with_agents([water]))
@@ -2364,9 +2688,14 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertIsNone(run(C._score_util_03, valid_doc())[0])
 
     def test_util_04_results(self):
-        """_score_util_04 (CMP-UTIL-04): no result objects -> 0; both -> 1;
-        family-weighted (a reactor with both beside a pump with neither ->
-        3/4)."""
+        """_score_util_04 / _util_04_unit (CMP-UTIL-04): no result objects ->
+        0; both -> 1; family-weighted (a reactor with both beside a pump with
+        neither -> 3/4). R2.0: a unit that always draws a utility
+        (_draws_utility: pump, HXutility, ...) with an empty consumption +
+        production pair -> 0, and non-numeric entries ({'a': 'b'}) count as
+        absent; one numeric entry -> 1. Waived only on affirmative evidence:
+        an idle unit (every connected stream states a zero flow), or a flash
+        stated adiabatic (Q = 0)."""
         self.assertEqual(run(C._score_util_04, valid_doc())[0], 0.0)
         doc = unit_doc({"utility_consumption_results": {},
                         "utility_production_results": {}})
@@ -2376,6 +2705,26 @@ class TestUtilityCriteria(unittest.TestCase):
                              utility_production_results={}),
                         dict(spec_unit("Pump"), id="P1")]
         self.assertEqual(run(C._score_util_04, doc)[0], 0.75)
+        pump = dict(spec_unit("Pump"), id="P1", utility_consumption_results={},
+                    utility_production_results={"a": "b"})
+        doc["units"] = [pump]
+        score, _m, missing = run(C._score_util_04, doc)
+        self.assertEqual(score, 0.0)
+        self.assertIn("always draws a utility", missing[0])
+        pump["utility_consumption_results"] = {"grid": 2.0}
+        self.assertEqual(C._util_04_unit(ctx(doc), 0), (1.0, []))
+        flash = ctx(unit_doc(spec_unit("Flash", {"Q": 0.0, "P": 1e5})))
+        self.assertFalse(C._draws_utility(flash, 0))
+        self.assertTrue(C._draws_utility(ctx(unit_doc(spec_unit("Flash"))), 0))
+        self.assertFalse(C._draws_utility(ctx(valid_doc()), 0))
+        idle = one_unit_doc(spec_unit("Pump"), ins=({"mass": 0.0},),
+                            outs=({"mass": 0.0},))
+        for s in idle["streams"]:
+            s["stream_properties"]["total_molar_flow"] = 0.0
+        self.assertFalse(C._draws_utility(ctx(idle), 0))
+        del idle["streams"][1]["stream_properties"]["total_mass_flow"]
+        del idle["streams"][1]["stream_properties"]["total_molar_flow"]
+        self.assertTrue(C._draws_utility(ctx(idle), 0))
 
     def test_util_05_selection_parameters(self):
         """_score_util_05 (CMP-UTIL-05): heat agents needed (an HXutility) ->
@@ -2461,11 +2810,17 @@ class TestIntegrityCriteria(unittest.TestCase):
         self.assertNotIn("CMP-INT-03", C._CRITERIA)
 
     def test_int_04_quantity_units(self):
-        """_score_int_04 (CMP-INT-04): legacy inline -> fraction with units
-        (1 empty of 6 -> 5/6); QU-01 pass -> 1, fail -> 0; none -> None."""
+        """_score_int_04 (CMP-INT-04): legacy inline -> fraction with units:
+        6 inline quantities (1 with empty units) plus U1's bare design result
+        'Flow rate' (_bare_design_results: a unitless quantity, R2.10) ->
+        5/7; QU-01 pass -> 1, fail -> 0; none -> None."""
+        self.assertEqual(C._bare_design_results(ctx(legacy_doc())),
+                         ["units[U1].design_results.Flow rate"])
         score, _m, missing = run(C._score_int_04, legacy_doc())
-        self.assertAlmostEqual(score, 5 / 6)
-        self.assertEqual(missing, ["streams[0].stream_properties.pressure.units"])
+        self.assertAlmostEqual(score, 5 / 7)
+        self.assertEqual(missing, ["streams[0].stream_properties.pressure.units",
+                                   "units[U1].design_results.Flow rate (bare "
+                                   "number, no units)"])
         self.assertEqual(run(C._score_int_04, valid_doc(), [check("QU-01", "pass")])[0], 1.0)
         self.assertEqual(run(C._score_int_04, valid_doc(), [check("QU-01", "fail")])[0], 0.0)
         self.assertIsNone(run(C._score_int_04, valid_doc())[0])
@@ -2709,13 +3064,17 @@ UNIT_TYPES = {"CleaningSystem": "Cleaning system", "Mixer": "Mixer",
               "SinglePhaseReactor": "Fermentation"}
 
 
+RICH_MW = {"Water": 18.015, "Glucose": 180.156, "Ethanol": 46.07, "CO2": 44.01}
+
+
 def _liquid(flows):
     """Stream properties of a single-liquid-phase stream with the given
-    {component: kmol/h} flows."""
+    {component: kmol/h} flows (mass flow from RICH_MW, so balances close)."""
     total = sum(flows.values())
     comp = [{"component_name": n, "mol_fraction": f / total}
             for n, f in flows.items()]
-    return {"total_molar_flow": total, "total_mass_flow": 18.0 * total,
+    mass = sum(f * RICH_MW[n] for n, f in flows.items())
+    return {"total_molar_flow": total, "total_mass_flow": mass,
             "enthalpy_flow": -1.0e5, "phases": {"l": {
                 "total_molar_flow": total, "composition": comp}}}
 
@@ -2737,17 +3096,24 @@ def rich_doc(single_thermo=False):
     feed ('spare', zero flow) enters M1. Thermo: C1, M1, P1 and H1 share one
     full package with an id; R1 alone runs a second one without an id;
     `single_thermo` instead gives every unit the same full package WITHOUT
-    an id (the CMP-THM-07 derived-credit case)."""
+    an id (the CMP-THM-07 derived-credit case). Package descriptors are real
+    thermosteam class names (R2.0), and every unit's mass balance -- and
+    each species' for the physical C1, M1, P1, H1 -- closes (R2.2), so the
+    derivations from stream data are available when an explicit spec is
+    deleted."""
     wg = {"Water": 90.0, "Glucose": 10.0}
-    sugar = {"Water": 99.0, "Glucose": 1.0, "Ethanol": 9.0, "CO2": 9.0}
-    edges = [("feedA", "None", "C1", wg, 300.0, 101325.0, 0.05),
+    mixed = {"Water": 140.0, "Glucose": 10.0}
+    # R1: 10 Glucose, conversions 0.9 then 0.5 -> 0.5 left, 19 Ethanol + 19 CO2
+    sugar = {"Water": 140.0, "Glucose": 0.5, "Ethanol": 19.0, "CO2": 19.0}
+    edges = [("feedA", "None", "C1", {"Water": 180.0, "Glucose": 20.0}, 300.0,
+              101325.0, 0.05),
              ("waste", "C1", "None", wg, 300.0, 101325.0, None),
              ("s0", "C1", "M1", wg, 300.0, 101325.0, None),
              ("feedB", "None", "M1", {"Water": 50.0}, 300.0, 101325.0, 0.001),
              ("spare", "None", "M1", {}, 300.0, 101325.0, 0.02),
-             ("s1", "M1", "P1", wg, 300.0, 101325.0, None),
-             ("s2", "P1", "H1", wg, 300.0, 300000.0, None),
-             ("s3", "H1", "R1", wg, 305.0, 300000.0, None),
+             ("s1", "M1", "P1", mixed, 300.0, 101325.0, None),
+             ("s2", "P1", "H1", mixed, 300.0, 300000.0, None),
+             ("s3", "H1", "R1", mixed, 305.0, 300000.0, None),
              ("prod", "R1", "None", sugar, 305.0, 300000.0, 0.7)]
     streams = []
     for sid, source, sink, flows, T, P, price in edges:
@@ -2761,10 +3127,8 @@ def rich_doc(single_thermo=False):
             stream["price"] = price
         streams.append(stream)
 
-    pkg_a = {"id": "set_a", "mixture": "IdealMixture", "gamma": "Dortmund",
-             "phi": "IdealFugacity", "PCF": "IdealPoynting"}
-    pkg_b = {k: v for k, v in pkg_a.items() if k != "id"}
-    pkg_b["gamma"] = "UNIFAC"
+    pkg_a = dict(FULL_PKG, id="set_a")
+    pkg_b = dict(UNIFAC_PKG)
     if single_thermo:
         pkg_a = {k: v for k, v in pkg_a.items() if k != "id"}
         pkg_b = pkg_a
@@ -3002,6 +3366,263 @@ class TestNeedBasedApplicability(unittest.TestCase):
         for position in (3, 4):
             reduced = deleted(doc, ("units", position, "design_simulation_method"))
             self.assertLess(ctx(reduced).unit_classes[position][2], 1.0)
+
+    def test_junk_never_beats_absence(self):
+        """R2.0 INVALID == MISSING: for every scalar leaf of rich_doc() (both
+        thermo variants) replaced by junk -- a blank string, or an
+        unhashable list ['x'] -- no criterion raises, and every criterion
+        scores <= its score with that leaf deleted (junk earns nothing
+        absence does not). A quantity unit '' is not junk (the schema's
+        documented dimensionless sentinel), so only ['x'] replaces those.
+        Expected: no violation over >150 leaves."""
+        with name_lookup(RICH_NAMES):
+            for single_thermo in (False, True):
+                doc = rich_doc(single_thermo)
+                leaves = [p for p, kind in deletable_paths(doc) if kind == "leaf"]
+                violations = []
+                for path in leaves:
+                    absent = criterion_results(deleted(doc, path))
+                    sentinel = "quantity_units_for_design_results" in path
+                    for junk in ((["x"],) if sentinel else ("", ["x"])):
+                        spoiled = copy.deepcopy(doc)
+                        node = spoiled
+                        for key in path[:-1]:
+                            node = node[key]
+                        node[path[-1]] = junk
+                        for cid, r in criterion_results(spoiled).items():
+                            if "raised" in r.message:
+                                violations.append((path, junk, cid, r.message))
+                            elif r.score is not None and (
+                                    absent[cid].score is None
+                                    or r.score > absent[cid].score + 1e-12):
+                                violations.append((path, junk, cid, r.score,
+                                                   absent[cid].score))
+                with self.subTest(single_thermo=single_thermo):
+                    self.assertGreater(len(leaves), 150)
+                    self.assertEqual(violations, [])
+
+
+class TestValidityGating(unittest.TestCase):
+    """Revision 2 part A: duplicates (R2.1), derivation closure (R2.2) and
+    robustness to malformed document values (R2.0)."""
+
+    def test_first_by_id(self):
+        """_first_by_id keeps the first element per non-empty string id and
+        every element without one (None, '', a list)."""
+        elements = [{"id": "a", "n": 1}, {"id": "a", "n": 2}, {"n": 3},
+                    {"id": ""}, {"id": ["a"]}, {"id": "b"}]
+        self.assertEqual(C._first_by_id(elements),
+                         [elements[0], elements[2], elements[3], elements[4],
+                          elements[5]])
+
+    def test_duplicates_collapse(self):
+        """R2.1: a context over rich_doc() plus 20 copies of H1 (and of
+        stream s2, and of the steam agent, across groups) holds each id
+        once, and every criterion scores exactly as on rich_doc()."""
+        with name_lookup(RICH_NAMES):
+            doc = rich_doc()
+            base = criterion_results(doc)
+            doc["units"] += [copy.deepcopy(doc["units"][3]) for _ in range(20)]
+            doc["streams"] += [copy.deepcopy(doc["streams"][6])
+                               for _ in range(20)]
+            doc["utilities"]["other_utilities"] = [
+                copy.deepcopy(doc["utilities"]["heat_utilities"][0])]
+            sc = ctx(doc)
+            self.assertEqual(len(sc.units), 5)
+            self.assertEqual(len(sc.streams), 9)
+            self.assertEqual(len(sc.agents), 3)
+            after = criterion_results(doc)
+        self.assertEqual({k: r.score for k, r in after.items()},
+                         {k: r.score for k, r in base.items()})
+
+    def test_closure_and_physical_unit(self):
+        """_closure (R2.2): a balanced one-unit doc closes; outlets carrying
+        10x the inlet mass -> (False, 'mass balance does not close ...'); a
+        stream without total_mass_flow -> False; a physical unit
+        (_physical_unit: PHYSICAL_FAMILIES, no well-formed reaction) whose
+        species change although the mass closes -> False; a reactor with the
+        same streams closes (no per-species test). Results are cached in
+        sc.closures."""
+        sc = ctx(one_unit_doc(spec_unit("Splitter"), outs=({}, {})))
+        self.assertEqual(C._closure(sc, 0), (True, ""))
+        self.assertIn(0, sc.closures)
+        self.assertTrue(C._physical_unit(sc, 0))
+        tenfold = ctx(one_unit_doc(spec_unit("Splitter"),
+                                   outs=({"mass": 460.7}, {"mass": 460.7})))
+        closes, why = C._closure(tenfold, 0)
+        self.assertFalse(closes)
+        self.assertIn("mass balance does not close", why)
+        doc = one_unit_doc(spec_unit("Pump"))
+        del doc["streams"][1]["stream_properties"]["total_mass_flow"]
+        self.assertFalse(C._closure(ctx(doc), 0)[0])
+        swapped = {"l": {"total_molar_flow": 1.0, "composition": [
+            {"component_name": "Water", "mol_fraction": 1.0}]}}
+        pump = ctx(one_unit_doc(spec_unit("Pump"), outs=({"phases": swapped},)))
+        self.assertIn("species balance does not close",
+                      C._closure(pump, 0)[1])
+        reactor = ctx(one_unit_doc(spec_unit("SinglePhaseReactor"),
+                                   outs=({"phases": swapped},)))
+        self.assertFalse(C._physical_unit(reactor, 0))
+        self.assertEqual(C._closure(reactor, 0), (True, ""))
+
+    def test_derivations_need_closure(self):
+        """R2.2 end to end: the Splitter's split and the HXutility's outlet T
+        are derivable (0.75) on balanced docs, unavailable (0) when the
+        outlets carry 10x the inlet, with the reason in the locator; TOP-02
+        port-order derivation (_port_order_derivable) is blocked too."""
+        tenfold = ({"mass": 460.7}, {"mass": 460.7})
+        self.assertEqual(spec_score("Splitter", outs=({}, {}))[0], 0.75)
+        score, missing = spec_score("Splitter", outs=tenfold)
+        self.assertEqual(score, 0.0)
+        self.assertIn("derivation from stream data unavailable: mass balance",
+                      missing[0])
+        self.assertEqual(spec_score("HXutility")[0], 0.75)
+        self.assertEqual(spec_score("HXutility", outs=({"mass": 460.7},))[0], 0.0)
+        sc = ctx(one_unit_doc(spec_unit("Splitter", {"split": [0.5]}),
+                              outs=tenfold))
+        self.assertFalse(C._port_order_derivable(sc, 0, "outs"))
+
+    def test_malformed_values_never_raise(self):
+        """Robustness (R2.0): list-valued ids, endpoints, component names,
+        reactants, registry ids, unit types, specs keys' values, result
+        values and agent ids across rich_doc() -> every criterion is scored
+        or not applicable without any 'criterion raised' message."""
+        with name_lookup(RICH_NAMES):
+            doc = rich_doc()
+            doc["units"][0]["unit_type"] = ["x"]
+            doc["units"][1]["design_simulation_method"] = ["x"]
+            doc["units"][4]["reactions"][0]["reactant"] = ["Glucose"]
+            doc["units"][4]["reactions"][1]["stoichiometry"] = {"Glucose": [1]}
+            doc["units"][2]["design_input_specs"] = {"P": {"a": 1}, "x": [[]]}
+            doc["units"][2]["utility_consumption_results"] = {"grid": ["x"]}
+            doc["units"].append({"id": ["U9"], "reactions": [{"equation": ["x"]}]})
+            doc["streams"][0]["sink_unit_id"] = ["C1"]
+            doc["streams"][1]["id"] = ["waste"]
+            doc["streams"][2]["stream_properties"]["phases"]["l"][
+                "composition"][0]["component_name"] = ["Water"]
+            doc["chemicals"][0]["registry_id"] = ["7732-18-5"]
+            doc["chemicals"].append({"id": ["X"], "index": [0]})
+            doc["utilities"]["heat_utilities"][0]["id"] = ["steam"]
+            doc["utilities"]["power_utilities"].append({"id": {"a": 1}})
+            raised = [(cid, r.message) for cid, r in criterion_results(doc).items()
+                      if "raised" in r.message]
+        self.assertEqual(raised, [])
+
+
+class TestAdversarialGaming(unittest.TestCase):
+    """The review's gaming cases (R2.0-R2.3): each junk value earns NO
+    credit -- the criterion scores exactly as with the junk removed (or 0)."""
+
+    def assert_no_credit(self, doc, junked, criteria):
+        """Each criterion scores the same on `junked` as on `doc`."""
+        before, after = criterion_results(doc), criterion_results(junked)
+        for cid in criteria:
+            self.assertEqual(after[cid].score, before[cid].score, cid)
+
+    def test_blank_specs(self):
+        """design_input_specs {'T': '', 'tau': ''} on a reactor: no explicit
+        key; UOP-01/02/03 score as with no specs at all."""
+        doc = unit_doc(spec_unit("SinglePhaseReactor"))
+        junked = unit_doc(spec_unit("SinglePhaseReactor", {"T": "", "tau": ""}))
+        self.assertEqual(C._explicit_keys(junked["units"][0]), set())
+        self.assert_no_credit(doc, junked, ("CMP-UOP-01", "CMP-UOP-02",
+                                            "CMP-UOP-03"))
+
+    def test_junk_registry_id(self):
+        """registry_id 'x': THM-02 credits the formula tier only (0.25), as
+        with no registry_id; THM-05 still needs property data."""
+        with name_lookup():
+            doc = valid_doc()
+            junked = copy.deepcopy(doc)
+            junked["chemicals"][0]["registry_id"] = "x"
+            self.assertEqual(run(C._score_thm_02, junked)[0],
+                             C.FORMULA_ONLY_CREDIT)
+            self.assert_no_credit(doc, junked, ("CMP-THM-02", "CMP-THM-05"))
+
+    def test_junk_thermo_package(self):
+        """thermo_property_package values 'x' and 'NRTL' (every descriptor):
+        THM-06 0 and THM-07 no single-thermo evidence, as with no package."""
+        doc = unit_doc(spec_unit("Pump"))
+        for junk in ("x", "NRTL"):
+            junked = unit_doc(dict(spec_unit("Pump"), thermo_property_package={
+                k: junk for k in C._TPP_KEYS}))
+            self.assertEqual(run(C._score_thm_06, junked)[0], 0.0)
+            self.assert_no_credit(doc, junked, ("CMP-THM-06", "CMP-THM-07"))
+
+    def test_empty_and_junk_reactions(self):
+        """reactions [{}] and [{'equation': 'x', 'reactant': 'y',
+        'conversion': 0.5}] on a reactor: RXN-01..04 all 0, as with no
+        reactions; on a mixer they do not even make it reactive (N/A)."""
+        for reactions in ([{}], [{"equation": "x", "reactant": "y",
+                                  "conversion": 0.5}]):
+            junked = rxn_doc(reactions)
+            for cid in ("CMP-RXN-01", "CMP-RXN-02", "CMP-RXN-03", "CMP-RXN-04"):
+                self.assertEqual(criterion_results(junked)[cid].score, 0.0, cid)
+            self.assert_no_credit(rxn_doc(None), junked, (
+                "CMP-RXN-01", "CMP-RXN-02", "CMP-RXN-03", "CMP-RXN-04"))
+            mixer = unit_doc({"reactions": reactions})
+            self.assertIsNone(criterion_results(mixer)["CMP-RXN-01"].score)
+
+    def test_null_purchase_cost_and_text_design_result(self):
+        """purchase_costs {'a': null} -> COST-01 0; design_results {'a': 'b'}
+        -> COST-03 0 (as with none)."""
+        junked = unit_doc(dict(spec_unit("Pump"), purchase_costs={"a": None},
+                               design_results={"a": "b"}))
+        self.assertEqual(run(C._score_cost_01, junked)[0], 0.0)
+        self.assertEqual(run(C._score_cost_03, junked)[0], 0.0)
+        self.assert_no_credit(unit_doc(spec_unit("Pump")), junked,
+                              ("CMP-COST-01", "CMP-COST-03"))
+
+    def test_implausible_feed(self):
+        """A feed at T = -50 K with flow -3 and an unnamed component of
+        fraction 0.01 (no pressure): FEED-01 0 -- no part of its state is
+        plausible."""
+        doc = one_unit_doc(spec_unit("Mixer"), ins=({"T": -50.0, "P": None,
+                                                     "mass": -3.0},))
+        sp = doc["streams"][0]["stream_properties"]
+        sp["total_molar_flow"] = -3.0
+        sp["phases"] = {"l": {"total_molar_flow": -3.0,
+                              "composition": [{"mol_fraction": 0.01}]}}
+        self.assertEqual(run(C._score_feed_01, doc)[0], 0.0)
+        self.assertEqual(C._stream_state(doc["streams"][0]),
+                         {"T": False, "P": False, "flow": False,
+                          "composition": False})
+
+    def test_duplicate_units(self):
+        """20 duplicate copies of one unit id never raise the score: rich_doc
+        plus 20 copies of its best-specified unit scores exactly the same
+        overall."""
+        with name_lookup(RICH_NAMES):
+            doc = rich_doc()
+            base = overall(doc)
+            doc["units"] += [copy.deepcopy(doc["units"][4]) for _ in range(20)]
+            self.assertEqual(overall(doc), base)
+
+    def test_tenfold_splitter(self):
+        """A Splitter whose outlets carry 10x its inlet earns no `split`
+        derivation (UOP-02 0 for the unit), where a balanced one earns
+        DERIVED_CREDIT."""
+        self.assertEqual(spec_score("Splitter", outs=(
+            {"mass": 460.7}, {"mass": 460.7}))[0], 0.0)
+        self.assertEqual(spec_score("Splitter", outs=({}, {}))[0],
+                         C.DERIVED_CREDIT)
+
+    def test_formula_ids_get_no_verified_name_credit(self):
+        """ids 'HP' (declared MW 90.08; the database's 'HP' is
+        hematoporphyrin, MW 598.69) and 'C2H6O' (resolves to dimethyl ether)
+        get no verified name credit even though the name search resolves
+        them: formula tier (0.25) at most, and both stay in THM-05."""
+        with name_lookup({"HP": (598.68872, "C34H38N4O6"),
+                          "C2H6O": (46.06844, "C2H6O")}):
+            for chem in ({"id": "HP", "molar_mass": 90.08},
+                         {"id": "C2H6O", "formula": "C2H6O"}):
+                credit, _note = C._thm_02_credit(chem, chem["id"])
+                self.assertLessEqual(credit, C.FORMULA_ONLY_CREDIT, chem)
+                self.assertIsNone(C._name_tier(chem, chem["id"]))
+            doc = valid_doc()
+            doc["chemicals"] = [{"id": "HP", "molar_mass": 90.08},
+                                {"id": "C2H6O", "formula": "C2H6O"}]
+            self.assertEqual(run(C._score_thm_05, doc)[0], 0.0)
 
 
 if __name__ == "__main__":

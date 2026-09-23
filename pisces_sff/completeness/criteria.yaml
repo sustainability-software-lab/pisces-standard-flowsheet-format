@@ -37,6 +37,19 @@
 # and scores 1; an empty feed stays in CMP-FEED-01 and scores 1). Pinned by
 # deletion-monotonicity tests on a synthetic document (Tier 1) and on the
 # corpus (Tier 5).
+#
+# INVALID == MISSING (Revision 2): a value earns credit only if it is
+# plausible for its role, judged by one shared set of predicates --
+# temperatures in (0, 1e4) K, pressures > 0, flows >= 0, fractions in
+# [0, 1] summing to 1, per-parameter design-spec ranges, well-formed
+# registry ids, recognised thermosteam model class names, well-formed
+# reactions, numeric costs and results -- and an implausible value scores
+# exactly like an absent one (pinned by a Tier 1 junk-versus-absence test).
+# Units, streams, chemicals and utility agents sharing an id are collapsed
+# to the first occurrence, so repetition inflates nothing. A derivation from
+# stream data needs the unit's mass balance (and, for a physical unit, every
+# species' balance) to close within 1 %. A conditional requirement is waived
+# only when the data affirmatively show its condition false.
 
 categories:
   thermo: Thermodynamic basis (chemicals and property package)
@@ -87,17 +100,26 @@ criteria:
     rationale: >-
       thermosteam builds a pure-component model (vapor pressure, heat capacity,
       heat of vaporization, molar volume, viscosity, ...) by looking the
-      chemical up in the chemicals/thermo databases. A registry id such as a
-      CAS number or SMILES identifies the species unambiguously and brings
-      every correlation with it (credit 1). An id that the chemicals database
-      resolves by name, as Chemical(ID) does, very likely identifies it too
-      (0.75; checked with a lazy, cached lookup, and unavailable when the
-      chemicals package cannot be imported). A formula alone narrows the
-      search but does not identify an isomer (C2H6O is ethanol or dimethyl
-      ether), so it earns 0.25. Without any of these, every property must be
-      supplied by hand. The population is every declared chemical plus every
-      referenced but undeclared id (which scores 0); a flowsheet with streams
-      or units but no chemicals at all scores 0.
+      chemical up in the chemicals/thermo databases. A valid registry id -- a
+      CAS number with a correct check digit (and, when the database knows it,
+      a molar mass within 2 % of the chemical's), an InChI, an InChIKey or
+      SMILES -- identifies the species unambiguously and brings every
+      correlation with it (credit 1); junk such as "x" counts as no id. An id
+      that the chemicals database resolves by name, as Chemical(ID) does,
+      identifies it when the record's molar mass (or formula) matches the
+      chemical's declared or formula-derived one within 1 % (verified, 0.75),
+      probably identifies it when the chemical states neither (unverified,
+      0.5), and misidentifies it on a mismatch (the name tier is then
+      withheld: "HP" resolves to hematoporphyrin, not 3-hydroxypropionic
+      acid). An id that is itself a molecular formula earns no name credit.
+      The lookup is lazy and cached, and unavailable when the chemicals
+      package cannot be imported. A formula alone -- a parseable formula
+      field, or a formula-like id -- narrows the search but does not identify
+      an isomer (C2H6O is ethanol or dimethyl ether), so it earns 0.25.
+      Without any of these, every property must be supplied by hand. The
+      population is every declared chemical plus every referenced but
+      undeclared id (which scores 0); a flowsheet with streams or units but
+      no chemicals at all scores 0.
 
   - id: CMP-THM-03
     category: thermo
@@ -152,11 +174,14 @@ criteria:
       combustion), and vapor pressure, boiling point and heat of vaporization
       when it is volatile, plus a lower heating value for combustibles burned
       in a boiler. Thermosteam refuses to compile a chemical set with missing
-      required properties, and no SFF field can carry these models; the
-      criterion applies to every chemical resolvable neither by its registry
-      id nor by its id as a name in the chemicals database (and to every
-      referenced but undeclared id), and scores 0. Weighted heavily because
-      one such chemical blocks the whole rebuild.
+      required properties -- for every member, so a declared but
+      unreferenced chemical counts too -- and no SFF field can carry these
+      models. The criterion looks at every declared and every referenced id
+      and applies to each one resolvable neither by a valid registry id nor
+      by a verified or unverified name (a mismatching or formula-like name
+      does not count; an undeclared id is judged by its name alone), and
+      then scores 0. Weighted heavily because one such chemical blocks the
+      whole rebuild.
 
   - id: CMP-THM-06
     category: thermo
@@ -175,8 +200,13 @@ criteria:
       coefficients and Poynting correction factors. These decide every
       vapor-liquid and liquid-liquid split, so the same flowsheet under a
       different package produces different flash, column and evaporator
-      results. Units are family-weighted, so a column's package counts more
-      than a pump's.
+      results. A descriptor counts only when its leading identifier is a
+      thermosteam model class of its role (IdealMixture or an EOS mixture;
+      an activity-coefficient class such as DortmundActivityCoefficients; a
+      fugacity-coefficient class; a Poynting-correction class, either
+      spelling), since only those rebuild the package; "x" or a bare "NRTL"
+      count as absent. Units are family-weighted, so a column's package
+      counts more than a pump's.
 
   - id: CMP-THM-07
     category: thermo
@@ -193,10 +223,11 @@ criteria:
       crossing the boundary can be converted. The property-package id names
       that set. Applies whenever the flowsheet has units (whether it is
       multi-thermo is itself data a deletion could remove): per unit, 1 when
-      its package states an id; derived credit when every unit states a full
-      package (mixture, gamma, phi and PCF) and all of them are identical,
-      which is single-thermo evidence implying one chemical set; else 0.
-      Family-weighted.
+      its package states an id (a non-blank string); derived credit when
+      every unit states a full, valid package (mixture, gamma, phi and PCF
+      each naming a thermosteam model class, as for CMP-THM-06) and all of
+      them are identical, which is single-thermo evidence implying one
+      chemical set; else 0. Family-weighted.
 
   # ---------------------------------------------------------------- topology
   - id: CMP-TOP-01
@@ -237,7 +268,9 @@ criteria:
       credit; other single-stream sides earn derived credit because
       unexported ports may exist; multi-stream sides earn derived credit only
       when the order follows from the data (a flash's vapor and liquid
-      outlets, a splitter with explicit split fractions). Family-weighted.
+      outlets, a splitter with explicit split fractions) and the unit's
+      balances close (stream data that do not balance derive nothing).
+      Family-weighted.
 
   # ------------------------------------------------------------------- feeds
   - id: CMP-FEED-01
@@ -257,15 +290,20 @@ criteria:
       In BioSTEAM's sequential-modular solve the feeds are the degrees of
       freedom: every feed's temperature, pressure, flow rate and composition
       must be set before System.simulate, and every other stream is computed
-      from them. A flowsheet with no feed, or none of whose feeds states a
-      non-zero flow, defines no problem (nothing sets its scale), so it
-      scores zero whether the flows are stated as zero or not stated; this is
-      the heaviest single criterion. Feeds weigh equally and every feed
-      counts: one whose state says it is empty (total flow numerically zero,
-      an unused placeholder port) scores 1, since its zero flow states all
-      such a port needs, and a feed whose flow is unknown scores its stated
-      parts. (Leaving empty feeds out, or weighting by mass-flow share, let
-      deleting a flow raise the score.)
+      from them; this is the heaviest single criterion. Each part counts only
+      when plausible: a temperature in (0, 1e4) K, a pressure above zero, a
+      flow of at least zero, and a composition whose every entry names its
+      component and whose mol (or mass) fractions lie in [0, 1] and sum to 1
+      within 1e-3 per phase. A flowsheet with no feed defines no problem and
+      scores 0. Feeds weigh equally and every feed counts: one whose state
+      says it is empty (total flow numerically zero, an unused placeholder
+      port) scores 1, since its zero flow states all such a port needs --
+      but only when some feed states a non-zero flow; otherwise nothing sets
+      the problem's scale, and a stated zero counts as a missing flow with no
+      composition exemption (so writing zeros earns nothing). A feed whose
+      flow is unknown scores its stated parts (temperature, pressure,
+      composition). (Leaving empty feeds out, or weighting by mass-flow
+      share, let deleting a flow raise the score.)
 
   - id: CMP-FEED-02
     category: feeds
@@ -330,11 +368,22 @@ criteria:
       reflux and boilup; a reactor its temperature, residence time and
       working volume; a batch bioreactor also its reactor count or volume; a
       splitter or dryer its split fractions. Explicit specifications earn
-      full credit; a specification recoverable from stream states, design
-      results or a class default earns derived credit; an explicit T or P that
-      contradicts the unit's outlet streams earns nothing. Units of unknown
-      family score zero because nothing tells the importer what to specify.
-      Units are family-weighted.
+      full credit only with a value plausible for the parameter (a
+      temperature in (0, 1e4) K, a positive pressure or residence time, a
+      working-volume fraction or efficiency in (0, 1], split fractions in
+      [0, 1], two light/heavy keys, a boolean flag, else any non-empty
+      value); a blank or out-of-range value counts as unstated. A
+      specification recoverable from stream states, design results or a
+      class default earns derived credit, and one read from stream data
+      only when the unit's mass balance -- and, for a physical unit, every
+      species' balance -- closes within 1 %; an explicit T or P that
+      contradicts the unit's outlet streams earns nothing. A conditional
+      requirement (the vapor fraction on a phase change, phase0/phase1 of a
+      process exchanger, dP_design) is waived only when the data show its
+      condition false (both phase sets known and equal, a pressure rise of
+      at least 1 Pa); when the data cannot tell, it applies. Units of
+      unknown family score zero because nothing tells the importer what to
+      specify. Units are family-weighted.
 
   - id: CMP-UOP-03
     category: unit_ops
@@ -354,11 +403,12 @@ criteria:
       is measured against the design-spec registry entry of its class, else
       of its nearest registry ancestor (a corn storage tank against
       StorageTank); unstated alternatives of an essential requirement already
-      met (V and H for an HXutility given T) are excused. Such a unit that no
-      registry entry covers is left out (a gap in the scorer's vocabulary,
-      not in the file). Every other unit -- class inferred from its
-      specification keys, family only, or unknown -- scores 0 because its
-      parameter universe is unknown. Units are family-weighted.
+      met (V and H for an HXutility given T) are excused. A parameter counts
+      as stated only with a plausible value (as for CMP-UOP-02). Such a unit
+      that no registry entry covers is left out (a gap in the scorer's
+      vocabulary, not in the file). Every other unit -- class inferred from
+      its specification keys, family only, or unknown -- scores 0 because
+      its parameter universe is unknown. Units are family-weighted.
 
   - id: CMP-UOP-04
     category: unit_ops
@@ -373,6 +423,8 @@ criteria:
       inputs, but they seed tear streams so recycle loops converge from a good
       initial guess, give a re-simulated flowsheet verification targets, and
       are the base from which missing unit specifications can be derived.
+      Each state part counts only when plausible, as for CMP-FEED-01 (a
+      stream stating a zero total flow needs no composition).
 
   - id: CMP-UOP-05
     category: unit_ops
@@ -407,9 +459,12 @@ criteria:
       objects in their mass balance. A unit that is a reactor, or whose
       outlets contain species its inlets lack (or the reverse), cannot be
       reproduced without its reaction set, so every such unit must declare at
-      least one reaction. Families whose chemistry the class itself fixes
-      (combustors, boiler-turbogenerators, facilities, Gibbs reactors, dryers)
-      are exempt from the species-appearance evidence. Family-weighted.
+      least one well-formed reaction: an equation or stoichiometry naming at
+      least one consumed and one produced species ([{}] or an equation "x"
+      counts as none, and does not by itself make a unit reactive either).
+      Families whose chemistry the class itself fixes (combustors,
+      boiler-turbogenerators, facilities, Gibbs reactors, dryers) are exempt
+      from the species-appearance evidence. Family-weighted.
 
   - id: CMP-RXN-02
     category: reactions
@@ -426,8 +481,12 @@ criteria:
       A thermosteam Reaction is defined by its stoichiometry, the reactant on
       which conversion is based, and the fractional conversion X (0 to 1).
       Missing any one of the three leaves the extent of reaction undefined.
-      Scored per reactive unit (as CMP-RXN-01 defines them, family-weighted)
-      over its reactions; a reactive unit without reactions scores 0.
+      Per reaction: 0 unless it is well-formed (see CMP-RXN-01) -- a
+      conversion attached to no parseable stoichiometry earns nothing -- else
+      the mean of {well-formed, the reactant is one of its consumed species,
+      a numeric conversion in [0, 1]}. Scored per reactive unit (as
+      CMP-RXN-01 defines them, family-weighted) over its reactions; a
+      reactive unit without reactions scores 0.
 
   - id: CMP-RXN-03
     category: reactions
@@ -444,8 +503,8 @@ criteria:
       reactive unit (as CMP-RXN-01 defines them, family-weighted): with two
       or more reactions, an index on every reaction is the minimal signal of
       their order (1, else 0); a single reaction has no order to state (1);
-      a reactive unit without reactions scores 0, since its reaction set and
-      so their order are unknown.
+      a reactive unit without a well-formed reaction scores 0, since its
+      reaction set and so their order are unknown.
 
   - id: CMP-RXN-04
     category: reactions
@@ -463,8 +522,9 @@ criteria:
       Reactions may be defined on a molar or mass basis (mass basis is common
       for biomass pseudo-components) and restricted to a phase; both change
       the computed outlet. No SFF field states either, so each reaction of a
-      reactive unit (a reactive unit without reactions scores 0) earns only
-      derived credit, half for each part: the basis when exactly one of
+      reactive unit (a reactive unit without reactions scores 0, a reaction
+      that is not well-formed scores 0) earns only derived credit, half for
+      each part: the basis when exactly one of
       sum(nu*MW) = 0 (a molar reaction conserves mass) and sum(nu) = 0 (a
       mass-basis reaction) holds to 1e-3 relative, with every molar mass
       resolvable; the phase when the equation tags every species with a
@@ -484,7 +544,8 @@ criteria:
       re-costed flowsheet and the only cost information for procedurally
       costed units. Scored over the costed units -- every unit except the
       cost-free ones (mixers, Splitter-type splitters, junctions) -- each
-      needing a non-empty purchase_costs object. Family-weighted.
+      needing a purchase_costs object holding at least one numeric cost of at
+      least zero ({"a": null} records nothing). Family-weighted.
 
   - id: CMP-COST-02
     category: costing
@@ -500,8 +561,8 @@ criteria:
       pressure and material factors included), and the TEA's fixed capital
       investment is built on installed equipment cost. Each cost item of a
       costed unit (every item named by its purchase costs, installed costs or
-      correlations) needs its installed cost; a costed unit with no items
-      scores 0. Family-weighted.
+      correlations) needs its installed cost, a number of at least zero; a
+      costed unit with no items scores 0. Family-weighted.
 
   - id: CMP-COST-03
     category: costing
@@ -516,9 +577,11 @@ criteria:
       Design results (area, volume, power, flow) are the sizes cost
       correlations are evaluated at. Without their units a size cannot be
       compared with a correlation's reference size, so each numeric result
-      needs a unit (the empty string marks a dimensionless result). Per
-      costed unit: absent or empty results 0, some result without a unit
-      0.5, else 1. Family-weighted.
+      needs a unit: a non-blank string, or exactly the empty string, the
+      schema's documented marker of a dimensionless result. Per costed unit:
+      no numeric result (absent, empty, or only non-numeric values such as
+      {"a": "b"}) 0, some numeric result without a unit 0.5, else 1.
+      Family-weighted.
 
   - id: CMP-COST-04
     category: costing
@@ -573,7 +636,8 @@ criteria:
       a cost item may be split across N identical pieces of equipment
       (CostItem.N); both change the cost through economies of scale. SFF
       states neither. Per costed unit, derived credit when a design result
-      states a count ('Number of reactors', ...), else 0. Family-weighted.
+      states a count ('Number of reactors', ...) with a numeric value, else
+      0. Family-weighted.
 
   - id: CMP-COST-07
     category: costing
@@ -658,10 +722,13 @@ criteria:
       (all vapor, such as steam) or an evaporating refrigerant (all liquid,
       not water-dominated, used for cooling). Heating or cooling is read off
       the sign of the duties units record for the agent (positive heating,
-      negative cooling; agent-regenerating facilities ignored). Half credit
-      each for efficiency and limit. Applicable when a unit exchanges heat
-      with a utility agent or a heat agent is declared; with that need and
-      no heat agent it scores 0.
+      negative cooling; agent-regenerating facilities ignored), and the
+      exemption needs that affirmative evidence: a vapor agent no unit
+      records a positive (heating) duty for still needs its limit. Half
+      credit each for efficiency (in (0, 1]) and limit (a plausible
+      temperature). Applicable when a unit exchanges heat with a utility
+      agent or a heat agent is declared; with that need and no heat agent
+      it scores 0.
 
   - id: CMP-UTIL-04
     category: utilities
@@ -675,7 +742,14 @@ criteria:
     rationale: >-
       Per-unit utility consumption and production let a re-simulated
       flowsheet be checked against the original heat and power demands and
-      show how utilities are allocated between units. Family-weighted.
+      show how utilities are allocated between units. Half credit per
+      results object present; entries without a numeric value count as
+      absent. A unit that always draws a utility (pump, utility heat
+      exchanger, compressor, distillation column, evaporator, flash) scores
+      0 when neither object holds a numeric entry, unless the data show it
+      draws nothing: every connected stream states a zero flow (an idle
+      unit), or a flash's specs state it adiabatic (Q = 0).
+      Family-weighted.
 
   - id: CMP-UTIL-05
     category: utilities
@@ -792,7 +866,9 @@ criteria:
       Without units every number is ambiguous (K or degC, kg/hr or kmol/hr),
       and a re-import must convert each value into BioSTEAM's internal units.
       Current-shape files declare units once in quantity_units_global (QU-01);
-      legacy files carry them inline on each quantity.
+      legacy files carry them inline on each quantity, so there the score is
+      the fraction of quantities carrying units, where a bare numeric design
+      result (no inline units at all) counts as a quantity without units.
 
 exclusions:
   - id: EXC-01
