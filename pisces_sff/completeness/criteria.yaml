@@ -147,8 +147,10 @@ criteria:
       atoms (C2H6O: ethanol or dimethyl ether) earns no name credit, being
       isomer-ambiguous; a formula id with at most one carbon atom (CO2, O2,
       CH4, NH3, H2SO4, P4O10, CaO) names one compound and earns name credit
-      like any other name. The lookup is lazy and cached, and unavailable
-      when the chemicals
+      like any other name. The lookup is lazy and cached, always runs the
+      scorer's own import-light replica of that search (so a file scores
+      the same whether or not thermosteam is loaded in the process), and is
+      unavailable when the chemicals
       package cannot be imported. A formula alone -- a parseable formula
       field, or a formula-like id -- narrows the search but does not identify
       an isomer (C2H6O is ethanol or dimethyl ether), so it earns 0.25.
@@ -335,7 +337,9 @@ criteria:
       outs[0]; a JetCooker expects the slurry in ins[0] and steam in ins[1].
       SFF records which unit a stream connects to but not the port index, so a
       unit side with several streams cannot be wired unambiguously.
-      Order-free sides (mixer and tank inlets) earn full credit. A side on
+      Order-free sides (mixer and tank inlets) earn full credit -- for a
+      mixer or tank family its ports do not contradict (CMP-UOP-01: a
+      'Mixer' with two material-carrying outlets is no mixer). A side on
       which at most one stream carries material (stated-empty streams are
       placeholders, like unexported ports) earns full credit on a
       single-port side (pumps, valves, heat exchangers, ...) and derived
@@ -436,8 +440,16 @@ criteria:
       Re-importing a unit means instantiating a class (Flash, HXutility, a
       biorefinery-specific subclass, ...) because the class carries the mass
       and energy balance, design and costing methods. Exporters state it as
-      "<Class> on <source URL>" in design_simulation_method; a unit_type that
-      exactly names a known class is equally good. Full credit needs a
+      "<Class> on <source URL>" in design_simulation_method, the only field
+      that names a class: unit_type is free text that yields a family by
+      keywords only, even when it spells a class name ('Separator',
+      'Evaporator'), since extracted files and exporters alike use class
+      names as labels. Keywords are read from the head noun -- the rightmost
+      equipment word ('Wastewater pump' is a pump, 'Fermentation tank' a
+      reactor, 'Feed/effluent heat exchanger' a process-process exchanger);
+      a service word (wastewater, boiler, process / chilled / cooling water,
+      CIP, fire water) decides only when the head is generic (system,
+      treatment, package, unit, ...) or absent. Full credit needs a
       concrete class: one on the scorer's static list of concrete BioSTEAM
       unit classes (enumerated from the biosteam source, facilities and the
       hensmith HeatExchangerNetwork included), or a custom (biorefinery)
@@ -457,9 +469,16 @@ criteria:
       credit; with no stated family, such an unambiguous key-set family
       earns 0.75. The key set never swaps a stated family, and an inferred
       class stays a family: only family-level rules and weights apply to
-      it. A unit id that stream endpoints reference but no unit declares
-      scores 0. Units are weighted by family (reactors and columns most,
-      pumps and tanks least).
+      it. A class or family claim contradicted by the unit's ports -- more
+      material-carrying (not stated-empty) inlets or outlets than the class
+      can have (a static table of every core class's port counts from the
+      biosteam source, most permissive over its history since 2022), or
+      than its family's convention allows (a mixer has one outlet; a pump,
+      valve or utility exchanger one inlet and one outlet) -- counts as
+      unstated; a bare 'heat exchanger' with two inlets and outlets is a
+      process-process exchanger. A unit id that stream endpoints reference
+      but no unit declares scores 0. Units are weighted by family (reactors
+      and columns most, pumps and tanks least).
 
   - id: CMP-UOP-02
     category: unit_ops
@@ -490,7 +509,9 @@ criteria:
       is waived only for a class known exactly (confidence 1) that
       affirmatively takes none of its parameters (a plain Splitter,
       MolecularSieve or liquids centrifuge has no moisture_content); a
-      class inferred from specification keys gets its family's rules only.
+      class inferred from specification keys gets its family's rules only,
+      and so does a unit_type that merely spells a class name ('Separator'):
+      only design_simulation_method identifies a class exactly.
       Boilers, boiler-turbogenerators, heat-exchanger
       networks and other facilities are scored by CMP-UOP-06 instead.
       Constructor arguments with defaults (V_wf, a tank's tau, theta_O2,
@@ -538,8 +559,10 @@ criteria:
       coefficient, number of shells, working-volume fraction, tray spacing,
       ...) change its design and purchase cost. Left unstated, BioSTEAM
       silently applies its own defaults, which may differ from the original
-      model. A unit whose class is known exactly (identified at confidence 1)
-      is measured against the design-spec registry entry of its class, else
+      model. A unit whose class is known exactly (named by
+      design_simulation_method and identified at confidence 1; a class name
+      in unit_type does not count) is measured against the design-spec
+      registry entry of its class, else
       of its nearest registry ancestor (a corn storage tank against
       StorageTank); unstated alternatives of an essential requirement already
       met (V and H for an HXutility given T) are excused. A parameter counts
@@ -572,7 +595,15 @@ criteria:
       not identified as a custom class) that declares no reactions cannot
       create or destroy species; when one appears or vanishes across it, or
       its species flows cannot be computed for every connected stream, its
-      outlets' compositions do not count as stated.
+      outlets' compositions do not count as stated. Mass-balance guard:
+      when every inlet and outlet of a unit states its mass flow and the
+      totals disagree by more than 1 %, its outlets' flows do not count as
+      stated (nothing tells which stated flow is wrong; a stated-zero flow
+      then earns no composition exemption either) -- except for families
+      whose chemistry the class fixes (combustors, dryers, boilers,
+      facilities, equilibrium reactors), whose classes may account mass
+      implicitly (BioSTEAM's DrumDryer emits the combustion products of its
+      natural gas without drawing the oxygen from any inlet).
 
   - id: CMP-UOP-05
     category: unit_ops
@@ -734,7 +765,10 @@ criteria:
       A unit's purchase costs per cost item are the verification target for a
       re-costed flowsheet and the only cost information for procedurally
       costed units. Scored over the costed units -- every unit except the
-      cost-free ones (mixers, Splitter-type splitters, junctions) -- each
+      cost-free ones (mixers, Splitter-type splitters, junctions), which
+      only a class named by design_simulation_method and known exactly
+      makes (a 'Mixer' or 'Separator' unit_type, or a family inferred from
+      specification keys, is no evidence a unit carries no cost) -- each
       needing a purchase_costs object holding at least one numeric cost of at
       least zero ({"a": null} records nothing). Family-weighted.
 

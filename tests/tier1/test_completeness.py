@@ -861,11 +861,12 @@ class TestUnitClass(unittest.TestCase):
         BoilerTurbogenerator -> boiler_turbogenerator, not turbine; ScrewPress
         and CrushingMill -> splitter, ScrewFeeder and HammerMill ->
         solids_handling; MESH/stripper -> staged_column before distillation;
-        'Fire water tank' -> facility; 'Mix tank' -> tank; R2.10: neutralizer,
-        hydrotreater, gasifier, pyrolysis -> reactor, 'Neutralization tank'
-        -> reactor, 'Wastewater treatment' -> reactor but the wastewater
-        cost lump and plant-air/CIP facilities -> facility, a plain 'Boiler'
-        -> boiler); unknown -> None."""
+        'Mix tank' -> tank; R2.10: neutralizer, hydrotreater, gasifier,
+        pyrolysis -> reactor, 'Neutralization tank' -> reactor, 'Wastewater
+        treatment' -> reactor but the wastewater cost lump and plant-air/CIP
+        facilities -> facility, a plain 'Boiler' -> boiler; R4.4 head nouns:
+        'Fire water tank' -> tank, 'LLE centrifuge' / 'Adsorption column'
+        keep their compound family); unknown -> None."""
         cases = {
             "SteamMixer": "steam_injection_heater",
             "Jet cooker": "steam_injection_heater",
@@ -881,7 +882,8 @@ class TestUnitClass(unittest.TestCase):
             "Heat exchanger network": "heat_exchanger_network",
             "Heat exchanger": "hx_utility", "HXprocess": "hx_process",
             "HydrolysateHeatExchanger": "hx_utility",
-            "Fire water tank": "facility", "Mix tank": "tank",
+            "Fire water tank": "tank", "Mix tank": "tank",
+            "LLE centrifuge": "extraction", "Adsorption column": "splitter",
             "Flash tank": "flash", "Thermal oxidizer": "combustor",
             "Drum dryer": "dryer", "Gibbs equilibrium reactor":
             "equilibrium_reactor", "AeratedBioreactor": "aerated_bioreactor",
@@ -1103,8 +1105,10 @@ class TestUnitClass(unittest.TestCase):
 
     def test_unit_class_paths(self):
         """_unit_class: core 'Class on <url>' -> 1.0; a custom class -> 0.75,
-        or 1.0 when its URL lies in the pinned repository (R3.6); unit_type
-        naming a known class -> 1.0. R3.1: an inferred class is never
+        or 1.0 when its URL lies in the pinned repository (R3.6); R4.3: a
+        unit_type naming a class ('Pump', 'JetCooker', even with the model
+        package pinned) -> only its keyword family at 0.5, never the class.
+        R3.1: an inferred class is never
         returned -- an unambiguous key-set family with no stated family ->
         (None, family, 0.75); a stated family (unit_type keyword, or a named
         abstract / unverifiable class's family) wins, 0.75 when the key set
@@ -1124,9 +1128,9 @@ class TestUnitClass(unittest.TestCase):
         self.assertEqual(U(custom, reg, pinned_repo=bip)[2], 1.0)
         self.assertEqual(U(spec_unit("GrainHandling", url=CUSTOM_URL), reg,
                            pinned_repo=bip)[2], 0.75)
-        self.assertEqual(U({"unit_type": "Pump"}, reg), ("Pump", "pump", 1.0))
-        self.assertEqual(U({"unit_type": "JetCooker"}, reg, pinned_repo=bip)[2],
-                         0.75)
+        self.assertEqual(U({"unit_type": "Pump"}, reg), (None, "pump", 0.5))
+        self.assertEqual(U({"unit_type": "JetCooker"}, reg, pinned_repo=bip),
+                         (None, "steam_injection_heater", 0.5))
         self.assertEqual(U({"design_input_specs": {"dP_design": 1.0}}, reg),
                          (None, "pump", 0.75))
         self.assertEqual(U({"unit_type": "Heat exchanger"}, reg),
@@ -1164,10 +1168,10 @@ class TestUnitClass(unittest.TestCase):
                          (None, "tank", 0.75))
         self.assertEqual(U(spec_unit("Compressor", {"dP_design": 1.0}), reg),
                          (None, "compressor", 0.5))
-        # ... and fall through to what the rest of the unit states: a
-        # concrete class in unit_type (as if no class had been named).
+        # ... and fall through to what the rest of the unit states: the
+        # unit_type keyword family (as if no class had been named).
         unit = dict(spec_unit("Unit"), unit_type="Pump")
-        self.assertEqual(U(unit, reg), ("Pump", "pump", 1.0))
+        self.assertEqual(U(unit, reg), (None, "pump", 0.5))
         self.assertEqual(U({"unit_type": "Widget"}, reg), (None, None, 0.0))
         self.assertEqual(U("garbage"), (None, None, 0.0))
 
@@ -1199,14 +1203,17 @@ class TestUnitClass(unittest.TestCase):
 
     def test_is_cost_free(self):
         """_is_cost_free: Mixer / Splitter / Separator / MockSplitter
-        (junction) and an unlisted mixer subclass -> True; @cost mixer
-        subclasses (AmmoniaMixer) and costed splitter subclasses
-        (CleaningSystem) -> False."""
+        (junction) and an unlisted mixer subclass -> True; R4.3: no class
+        (a mixer / junction family alone, from unit_type keywords or spec
+        keys) -> False; @cost mixer subclasses (AmmoniaMixer) and costed
+        splitter subclasses (CleaningSystem) -> False."""
         self.assertTrue(C._is_cost_free("Mixer", "mixer"))
         self.assertTrue(C._is_cost_free("Splitter", "splitter"))
         self.assertTrue(C._is_cost_free("Separator", "splitter"))
         self.assertTrue(C._is_cost_free("MockSplitter", "junction"))
-        self.assertTrue(C._is_cost_free(None, "mixer"))
+        self.assertTrue(C._is_cost_free("SugarMixer", "mixer"))
+        self.assertFalse(C._is_cost_free(None, "mixer"))
+        self.assertFalse(C._is_cost_free(None, "junction"))
         self.assertFalse(C._is_cost_free("AmmoniaMixer", "mixer"))
         self.assertFalse(C._is_cost_free("CleaningSystem", "splitter"))
         self.assertFalse(C._is_cost_free("Pump", "pump"))
@@ -1242,27 +1249,37 @@ class TestContext(unittest.TestCase):
         self.assertEqual(topo["unit_outlets"]["A"], [1])
 
     def test_context_on_valid_doc(self):
-        """_ScoringContext(valid_doc): one feed, one outlet, U1 resolved to
-        the core registry class Mixer (confidence 1.0, unit_core True,
-        registry class Mixer), labels by id."""
+        """_ScoringContext(valid_doc): one feed, one outlet, labels by id;
+        R4.3: U1's bare unit_type 'Mixer' gives the mixer family only
+        (None, 'mixer', 0.5; not core, no registry class); named by
+        design_simulation_method (exact_mixer_doc) U1 resolves to the core
+        registry class Mixer (confidence 1.0, unit_core True, registry class
+        Mixer). unit_ports holds U1's (non-empty inlets, outlets) = (1, 1)."""
         sc = ctx(valid_doc())
         self.assertEqual((sc.feeds, sc.outlets), ([0], [1]))
+        self.assertEqual(sc.unit_classes[0], (None, "mixer", 0.5))
+        self.assertEqual((sc.unit_core, sc.unit_registry_classes),
+                         ([False], [None]))
+        self.assertEqual(sc.unit_ports, [(1, 1)])
+        self.assertEqual(sc.stream_labels, ["streams[feed]", "streams[prod]"])
+        self.assertEqual(sc.chem_by_index, {0: "Ethanol"})
+        sc = ctx(exact_mixer_doc())
         self.assertEqual(sc.unit_classes[0], ("Mixer", "mixer", 1.0))
         self.assertEqual((sc.unit_core, sc.unit_registry_classes),
                          ([True], ["Mixer"]))
-        self.assertEqual(sc.stream_labels, ["streams[feed]", "streams[prod]"])
-        self.assertEqual(sc.chem_by_index, {0: "Ethanol"})
 
     def test_context_positions_costed_and_vctx(self):
         """_ScoringContext: unit_positions maps id -> first position; costed
-        lists the non-cost-free units (a Mixer is cost-free, a Pump is not);
+        lists the non-cost-free units (an exactly named Mixer is cost-free, a
+        Pump is not; R4.3: valid_doc's unit_type-only 'Mixer' is costed);
         the vctx property is the validator's _Context over the same doc,
         built once (molar_mass('Ethanol') -> 46.07)."""
-        doc = valid_doc()
+        doc = exact_mixer_doc()
         doc["units"].append(dict(spec_unit("Pump"), id="P1"))
         sc = ctx(doc)
         self.assertEqual(sc.unit_positions, {"U1": 0, "P1": 1})
         self.assertEqual(sc.costed, [1])
+        self.assertEqual(ctx(valid_doc()).costed, [0])
         self.assertIs(sc.vctx, sc.vctx)
         self.assertAlmostEqual(sc.vctx.molar_mass("Ethanol"), 46.07)
 
@@ -1752,15 +1769,18 @@ class TestFamilyRules(unittest.TestCase):
         """tank tau (1 / 0); ThermalOxidizer (combustor, R3.5) needs
         duty_per_kg (0 without, 1 with); BoilerTurbogenerator, Boiler and
         HeatExchangerNetwork are no longer UOP-02 units (R2.5: scored by
-        CMP-UOP-06) -> None, whatever they state."""
+        CMP-UOP-06) -> None, whatever they state (the port-less
+        HeatExchangerNetwork given no streams, as R4.8 requires)."""
         self.check(1.0, "StorageTank", {"tau": 2.0})
         self.check(0.0, "StorageTank")
         self.check(0.0, "ThermalOxidizer")
         self.check(1.0, "ThermalOxidizer", {"duty_per_kg": 61.0})
-        for name, specs in (("BoilerTurbogenerator", {"boiler_efficiency": 0.8}),
-                            ("Boiler", {}),
-                            ("HeatExchangerNetwork", {"T_min_app": 5.0})):
-            self.assertEqual(spec_score(name, specs), (None, []), name)
+        for name, specs, ports in (
+                ("BoilerTurbogenerator", {"boiler_efficiency": 0.8}, ({},)),
+                ("Boiler", {}, ({},)),
+                ("HeatExchangerNetwork", {"T_min_app": 5.0}, ())):
+            self.assertEqual(spec_score(name, specs, ins=ports, outs=ports),
+                             (None, []), name)
 
 
 # ------------------------------------------------------- thermo criteria
@@ -2285,8 +2305,11 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         single-port convention rests on the stream count, so it needs
         closure (R2.2): (1 + 0) / 2 with a 'mass balance does not close'
         locator; a reactor's single-stream sides -> DERIVED_CREDIT
-        (unexported ports may exist); a pump's 2 inlets -> (0 + 1) / 2; no
-        units -> None."""
+        (unexported ports may exist); a pump with an empty second inlet ->
+        1 (one material-carrying port); R4.8: a 'Pump' with 2
+        material-carrying inlets is contradicted by its ports, so its family
+        is unknown: ins 0 (order of 2 streams), outs DERIVED_CREDIT -> 0.375;
+        no units -> None."""
         self.assertEqual(run(C._score_top_02, valid_doc())[0], 1.0)
         doc = one_unit_doc(cls("Mixer"), ins=({}, {}))
         self.assertEqual(run(C._score_top_02, doc), (
@@ -2303,11 +2326,17 @@ class TestTopologyFeedCriteria(unittest.TestCase):
             spec_unit("SinglePhaseReactor")))
         self.assertEqual(score, C.DERIVED_CREDIT)
         self.assertIn("port index not representable", missing[0])
-        score, _m, missing = run(C._score_top_02, one_unit_doc(
-            spec_unit("Pump"), ins=({}, {})))
-        self.assertEqual(score, 0.5)
-        self.assertEqual(missing, ["units[U1].ins: order of 2 streams not "
-                                   "representable"])
+        doc = one_unit_doc(spec_unit("Pump"), ins=({}, {}))
+        self.assertEqual(run(C._score_top_02, doc)[0], 0.375)
+        self.assertEqual(run(C._score_top_02, doc)[2][0],
+                         "units[U1].ins: order of 2 streams not representable")
+        doc = one_unit_doc(spec_unit("Pump"), ins=({}, {}),
+                           outs=({"mass": 46.07},))
+        doc["streams"][1]["stream_properties"].update(
+            total_mass_flow=0.0, total_molar_flow=0.0, phases={})
+        self.assertEqual(run(C._score_top_02, doc), (
+            1.0, "not representable; 2 of 2 unit port side(s) unambiguous by "
+                 "convention", []))
         self.assertIsNone(run(C._score_top_02, {})[0])
 
     def test_top_02_side_rules(self):
@@ -2505,12 +2534,15 @@ class TestTopologyFeedCriteria(unittest.TestCase):
 
 class TestUnitOpCriteria(unittest.TestCase):
     def test_uop_01_class_identity(self):
-        """_score_uop_01 (CMP-UOP-01): registry class name -> 1; free-text
+        """_score_uop_01 (CMP-UOP-01): a core class named by
+        design_simulation_method -> 1; R4.3: the same class name as bare
+        unit_type ('Mixer') -> 0.5 (keyword family only); free-text
         unit_type -> 0.5; unknown -> 0; no units -> None; R2.6 abstract
         classes: unit_type 'Compressor' -> 0.5 (family only), unit_type
         'Unit' and 'Unit on <biosteam url>' -> 0, 'Tank on <biosteam url>'
         -> 0.5."""
-        self.assertEqual(run(C._score_uop_01, valid_doc())[0], 1.0)
+        self.assertEqual(run(C._score_uop_01, exact_mixer_doc())[0], 1.0)
+        self.assertEqual(run(C._score_uop_01, valid_doc())[0], 0.5)
         doc = unit_doc({"unit_type": "Heat exchanger"})
         score, _m, missing = run(C._score_uop_01, doc)
         self.assertEqual(score, 0.5)
@@ -2528,22 +2560,34 @@ class TestUnitOpCriteria(unittest.TestCase):
                              expected, fields)
 
     def test_class_note(self):
-        """_class_note: confidence 1 -> None; a stated custom class (by
-        design_simulation_method or unit_type) not located in the pinned
-        repository (R3.6) -> 'custom class ... is not in the repository
-        ... pins'; a family confirmed by the spec keys (R3.1) -> "family
-        'pump' confirmed by every design-spec registry class ...; tightest
-        'Pump'"; a keyword family -> "family 'hx_utility' from unit_type";
-        nothing -> 'class unresolved'; an abstract class -> 'is abstract'
-        with its family (or none); an unknown class on a biosteam URL ->
-        '... claims biosteam'."""
-        def note(unit):
-            return C._class_note(ctx(one_unit_doc(unit)), 0)
+        """_class_note: confidence 1 -> None; a custom class named by
+        design_simulation_method not located in the pinned repository
+        (R3.6) -> 'custom class ... is not in the repository ... pins';
+        R4.3: a class name in unit_type ('JetCooker') is a keyword family
+        only -> "family 'steam_injection_heater' from unit_type keywords"; a
+        family confirmed by the spec keys (R3.1) -> "family 'pump' confirmed
+        by every design-spec registry class ...; tightest 'Pump'"; a keyword
+        family -> "family 'hx_utility' from unit_type"; nothing -> 'class
+        unresolved'; an abstract class -> 'is abstract' with its family (or
+        none); an unknown class on a biosteam URL -> '... claims biosteam';
+        R4.8: a Pump with two material-carrying inlets -> "class 'Pump' is
+        contradicted by its ports ... class 'Pump' (2 non-empty inlet(s), at
+        most 1 allowed)" and the unit_type 'Pump' family likewise."""
+        def note(unit, ins=({},)):
+            return C._class_note(ctx(one_unit_doc(unit, ins=ins)), 0)
         self.assertIsNone(note(spec_unit("Pump")))
         self.assertIn("custom class 'GrainHandling' is not core BioSTEAM "
                       "and its source URL is not in the repository",
                       note(spec_unit("GrainHandling", url=BIP_URL)))
-        self.assertIn("custom class 'JetCooker'", note({"unit_type": "JetCooker"}))
+        self.assertIn("family 'steam_injection_heater' from unit_type keywords",
+                      note({"unit_type": "JetCooker"}))
+        contradicted = note(dict(spec_unit("Pump"), unit_type="Pump"),
+                            ins=({}, {}))
+        self.assertIn("class 'Pump' is contradicted by its ports (no family "
+                      "either); ignored as contradicted by its ports (R4.8): "
+                      "class 'Pump' (2 non-empty inlet(s), at most 1 "
+                      "allowed); unit_type family 'pump' (2 non-empty "
+                      "inlet(s), at most 1 allowed)", contradicted)
         self.assertIn("family 'pump' confirmed by every design-spec registry "
                       "class holding its design_input_specs keys; tightest "
                       "'Pump'",
@@ -3027,6 +3071,13 @@ def costed(corr=None, results=None, units_map=None, installed=True,
     return unit_doc(unit)
 
 
+def exact_mixer_doc():
+    """valid_doc with U1 named exactly as the core Mixer by
+    design_simulation_method (confidence 1, so cost-free; R4.3: valid_doc's
+    bare unit_type 'Mixer' is a family claim only, and costed)."""
+    return unit_doc(cls("Mixer"))
+
+
 POWER_LAW = {"correlation_type": "power_law", "basis": "Volume",
              "reference_size": 10.0, "reference_cost": 900.0, "exponent": 0.6,
              "reference_CE_index": 500.0}
@@ -3081,14 +3132,17 @@ class TestCostingCriteria(unittest.TestCase):
         score_of = lambda sc, p: ((1.0, []) if p == 0 else (0.0, ["gap"]))
         self.assertEqual(C._per_costed_unit(sc, score_of), (0.75, ["gap"], 1))
         self.assertEqual(C._per_costed_unit(sc, score_of, [1]), (0.0, ["gap"], 0))
-        self.assertEqual(C._per_costed_unit(ctx(valid_doc()), score_of),
+        self.assertEqual(C._per_costed_unit(ctx(exact_mixer_doc()), score_of),
                          (None, [], 0))
 
     def test_cost_01_purchase_costs(self):
         """_cost_01_unit / _score_cost_01 (CMP-COST-01): only a cost-free
-        Mixer -> None; a costed unit without purchase_costs -> 0; with {} ->
-        0 ('(empty)'); non-empty -> 1."""
-        self.assertIsNone(run(C._score_cost_01, valid_doc())[0])
+        Mixer (named exactly by design_simulation_method) -> None; R4.3: a
+        unit_type-only 'Mixer' (family claim, no class) is costed -> 0; a
+        costed unit without purchase_costs -> 0; with {} -> 0 ('(empty)');
+        non-empty -> 1."""
+        self.assertIsNone(run(C._score_cost_01, exact_mixer_doc())[0])
+        self.assertEqual(run(C._score_cost_01, valid_doc())[0], 0.0)
         doc = costed()
         del doc["units"][0]["purchase_costs"]
         self.assertEqual(run(C._score_cost_01, doc)[0], 0.0)
@@ -3105,7 +3159,7 @@ class TestCostingCriteria(unittest.TestCase):
         score, _m, missing = run(C._score_cost_02, costed(installed=False))
         self.assertEqual((score, missing), (0.0, ["units[U1].installed_costs['Tank']"]))
         self.assertEqual(C._cost_02_unit(ctx(costed(costs={}, installed=False)), 0)[0], 0.0)
-        self.assertIsNone(run(C._score_cost_02, valid_doc())[0])
+        self.assertIsNone(run(C._score_cost_02, exact_mixer_doc())[0])
 
     def test_cost_03_design_result_units(self):
         """_cost_03_unit / _score_cost_03 / _has_quantity_unit (CMP-COST-03):
@@ -3122,7 +3176,7 @@ class TestCostingCriteria(unittest.TestCase):
             results={"Volume": {"value": 5, "units": "m3"}, "Type": "x"}))[0], 1.0)
         self.assertTrue(C._has_quantity_unit(5.0, ""))
         self.assertFalse(C._has_quantity_unit(5.0, None))
-        self.assertIsNone(run(C._score_cost_03, valid_doc())[0])
+        self.assertIsNone(run(C._score_cost_03, exact_mixer_doc())[0])
 
     def test_cost_04_correlations(self):
         """_cost_04_unit / _score_cost_04 (CMP-COST-04) over EVERY costed
@@ -3152,7 +3206,7 @@ class TestCostingCriteria(unittest.TestCase):
         score, _m, missing = run(C._score_cost_04, doc)
         self.assertEqual((score, missing),
                          (0.0, ["units[U1].purchase_cost_correlations['Tank']"]))
-        self.assertIsNone(run(C._score_cost_04, valid_doc())[0])
+        self.assertIsNone(run(C._score_cost_04, exact_mixer_doc())[0])
 
     def test_cost_05_cepci_back_derivation(self):
         """_score_cost_05 / _back_derivable (CMP-COST-05): complete power-law
@@ -3168,7 +3222,7 @@ class TestCostingCriteria(unittest.TestCase):
         del corr["exponent"]
         self.assertEqual(run(C._score_cost_05, costed(corr, {"Volume": 12.0}))[0], 0.0)
         self.assertEqual(run(C._score_cost_05, costed())[0], 0.0)
-        self.assertIsNone(run(C._score_cost_05, valid_doc())[0])
+        self.assertIsNone(run(C._score_cost_05, exact_mixer_doc())[0])
 
     def test_cost_06_parallel_count(self):
         """_count_result_key / _cost_06_unit / _score_cost_06 (CMP-COST-06):
@@ -3181,7 +3235,7 @@ class TestCostingCriteria(unittest.TestCase):
         self.assertIn("design_results['Number of tanks']", missing[0])
         self.assertEqual(C._cost_06_unit(ctx(costed()), 0)[0], 0.0)
         self.assertIsNone(C._count_result_key({}))
-        self.assertIsNone(run(C._score_cost_06, valid_doc())[0])
+        self.assertIsNone(run(C._score_cost_06, exact_mixer_doc())[0])
 
     def test_cost_07_lifetimes(self):
         """_cost_07_unit / _score_cost_07 (CMP-COST-07): every correlation
@@ -3193,7 +3247,7 @@ class TestCostingCriteria(unittest.TestCase):
         custom = dict(name="CustomTank", url=CUSTOM_URL)
         self.assertEqual(run(C._score_cost_07, costed(POWER_LAW, **custom))[0], 0.0)
         self.assertEqual(C._cost_07_unit(ctx(costed(**custom)), 0)[0], 0.0)
-        self.assertIsNone(run(C._score_cost_07, valid_doc())[0])
+        self.assertIsNone(run(C._score_cost_07, exact_mixer_doc())[0])
 
 
 # ---------------------------------------------------------- utility criteria
@@ -5057,7 +5111,7 @@ class TestRevision3PartA(unittest.TestCase):
         _phantom_note the message suffix. With no units at all, streams
         into 'A' still score those criteria 0 (not not-applicable)."""
         doc = one_unit_doc(spec_unit("Pump", {"P": 101325.0, "dP_design": 1.0}))
-        doc["streams"].append(stream("ghost", "Ghost", "U1"))
+        doc["streams"].append(stream("ghost", "Ghost", "None"))
         doc["streams"].append(stream("odd", 5, "None"))
         sc = ctx(doc)
         self.assertEqual(sc.phantom_units, ["Ghost"])
@@ -5870,32 +5924,51 @@ class TestRevision4PartA(unittest.TestCase):
                 self.assertIsNone(C._database_record(name))
                 self.assertEqual(C._name_record(name).name, builtin)
 
-    def test_chemicals_search_uses_thermosteam_database_when_present(self):
-        """_chemicals_search: when thermosteam has replaced
-        chemicals.identifiers.pubchem_db with its own database (it has
-        'unloaded_files'), the search calls that database's search() on the
-        stripped id (skipped when `chemicals` is unavailable)."""
-        try:
-            from chemicals import identifiers
-        except Exception:
+    def test_chemicals_search_ignores_thermosteam_state(self):
+        """Determinism (R4.1 follow-up): _chemicals_search always searches
+        its own import-light _MetadataDB replica, so the same ids resolve
+        to the same records whether or not thermosteam is in sys.modules
+        and has replaced chemicals.identifiers.pubchem_db with its own
+        database (skipped when `chemicals` is unavailable). With a fake
+        thermosteam module and a fake 'unloaded_files' database installed,
+        the records of Water (also padded with spaces), AceticAcid (the
+        CamelCase-split name) and Ethanol are unchanged, SolubleProtein
+        still misses, _database_record (fresh cache) agrees, and the fake
+        database is never called."""
+        search = C._chemicals_search()
+        if search is None:
             self.skipTest("chemicals package not importable")
+        from chemicals import identifiers
+        names = ("Water", "  Water ", "AceticAcid", "Ethanol", "SolubleProtein")
+        baseline = [search(n) for n in names]
+        self.assertEqual([r is None for r in baseline],
+                         [False, False, False, False, True])
+        with name_lookup(search=search):
+            records = [C._database_record(n) for n in names]
+        self.assertEqual(records, baseline)
         calls = []
-        fake = types.SimpleNamespace(
-            unloaded_files=[], search=lambda ID: calls.append(ID) or "record")
-        saved = identifiers.__dict__.get("pubchem_db", C)
-        saved_search = list(C._CHEMICALS_SEARCH)
-        identifiers.pubchem_db = fake
-        C._CHEMICALS_SEARCH.clear()
+        fake_db = types.SimpleNamespace(
+            unloaded_files=[], search=lambda ID: calls.append(ID) or "bogus")
+        saved_db = identifiers.__dict__.get("pubchem_db", C)
+        saved_module = sys.modules.get("thermosteam")
+        identifiers.pubchem_db = fake_db
+        sys.modules["thermosteam"] = types.ModuleType("thermosteam")
         try:
-            self.assertEqual(C._chemicals_search()("  Water "), "record")
-            self.assertIsNone(C._chemicals_search()("   "))
-            self.assertEqual(calls, ["Water"])
+            self.assertEqual([search(n) for n in names], baseline)
+            with name_lookup(search=search):
+                self.assertEqual([C._database_record(n) for n in names],
+                                 baseline)
+            self.assertEqual(calls, [])
         finally:
-            if saved is C:
+            if saved_db is C:
                 del identifiers.pubchem_db
             else:
-                identifiers.pubchem_db = saved
-            C._CHEMICALS_SEARCH[:] = saved_search
+                identifiers.pubchem_db = saved_db
+            if saved_module is None:
+                del sys.modules["thermosteam"]
+            else:
+                sys.modules["thermosteam"] = saved_module
+        self.assertEqual([search(n) for n in names], baseline)
 
     def test_review_builtins_on_synthetic_doc(self):
         """R4.1 review case (real database; skipped when unavailable): a doc
@@ -6096,6 +6169,283 @@ class TestRevision4PartA(unittest.TestCase):
                                 or r.score > absent[cid].score + 1e-12):
                             violations.append((path, junk, cid))
         self.assertEqual(violations, [])
+
+
+# ------------------------------------------- Revision 4 part B (R4.3-R4.10)
+
+def sparse_doc(unit_types, edges):
+    """A sparse extracted flowsheet: units carry only id + unit_type
+    ({id: unit_type}), streams only id and endpoints (edges: (id, source,
+    sink)) -- no states, specs, costs or chemicals."""
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD"},
+            "units": [{"id": uid, "unit_type": t} for uid, t in unit_types.items()],
+            "streams": [{"id": sid, "source_unit_id": a, "sink_unit_id": b}
+                        for sid, a, b in edges]}
+
+
+# rich_doc's topology plus a vent from R1 (so R1 and C1 have 2 outlets).
+SPARSE_EDGES = (("feedA", "None", "C1"), ("waste", "C1", "None"),
+                ("s0", "C1", "M1"), ("feedB", "None", "M1"),
+                ("s1", "M1", "P1"), ("s2", "P1", "H1"), ("s3", "H1", "R1"),
+                ("prod", "R1", "None"), ("vent", "R1", "None"))
+SPARSE_TYPES = {"C1": "Cleaning system", "M1": "Mixer", "P1": "Pump",
+                "H1": "Heat exchanger", "R1": "Fermentation"}
+
+
+class TestRevision4PartB(unittest.TestCase):
+    """Revision 4 part B: unit_type never confers exact identity (R4.3),
+    head-noun keyword matching (R4.4), port-count plausibility (R4.8) and
+    the UOP-04 mass-balance guard (R4.10)."""
+
+    def test_equipment_matches_and_phrase_family(self):
+        """_equipment_matches('wastewater pump') -> the pump match
+        (end 15, -start 11) is the max (the head); _phrase_family on
+        normalized phrases -> R4.4 head-noun families: a generic head
+        ('system') lets a service modifier decide ('chilled water system' ->
+        facility) and falls back to the equipment otherwise ('pump system'
+        -> pump); a junction marker wins ('mock mixer'); nothing -> None."""
+        matches = C._equipment_matches("wastewater pump")
+        self.assertEqual(max(matches), (15, -11, "pump"))
+        self.assertEqual(C._equipment_matches("widget"), [])
+        for text, family in (("chilled water system", "facility"),
+                             ("pump system", "pump"),
+                             ("mock mixer", "junction"),
+                             ("flash drum", "flash"),
+                             ("economizer heat exchanger", "hx_process"),
+                             ("widget", None)):
+            self.assertEqual(C._phrase_family(text), family, text)
+
+    def test_keyword_family_head_nouns(self):
+        """R4.4 review cases through _keyword_family: 'Wastewater pump' ->
+        pump, 'Waste water cooler' -> hx_utility, 'Boiler feed water pump'
+        -> pump, 'Chilled water pump' -> pump, 'Process water tank' -> tank,
+        'Feed/effluent heat exchanger' -> hx_process, 'Wastewater treatment'
+        -> the wastewater rules (the reactor family, R2.10), 'Neutralization
+        tank' and 'Fermentation tank' -> reactor, 'Boiler' -> boiler; also
+        'Recuperator' -> hx_process and 'Chilled water package' ->
+        facility."""
+        cases = {"Wastewater pump": "pump", "Waste water cooler": "hx_utility",
+                 "Boiler feed water pump": "pump", "Chilled water pump": "pump",
+                 "Process water tank": "tank",
+                 "Feed/effluent heat exchanger": "hx_process",
+                 "Wastewater treatment": "reactor",
+                 "Neutralization tank": "reactor",
+                 "Fermentation tank": "reactor", "Boiler": "boiler",
+                 "Recuperator": "hx_process",
+                 "Chilled water package": "facility"}
+        for text, family in cases.items():
+            self.assertEqual(C._keyword_family(text), family, text)
+
+    def test_port_limits_and_contradiction(self):
+        """_port_limits: an exact core class -> its _PORT_LIMITS entry
+        (Mixer (None, 1), HXprocess (2, 2)); not core -> the family
+        convention (hx_utility (1, 1)); no convention (splitter) -> (None,
+        None). _port_contradiction: Mixer with 2 non-empty outlets -> '2
+        non-empty outlet(s), at most 1 allowed'; a pump family with 2 inlets
+        -> the inlet message; within limits, or ports None -> None;
+        _ports_plausible is its negation. Every core class has an entry."""
+        self.assertEqual(C._port_limits("Mixer", "mixer", True), (None, 1))
+        self.assertEqual(C._port_limits("HXprocess", "hx_process", True), (2, 2))
+        self.assertEqual(C._port_limits("HydrolysateHeatExchanger",
+                                        "hx_utility", False), (1, 1))
+        self.assertEqual(C._port_limits(None, "splitter", False), (None, None))
+        self.assertEqual(C._port_contradiction("Mixer", "mixer", True, (3, 2)),
+                         "2 non-empty outlet(s), at most 1 allowed")
+        self.assertEqual(C._port_contradiction(None, "pump", False, (2, 1)),
+                         "2 non-empty inlet(s), at most 1 allowed")
+        self.assertIsNone(C._port_contradiction("Mixer", "mixer", True, (5, 1)))
+        self.assertIsNone(C._port_contradiction("Mixer", "mixer", True, None))
+        self.assertTrue(C._ports_plausible(None, "splitter", False, (4, 3)))
+        self.assertFalse(C._ports_plausible(None, "valve", False, (1, 2)))
+        self.assertEqual(set(C._CORE_CLASSES) - set(C._PORT_LIMITS), set())
+
+    def test_unit_class_port_plausibility(self):
+        """R4.8 through _unit_class(ports=...): a DSM 'Mixer' (core) with 2
+        non-empty outlets is contradicted -> its class and family are
+        dropped and the unit_type 'Separator' keyword family is used
+        (None, 'splitter', 0.5); a unit_type-only 'Mixer' with 2 outlets ->
+        (None, None, 0.0); the same with 1 outlet -> (None, 'mixer', 0.5);
+        the custom HydrolysateHeatExchanger (hx_utility) with 2 inlets and
+        2 outlets -> nothing; a contradicted unit_type family falls back to
+        the key-set inference ('Pump' with dP_design and 2 outlets ->
+        nothing, since the inferred pump family is contradicted too)."""
+        U = C._unit_class
+        mixer = dict(cls("Mixer"), unit_type="Separator")
+        self.assertEqual(U(mixer, ports=(1, 1)), ("Mixer", "mixer", 1.0))
+        self.assertEqual(U(mixer, ports=(1, 2)), (None, "splitter", 0.5))
+        self.assertEqual(U({"unit_type": "Mixer"}, ports=(1, 2)),
+                         (None, None, 0.0))
+        self.assertEqual(U({"unit_type": "Mixer"}, ports=(3, 1)),
+                         (None, "mixer", 0.5))
+        custom = spec_unit("HydrolysateHeatExchanger", url=BIP_URL)
+        self.assertEqual(U(custom, ports=(2, 2)), (None, None, 0.0))
+        reg = {"Pump": {"design_input_spec_params": {"P": {}, "dP_design": {}}}}
+        pump = {"unit_type": "Pump", "design_input_specs": {"dP_design": 1.0}}
+        self.assertEqual(U(pump, reg, ports=(1, 1)), (None, "pump", 0.75))
+        self.assertEqual(U(pump, reg, ports=(1, 2)), (None, None, 0.0))
+        # a bare 'Heat exchanger' with 2 inlets / outlets is a process-
+        # process exchanger (BioSTEAM labels both kinds so); 'Heater' is not
+        hx = {"unit_type": "Heat exchanger"}
+        self.assertEqual(U(hx, ports=(1, 1)), (None, "hx_utility", 0.5))
+        self.assertEqual(U(hx, ports=(2, 2)), (None, "hx_process", 0.5))
+        self.assertEqual(U(hx, ports=(3, 2)), (None, None, 0.0))
+        self.assertEqual(U({"unit_type": "Heater"}, ports=(2, 2)),
+                         (None, None, 0.0))
+
+    def test_generic_exchanger(self):
+        """_generic_exchanger: a bare heat-exchanger head noun ('Heat
+        exchanger', 'Hydrolysate heat exchanger', 'HX') -> True; 'Heater',
+        'Condenser', 'HXutility', 'Heat exchanger network', '' and None ->
+        False."""
+        for text in ("Heat exchanger", "Hydrolysate heat exchanger", "HX"):
+            self.assertTrue(C._generic_exchanger(text), text)
+        for text in ("Heater", "Condenser", "HXutility", "Heat exchanger network",
+                     "", None):
+            self.assertFalse(C._generic_exchanger(text), text)
+
+    def test_nonempty_ports_and_port_notes(self):
+        """_ScoringContext.nonempty_ports: stated-empty streams are not
+        counted, streams of unknown flow are (a Mixer with a zero-flow and
+        a flowless second outlet -> (1, 2)); no id -> (0, 0).
+        _port_notes names each contradicted claim: the DSM class 'Mixer'
+        and the unit_type family 'mixer'."""
+        doc = one_unit_doc(dict(cls("Mixer"), unit_type="Mixer"),
+                           outs=({}, {}, {}))
+        doc["streams"][2]["stream_properties"].update(
+            total_mass_flow=0.0, total_molar_flow=0.0)
+        del doc["streams"][3]["stream_properties"]["total_mass_flow"]
+        del doc["streams"][3]["stream_properties"]["total_molar_flow"]
+        sc = ctx(doc)
+        self.assertEqual(sc.nonempty_ports("U1"), (1, 2))
+        self.assertEqual(sc.nonempty_ports(None), (0, 0))
+        self.assertEqual(C._port_notes(sc, 0), [
+            "class 'Mixer' (2 non-empty outlet(s), at most 1 allowed)",
+            "unit_type family 'mixer' (2 non-empty outlet(s), at most 1 "
+            "allowed)"])
+        self.assertEqual(sc.unit_classes[0], (None, None, 0.0))
+
+    def test_unit_type_labels_confer_no_identity(self):
+        """R4.3 sparse-document labels: a one-unit sparse doc labelled
+        'Separator' scores exactly like 'Solid-liquid separator' (both
+        (None, 'splitter', 0.5), every criterion equal), and 'Evaporator'
+        exactly like 'Multiple-effect evaporator' ((None, 'evaporator',
+        0.5)) -- a class name in unit_type confers no exact identity,
+        cost-free status or class waiver."""
+        edges = (("feed", "None", "U1"), ("out", "U1", "None"),
+                 ("out2", "U1", "None"))
+        for a, b, family in (("Separator", "Solid-liquid separator", "splitter"),
+                             ("Evaporator", "Multiple-effect evaporator",
+                              "evaporator")):
+            da, db = sparse_doc({"U1": a}, edges), sparse_doc({"U1": b}, edges)
+            with self.subTest(labels=(a, b)):
+                self.assertEqual(ctx(da).unit_classes, [(None, family, 0.5)])
+                self.assertEqual(ctx(db).unit_classes, [(None, family, 0.5)])
+                ra, rb = criterion_results(da), criterion_results(db)
+                self.assertEqual({k: r.score for k, r in ra.items()},
+                                 {k: r.score for k, r in rb.items()})
+
+    def test_mixer_relabel_does_not_pay(self):
+        """R4.8 review case on a sparse doc (SPARSE_EDGES: R1 and C1 have 2
+        outlets): relabelling R1, C1 and H1 'Mixer' used to raise the
+        overall score by ~0.10 (mixer family: no operating specifications,
+        cost-free, order-free inlets). Now R1 and C1 are contradicted by
+        their outlets -> (None, None, 0.0), exactly as if their unit_type
+        were deleted (INVALID == MISSING: every criterion equal); H1 (1 in /
+        1 out) stays a plausible mixer family (None, 'mixer', 0.5) but is
+        costed (R4.3: no cost-free status without an exact class). The
+        combined relabel gains < 0.01 -- what remains is deleting R1's only
+        family evidence shedding the reactive need (a pre-existing
+        need-by-family gap outside R4.8) and H1's plausible relabel."""
+        base = sparse_doc(SPARSE_TYPES, SPARSE_EDGES)
+        relabelled = sparse_doc(dict(SPARSE_TYPES, R1="Mixer", C1="Mixer",
+                                     H1="Mixer"), SPARSE_EDGES)
+        classes = dict(zip(SPARSE_TYPES, ctx(relabelled).unit_classes))
+        self.assertEqual(classes["R1"], (None, None, 0.0))
+        self.assertEqual(classes["C1"], (None, None, 0.0))
+        self.assertEqual(classes["H1"], (None, "mixer", 0.5))
+        self.assertIn(3, ctx(relabelled).costed)
+        for uid in ("R1", "C1"):
+            as_mixer = sparse_doc(dict(SPARSE_TYPES, **{uid: "Mixer"}),
+                                  SPARSE_EDGES)
+            unlabelled = sparse_doc(dict(SPARSE_TYPES, **{uid: ""}),
+                                    SPARSE_EDGES)
+            with self.subTest(unit=uid):
+                self.assertEqual(
+                    {k: r.score for k, r in criterion_results(as_mixer).items()},
+                    {k: r.score for k, r in
+                     criterion_results(unlabelled).items()})
+        self.assertLess(overall(relabelled) - overall(base), 0.01)
+
+    def test_mass_balance(self):
+        """_mass_balance on one_unit_doc: balanced -> (True, True, ''); the
+        product's mass x1.1 -> (True, False, 'mass balance does not close
+        (in 46.07, out 50.677)'); a stream without total_mass_flow ->
+        (False, False, ...); no streams -> (False, False, 'no connected
+        streams')."""
+        doc = one_unit_doc(spec_unit("Pump"))
+        self.assertEqual(C._mass_balance(ctx(doc), 0), (True, True, ""))
+        doc["streams"][1]["stream_properties"]["total_mass_flow"] *= 1.1
+        self.assertEqual(C._mass_balance(ctx(doc), 0), (
+            True, False, "mass balance does not close (in 46.07, out 50.677)"))
+        del doc["streams"][1]["stream_properties"]["total_mass_flow"]
+        self.assertEqual(C._mass_balance(ctx(doc), 0)[:2], (False, False))
+        doc["streams"] = []
+        self.assertEqual(C._mass_balance(ctx(doc), 0),
+                         (False, False, "no connected streams"))
+
+    def test_uop_04_unbalanced_outlets(self):
+        """R4.10 review case: rich_doc scores CMP-UOP-04 = 1; with every
+        internal stream's total_mass_flow x1.1, C1 (feedA in; waste, s0
+        out), M1 (s0, feedB in; s1 out) and R1 (s3 in, prod out) no longer
+        close, so waste, s0, s1 and prod earn no flow credit (3 of 4 parts
+        each) among the 6 internal / product streams: UOP-04 = (2 x 1 + 4 x
+        0.75) / 6 with 'stated, but unbalanced at units[C1]' locators; P1
+        and H1 (both sides scaled) still close. A class-implied-chemistry
+        family (a DrumDryer burning natural gas without drawing O2) is
+        exempt: its unbalanced product keeps full credit."""
+        doc = rich_doc()
+        self.assertEqual(run(C._score_uop_04, doc)[0], 1.0)
+        for s in doc["streams"]:
+            if "None" not in (s["source_unit_id"], s["sink_unit_id"]):
+                s["stream_properties"]["total_mass_flow"] *= 1.1
+        score, message, missing = run(C._score_uop_04, doc)
+        self.assertAlmostEqual(score, (2 + 4 * 0.75) / 6)
+        self.assertIn("4 outlet(s) of units whose mass balance does not "
+                      "close earn no flow credit", message)
+        self.assertTrue(any(m.startswith("streams[s0].stream_properties."
+                                         "total_mass_flow") and
+                            "unbalanced at units[C1]" in m for m in missing))
+        dryer = one_unit_doc(spec_unit("DrumDryer"), outs=({"mass": 60.0},))
+        self.assertEqual(run(C._score_uop_04, dryer)[0], 1.0)
+
+    def test_revision_4_part_b_deletions_on_descriptive_doc(self):
+        """R4.3 deletions: descriptive_doc() with its Mixer M1 also named
+        exactly ('Mixer on <biosteam url>': cost-free, confidence 1) and its
+        pump P1 as 'Pump on <biosteam url>'. Deleting M1's
+        design_simulation_method makes it a costed mixer family (0.5),
+        deleting P1's leaves the key-set-confirmed pump family (0.75), and
+        deleting their unit_types changes nothing: no deletion raises the
+        overall score or any criterion, and the two class deletions lower
+        the overall score."""
+        doc = descriptive_doc()
+        doc["units"][-1].update(cls("Mixer"))
+        doc["units"][0].update(cls("Pump"))
+        base = criterion_results(doc)
+        base_score = overall(doc)
+        for position in (0, len(doc["units"]) - 1):
+            for key in ("design_simulation_method", "unit_type"):
+                reduced = deleted(doc, ("units", position, key))
+                after = criterion_results(reduced)
+                with self.subTest(unit=position, key=key):
+                    for cid, before in base.items():
+                        if before.status == "scored":
+                            self.assertEqual(after[cid].status, "scored", cid)
+                            self.assertLessEqual(after[cid].score,
+                                                 before.score + 1e-12, cid)
+                    if key == "design_simulation_method":
+                        self.assertLess(overall(reduced), base_score)
+                    else:
+                        self.assertEqual(overall(reduced), base_score)
 
 
 if __name__ == "__main__":

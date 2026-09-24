@@ -378,10 +378,10 @@ def _chemicals_search():
     when unresolved) -- built lazily once; None when the `chemicals` package
     cannot be imported (the CMP-THM-02 database tiers are then unavailable).
     It searches a _MetadataDB (thermosteam's algorithm over the `chemicals`
-    identifier files) built on first use; when thermosteam has already
-    replaced the `chemicals` database in this process with its own, that
-    database's ``search`` is used instead (same algorithm, already loaded).
-    No thermosteam import is made."""
+    identifier files) built on first use -- ALWAYS this import-light
+    replica, never a database thermosteam may have installed in this
+    process, so one file scores the same whatever else the process has
+    imported. No thermosteam import is made."""
     if not _CHEMICALS_SEARCH:
         try:
             from chemicals import identifiers
@@ -393,9 +393,6 @@ def _chemicals_search():
                 ID = ID.strip()
                 if not ID:
                     return None
-                db = getattr(identifiers, 'pubchem_db', None)
-                if hasattr(db, 'unloaded_files'):  # thermosteam's database
-                    return db.search(ID)
                 if not own:
                     own.append(_MetadataDB(
                         identifiers.folder, periodic_table,
@@ -2046,64 +2043,178 @@ _ABSTRACT_CLASSES = frozenset({
     'LiquidsSettler', 'NRELAnaerobicBatchBioreactor', 'Tank', 'Turbine',
     'Unit', 'Valve'})
 
-# Keyword fallback, in precedence order: the first family whose pattern
-# matches the (raw or CamelCase-split) lowercase text wins, so specific
-# families precede generic ones -- junction-like before everything;
-# turbogenerator before a plain boiler (R2.10), both before turbine; heat
-# exchanger network before heat exchanger; named plant facilities (fire
-# water tank, plant air / CIP, the wastewater cost lump) before wastewater
-# treatment, which scores as the reactor family of the biosteam.wastewater
-# digesters (R2.10), before a generic 'facility'; mixer settler and steam
-# mixer before mixer; MESH/multistage/adiabatic columns and absorbers before
-# distillation; combustor/dryer/equilibrium/aerated/batch reactors and
-# crystallizers before reactor; neutralizers, hydrotreaters, gasifiers and
-# pyrolysis units are reactors, and reactor precedes tank ('Neutralization
-# tank'); screw press and crushing mill (splitter) before screw and mill
-# (solids handling); mix tank (tank) before mix (mixer).
-_FAMILY_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
-    ('junction', r'\bjunction|\bscaler\b|duplicator|mass balance|'
-                 r'diagram only|\bmock\b'),
+# R4.8 port-count plausibility. STATIC, generated once from the biosteam
+# source (no runtime import): for every core class, the most inlet / outlet
+# streams (max inlets, max outlets) it can carry -- its _N_ins / _N_outs
+# where the side is fixed-size (_ins_size_is_fixed / _outs_size_is_fixed),
+# None where the side is variable (a False flag, or an instance-level
+# override in the class's own methods: MultiStageEquilibrium,
+# MultiStageMixerSettlers). Read at the biosteam 2.54 head and taken as the
+# MOST PERMISSIVE value over 43 commits sampled across its history since
+# 2022, so a file exported against an older biosteam is not contradicted by
+# a later narrowing (ChilledWaterPackage and FireWaterTank had 1 / 1 ports
+# before 2025, CoolingTower 3 / 3, Boiler 5 outlets, AnaerobicDigestion
+# 2 / 4). Only a claim contradicted by MORE non-empty streams on a side than
+# this allows is invalid (_ports_plausible).
+_PORT_LIMITS = {
+    **dict.fromkeys(('ChemicalCapitalInvestment', 'HeatExchangerNetwork'),
+                    (0, 0)),
+    **dict.fromkeys((
+        'AirDistributionPackage', 'BagassePelletMill', 'BatchCrystallizer',
+        'CIPpackage', 'CO2Compression', 'ChilledWaterPackage',
+        'ConveyingBelt', 'FireWaterTank', 'HXutilities', 'HXutility',
+        'HammerMill', 'IsenthalpicValve', 'IsentropicCompressor',
+        'IsentropicTurbine', 'IsothermalCompressor', 'Junction',
+        'MassBalance', 'MultistageCompressor', 'PelletMill',
+        'PolytropicCompressor', 'Pump', 'RefrigerationPackage', 'Scaler',
+        'ScrewFeeder', 'Shredder', 'StorageTank', 'WWTpump',
+        'WastewaterSystemCost'), (1, 1)),
+    **dict.fromkeys((
+        'Clarifier', 'Flash', 'LLECentrifuge', 'LLESettler',
+        'LiquidsPartitionSettler', 'LiquidsRatioCentrifuge',
+        'LiquidsSplitCentrifuge', 'LiquidsSplitSettler', 'MagneticSeparator',
+        'MembraneBioreactor', 'MolecularSieve', 'MultiEffectEvaporator',
+        'PhasePartition', 'PhaseSplitter', 'RefluxDrum', 'ReverseOsmosis',
+        'SplitFlash', 'Splitter', 'SprayDryer', 'VibratingScreen'), (1, 2)),
+    **dict.fromkeys(('SLLECentrifuge', 'SolidLiquidsSplitCentrifuge'),
+                    (1, 3)),
+    **dict.fromkeys(('FakeSplitter', 'MockSplitter', 'ReversedSplitter'),
+                    (1, None)),
+    **dict.fromkeys(('BiogasUpgrading', 'HXprocess', 'VentScrubber'),
+                    (2, 2)),
+    'Evaporator': (2, 3),
+    'AnaerobicDigestion': (2, 4),
+    'ThermalOxidizer': (3, 1),
+    **dict.fromkeys(('AerobicDigestion', 'AmineAbsorption'), (3, 2)),
+    **dict.fromkeys(('CoolingTower', 'DrumDryer',
+                     'SingleComponentAdsorptionColumn'), (3, 3)),
+    'PolishingFilter': (3, 4),
+    **dict.fromkeys(('FluidizedCatalyticCracking', 'ProcessWaterCenter'),
+                    (4, 3)),
+    'AnMBR': (6, 4),
+    'BoilerTurbogenerator': (7, 3),
+    'Boiler': (7, 5),
+    **dict.fromkeys((
+        'BlowdownMixer', 'CHP', 'EnzymeTreatment', 'LiquidsMixingTank',
+        'MixTank', 'Mixer', 'MockMixer', 'ReactivePhaseStage',
+        'SinglePhaseReactor', 'SinglePhaseStage', 'SteamMixer'),
+        (None, 1)),
+    **dict.fromkeys((
+        'AdiabaticMultiStageVLEColumn', 'AeratedBioreactor',
+        'AnaerobicBioreactor', 'BeltThickener', 'BinaryDistillation',
+        'CrushingMill', 'GasFedBioreactor', 'MixerSettler',
+        'NRELEthanolFermentation', 'PressureFilter', 'RotaryVacuumFilter',
+        'ScrewPress', 'Separator', 'ShortcutColumn', 'SludgeCentrifuge',
+        'SludgeHandling', 'SolidsCentrifuge', 'SolidsSeparator'),
+        (None, 2)),
+    'InternalCirculationRx': (None, 3),
+    **dict.fromkeys((
+        'FacilityModule', 'GibbsEquilibriumReactor', 'GroupedUnit',
+        'MESHDistillation', 'Module', 'MultiStageEquilibrium',
+        'MultiStageMixerSettlers', 'Skipped', 'StageEquilibrium'),
+        (None, None)),
+}
+
+# R4.8 family conventions, for a claim no exact core class backs (a
+# unit_type keyword family, a named abstract or custom class, a key-set
+# inference): a mixer has one outlet; a pump, valve or utility heat
+# exchanger one inlet and one outlet. Every core class of these families
+# obeys them (SinglePhaseStage, the one multi-inlet hx_utility class, is
+# only ever claimed exactly, by its own _PORT_LIMITS entry); a process-
+# process exchanger (HXprocess, the family's one class) two of each. There
+# is no splitter convention: the splitter family also holds the
+# multi-inlet Separator, VentScrubber, AmineAbsorption, filters and presses.
+_FAMILY_PORT_LIMITS = {'mixer': (None, 1), 'pump': (1, 1), 'valve': (1, 1),
+                       'hx_utility': (1, 1), 'hx_process': (2, 2)}
+# A bare 'heat exchanger' / 'HX' head noun: BioSTEAM labels utility and
+# process-process exchangers alike ('Heat exchanger' is both classes' line).
+_ANY_EXCHANGER_RE = re.compile(r'(?:heat )?exchanger|hx')
+
+# Keyword families (R4.4: head-noun matching). A unit_type or class name is
+# read as a phrase whose HEAD noun -- the rightmost equipment match -- names
+# the equipment: 'Wastewater pump' is a pump, 'Waste water cooler' a
+# utility heat exchanger. Where several equipment patterns end at the same
+# place the longest match wins, so compound names keep their specific family
+# ('Mixer settler' extraction, not a settler; 'Steam mixer' a steam-injection
+# heater; 'MESH distillation' / 'Stripping column' staged columns; 'Crushing
+# mill' a splitter, not a mill; 'Heat exchanger network'; 'Aerated
+# bioreactor'; 'Batch co-fermentation'). Two exceptions override the head:
+# a reaction or flash word before a vessel head (tank, vessel, drum) makes
+# it a reactor / flash ('Neutralization tank', 'Fermentation tank', 'Flash
+# drum'); a feed/effluent, interchanger, economizer or recuperator word with
+# a heat-exchanger head makes it a process-process exchanger ('Feed/effluent
+# heat exchanger'). A junction marker (junction, scaler, duplicator, mass
+# balance, diagram only, mock) anywhere wins outright.
+_EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
     ('boiler_turbogenerator', r'turbo ?generator'),
-    ('boiler', r'\bboiler\b'),
     ('heat_exchanger_network', r'heat exchanger network|\bhxn\b'),
-    ('facility', r'cooling tower|chilled water|process water|'
-                 r'\bcip\b|cip ?package|fire ?water|air distribution|'
-                 r'plant air|refrigeration package|waste ?water system cost'),
-    ('reactor', r'waste ?water'),
-    ('facility', r'facilit'),
-    ('extraction', r'mixer ?settler|extract|liquid ?liquid|\blle\b'),
-    ('steam_injection_heater', r'steam ?mixer|jet ?cooker|steam injection|'
-                               r'direct steam'),
-    ('staged_column', r'\bmesh\b|multi ?stage (?:equilibrium|vle)|'
-                      r'adiabatic multi|absor(?:ber|ption column)|stripper'),
-    ('combustor', r'combust|oxidi[sz]er|furnace|incinerat|burner'),
+    ('facility', r'cooling tower'),
+    ('extraction', r'mixer ?settlers?|extract\w*|liquid ?liquid|'
+                   r'\blle\b(?: (?:centrifuge|settler))?'),
+    ('steam_injection_heater', r'steam ?mixer|jet ?cooker|steam injection'
+                               r'(?: heater)?|direct steam(?: \w+)?'),
+    ('staged_column', r'\bmesh\b(?: distillation| column)?|multi ?stage '
+                      r'(?:equilibrium|vle)(?: column)?|adiabatic multi ?stage'
+                      r'(?: (?:equilibrium|vle))?(?: column)?|'
+                      r'absor(?:ber|ption column)|stripp(?:er|ing column)'),
+    ('combustor', r'combust\w*|oxidi[sz]er|furnace|incinerat\w*|burner'),
     ('dryer', r'dryer|drier\b|drying'),
-    ('equilibrium_reactor', r'equilibrium reactor|gibbs'),
-    ('aerated_bioreactor', r'\baerated|gas ?fed'),
-    ('batch_bioreactor', r'batch ?(?:bio)?reactor|batch ?(?:co ?)?ferment|'
-                         r'\bssf\b|simultaneous saccharification'),
-    ('hx_process', r'hx ?process|interchanger|economi[sz]er'),
-    ('hx_utility', r'hx ?utilit|heat exchanger|heater|cooler|condenser|'
+    ('equilibrium_reactor', r'(?:gibbs )?equilibrium reactor|gibbs'),
+    ('aerated_bioreactor', r'\baerated(?: (?:bio)?reactor| ferment\w*)?|'
+                           r'gas ?fed(?: (?:bio)?reactor| ferment\w*)?'),
+    ('batch_bioreactor', r'batch ?(?:bio)?reactor|batch ?(?:co ?)?ferment\w*|'
+                         r'\bssf\b|simultaneous saccharification'
+                         r'(?: (?:and )?ferment\w*)?'),
+    ('hx_process', r'hx ?process|interchanger|economi[sz]er|recuperat\w*'),
+    ('hx_utility', r'hx ?utilit\w*|heat exchanger|heater|cooler|condenser|'
                    r'reboiler|\bhx\b'),
     ('pump', r'pump'),
     ('valve', r'valve'),
-    ('compressor', r'compress|blower'),
+    ('compressor', r'compress\w*|blower'),
     ('turbine', r'turbine'),
-    ('evaporator', r'evaporat'),
+    ('evaporator', r'evaporat\w*'),
     ('flash', r'flash'),
-    ('crystallizer', r'crystalli'),
-    ('reactor', r'reactor|ferment|saccharif|digest|hydroly|liquefaction|'
-                r'\brx\b|\bmbr\b|seed train|neutrali[sz]|hydrotreat|gasif|'
-                r'pyroly'),
-    ('splitter', r'splitter|\bsplit|centrifuge|filter|\bpress\b|screen|'
+    ('crystallizer', r'crystalli\w*'),
+    ('reactor', r'reactor|ferment\w*|saccharif\w*|digest\w*|hydroly\w*|'
+                r'liquefaction|\brx\b|\bmbr\b|seed train|neutrali[sz]\w*|'
+                r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation'),
+    ('splitter', r'splitter|\bsplit\w*|centrifuge|filter|\bpress\b|screen|'
                  r'separator|decanter|settler|sieve|scrubber|clarifier|'
-                 r'adsorp|absorp|membrane|cyclone|osmosis|thickener|'
-                 r'crushing mill'),
+                 r'adsorp\w*(?: column)?|absorp\w*|membrane|cyclone|'
+                 r'osmosis|thickener|crushing mill'),
     ('distillation', r'distillation|column|rectifier'),
-    ('tank', r'tank|storage|vessel|hopper|\bsilo|\bbin\b'),
-    ('solids_handling', r'convey|\bmill|crusher|grinder|screw|grain handling|'
-                        r'hammer|handling|shredder|feeder'),
-    ('mixer', r'mixer|\bmix\b|blend'),
+    ('tank', r'tank|storage|vessel|hopper|\bsilo|\bbin\b|\bdrum\b'),
+    ('solids_handling', r'convey\w*|\bmill|crusher|grinder|screw|'
+                        r'grain handling|hammer|handling|shredder|feeder'),
+    ('mixer', r'mixer|\bmix\b|blend\w*'),
+))
+_JUNCTION_RE = re.compile(r'\bjunction|\bscaler\b|duplicator|mass balance|'
+                          r'diagram only|\bmock\b')
+# The vessel exception (a reaction or flash word before a vessel head) and
+# the process-exchanger exception (a heat-exchanger head with a feed/effluent
+# word).
+_VESSEL_RE = re.compile(r'tank|vessel|\bdrum\b')
+_VESSEL_MODIFIER_FAMILIES = REACTOR_FAMILIES | {'flash'}
+_HX_PROCESS_MODIFIER_RE = re.compile(r'feed ?effluent|interchang|economi[sz]|'
+                                     r'recuperat')
+# Generic head nouns: a phrase ending in one names no equipment itself, so a
+# service modifier decides its family ('Wastewater treatment', 'Chilled
+# water package', 'Boiler unit').
+_GENERIC_HEAD_RE = re.compile(r'\b(?:system|treatment|package|unit|plant|'
+                              r'section|area|facilit\w*|center|centre)s?\b')
+# Service modifiers, in precedence order: they name what a unit serves, not
+# what it is, and decide the family only when the head noun is generic or
+# absent -- named plant facilities first (the wastewater cost lump, plant
+# air / CIP, fire water, water services), then wastewater treatment (scored
+# as the reactor family of biosteam.wastewater's digesters, R2.10), then a
+# boiler; a bare 'facility' last.
+_SERVICE_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
+    ('facility', r'waste ?water system cost|plant air|air distribution|'
+                 r'\bcip\b|cip ?package|fire ?water|chilled water|'
+                 r'process water|cooling water|refrigeration'),
+    ('reactor', r'waste ?water'),
+    ('boiler', r'\bboiler\b'),
+    ('facility', r'facilit'),
 ))
 
 
@@ -2116,16 +2227,48 @@ def _normalized_texts(text):
     return text.lower(), spaced
 
 
+def _equipment_matches(text):
+    """Every equipment keyword match in `text` as (end, -start, family),
+    so max() picks the head: the rightmost, then the longest."""
+    return [(m.end(), -m.start(), family)
+            for family, pattern in _EQUIPMENT_KEYWORDS
+            for m in pattern.finditer(text)]
+
+
+def _phrase_family(text):
+    """R4.4 head-noun family of one normalized phrase, or None (see the
+    _EQUIPMENT_KEYWORDS comment)."""
+    if _JUNCTION_RE.search(text):
+        return 'junction'
+    matches = _equipment_matches(text)
+    generic = [m.end() for m in _GENERIC_HEAD_RE.finditer(text)]
+    head = max(matches) if matches else None
+    if head is None or (generic and max(generic) > head[0]):
+        for family, pattern in _SERVICE_KEYWORDS:
+            if pattern.search(text):
+                return family
+    if head is None:
+        return None
+    end, start, family = head
+    if family == 'tank' and _VESSEL_RE.fullmatch(text, -start, end):
+        before = [m for m in matches
+                  if m[0] <= -start and m[2] in _VESSEL_MODIFIER_FAMILIES]
+        if before:
+            return max(before)[2]
+    if family == 'hx_utility' and _HX_PROCESS_MODIFIER_RE.search(text):
+        return 'hx_process'
+    return family
+
+
 def _keyword_family(text):
-    """Family whose keyword pattern (in _FAMILY_KEYWORDS precedence order)
-    matches `text` (a unit_type or a class name), or None."""
+    """R4.4 keyword family of `text` (a unit_type or a class name): the
+    head-noun family (_phrase_family) of its CamelCase-split, separator-
+    normalized form, else of its raw lowercase form ('HXutility',
+    'CIPpackage'); None when neither names a family."""
     if not _nonempty_str(text):
         return None
-    variants = _normalized_texts(text)
-    for family, pattern in _FAMILY_KEYWORDS:
-        if any(pattern.search(v) for v in variants):
-            return family
-    return None
+    raw, spaced = _normalized_texts(text)
+    return _phrase_family(spaced) or _phrase_family(raw)
 
 
 def _class_family(class_name):
@@ -2230,18 +2373,63 @@ def _infer_class_from_specs(unit, registry):
     return (tied[0] if len(tied) == 1 else None), families.pop()
 
 
-def _unit_class(unit, registry=None, pinned_repo=None):
+def _port_limits(class_name, family, core):
+    """(max inlets, max outlets) a class / family claim allows (R4.8; None
+    on a side: unlimited): an exactly named core class's _PORT_LIMITS entry,
+    else its family's _FAMILY_PORT_LIMITS convention, else (None, None)."""
+    if core and class_name in _PORT_LIMITS:
+        return _PORT_LIMITS[class_name]
+    return _FAMILY_PORT_LIMITS.get(family, (None, None))
+
+
+def _port_contradiction(class_name, family, core, ports):
+    """R4.8: why a class / family claim is contradicted by `ports` -- the
+    unit's (non-empty inlets, non-empty outlets) counts, None when unknown
+    -- e.g. '2 non-empty outlet(s), at most 1 allowed'; None when the claim
+    is plausible."""
+    if ports is None:
+        return None
+    for side, count, limit in zip(('inlet', 'outlet'), ports,
+                                  _port_limits(class_name, family, core)):
+        if limit is not None and count > limit:
+            return f'{count} non-empty {side}(s), at most {limit} allowed'
+    return None
+
+
+def _ports_plausible(class_name, family, core, ports):
+    """True unless the claim is contradicted (_port_contradiction)."""
+    return _port_contradiction(class_name, family, core, ports) is None
+
+
+def _generic_exchanger(text):
+    """True when the head noun of `text` (a unit_type) is a bare heat
+    exchanger -- 'Heat exchanger', 'Hydrolysate heat exchanger', 'HX' --
+    which names a utility or a process-process exchanger (R4.8: its ports
+    decide between hx_utility and hx_process); not 'Heater', 'Cooler',
+    'Condenser' or 'HXutility'."""
+    if not _nonempty_str(text):
+        return False
+    spaced = _normalized_texts(text)[1]
+    matches = _equipment_matches(spaced)
+    if not matches:
+        return False
+    end, start, family = max(matches)
+    return (family == 'hx_utility'
+            and _ANY_EXCHANGER_RE.fullmatch(spaced, -start, end) is not None)
+
+
+def _unit_class(unit, registry=None, pinned_repo=None, ports=None):
     """(class_name or None, family or None, confidence) for one unit.
 
-    A class named by design_simulation_method "Class on <URL>", or by a
-    unit_type that exactly names a registry/table/core class, scores
-    _class_confidence: 1.0 for a concrete core BioSTEAM class, 1.0 or 0.75
-    for a custom class (source URL in the pinned model-package repository
-    `pinned_repo`, or not; R3.6). Its family is the class's own, else the
-    unit_type keyword family, else the key-set inference. An abstract
-    class, or an unverifiable biosteam-URL claim, names no class (R2.6):
-    the unit resolves as if it were not named, the named class's family
-    joining the STATED family sources.
+    R4.3: exact class identity comes ONLY from design_simulation_method
+    "Class on <URL>": the named class scores _class_confidence -- 1.0 for a
+    concrete core BioSTEAM class, 1.0 or 0.75 for a custom class (source URL
+    in the pinned model-package repository `pinned_repo`, or not; R3.6).
+    Its family is the class's own, else the unit_type keyword family, else
+    the key-set inference. An abstract class, or an unverifiable biosteam-
+    URL claim, names no class (R2.6): its family joins the STATED family
+    sources. unit_type never names a class -- not even a class name
+    written there -- it yields a family by keywords only (R4.4).
 
     Without a named class (R3.1), a STATED family -- the unit_type keyword
     family, else the family of the abstract / unverifiable class named --
@@ -2250,30 +2438,42 @@ def _unit_class(unit, registry=None, pinned_repo=None):
     never swaps it. With no stated family, the unambiguous key-set family
     gives (None, family, 0.75). An inferred class is never returned as the
     class (its rules, weights and class knowledge stay family-level); else
-    (None, None, 0.0)."""
+    (None, None, 0.0).
+
+    R4.8: `ports` -- the unit's (non-empty inlets, non-empty outlets), None
+    when unknown -- invalidates every claim they contradict
+    (_port_contradiction): the named class together with its family, the
+    unit_type family, a named abstract class's family, the inferred family.
+    An invalid claim counts as absent (INVALID == MISSING). A bare 'heat
+    exchanger' unit_type (_generic_exchanger) whose ports rule out a
+    utility exchanger names a process-process exchanger (hx_process)."""
     unit = _as_dict(unit)
     registry = _as_dict(registry)
     name, source = _dsm_class(unit)
     unit_type = unit.get('unit_type')
-    unit_type = unit_type.strip() if isinstance(unit_type, str) else None
-    typed = unit_type if unit_type and (
-        unit_type in registry or unit_type in _CLASS_TABLE
-        or unit_type in _CORE_CLASSES) else None
+    keyword = _keyword_family(unit_type)
+    if keyword == 'hx_utility' and _generic_exchanger(unit_type) and not (
+            _ports_plausible(None, keyword, False, ports)):
+        keyword = 'hx_process'  # a bare 'heat exchanger' with 2 ins / outs
+    if not _ports_plausible(None, keyword, False, ports):
+        keyword = None
     inferred = _infer_class_from_specs(unit, registry)
-    for candidate, url in ((name, source), (typed, None)):
-        if not candidate:
-            continue
-        confidence = _class_confidence(candidate, url, pinned_repo)
-        if confidence is None:
-            continue
-        family = _class_family(candidate)
-        if family is None and candidate not in _CLASS_TABLE:
-            family = (_keyword_family(unit_type)
-                      or (inferred[1] if inferred else None))
-        return candidate, family, confidence
-    stated = (_keyword_family(unit_type)
-              or (_class_family(name) if name else None)
-              or (_class_family(typed) if typed else None))
+    if inferred and not _ports_plausible(None, inferred[1], False, ports):
+        inferred = None
+    if name:
+        confidence = _class_confidence(name, source, pinned_repo)
+        if confidence is not None:
+            family = _class_family(name)
+            if family is None and name not in _CLASS_TABLE:
+                family = keyword or (inferred[1] if inferred else None)
+            if _ports_plausible(name, family, _is_core_class(name, source),
+                                ports):
+                return name, family, confidence
+            name = None  # R4.8: a contradicted class claims nothing
+    named = _class_family(name) if name else None
+    if not _ports_plausible(None, named, False, ports):
+        named = None
+    stated = keyword or named
     if stated:
         agrees = inferred is not None and inferred[1] == stated
         return None, stated, (0.75 if agrees else 0.5)
@@ -2317,9 +2517,14 @@ def _wmean(pairs):
 
 
 def _is_cost_free(class_name, family):
-    """True when a unit of this class/family carries no purchase cost by
-    default: a COST_FREE_CLASSES class, or a COST_FREE_FAMILIES family unless
-    the class is a known @cost-decorated subclass."""
+    """True when a unit of this exactly known class carries no purchase cost
+    by default: a COST_FREE_CLASSES class, or a class of a COST_FREE_FAMILIES
+    family unless it is a known @cost-decorated subclass. R4.3: never
+    without a class (`class_name` None) -- a family from unit_type keywords
+    or spec keys is no evidence a unit is cost-free; callers pass the class
+    only when it is known at confidence 1."""
+    if not _nonempty_str(class_name):
+        return False
     if class_name in COST_FREE_CLASSES:
         return True
     return family in COST_FREE_FAMILIES and class_name not in _COSTED_CLASSES
@@ -2652,6 +2857,31 @@ def _physical_unit(sc, position):
             and not sc.unit_reacts[position])
 
 
+def _mass_balance(sc, position):
+    """(evaluable, closes, reason) of unit `position`'s total mass balance:
+    evaluable when it has connected streams and each states a valid
+    total_mass_flow or a zero total flow (no mass); it closes when mass in
+    and out agree within CLOSURE_RTOL. reason says why not ('' when it
+    closes)."""
+    uid = sc.units[position].get('id')
+    ins = sc.unit_inlets.get(uid, []) if isinstance(uid, str) else []
+    outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
+    if not ins + outs:
+        return False, False, 'no connected streams'
+    # A stream stating a zero total flow (mass or molar) carries no mass.
+    masses = [0.0 if _is_empty_stream(sc.streams[i]) else
+              _valid_flow(_as_dict(sc.streams[i].get('stream_properties'))
+                          .get('total_mass_flow')) for i in ins + outs]
+    if any(m is None for m in masses):
+        return (False, False,
+                'a connected stream states no valid total_mass_flow')
+    m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
+    if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
+        return True, False, (f'mass balance does not close (in {m_in:.6g}, '
+                             f'out {m_out:.6g})')
+    return True, True, ''
+
+
 def _closure(sc, position):
     """(closes, reason) of unit `position`'s balances (R2.2): the total
     mass flow in and out (every connected stream stating a valid
@@ -2667,21 +2897,9 @@ def _closure(sc, position):
     uid = sc.units[position].get('id')
     ins = sc.unit_inlets.get(uid, []) if isinstance(uid, str) else []
     outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
-    result = True, ''
-    # A stream stating a zero total flow (mass or molar) carries no mass.
-    masses = [0.0 if _is_empty_stream(sc.streams[i]) else
-              _valid_flow(_as_dict(sc.streams[i].get('stream_properties'))
-                          .get('total_mass_flow')) for i in ins + outs]
-    if not ins + outs:
-        result = False, 'no connected streams'
-    elif any(m is None for m in masses):
-        result = False, 'a connected stream states no valid total_mass_flow'
-    else:
-        m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
-        if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
-            result = False, (f'mass balance does not close (in {m_in:.6g}, '
-                             f'out {m_out:.6g})')
-        elif _physical_unit(sc, position):
+    result = _mass_balance(sc, position)[1:]
+    if result[0]:
+        if _physical_unit(sc, position):
             sides = []
             for streams in (ins, outs):
                 acc = {}
@@ -3064,8 +3282,11 @@ class _ScoringContext:
         # Unit class identity: (class, family, confidence) per unit, whether
         # the class is core BioSTEAM, and its design-spec registry class.
         self.pinned_repo = _pinned_repository(self.metadata)
-        self.unit_classes = [_unit_class(u, self.registry, self.pinned_repo)
-                             for u in self.units]
+        # R4.8: per unit, its (non-empty inlets, non-empty outlets).
+        self.unit_ports = [self.nonempty_ports(u.get('id')) for u in self.units]
+        self.unit_classes = [_unit_class(u, self.registry, self.pinned_repo,
+                                         ports)
+                             for u, ports in zip(self.units, self.unit_ports)]
         # The URL counts only when design_simulation_method named the class
         # the unit resolved to (not when an abstract one fell through to it).
         self.unit_core = [
@@ -3091,8 +3312,9 @@ class _ScoringContext:
                 self.unit_positions.setdefault(u['id'], i)
         # Costed population (R1.8): units whose class/family carries a
         # purchase cost by default.
-        self.costed = [i for i, (name, family, _c) in enumerate(self.unit_classes)
-                       if not _is_cost_free(name, family)]
+        # R4.3: cost-free status needs the class known exactly.
+        self.costed = [i for i, (name, family, c) in enumerate(self.unit_classes)
+                       if not _is_cost_free(name if c == 1.0 else None, family)]
 
         utilities = _as_dict(self.doc.get('utilities'))
         agents, seen = [], set()
@@ -3107,6 +3329,16 @@ class _ScoringContext:
                                _label(f'utilities.{group}', agent, i)))
         self.agents = agents
         self._vctx = None
+
+    def nonempty_ports(self, unit_id):
+        """(inlets, outlets) of unit `unit_id` that are not stated empty
+        (_is_empty_stream: a stream of unknown flow counts), the R4.8
+        port-count evidence; (0, 0) for a unit without an id."""
+        if not _nonempty_str(unit_id):
+            return 0, 0
+        return tuple(sum(not _is_empty_stream(self.streams[i])
+                         for i in side.get(unit_id, []))
+                     for side in (self.unit_inlets, self.unit_outlets))
 
     def well_formed(self, reaction):
         """_well_formed against this document's chemical ids and indices."""
@@ -3918,13 +4150,18 @@ def _class_note(sc, position):
     if confidence == 1.0:
         return None
     named = _dsm_class(unit)
+    contradicted = _port_notes(sc, position)
+    suffix = (f"; ignored as contradicted by its ports (R4.8): "
+              f"{'; '.join(contradicted)}" if contradicted else '')
     if name is None and named[0]:
         why = ('is abstract' if named[0] in _ABSTRACT_CLASSES else
                'is not a concrete core BioSTEAM class, although its URL '
-               'claims biosteam')
+               'claims biosteam' if _class_confidence(
+                   named[0], named[1], sc.pinned_repo) is None else
+               'is contradicted by its ports')
         return (f"{label}.design_simulation_method: class '{named[0]}' {why}"
                 + (f" (family '{family}' only)" if family else
-                   ' (no family either)'))
+                   ' (no family either)') + suffix)
     if confidence == 0.75 and name:
         return (f"{label}: custom class '{name}' is not core BioSTEAM and its "
                 f"source URL is not in the repository "
@@ -3935,13 +4172,35 @@ def _class_note(sc, position):
         return (f"{label}.design_simulation_method: class not stated (family "
                 f"'{family}' confirmed by every design-spec registry class "
                 f"holding its design_input_specs keys"
-                + (f"; tightest '{hint}'" if hint else '') + ')')
+                + (f"; tightest '{hint}'" if hint else '') + ')' + suffix)
     if confidence == 0.5:
         return (f"{label}.design_simulation_method: class not stated (family "
-                f"'{family}' from unit_type / a named abstract class; its "
-                f"design_input_specs keys do not confirm it unambiguously)")
+                f"'{family}' from unit_type keywords / a named abstract "
+                f"class; its design_input_specs keys do not confirm it "
+                f"unambiguously)" + suffix)
     return (f"{label}: class unresolved (unit_type {unit.get('unit_type')!r} "
-            f"names no known class or family)")
+            f"names no known family)" + suffix)
+
+
+def _port_notes(sc, position):
+    """R4.8: the claims of unit `position` its ports contradict, each as
+    "<claim> (<why>)" -- a design_simulation_method class (with its family)
+    and the unit_type keyword family."""
+    unit, ports = sc.units[position], sc.unit_ports[position]
+    notes = []
+    name, source = _dsm_class(unit)
+    keyword = _keyword_family(unit.get('unit_type'))
+    if name and _class_confidence(name, source, sc.pinned_repo) is not None:
+        why = _port_contradiction(name, _class_family(name) or keyword,
+                                  _is_core_class(name, source), ports)
+        if why:
+            notes.append(f"class '{name}' ({why})")
+    why = _port_contradiction(None, keyword, False, ports)
+    if why and not (keyword == 'hx_utility'
+                    and _generic_exchanger(unit.get('unit_type'))
+                    and _ports_plausible(None, 'hx_process', False, ports)):
+        notes.append(f"unit_type family '{keyword}' ({why})")
+    return notes
 
 
 def _phantom_pairs(sc, what):
@@ -4048,16 +4307,36 @@ def _score_uop_04(sc):  # CMP-UOP-04
     # R2.4 consistency guard: the outlets of a physical-only unit whose
     # species appear or vanish without declared reactions (or cannot be
     # checked) do not count their composition as stated.
-    suspect = {}
+    # R4.10: the outlets of a unit whose total mass balance is evaluable
+    # (inlets and outlets all state their mass flow) and fails to close do
+    # not count their flow as stated (INVALID == MISSING: nothing tells
+    # which stated flow is wrong), nor, then, a stated-zero flow's
+    # composition exemption. Families whose chemistry the class fixes
+    # (CLASS_IMPLIED_CHEMISTRY_FAMILIES) are exempt: their classes may
+    # account mass implicitly -- BioSTEAM's DrumDryer emits the CO2 and H2O
+    # of the natural gas it burns without drawing the O2 from any inlet.
+    suspect, unbalanced = {}, {}
     for position, unit in enumerate(sc.units):
         consistent, why = _species_consistency(sc, position)
         uid = unit.get('id')
-        if not consistent and isinstance(uid, str):
-            for i in sc.unit_outlets.get(uid, []):
+        if not isinstance(uid, str):
+            continue
+        outs = sc.unit_outlets.get(uid, [])
+        if not consistent:
+            for i in outs:
                 suspect.setdefault(i, (sc.unit_labels[position], why))
+        if sc.unit_classes[position][1] in CLASS_IMPLIED_CHEMISTRY_FAMILIES:
+            continue
+        evaluable, closes, why = _mass_balance(sc, position)
+        if evaluable and not closes and sc.unit_inlets.get(uid) and outs:
+            for i in outs:
+                unbalanced.setdefault(i, (sc.unit_labels[position], why))
     scores, missing, full = [], [], 0
     for i in sorted(positions):
         state = dict(sc.stream_states[i])
+        if i in unbalanced:
+            state = dict(_stream_state(sc.streams[i], empty_exempt=False),
+                         flow=False)
         if i in suspect:
             state['composition'] = False
         scores.append(sum(state.values()) / len(state))
@@ -4066,15 +4345,21 @@ def _score_uop_04(sc):  # CMP-UOP-04
             if ok:
                 continue
             note = ''
-            if key == 'composition' and sc.stream_states[i][key]:
+            if key == 'flow' and i in unbalanced:
+                label, why = unbalanced[i]
+                note = f' (stated, but unbalanced at {label}: {why})'
+            elif (key == 'composition' and i in suspect
+                  and sc.stream_states[i][key]):
                 label, why = suspect[i]
                 note = f' (stated, but inconsistent at {label}: {why})'
             missing.append(f'{sc.stream_labels[i]}.{_STATE_PATHS[key]}{note}')
+    notes = [f'{len(suspect)} outlet(s) of physical-only units fail the '
+             f'species-consistency guard' if suspect else '',
+             f'{len(unbalanced)} outlet(s) of units whose mass balance does '
+             f'not close earn no flow credit' if unbalanced else '']
     return (_mean(scores), f'{full} of {len(positions)} internal/product '
-            f'stream(s) fully stated' + (f'; {len(suspect)} outlet(s) of '
-                                         f'physical-only units fail the '
-                                         f'species-consistency guard'
-                                         if suspect else ''), missing)
+            f'stream(s) fully stated' + ''.join(f'; {n}' for n in notes if n),
+            missing)
 
 
 def _score_uop_05(sc):  # CMP-UOP-05

@@ -333,6 +333,63 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                     C._score_sys_02(C._ScoringContext(doc))[0], 2 / 14)
         self.assertEqual(by_id["CMP-INT-04"].score, 1.0)
 
+    def test_revision_4_part_b_on_the_corn_file(self):
+        """Revision 4 part B review cases on SF_BST_01. R4.3: C603's
+        unit_type set to 'Separator' and Ev607's to 'Evaporator', their
+        purchase and installed costs cleared, then BOTH design_simulation_
+        methods deleted -> no criterion rises and the overall score drops
+        (before the fix the bare class names became exact classes:
+        CMP-UOP-02 0.9921 -> 0.9950, CMP-COST-01/02 0.9462 -> 0.9670,
+        CMP-COST-07 0.500 -> 0.511, overall up 0.0007); both units resolve
+        to keyword families only (splitter, evaporator; confidence < 1) and
+        stay in the costed population. R4.8: no claim on the corn file is
+        contradicted by its ports (_port_notes empty for every unit: every
+        design_simulation_method class survives, and the four HXprocess
+        units' bare 'Heat exchanger' unit_type reads as hx_process, not as
+        a contradicted hx_utility). R4.10: every internal
+        stream's total_mass_flow x1.1 -> CMP-UOP-04 < 1 (was 1.000), the
+        failing units' outlets listed as 'stated, but unbalanced'."""
+        sc = C._ScoringContext(self.corn)
+        self.assertEqual([C._port_notes(sc, p) for p in range(len(sc.units))
+                          if C._port_notes(sc, p)], [])
+        relabelled = copy.deepcopy(self.corn)
+        for unit in relabelled["units"]:
+            if unit["id"] in ("C603", "Ev607"):
+                unit["unit_type"] = ("Separator" if unit["id"] == "C603"
+                                     else "Evaporator")
+                unit["purchase_costs"], unit["installed_costs"] = {}, {}
+        stripped = copy.deepcopy(relabelled)
+        for unit in stripped["units"]:
+            if unit["id"] in ("C603", "Ev607"):
+                del unit["design_simulation_method"]
+        before = C.score_flowsheet_completeness(relabelled)
+        after = C.score_flowsheet_completeness(stripped)
+        self.assertLess(after.score, before.score)
+        was = {c.criterion_id: c for c in before.criteria}
+        for c in after.criteria:
+            with self.subTest(criterion=c.criterion_id):
+                if was[c.criterion_id].status == "scored":
+                    self.assertEqual(c.status, "scored")
+                    self.assertLessEqual(c.score,
+                                         was[c.criterion_id].score + TOL)
+        sc = C._ScoringContext(stripped)
+        for uid, family in (("C603", "splitter"), ("Ev607", "evaporator")):
+            position = sc.unit_positions[uid]
+            name, fam, confidence = sc.unit_classes[position]
+            self.assertEqual((name, fam), (None, family), uid)
+            self.assertLess(confidence, 1.0, uid)
+            self.assertIn(position, sc.costed, uid)
+        scaled = copy.deepcopy(self.corn)
+        for stream in scaled["streams"]:
+            if "None" not in (stream["source_unit_id"], stream["sink_unit_id"]):
+                sp = stream.get("stream_properties", {})
+                if isinstance(sp.get("total_mass_flow"), (int, float)):
+                    sp["total_mass_flow"] *= 1.1
+        score, _message, missing = C._score_uop_04(C._ScoringContext(scaled))
+        self.assertLess(score, 1.0)
+        self.assertTrue(any("stated, but unbalanced at units[" in m
+                            for m in missing))
+
     def test_revision_3_part_b_quantity_units_on_the_corn_file(self):
         """R3.4 review case: SF_BST_01 with every stream (and phase) and
         utility temperature restated in degC under
