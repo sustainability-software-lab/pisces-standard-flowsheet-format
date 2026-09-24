@@ -1756,22 +1756,12 @@ COST_FREE_CLASSES = frozenset({'Mixer', 'MockMixer', 'BlowdownMixer',
 _COSTED_CLASSES = frozenset({'AmmoniaMixer', 'EnzymeHydrolysateMixer',
                              'SulfuricAcidMixer'})
 
-# Per-unit weight in every per-unit average (Revision 1, R1.6): units whose
-# specification decides most of the flowsheet weigh most.
-FAMILY_WEIGHTS = {
-    **dict.fromkeys(('reactor', 'batch_bioreactor', 'aerated_bioreactor',
-                     'equilibrium_reactor', 'distillation', 'staged_column',
-                     'evaporator', 'flash', 'extraction', 'crystallizer'),
-                    3),
-    **dict.fromkeys(('hx_utility', 'hx_process', 'splitter', 'dryer',
-                     'steam_injection_heater', 'facility', 'combustor',
-                     'boiler', 'boiler_turbogenerator',
-                     'heat_exchanger_network',
-                     'compressor', 'turbine'), 2),
-    **dict.fromkeys(('pump', 'valve', 'tank', 'mixer', 'solids_handling',
-                     'junction'), 1),
-}
-UNKNOWN_FAMILY_WEIGHT = 2
+# Per-unit averages are UNWEIGHTED (R4.12, superseding R1.6's family
+# weights): each unit counts once. A weight derived from deletable data (the
+# family, read from unit_type / design_simulation_method) broke the deletion
+# guarantee in every criterion whose per-unit score does not depend on it --
+# deleting a costed pump's unit_type moved its weight and raised COST-01.
+# Major equipment keeps its emphasis through its richer requirement sets.
 
 # Curated class -> (family, registry_class). registry_class names the nearest
 # design-spec-registry ancestor of a class the registry does not list (used by
@@ -2126,6 +2116,9 @@ _PORT_LIMITS = {
 # multi-inlet Separator, VentScrubber, AmineAbsorption, filters and presses.
 _FAMILY_PORT_LIMITS = {'mixer': (None, 1), 'pump': (1, 1), 'valve': (1, 1),
                        'hx_utility': (1, 1), 'hx_process': (2, 2)}
+# R4.14: inlets (non-empty or of unknown flow) a mixer family claim needs
+# when no exact class backs it.
+MIXER_MIN_INLETS = 2
 # A bare 'heat exchanger' / 'HX' head noun: BioSTEAM labels utility and
 # process-process exchangers alike ('Heat exchanger' is both classes' line).
 _ANY_EXCHANGER_RE = re.compile(r'(?:heat )?exchanger|hx')
@@ -2384,15 +2377,28 @@ def _port_limits(class_name, family, core):
 
 def _port_contradiction(class_name, family, core, ports):
     """R4.8: why a class / family claim is contradicted by `ports` -- the
-    unit's (non-empty inlets, non-empty outlets) counts, None when unknown
-    -- e.g. '2 non-empty outlet(s), at most 1 allowed'; None when the claim
-    is plausible."""
+    unit's (non-empty inlets, non-empty outlets) counts, streams of unknown
+    flow included, None when unknown -- e.g. '2 non-empty outlet(s), at
+    most 1 allowed'; None when the claim is plausible.
+
+    R4.14: a mixer FAMILY claim without an exact class (`class_name` None:
+    a unit_type keyword, a named abstract class, a key-set inference) also
+    needs >= MIXER_MIN_INLETS inlets that are non-empty or of unknown flow
+    -- a one-inlet 'Mixer' label mixes nothing, so it cannot shed the needs
+    of the unit it hides (a reactor, an exchanger). Exact-class mixers use
+    the static port table only. (A document whose label-only mixer has a
+    single non-empty inlet beside stated-empty ones makes an implausible
+    claim, so it is not a consistent document: deleting an empty inlet's
+    flow there may restore the claim.)"""
     if ports is None:
         return None
     for side, count, limit in zip(('inlet', 'outlet'), ports,
                                   _port_limits(class_name, family, core)):
         if limit is not None and count > limit:
             return f'{count} non-empty {side}(s), at most {limit} allowed'
+    if class_name is None and family == 'mixer' and ports[0] < MIXER_MIN_INLETS:
+        return (f'{ports[0]} non-empty inlet(s), a mixer claim without an '
+                f'exact class needs at least {MIXER_MIN_INLETS}')
     return None
 
 
@@ -2437,7 +2443,7 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None):
     (0.75 when the unambiguous inferred family equals it, else 0.5) and
     never swaps it. With no stated family, the unambiguous key-set family
     gives (None, family, 0.75). An inferred class is never returned as the
-    class (its rules, weights and class knowledge stay family-level); else
+    class (its rules and class knowledge stay family-level); else
     (None, None, 0.0).
 
     R4.8: `ports` -- the unit's (non-empty inlets, non-empty outlets), None
@@ -2495,25 +2501,6 @@ def _declared_registry_class(class_name, registry):
         return class_name
     ancestor = _CLASS_TABLE.get(class_name, (None, None))[1]
     return ancestor if ancestor in registry else None
-
-
-def _family_weight(family):
-    """Per-unit weight of a family (UNKNOWN_FAMILY_WEIGHT when unknown)."""
-    return FAMILY_WEIGHTS.get(family, UNKNOWN_FAMILY_WEIGHT)
-
-
-def _unit_weight(sc, position):
-    """Weight of unit `position` in every per-unit average (R1.6); shared by
-    the unit-operation, topology, thermo and costing criteria."""
-    return _family_weight(sc.unit_classes[position][1])
-
-
-def _wmean(pairs):
-    """Weighted mean of (value, weight) pairs; None when the weights sum to
-    zero (or there are no pairs)."""
-    pairs = list(pairs)
-    total = sum(w for _v, w in pairs)
-    return sum(v * w for v, w in pairs) / total if total else None
 
 
 def _is_cost_free(class_name, family):
@@ -2851,9 +2838,11 @@ def _pressure_rise(sc, unit_id):
 
 def _physical_unit(sc, position):
     """True when unit `position` is in a physical-only family
-    (PHYSICAL_FAMILIES) and declares no well-formed reaction: its species
-    must then balance one by one (R2.2)."""
-    return (sc.unit_classes[position][1] in PHYSICAL_FAMILIES
+    (PHYSICAL_FAMILIES), or of unknown family (R4.13: it could be one), and
+    declares no well-formed reaction: its species must then balance one by
+    one (R2.2)."""
+    family = sc.unit_classes[position][1]
+    return ((family is None or family in PHYSICAL_FAMILIES)
             and not sc.unit_reacts[position])
 
 
@@ -3729,17 +3718,15 @@ def _score_thm_06(sc):  # CMP-THM-06
         return None, 'no units', []
     # A descriptor counts only when it names a thermosteam model class of its
     # role (R2.0; _valid_package_descriptor).
-    pairs, missing = [], []
-    for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
+    scores, missing = [], []
+    for unit, label in zip(sc.units, sc.unit_labels):
         tpp = _as_dict(unit.get('thermo_property_package'))
         absent = [k for k in _TPP_KEYS
                   if not _valid_package_descriptor(k, tpp.get(k))]
-        pairs.append((1.0 - len(absent) / len(_TPP_KEYS),
-                      _unit_weight(sc, position)))
+        scores.append(1.0 - len(absent) / len(_TPP_KEYS))
         missing.extend(f'{label}.thermo_property_package.{k}' for k in absent)
-    full = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{full} of {len(pairs)} unit(s) state a full '
-            f'property package (family-weighted)', missing)
+    return (_mean(scores), f'{scores.count(1.0)} of {len(scores)} unit(s) '
+            f'state a full property package', missing)
 
 
 def _single_full_package(packages):
@@ -3761,8 +3748,8 @@ def _score_thm_07(sc):  # CMP-THM-07
         return None, 'no units', []
     packages = [_as_dict(u.get('thermo_property_package')) for u in sc.units]
     single = _single_full_package(packages)
-    pairs, missing = [], []
-    for position, (package, label) in enumerate(zip(packages, sc.unit_labels)):
+    scores, missing = [], []
+    for package, label in zip(packages, sc.unit_labels):
         if _nonempty_str(package.get('id')):
             credit = 1.0
         else:
@@ -3771,12 +3758,12 @@ def _score_thm_07(sc):  # CMP-THM-07
                            + (' (one full package shared by every unit: '
                               'a single chemical set is implied)'
                               if single else ''))
-        pairs.append((credit, _unit_weight(sc, position)))
+        scores.append(credit)
     named = sum(1 for p in packages if _nonempty_str(p.get('id')))
-    return (_wmean(pairs), f'{named} of {len(packages)} unit(s) name their '
+    return (_mean(scores), f'{named} of {len(packages)} unit(s) name their '
             f'chemical set' + ('; every unit shares one full property package '
-                               '(single thermo implied)' if single else '')
-            + ' (family-weighted)', missing)
+                               '(single thermo implied)' if single else ''),
+            missing)
 
 #%% Criteria -- topology
 
@@ -3896,19 +3883,19 @@ def _side_credit(sc, position, side):
 def _score_top_02(sc):  # CMP-TOP-02
     if not sc.units and not sc.phantom_units:
         return None, 'no units', []
-    pairs, missing = [], []
+    scores, missing = [], []
     for position in range(len(sc.units)):
         for side in ('ins', 'outs'):
             credit, locator = _side_credit(sc, position, side)
-            pairs.append((credit, _unit_weight(sc, position)))
+            scores.append(credit)
             if locator:
                 missing.append(locator)
-    ok = sum(1 for credit, _w in pairs if credit == 1.0)
+    ok = scores.count(1.0)
     # R3.8: both sides of an undeclared referenced unit score 0.
-    phantom_pairs, phantom_missing = _phantom_pairs(
+    phantom_scores, phantom_missing = _phantom_scores(
         sc, 'its port conventions are unknown')
-    return (_wmean(pairs + phantom_pairs * 2), f'not representable; {ok} of '
-            f'{len(pairs)} unit port side(s) unambiguous by convention'
+    return (_mean(scores + phantom_scores * 2), f'not representable; {ok} of '
+            f'{len(scores)} unit port side(s) unambiguous by convention'
             + _phantom_note(sc), missing + phantom_missing)
 
 #%% Criteria -- feeds
@@ -4203,10 +4190,11 @@ def _port_notes(sc, position):
     return notes
 
 
-def _phantom_pairs(sc, what):
-    """(pairs, missing) for the R3.8 undeclared referenced units: each
-    scores 0 at UNKNOWN_FAMILY_WEIGHT, its locator saying `what` it lacks."""
-    return ([(0.0, UNKNOWN_FAMILY_WEIGHT) for _uid in sc.phantom_units],
+def _phantom_scores(sc, what):
+    """(scores, missing) for the R3.8 undeclared referenced units: each
+    scores 0 (counting once, like every unit: R4.12), its locator saying
+    `what` it lacks."""
+    return ([0.0 for _uid in sc.phantom_units],
             [f'units[{uid}]: referenced by a stream endpoint but not '
              f'declared, so {what}' for uid in sc.phantom_units])
 
@@ -4223,29 +4211,27 @@ def _score_uop_01(sc):  # CMP-UOP-01
     missing = [note for note in (_class_note(sc, p) for p in range(len(sc.units)))
                if note]
     exact = sum(1 for c in sc.unit_classes if c[2] == 1.0)
-    pairs = [(c[2], _unit_weight(sc, p)) for p, c in enumerate(sc.unit_classes)]
-    phantom_pairs, phantom_missing = _phantom_pairs(sc, 'its class is unknown')
-    return (_wmean(pairs + phantom_pairs),
+    scores = [c[2] for c in sc.unit_classes]
+    phantom_scores, phantom_missing = _phantom_scores(sc, 'its class is unknown')
+    return (_mean(scores + phantom_scores),
             f'{exact} of {len(sc.units)} unit(s) identify their class at '
-            f'confidence 1 (family-weighted)' + _phantom_note(sc),
-            missing + phantom_missing)
+            f'confidence 1' + _phantom_note(sc), missing + phantom_missing)
 
 
 def _score_uop_02(sc):  # CMP-UOP-02
-    pairs, missing = [], []
+    scores, missing = [], []
     for position in _spec_population(sc):
         score, unit_missing = _unit_spec_score(sc, position)
         if score is None:
             continue
-        pairs.append((score, _unit_weight(sc, position)))
+        scores.append(score)
         missing.extend(unit_missing)
-    full = sum(1 for score, _w in pairs if score == 1.0)
-    phantom_pairs, phantom_missing = _phantom_pairs(
+    phantom_scores, phantom_missing = _phantom_scores(
         sc, 'its operating specifications are unknown')
-    if not pairs + phantom_pairs:
+    if not scores + phantom_scores:
         return None, 'no units that need operating specifications', []
-    return (_wmean(pairs + phantom_pairs), f'{full} of {len(pairs)} '
-            f'applicable unit(s) fully specified (family-weighted)'
+    return (_mean(scores + phantom_scores), f'{scores.count(1.0)} of '
+            f'{len(scores)} applicable unit(s) fully specified'
             + _phantom_note(sc), missing + phantom_missing)
 
 
@@ -4262,20 +4248,19 @@ def _score_uop_03(sc):  # CMP-UOP-03
     # the coverage. An exact CUSTOM class the registry does not list (nor a
     # curated ancestor) also scores 0 (R3.6): the file states none of its
     # parameters (the exporter emits {} for it), a real gap.
-    pairs, missing, unknown = [], [], 0
+    scores, missing, unknown = [], [], 0
     for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
         name, _family, confidence = sc.unit_classes[position]
-        weight = _unit_weight(sc, position)
         if not (name and confidence == 1.0):
             unknown += 1
-            pairs.append((0.0, weight))
+            scores.append(0.0)
             missing.append(f'{label}: class not identified at confidence 1, '
                            f'so its design-spec parameter universe is unknown')
             continue
         registry_class = _declared_registry_class(name, sc.registry)
         if registry_class is None and not sc.unit_core[position]:
             unknown += 1
-            pairs.append((0.0, weight))
+            scores.append(0.0)
             missing.append(f"{label}: custom class '{name}' has no "
                            f"design-spec registry entry, so the file states "
                            f"none of its parameters")
@@ -4288,20 +4273,28 @@ def _score_uop_03(sc):  # CMP-UOP-03
         excused = _excused_params(sc, position, explicit)
         needed = [p for p in params if p not in excused]
         absent = [p for p in needed if p not in explicit]
-        pairs.append((1.0 - len(absent) / len(needed) if needed else 1.0, weight))
+        scores.append(1.0 - len(absent) / len(needed) if needed else 1.0)
         missing.extend(f'{label}.design_input_specs.{p}' for p in absent)
-    if not pairs:
+    if not scores:
         return (None, 'no units, or every unit is a known core class the '
                 'design-spec registry does not list', [])
-    return (_wmean(pairs), f'{len(pairs) - unknown} unit(s) measured against '
+    return (_mean(scores), f'{len(scores) - unknown} unit(s) measured against '
             f'their registry class, {unknown} with no class known exactly or '
             f'a custom class the registry does not list (score 0); '
-            f'{len(missing) - unknown} registry param(s) unstated '
-            f'(family-weighted)', missing)
+            f'{len(missing) - unknown} registry param(s) unstated', missing)
 
 
 def _score_uop_04(sc):  # CMP-UOP-04
-    positions = sc.internal + sc.outlets
+    # A stream whose source_unit_id is not stated (missing, not a string,
+    # or empty: only the "None" sentinel affirms the boundary) may be an
+    # internal or product stream, so it stays in the population (need, not
+    # data: deleting an internal stream's source must not drop it) and
+    # scores 0 -- its state cannot be attributed to any unit's outlet, so
+    # it verifies nothing (else deleting a feed's source would add a fully
+    # stated stream).
+    unsourced = [i for i, s in enumerate(sc.streams)
+                 if not _nonempty_str(s.get('source_unit_id'))]
+    positions = sorted(set(sc.internal + sc.outlets + unsourced))
     if not positions:
         return None, 'no internal or product streams', []
     # R2.4 consistency guard: the outlets of a physical-only unit whose
@@ -4332,7 +4325,13 @@ def _score_uop_04(sc):  # CMP-UOP-04
             for i in outs:
                 unbalanced.setdefault(i, (sc.unit_labels[position], why))
     scores, missing, full = [], [], 0
-    for i in sorted(positions):
+    unsourced = set(unsourced)
+    for i in positions:
+        if i in unsourced:
+            scores.append(0.0)
+            missing.append(f'{sc.stream_labels[i]}.source_unit_id (not '
+                           f'stated, so its state is no unit outlet state)')
+            continue
         state = dict(sc.stream_states[i])
         if i in unbalanced:
             state = dict(_stream_state(sc.streams[i], empty_exempt=False),
@@ -4356,7 +4355,9 @@ def _score_uop_04(sc):  # CMP-UOP-04
     notes = [f'{len(suspect)} outlet(s) of physical-only units fail the '
              f'species-consistency guard' if suspect else '',
              f'{len(unbalanced)} outlet(s) of units whose mass balance does '
-             f'not close earn no flow credit' if unbalanced else '']
+             f'not close earn no flow credit' if unbalanced else '',
+             f'{len(unsourced)} stream(s) without a stated source score 0'
+             if unsourced else '']
     return (_mean(scores), f'{full} of {len(positions)} internal/product '
             f'stream(s) fully stated' + ''.join(f'; {n}' for n in notes if n),
             missing)
@@ -4368,21 +4369,20 @@ def _score_uop_05(sc):  # CMP-UOP-05
     # need operating specifications (CMP-UOP-02) or facility settings
     # (CMP-UOP-06), whose numeric settings (T_min_app, ...) carry no units
     # either.
-    pairs, missing = [], []
+    scores, missing = [], []
     for position in sorted(set(_spec_population(sc))
                            | set(_facility_population(sc))):
         name, family, confidence = sc.unit_classes[position]
         known = bool(name) and confidence == 1.0 and family is not None
-        pairs.append((DERIVED_CREDIT if known else 0.0,
-                      _unit_weight(sc, position)))
+        scores.append(DERIVED_CREDIT if known else 0.0)
         missing.append(f'{sc.unit_labels[position]}.design_input_specs: '
                        f'quantity units not representable'
                        + (' (fixed by class conventions)' if known else ''))
-    if not pairs:
+    if not scores:
         return None, 'no units that need operating specifications', []
-    known = sum(1 for credit, _w in pairs if credit)
-    return (_wmean(pairs), f'not representable; units implied by class '
-            f'conventions for {known} of {len(pairs)} unit(s)', missing)
+    known = sum(1 for credit in scores if credit)
+    return (_mean(scores), f'not representable; units implied by class '
+            f'conventions for {known} of {len(scores)} unit(s)', missing)
 
 
 #%% Facility bindings and settings (CMP-UOP-06)
@@ -4543,16 +4543,15 @@ def _facility_unit_score(sc, position):
 
 
 def _score_uop_06(sc):  # CMP-UOP-06
-    pairs, missing = [], []
+    scores, missing = [], []
     for position in _facility_population(sc):
         score, gaps = _facility_unit_score(sc, position)
-        pairs.append((score, _unit_weight(sc, position)))
+        scores.append(score)
         missing.extend(gaps)
-    if not pairs:
+    if not scores:
         return None, 'no facilities with bindings or settings', []
-    full = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{full} of {len(pairs)} facility unit(s) state '
-            f'every binding and setting (family-weighted)', missing)
+    return (_mean(scores), f'{scores.count(1.0)} of {len(scores)} facility '
+            f'unit(s) state every binding and setting', missing)
 
 #%% Criteria -- reactions
 
@@ -4590,11 +4589,16 @@ def _species_guarded(sc, position):
     consistency guard (R2.4): a physical-only family (PHYSICAL_FAMILIES --
     a splitter unless it names a custom, non-core class, whose code may
     transform species) that declares no well-formed reaction. A splitter of
-    unknown class is guarded: only an identified custom class waives it."""
+    unknown class is guarded: only an identified custom class waives it.
+    R4.13: a unit of unknown family could be physical-only, so it is
+    guarded like a splitter (only an identified custom class waives it) --
+    deleting a flash's unit_type must not lift the guard."""
     name, family, _confidence = sc.unit_classes[position]
-    if family not in PHYSICAL_FAMILIES or sc.unit_reacts[position]:
+    if sc.unit_reacts[position] or (family is not None
+                                    and family not in PHYSICAL_FAMILIES):
         return False
-    return not (family == 'splitter' and name and not sc.unit_core[position])
+    return not (family in ('splitter', None) and name
+                and not sc.unit_core[position])
 
 
 def _species_consistency(sc, position):
@@ -4626,10 +4630,16 @@ def _reactive_reason(sc, position):
     (R2.4: the reactor families -- continuous, batch, aerated and gas-fed
     bioreactors, incl. keyword reactors such as neutralizers,
     hydrotreaters, gasifiers, pyrolysis and hydrolysis units -- minus the
-    class-implied-chemistry equilibrium reactors); else None. Declared
-    reactions and species appearance no longer make a unit reactive: a
-    population defined by data let deleting that data shrink it."""
+    class-implied-chemistry equilibrium reactors); 'family unknown' when
+    the unit's family is unknown (R4.13: it could be a reactor, so it needs
+    reactions unless affirmative evidence says otherwise -- deleting a
+    reactor's only family evidence must not shed the need); else None.
+    Declared reactions and species appearance no longer make a unit
+    reactive: a population defined by data let deleting that data shrink
+    it."""
     family = sc.unit_classes[position][1]
+    if family is None:
+        return 'family unknown'
     if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
     return None
@@ -4660,16 +4670,16 @@ def _score_rxn_01(sc):  # CMP-RXN-01
     if not reactive:
         return None, 'no reactive units', []
     # A unit carries reactions only with >= 1 well-formed one (R2.0).
-    pairs, missing = [], []
+    scores, missing = [], []
     for position, reason in reactive:
         carries = sc.unit_reacts[position]
-        pairs.append((1.0 if carries else 0.0, _unit_weight(sc, position)))
+        scores.append(1.0 if carries else 0.0)
         if not carries:
             missing.append(f'{sc.unit_labels[position]}.reactions: none '
                            f'well-formed declared ({reason})')
     ok = len(reactive) - len(missing)
-    return (_wmean(pairs), f'{ok} of {len(reactive)} reactive unit(s) carry '
-            f'reactions (family-weighted)', missing)
+    return (_mean(scores), f'{ok} of {len(reactive)} reactive unit(s) carry '
+            f'reactions', missing)
 
 
 _MALFORMED_REACTION = (': not well-formed (its equation|stoichiometry names '
@@ -4696,19 +4706,19 @@ def _reaction_completeness(sc, reaction, where):
 
 
 def _per_reactive_unit(sc, reaction_score):
-    """(family-weighted mean, missing, n units scoring 1, n reactive units)
-    over the reaction units (_reaction_units) of each unit's mean
-    reaction_score(sc, position, index, reaction) -> (score, missing); a
-    reactive unit without reactions contributes 0. The mean is None when the
-    population is empty."""
-    pairs, missing, full = [], [], 0
+    """(mean, missing, n units scoring 1, n reactive units) over the
+    reaction units (_reaction_units, each counting once: R4.12) of each
+    unit's mean reaction_score(sc, position, index, reaction) -> (score,
+    missing); a reactive unit without reactions contributes 0. The mean is
+    None when the population is empty."""
+    unit_scores, missing, full = [], [], 0
     for position, reason in _reaction_units(sc):
         label = sc.unit_labels[position]
         reactions = [(ri, r) for ri, r in
                      enumerate(_as_list(sc.units[position].get('reactions')))
                      if isinstance(r, dict)]
         if not reactions:
-            pairs.append((0.0, _unit_weight(sc, position)))
+            unit_scores.append(0.0)
             missing.append(f'{label}.reactions: none declared ({reason})')
             continue
         scores = []
@@ -4718,8 +4728,8 @@ def _per_reactive_unit(sc, reaction_score):
             missing.extend(gaps)
         unit_score = _mean(scores)
         full += unit_score == 1.0
-        pairs.append((unit_score, _unit_weight(sc, position)))
-    return _wmean(pairs), missing, full, len(pairs)
+        unit_scores.append(unit_score)
+    return _mean(unit_scores), missing, full, len(unit_scores)
 
 
 def _score_rxn_02(sc):  # CMP-RXN-02
@@ -4729,7 +4739,7 @@ def _score_rxn_02(sc):  # CMP-RXN-02
     if not n:
         return None, 'no reactive units and no declared reactions', []
     return (score, f'{full} of {n} reactive / reaction-declaring unit(s) '
-            f'define every reaction completely (family-weighted)', missing)
+            f'define every reaction completely', missing)
 
 
 def _score_rxn_03(sc):  # CMP-RXN-03
@@ -4743,12 +4753,12 @@ def _score_rxn_03(sc):  # CMP-RXN-03
     reactive = _reaction_units(sc)
     if not reactive:
         return None, 'no reactive units and no declared reactions', []
-    pairs, missing, multi = [], [], 0
+    scores, missing, multi = [], [], 0
     for position, reason in reactive:
         label = sc.unit_labels[position]
         reactions = _dicts(sc.units[position].get('reactions'))
         if not sc.unit_reacts[position]:
-            pairs.append((0.0, _unit_weight(sc, position)))
+            scores.append(0.0)
             missing.append(f'{label}.reactions: none well-formed declared '
                            f'({reason}), so their series/parallel order is '
                            f'unknown')
@@ -4758,12 +4768,11 @@ def _score_rxn_03(sc):  # CMP-RXN-03
                      if len(reactions) >= 2 and (
                          isinstance(r.get('index'), bool)
                          or not isinstance(r.get('index'), int))]
-        pairs.append((0.0 if unindexed else 1.0, _unit_weight(sc, position)))
+        scores.append(0.0 if unindexed else 1.0)
         missing.extend(f'{label}.reactions[{ri}].index' for ri in unindexed)
-    ok = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{ok} of {len(reactive)} reactive / '
-            f'reaction-declaring unit(s) state their reaction order ({multi} with two or more reactions; '
-            f'family-weighted)', missing)
+    return (_mean(scores), f'{scores.count(1.0)} of {len(reactive)} '
+            f'reactive / reaction-declaring unit(s) state their reaction '
+            f'order ({multi} with two or more reactions)', missing)
 
 
 def _reaction_coefficients(sc, reaction):
@@ -4898,16 +4907,15 @@ _NO_COSTED_UNITS = 'no costed units (no units, or all are cost-free mixers/split
 
 
 def _per_costed_unit(sc, unit_score, positions=None):
-    """(family-weighted mean or None, missing, n units scoring 1) over the
-    costed units (or `positions`) of unit_score(sc, position) -> (score,
-    missing locators)."""
-    pairs, missing = [], []
+    """(mean or None, missing, n units scoring 1) over the costed units (or
+    `positions`), each counting once (R4.12), of unit_score(sc, position) ->
+    (score, missing locators)."""
+    scores, missing = [], []
     for position in sc.costed if positions is None else positions:
         score, gaps = unit_score(sc, position)
-        pairs.append((score, _unit_weight(sc, position)))
+        scores.append(score)
         missing.extend(gaps)
-    full = sum(1 for score, _w in pairs if score == 1.0)
-    return _wmean(pairs), missing, full
+    return _mean(scores), missing, scores.count(1.0)
 
 
 def _cost_01_unit(sc, position):
@@ -4927,7 +4935,7 @@ def _score_cost_01(sc):  # CMP-COST-01
         return None, _NO_COSTED_UNITS, []
     score, missing, ok = _per_costed_unit(sc, _cost_01_unit)
     return (score, f'{ok} of {len(sc.costed)} costed unit(s) record purchase '
-            f'costs (family-weighted)', missing)
+            f'costs', missing)
 
 
 def _cost_02_unit(sc, position):
@@ -4948,7 +4956,7 @@ def _score_cost_02(sc):  # CMP-COST-02
         return None, _NO_COSTED_UNITS, []
     score, missing, ok = _per_costed_unit(sc, _cost_02_unit)
     return (score, f'{ok} of {len(sc.costed)} costed unit(s) have an installed '
-            f'cost for every item (family-weighted)', missing)
+            f'cost for every item', missing)
 
 
 def _has_quantity_unit(value, declared):
@@ -4983,7 +4991,7 @@ def _score_cost_03(sc):  # CMP-COST-03
         return None, _NO_COSTED_UNITS, []
     score, missing, ok = _per_costed_unit(sc, _cost_03_unit)
     return (score, f'{ok} of {len(sc.costed)} costed unit(s) state design '
-            f'results with units (family-weighted)', missing)
+            f'results with units', missing)
 
 
 _CORRELATION_CREDIT = {'power_law': 1.0, 'custom_function': 0.5}
@@ -5026,7 +5034,7 @@ def _score_cost_04(sc):  # CMP-COST-04
     core = sum(1 for p in sc.costed if _core_class_known(sc, p))
     return (score, f'{ok} of {len(sc.costed)} costed unit(s) re-costable: '
             f'{core} core BioSTEAM class(es) at confidence 1, the rest by '
-            f'power-law correlations for every item (family-weighted)', missing)
+            f'power-law correlations for every item', missing)
 
 
 def _back_derivable(unit, item, cost):
@@ -5147,7 +5155,7 @@ def _score_cost_07(sc):  # CMP-COST-07
     return (score, f'{ok} of {len(sc.costed)} costed unit(s) state every '
             f'lifetime; {derived} more earn derived credit ({DERIVED_CREDIT:g}) '
             f'as core BioSTEAM classes known exactly, whose class-default '
-            f'lifetime applies (family-weighted)', missing)
+            f'lifetime applies', missing)
 
 #%% Criteria -- utilities
 
@@ -5198,19 +5206,33 @@ def _agent_gaps(group, agent):
     return gaps
 
 
+def _unit_families(sc):
+    """The families of the declared units; None stands for every unit whose
+    family is unknown (R4.13: it could be anything, so it carries every
+    family-dependent need -- see _needs_family)."""
+    return {family for _name, family, _c in sc.unit_classes}
+
+
+def _needs_family(families, needing):
+    """True when a unit of one of `families` (a _unit_families set) carries
+    the need of the `needing` family set: a unit of that set, or, R4.13, a
+    unit of unknown family (affirmative evidence alone waives a need)."""
+    return None in families or bool(families & needing)
+
+
 def _utility_need(sc):
     """True when the flowsheet needs utility agents (R1.9): a unit in a
-    utility-using family, any unit utility result, or any declared agent."""
-    return (any(family in UTILITY_USING_FAMILIES
-                for _name, family, _c in sc.unit_classes)
+    utility-using family or of unknown family (R4.13), any unit utility
+    result, or any declared agent."""
+    return (_needs_family(_unit_families(sc), UTILITY_USING_FAMILIES)
             or bool(_utility_refs(sc)) or bool(sc.agents))
 
 
 def _heat_need(sc):
     """True when the flowsheet needs heat-utility agents: a unit in a
-    heat-exchanging family, or a declared heat agent."""
-    return (any(family in HEAT_UTILITY_FAMILIES
-                for _name, family, _c in sc.unit_classes)
+    heat-exchanging family or of unknown family (R4.13), or a declared heat
+    agent."""
+    return (_needs_family(_unit_families(sc), HEAT_UTILITY_FAMILIES)
             or any(group == 'heat_utilities' for group, _a, _l in sc.agents))
 
 
@@ -5223,16 +5245,22 @@ def _missing_agent_kinds(sc):
     family (HEAT_UTILITY_FAMILIES) but no heat-utility agent is declared; a
     power utility when a unit is in a power-drawing or -delivering family
     (POWER_UTILITY_FAMILIES) but no power utility is declared. Need is per
-    kind: a declared power utility says nothing about steam."""
-    families = {family for _n, family, _c in sc.unit_classes}
+    kind: a declared power utility says nothing about steam. R4.13: a unit
+    of unknown family needs both kinds."""
+    families = _unit_families(sc)
     groups = {group for group, _a, _l in sc.agents}
     missing = []
-    if families & HEAT_UTILITY_FAMILIES and 'heat_utilities' not in groups:
-        missing.append('utilities.heat_utilities: no heat agent declared, '
-                       'although units exchange heat')
-    if families & POWER_UTILITY_FAMILIES and 'power_utilities' not in groups:
-        missing.append('utilities.power_utilities: no power utility '
-                       'declared, although units draw or deliver electricity')
+    for group, needing, noun, why in (
+            ('heat_utilities', HEAT_UTILITY_FAMILIES, 'heat agent',
+             'exchange heat'),
+            ('power_utilities', POWER_UTILITY_FAMILIES, 'power utility',
+             'draw or deliver electricity')):
+        if group in groups or not _needs_family(families, needing):
+            continue
+        who = ('units' if families & needing
+               else 'units of unknown family (R4.13) may')
+        missing.append(f'utilities.{group}: no {noun} declared, although '
+                       f'{who} {why}')
     return missing
 
 
@@ -5429,9 +5457,10 @@ def _draws_utility(sc, position):
     ALWAYS_DRAW_FAMILIES). Waived only on affirmative evidence (R2.13): an
     idle unit, every connected stream stating a zero total flow, draws
     nothing; a flash whose specs state it adiabatic (a valid Q of 0) draws
-    no heat."""
+    no heat. R4.13: a unit of unknown family could be a pump or an
+    exchanger, so it draws unless idle."""
     family = sc.unit_classes[position][1]
-    if family not in ALWAYS_DRAW_FAMILIES:
+    if family is not None and family not in ALWAYS_DRAW_FAMILIES:
         return False
     uid = sc.units[position].get('id')
     ports = (sc.unit_inlets.get(uid, []) + sc.unit_outlets.get(uid, [])
@@ -5456,24 +5485,25 @@ def _util_04_unit(sc, position):
     numeric = any(_num(v) is not None for obj in objects
                   if isinstance(obj, dict) for v in obj.values())
     if _draws_utility(sc, position) and not numeric:
+        family = sc.unit_classes[position][1]
+        who = (f'a {family} unit always draws' if family else
+               'a unit of unknown family may draw')
         return 0.0, [f'{label}.{_UTILITY_RESULT_KEYS[0]}|'
                      f'{_UTILITY_RESULT_KEYS[1]} (no numeric result, although '
-                     f'a {sc.unit_classes[position][1]} unit always draws a '
-                     f'utility)']
+                     f'{who} a utility)']
     return 1.0 - len(absent) / 2, [f'{label}.{k}' for k in absent]
 
 
 def _score_util_04(sc):  # CMP-UTIL-04
     if not sc.units:
         return None, 'no units', []
-    pairs, missing = [], []
+    scores, missing = [], []
     for position in range(len(sc.units)):
         score, gaps = _util_04_unit(sc, position)
-        pairs.append((score, _unit_weight(sc, position)))
+        scores.append(score)
         missing.extend(gaps)
-    full = sum(1 for score, _w in pairs if score == 1.0)
-    return (_wmean(pairs), f'{full} of {len(pairs)} unit(s) record utility '
-            f'results (family-weighted)', missing)
+    return (_mean(scores), f'{scores.count(1.0)} of {len(scores)} unit(s) '
+            f'record utility results', missing)
 
 
 def _score_util_05(sc):  # CMP-UTIL-05

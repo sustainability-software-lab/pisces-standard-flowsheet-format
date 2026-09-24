@@ -66,6 +66,15 @@ def unit_doc(unit_fields=None, specs=None, out_T=300.0, out_P=101325.0):
     return doc
 
 
+def label_mixer_doc():
+    """valid_doc with a second feed 'feed2' into U1, so U1's bare unit_type
+    'Mixer' is a plausible mixer family claim (R4.14: a label-only mixer
+    needs >= 2 inlets; valid_doc's one-inlet U1 has unknown family)."""
+    doc = valid_doc()
+    doc["streams"].append(dict(copy.deepcopy(doc["streams"][0]), id="feed2"))
+    return doc
+
+
 def cls(name):
     """Unit fields naming class `name` on a biosteam source URL (a core-list
     class is then core; R2.6: another repository's URL would make even a
@@ -941,10 +950,11 @@ class TestUnitClass(unittest.TestCase):
         families are class-implied-chemistry families; UTILITY_USING_FAMILIES
         includes the power-drawing tank / solids_handling / extraction
         families and contains HEAT_UTILITY_FAMILIES (which excludes pumps and
-        tanks); FAMILY_WEIGHTS covers exactly FAMILIES (reactor 3, hx_utility
-        2, pump 1); POWER_UTILITY_FAMILIES holds pumps, compressors and
-        solids handling but no utility exchanger; FACILITY_FAMILIES is the
-        four facility families, each with no UOP-02 rule."""
+        tanks); there are no family weights any more (R4.12: per-unit
+        averages are unweighted); POWER_UTILITY_FAMILIES holds pumps,
+        compressors and solids handling but no utility exchanger;
+        FACILITY_FAMILIES is the four facility families, each with no UOP-02
+        rule."""
         families = set(C.FAMILIES)
         for group in (C.REACTOR_FAMILIES, C.UTILITY_USING_FAMILIES,
                       C.HEAT_UTILITY_FAMILIES, C.AGENT_REGENERATOR_FAMILIES,
@@ -957,10 +967,9 @@ class TestUnitClass(unittest.TestCase):
                              C.UTILITY_USING_FAMILIES)
         self.assertLessEqual(C.HEAT_UTILITY_FAMILIES, C.UTILITY_USING_FAMILIES)
         self.assertFalse({"pump", "tank"} & C.HEAT_UTILITY_FAMILIES)
-        self.assertEqual(set(C.FAMILY_WEIGHTS), families)
-        self.assertEqual((C.FAMILY_WEIGHTS["reactor"],
-                          C.FAMILY_WEIGHTS["hx_utility"],
-                          C.FAMILY_WEIGHTS["pump"]), (3, 2, 1))
+        for name in ("FAMILY_WEIGHTS", "UNKNOWN_FAMILY_WEIGHT",
+                     "_family_weight", "_unit_weight", "_wmean"):
+            self.assertFalse(hasattr(C, name), name)
         # Revision 2 part B: the power need (R2.7) and the facility families
         # of CMP-UOP-06 (R2.5), which UOP-02 no longer scores.
         for group in (C.POWER_UTILITY_FAMILIES, C.FACILITY_FAMILIES):
@@ -1191,15 +1200,20 @@ class TestUnitClass(unittest.TestCase):
         self.assertEqual(sc.unit_registry_classes, [None])
         self.assertIs(C._unit_rules(sc, 0), C._FAMILY_RULES["pump"])
 
-    def test_weights(self):
-        """_family_weight (unknown -> 2), _unit_weight on a context (a
-        reactor -> 3), _wmean ((1*3 + 0*1) / 4 = 0.75; no weight -> None)."""
-        self.assertEqual(C._family_weight("flash"), 3)
-        self.assertEqual(C._family_weight(None), C.UNKNOWN_FAMILY_WEIGHT)
-        sc = ctx(one_unit_doc(spec_unit("SinglePhaseReactor")))
-        self.assertEqual(C._unit_weight(sc, 0), 3)
-        self.assertEqual(C._wmean([(1.0, 3), (0.0, 1)]), 0.75)
-        self.assertIsNone(C._wmean([]))
+    def test_unweighted_unit_averages(self):
+        """R4.12: per-unit averages are unweighted. A two-unit doc -- a
+        fully costed SinglePhaseReactor beside an uncosted Pump -- scores
+        CMP-COST-01 = 1/2 (a family-weighted mean gave 3/4), and deleting
+        the pump's design_simulation_method (its family then unknown)
+        leaves it at 1/2 instead of moving the pump's weight."""
+        doc = one_unit_doc(dict(spec_unit("SinglePhaseReactor"),
+                                purchase_costs={"Reactor": 1.0e5}))
+        doc["units"].append(dict(spec_unit("Pump"), id="U2"))
+        self.assertEqual(run(C._score_cost_01, doc)[0], 0.5)
+        del doc["units"][1]["design_simulation_method"]
+        self.assertIsNone(ctx(doc).unit_classes[1][1])
+        self.assertEqual(run(C._score_cost_01, doc)[0], 0.5)
+        self.assertIsNone(C._mean([]))
 
     def test_is_cost_free(self):
         """_is_cost_free: Mixer / Splitter / Separator / MockSplitter
@@ -1250,14 +1264,18 @@ class TestContext(unittest.TestCase):
 
     def test_context_on_valid_doc(self):
         """_ScoringContext(valid_doc): one feed, one outlet, labels by id;
-        R4.3: U1's bare unit_type 'Mixer' gives the mixer family only
-        (None, 'mixer', 0.5; not core, no registry class); named by
+        R4.3 / R4.14: U1's bare unit_type 'Mixer' could give the mixer
+        family only, and with one inlet it is no plausible mixer claim, so
+        U1's family is unknown ((None, None, 0.0); not core, no registry
+        class) -- with a second inlet it is (None, 'mixer', 0.5); named by
         design_simulation_method (exact_mixer_doc) U1 resolves to the core
         registry class Mixer (confidence 1.0, unit_core True, registry class
         Mixer). unit_ports holds U1's (non-empty inlets, outlets) = (1, 1)."""
         sc = ctx(valid_doc())
         self.assertEqual((sc.feeds, sc.outlets), ([0], [1]))
-        self.assertEqual(sc.unit_classes[0], (None, "mixer", 0.5))
+        self.assertEqual(sc.unit_classes[0], (None, None, 0.0))
+        self.assertEqual(ctx(label_mixer_doc()).unit_classes[0],
+                         (None, "mixer", 0.5))
         self.assertEqual((sc.unit_core, sc.unit_registry_classes),
                          ([False], [None]))
         self.assertEqual(sc.unit_ports, [(1, 1)])
@@ -2231,15 +2249,15 @@ class TestThermoCriteria(unittest.TestCase):
                            ("id", "IdealMixture")):
             self.assertFalse(C._valid_package_descriptor(key, value), value)
 
-    def test_thm_06_family_weighted(self):
-        """_score_thm_06 (CMP-THM-06) is family-weighted: a reactor (weight 3)
-        with a full package beside a pump (weight 1) with none -> 3/4."""
+    def test_thm_06_unweighted(self):
+        """_score_thm_06 (CMP-THM-06) is unweighted (R4.12): a reactor with
+        a full package beside a pump with none -> 1/2."""
         full = dict(FULL_PKG)
         doc = valid_doc()
         doc["units"] = [dict(spec_unit("SinglePhaseReactor"), id="R1",
                              thermo_property_package=full),
                         dict(spec_unit("Pump"), id="P1")]
-        self.assertEqual(run(C._score_thm_06, doc)[0], 0.75)
+        self.assertEqual(run(C._score_thm_06, doc)[0], 0.5)
 
     def test_single_full_package(self):
         """_single_full_package: every package full (mixture, gamma, phi,
@@ -2309,8 +2327,10 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         1 (one material-carrying port); R4.8: a 'Pump' with 2
         material-carrying inlets is contradicted by its ports, so its family
         is unknown: ins 0 (order of 2 streams), outs DERIVED_CREDIT -> 0.375;
-        no units -> None."""
-        self.assertEqual(run(C._score_top_02, valid_doc())[0], 1.0)
+        no units -> None. R4.14: valid_doc's one-inlet 'Mixer' label is no
+        plausible mixer claim, so its family is unknown and each
+        single-stream side earns DERIVED_CREDIT only."""
+        self.assertEqual(run(C._score_top_02, valid_doc())[0], C.DERIVED_CREDIT)
         doc = one_unit_doc(cls("Mixer"), ins=({}, {}))
         self.assertEqual(run(C._score_top_02, doc), (
             1.0, "not representable; 2 of 2 unit port side(s) unambiguous by "
@@ -2536,13 +2556,15 @@ class TestUnitOpCriteria(unittest.TestCase):
     def test_uop_01_class_identity(self):
         """_score_uop_01 (CMP-UOP-01): a core class named by
         design_simulation_method -> 1; R4.3: the same class name as bare
-        unit_type ('Mixer') -> 0.5 (keyword family only); free-text
+        unit_type ('Mixer', two inlets) -> 0.5 (keyword family only), with
+        one inlet -> 0 (R4.14: no plausible mixer claim); free-text
         unit_type -> 0.5; unknown -> 0; no units -> None; R2.6 abstract
         classes: unit_type 'Compressor' -> 0.5 (family only), unit_type
         'Unit' and 'Unit on <biosteam url>' -> 0, 'Tank on <biosteam url>'
         -> 0.5."""
         self.assertEqual(run(C._score_uop_01, exact_mixer_doc())[0], 1.0)
-        self.assertEqual(run(C._score_uop_01, valid_doc())[0], 0.5)
+        self.assertEqual(run(C._score_uop_01, label_mixer_doc())[0], 0.5)
+        self.assertEqual(run(C._score_uop_01, valid_doc())[0], 0.0)
         doc = unit_doc({"unit_type": "Heat exchanger"})
         score, _m, missing = run(C._score_uop_01, doc)
         self.assertEqual(score, 0.5)
@@ -2607,8 +2629,10 @@ class TestUnitOpCriteria(unittest.TestCase):
         """_score_uop_02 (CMP-UOP-02): mixer only -> None; HXutility with a T
         matching its outlet -> 1; the same T against a 300 K outlet -> 0 with
         an 'inconsistent' locator (consistency guard); HXutility with only an
-        outlet T -> DERIVED_CREDIT; unknown family -> 0."""
-        self.assertIsNone(run(C._score_uop_02, valid_doc())[0])
+        outlet T -> DERIVED_CREDIT; unknown family (R4.14: valid_doc's
+        one-inlet 'Mixer' label) -> 0."""
+        self.assertIsNone(run(C._score_uop_02, label_mixer_doc())[0])
+        self.assertEqual(run(C._score_uop_02, valid_doc())[0], 0.0)
         self.assertEqual(run(C._score_uop_02, unit_doc(
             cls("HXutility"), {"T": 350.0}, out_T=350.0))[0], 1.0)
         score, _m, missing = run(C._score_uop_02,
@@ -2691,11 +2715,11 @@ class TestUnitOpCriteria(unittest.TestCase):
         """_score_uop_05 (CMP-UOP-05): mixer only -> None; a core class at
         confidence 1 -> DERIVED_CREDIT ('fixed by class conventions'); an
         unpinned custom class (JetCooker) -> 0, pinned -> DERIVED_CREDIT; the
-        bare 'Unit' (abstract: no class, no family) -> 0; family-weighted:
-        reactor (3, 0.75) + bare Unit (2, 0) -> 0.45; the population also
+        bare 'Unit' (abstract: no class, no family) -> 0; unweighted
+        (R4.12): reactor 0.75 + bare Unit 0 -> 0.375; the population also
         holds the CMP-UOP-06 facilities (a ProcessWaterCenter ->
         DERIVED_CREDIT), but not cost-only ones (CIPpackage -> None)."""
-        self.assertIsNone(run(C._score_uop_05, valid_doc())[0])
+        self.assertIsNone(run(C._score_uop_05, label_mixer_doc())[0])
         score, _m, missing = run(C._score_uop_05,
                                  one_unit_doc(spec_unit("HXutility")))
         self.assertEqual(score, C.DERIVED_CREDIT)
@@ -2712,7 +2736,7 @@ class TestUnitOpCriteria(unittest.TestCase):
         self.assertNotIn("fixed by class conventions", missing[0])
         doc = one_unit_doc(spec_unit("SinglePhaseReactor"))
         doc["units"].append(dict(spec_unit("Unit"), id="U2"))
-        self.assertAlmostEqual(run(C._score_uop_05, doc)[0], 0.45)
+        self.assertAlmostEqual(run(C._score_uop_05, doc)[0], 0.375)
         self.assertEqual(run(C._score_uop_05, one_unit_doc(
             spec_unit("ProcessWaterCenter")))[0], C.DERIVED_CREDIT)
         self.assertIsNone(run(C._score_uop_05, one_unit_doc(
@@ -2747,8 +2771,10 @@ def rxn_doc(reactions):
 
 class TestReactionCriteria(unittest.TestCase):
     def _appearing_doc(self, unit_fields=None):
-        """valid_doc whose product carries CO2 the feed lacks."""
-        doc = unit_doc(unit_fields)
+        """valid_doc whose product carries CO2 the feed lacks; U1 is the
+        exactly named core Mixer unless `unit_fields` say otherwise (R4.14:
+        valid_doc's one-inlet 'Mixer' label alone has unknown family)."""
+        doc = unit_doc(cls("Mixer") if unit_fields is None else unit_fields)
         doc["streams"][1]["stream_properties"]["phases"]["l"]["composition"] = [
             {"component_name": "Ethanol", "mol_fraction": 0.5},
             {"component_name": "CO2", "mol_fraction": 0.5}]
@@ -2806,14 +2832,18 @@ class TestReactionCriteria(unittest.TestCase):
         """_reactive_reason (R2.4, need only): a reactor family (incl. the
         keyword reactors 'Neutralization tank', 'Hydrotreater') -> 'reactor
         family'; declared reactions on a mixer, species evidence on a mixer,
-        a facility, a Gibbs reactor -> None."""
+        a facility, a Gibbs reactor -> None. R4.13: a unit of unknown family
+        (valid_doc's one-inlet 'Mixer' label, R4.14; a 'Widget') -> 'family
+        unknown' (it could be a reactor)."""
+        for doc in (valid_doc(), unit_doc({"unit_type": "Widget"})):
+            self.assertEqual(C._reactive_reason(ctx(doc), 0), "family unknown")
         self.assertEqual(C._reactive_reason(ctx(unit_doc(cls("NRELFermentation"))), 0),
                          "reactor family")
         for unit_type in ("Neutralization tank", "Hydrotreater"):
             self.assertEqual(C._reactive_reason(
                 ctx(unit_doc({"unit_type": unit_type})), 0), "reactor family")
         self.assertIsNone(C._reactive_reason(
-            ctx(unit_doc({"reactions": [reaction()]})), 0))
+            ctx(unit_doc({**cls("Mixer"), "reactions": [reaction()]})), 0))
         self.assertIsNone(C._reactive_reason(ctx(self._appearing_doc()), 0))
         self.assertIsNone(C._reactive_reason(
             ctx(self._appearing_doc(cls("ProcessWaterCenter"))), 0))
@@ -2826,7 +2856,7 @@ class TestReactionCriteria(unittest.TestCase):
         guard, not need); a reactor without reactions -> 0 ('none
         well-formed declared (reactor family)'); with a reaction -> 1; with
         only malformed ones -> 0."""
-        self.assertIsNone(run(C._score_rxn_01, valid_doc())[0])
+        self.assertIsNone(run(C._score_rxn_01, exact_mixer_doc())[0])
         self.assertIsNone(run(C._score_rxn_01, self._appearing_doc())[0])
         reactor = spec_unit("SinglePhaseReactor")
         score, _m, missing = run(C._score_rxn_01, self._appearing_doc(reactor))
@@ -2844,10 +2874,10 @@ class TestReactionCriteria(unittest.TestCase):
         reactions -> []; RXN-02 scores a mixer's declared reaction (complete
         -> 1, conversion missing -> 2/3) while RXN-01 stays not applicable;
         a Boiler's declared combustion set is scored too."""
-        self.assertEqual(C._reaction_units(ctx(valid_doc())), [])
+        self.assertEqual(C._reaction_units(ctx(exact_mixer_doc())), [])
         self.assertEqual(C._reaction_units(ctx(rxn_doc(None))),
                          [(0, "reactor family")])
-        doc = unit_doc({"reactions": [reaction()]})
+        doc = unit_doc({**cls("Mixer"), "reactions": [reaction()]})
         self.assertEqual(C._reaction_units(ctx(doc)), [(0, "declares reactions")])
         self.assertEqual(run(C._score_rxn_02, doc)[0], 1.0)
         self.assertIsNone(run(C._score_rxn_01, doc)[0])
@@ -2883,11 +2913,11 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertEqual(ctx(rxn_doc([{}])).unit_reacts, [False])
 
     def test_reactive_units(self):
-        """_reactive_units: the valid mixer -> [] (with declared reactions
+        """_reactive_units: an exact mixer -> [] (with declared reactions
         too: R2.4); a reactor-family unit -> [(0, 'reactor family')]."""
-        self.assertEqual(C._reactive_units(ctx(valid_doc())), [])
+        self.assertEqual(C._reactive_units(ctx(exact_mixer_doc())), [])
         self.assertEqual(C._reactive_units(ctx(unit_doc(
-            {"reactions": [reaction()]}))), [])
+            {**cls("Mixer"), "reactions": [reaction()]}))), [])
         self.assertEqual(C._reactive_units(ctx(rxn_doc(None))),
                          [(0, "reactor family")])
 
@@ -2935,7 +2965,7 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertEqual(C._per_reactive_unit(ctx(rxn_doc(None)), half),
                          (0.0, ["units[U1].reactions: none declared "
                                 "(reactor family)"], 0, 1))
-        self.assertEqual(C._per_reactive_unit(ctx(valid_doc()), half),
+        self.assertEqual(C._per_reactive_unit(ctx(exact_mixer_doc()), half),
                          (None, [], 0, 0))
 
     def test_rxn_02_definitions(self):
@@ -2943,13 +2973,13 @@ class TestReactionCriteria(unittest.TestCase):
         with a conversion locator; a reactive unit without reactions -> 0
         (population = reactive units, not reactions); no reactive unit ->
         None."""
-        self.assertEqual(run(C._score_rxn_02, unit_doc({"reactions": [reaction()]}))[0], 1.0)
+        self.assertEqual(run(C._score_rxn_02, unit_doc({**cls("Mixer"), "reactions": [reaction()]}))[0], 1.0)
         score, _m, missing = run(C._score_rxn_02, unit_doc(
             {"reactions": [reaction(conversion=1.5)]}))
         self.assertAlmostEqual(score, 2 / 3)
         self.assertEqual(missing, ["units[U1].reactions[0].conversion (0..1)"])
         self.assertEqual(run(C._score_rxn_02, rxn_doc(None))[0], 0.0)
-        self.assertIsNone(run(C._score_rxn_02, valid_doc())[0])
+        self.assertIsNone(run(C._score_rxn_02, exact_mixer_doc())[0])
 
     def test_rxn_03_series_parallel(self):
         """_score_rxn_03 (CMP-RXN-03) over the reactive units: two indexed
@@ -2959,11 +2989,11 @@ class TestReactionCriteria(unittest.TestCase):
         not N/A); a unit carrying only a malformed reaction ([{}]) -> 0;
         no reactive unit -> None."""
         two = [reaction(index=0), reaction(index=1)]
-        self.assertEqual(run(C._score_rxn_03, unit_doc({"reactions": two}))[0], 1.0)
+        self.assertEqual(run(C._score_rxn_03, unit_doc({**cls("Mixer"), "reactions": two}))[0], 1.0)
         del two[1]["index"]
-        score, _m, missing = run(C._score_rxn_03, unit_doc({"reactions": two}))
+        score, _m, missing = run(C._score_rxn_03, unit_doc({**cls("Mixer"), "reactions": two}))
         self.assertEqual((score, missing), (0.0, ["units[U1].reactions[1].index"]))
-        self.assertEqual(run(C._score_rxn_03, unit_doc({"reactions": [reaction()]}))[0], 1.0)
+        self.assertEqual(run(C._score_rxn_03, unit_doc({**cls("Mixer"), "reactions": [reaction()]}))[0], 1.0)
         doc = unit_doc(spec_unit("SinglePhaseReactor"))
         score, _m, missing = run(C._score_rxn_03, doc)
         self.assertEqual(score, 0.0)
@@ -2971,7 +3001,7 @@ class TestReactionCriteria(unittest.TestCase):
                       "(reactor family)", missing[0])
         doc["units"][0]["reactions"] = [{}]
         self.assertEqual(run(C._score_rxn_03, doc)[0], 0.0)
-        self.assertIsNone(run(C._score_rxn_03, valid_doc())[0])
+        self.assertIsNone(run(C._score_rxn_03, exact_mixer_doc())[0])
 
     def test_reaction_coefficients(self):
         """_reaction_coefficients: stoichiometry by id -> its coefficients;
@@ -3045,7 +3075,7 @@ class TestReactionCriteria(unittest.TestCase):
         doc = rxn_doc([reaction(equation=GLUCOSE_EQ, reactant="Glucose")])
         self.assertEqual(run(C._score_rxn_04, doc)[0], C.DERIVED_CREDIT)
         self.assertEqual(run(C._score_rxn_04, rxn_doc(None))[0], 0.0)
-        self.assertIsNone(run(C._score_rxn_04, valid_doc())[0])
+        self.assertIsNone(run(C._score_rxn_04, exact_mixer_doc())[0])
 
 
 # ---------------------------------------------------------- costing criteria
@@ -3122,15 +3152,15 @@ class TestCostingCriteria(unittest.TestCase):
         self.assertEqual(run(C._score_cost_07, doc)[0], 0.0)
 
     def test_per_costed_unit(self):
-        """_per_costed_unit: family-weighted over sc.costed (a reactor, weight
-        3, scoring 1 beside a pump, weight 1, scoring 0 -> 0.75, one full);
-        explicit positions restrict the population; none -> (None, [], 0)."""
+        """_per_costed_unit: unweighted over sc.costed (R4.12: a reactor
+        scoring 1 beside a pump scoring 0 -> 0.5, one full); explicit
+        positions restrict the population; none -> (None, [], 0)."""
         doc = valid_doc()
         doc["units"] = [dict(spec_unit("SinglePhaseReactor"), id="R1"),
                         dict(spec_unit("Pump"), id="P1")]
         sc = ctx(doc)
         score_of = lambda sc, p: ((1.0, []) if p == 0 else (0.0, ["gap"]))
-        self.assertEqual(C._per_costed_unit(sc, score_of), (0.75, ["gap"], 1))
+        self.assertEqual(C._per_costed_unit(sc, score_of), (0.5, ["gap"], 1))
         self.assertEqual(C._per_costed_unit(sc, score_of, [1]), (0.0, ["gap"], 0))
         self.assertEqual(C._per_costed_unit(ctx(exact_mixer_doc()), score_of),
                          (None, [], 0))
@@ -3259,7 +3289,7 @@ STEAM = {"id": "steam", "temperature": 400.0, "pressure": 3e5,
 
 
 def with_agents(heat=(), power=(), other=(), consumption=None):
-    doc = valid_doc()
+    doc = label_mixer_doc()
     doc["utilities"] = {"heat_utilities": list(heat),
                         "power_utilities": list(power),
                         "other_utilities": list(other)}
@@ -3300,9 +3330,13 @@ class TestUtilityCriteria(unittest.TestCase):
     def test_utility_and_heat_need(self):
         """_utility_need / _heat_need (R1.9): a lone Mixer, nothing declared
         -> neither; a Pump -> utility need only; an HXutility -> both; a
-        declared heat agent -> both; a unit utility result -> utility need."""
+        declared heat agent -> both; a unit utility result -> utility need.
+        R4.13: a unit of unknown family (valid_doc's one-inlet 'Mixer'
+        label, R4.14) -> both."""
+        self.assertEqual((C._utility_need(ctx(label_mixer_doc())),
+                          C._heat_need(ctx(label_mixer_doc()))), (False, False))
         self.assertEqual((C._utility_need(ctx(valid_doc())),
-                          C._heat_need(ctx(valid_doc()))), (False, False))
+                          C._heat_need(ctx(valid_doc()))), (True, True))
         pump = ctx(one_unit_doc(spec_unit("Pump")))
         self.assertEqual((C._utility_need(pump), C._heat_need(pump)), (True, False))
         hx = ctx(one_unit_doc(spec_unit("HXutility")))
@@ -3317,7 +3351,7 @@ class TestUtilityCriteria(unittest.TestCase):
         -> 1; a heat agent without composition -> 2/4 (its phase goes too,
         R4.2); only its phase deleted -> 3/4, the missing entry naming the
         phase; an other agent without composition -> 2/3."""
-        self.assertIsNone(run(C._score_util_01, valid_doc())[0])
+        self.assertIsNone(run(C._score_util_01, label_mixer_doc())[0])
         score, _m, missing = run(C._score_util_01, one_unit_doc(spec_unit("Pump")))
         self.assertEqual((score, missing), (0.0, ["utilities: no agents declared"]))
         score, _m, missing = run(C._score_util_01, with_agents(consumption={"steam": 1}))
@@ -3352,7 +3386,7 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertEqual(score, 0.5)
         self.assertIn("no agent 'power' to price", missing[0])
         self.assertEqual(run(C._score_util_02, one_unit_doc(spec_unit("Pump")))[0], 0.0)
-        self.assertIsNone(run(C._score_util_02, valid_doc())[0])
+        self.assertIsNone(run(C._score_util_02, label_mixer_doc())[0])
 
     def test_agent_roles(self):
         """_agent_roles: a positive recorded duty -> heating, a negative one
@@ -3425,26 +3459,32 @@ class TestUtilityCriteria(unittest.TestCase):
         doc["units"][0]["utility_production_results"] = {"propane": -2.0}
         self.assertEqual(run(C._score_util_03, doc)[0], 1.0)
         self.assertEqual(run(C._score_util_03, one_unit_doc(spec_unit("HXutility")))[0], 0.0)
-        self.assertIsNone(run(C._score_util_03, valid_doc())[0])
+        self.assertIsNone(run(C._score_util_03, label_mixer_doc())[0])
 
     def test_util_04_results(self):
         """_score_util_04 / _util_04_unit (CMP-UTIL-04): no result objects ->
-        0; both -> 1; family-weighted (a reactor with both beside a pump with
-        neither -> 3/4). R2.0: a unit that always draws a utility
-        (_draws_utility: pump, HXutility, ...) with an empty consumption +
-        production pair -> 0, and non-numeric entries ({'a': 'b'}) count as
-        absent; one numeric entry -> 1. Waived only on affirmative evidence:
-        an idle unit (every connected stream states a zero flow), or a flash
-        stated adiabatic (Q = 0)."""
+        0; both -> 1 (an exactly named Mixer); unweighted (R4.12: a reactor
+        with both beside a pump with neither -> 1/2). R2.0: a unit that
+        always draws a utility (_draws_utility: pump, HXutility, ...) with
+        an empty consumption + production pair -> 0, and non-numeric entries
+        ({'a': 'b'}) count as absent; one numeric entry -> 1. R4.13: so does
+        a unit of unknown family (valid_doc's one-inlet 'Mixer' label, R4.14:
+        'may draw'). Waived only on affirmative evidence: an idle unit
+        (every connected stream states a zero flow), or a flash stated
+        adiabatic (Q = 0)."""
         self.assertEqual(run(C._score_util_04, valid_doc())[0], 0.0)
-        doc = unit_doc({"utility_consumption_results": {},
-                        "utility_production_results": {}})
+        empty = {"utility_consumption_results": {},
+                 "utility_production_results": {}}
+        doc = unit_doc(dict(cls("Mixer"), **empty))
         self.assertEqual(run(C._score_util_04, doc)[0], 1.0)
+        score, _m, missing = run(C._score_util_04, unit_doc(dict(empty)))
+        self.assertEqual(score, 0.0)
+        self.assertIn("a unit of unknown family may draw a utility", missing[0])
         doc["units"] = [dict(spec_unit("SinglePhaseReactor"), id="R1",
                              utility_consumption_results={},
                              utility_production_results={}),
                         dict(spec_unit("Pump"), id="P1")]
-        self.assertEqual(run(C._score_util_04, doc)[0], 0.75)
+        self.assertEqual(run(C._score_util_04, doc)[0], 0.5)
         pump = dict(spec_unit("Pump"), id="P1", utility_consumption_results={},
                     utility_production_results={"a": "b"})
         doc["units"] = [pump]
@@ -3456,7 +3496,8 @@ class TestUtilityCriteria(unittest.TestCase):
         flash = ctx(unit_doc(spec_unit("Flash", {"Q": 0.0, "P": 1e5})))
         self.assertFalse(C._draws_utility(flash, 0))
         self.assertTrue(C._draws_utility(ctx(unit_doc(spec_unit("Flash"))), 0))
-        self.assertFalse(C._draws_utility(ctx(valid_doc()), 0))
+        self.assertFalse(C._draws_utility(ctx(exact_mixer_doc()), 0))
+        self.assertTrue(C._draws_utility(ctx(valid_doc()), 0))
         idle = one_unit_doc(spec_unit("Pump"), ins=({"mass": 0.0},),
                             outs=({"mass": 0.0},))
         for s in idle["streams"]:
@@ -3664,7 +3705,8 @@ class TestDriver(unittest.TestCase):
         status not_applicable, score None."""
         registry = C.load_completeness_criteria()["criteria"]
         results = {r.criterion_id: r for r in
-                   C._evaluate_criteria(ctx(valid_doc()), registry, (0, 0, 3))}
+                   C._evaluate_criteria(ctx(label_mixer_doc()), registry,
+                                        (0, 0, 3))}
         self.assertFalse(results["CMP-COST-04"].representable)
         self.assertFalse(results["CMP-THM-05"].representable)
         self.assertTrue(results["CMP-THM-04"].representable)
@@ -4216,11 +4258,11 @@ class TestNeedBasedApplicability(unittest.TestCase):
         # 'waste' unpriced; the empty 'spare' feed counts as 1 (4 of 5).
         self.assertEqual(results["CMP-FEED-02"].score, 0.8)
         self.assertEqual(results["CMP-RXN-03"].score, 1.0)
-        # C1 (custom, splitter weight 2) 0.75; P1, H1, R1 core -> 1.
-        self.assertAlmostEqual(results["CMP-COST-04"].score, 7.5 / 8)
+        # C1 (custom) 0.75; P1, H1, R1 core -> 1 (unweighted, R4.12).
+        self.assertAlmostEqual(results["CMP-COST-04"].score, 3.75 / 4)
         self.assertEqual(results["CMP-COST-07"].score, 1.0)
-        # R1 (reactor weight 3) names no chemical set; 6 of 9 weight do.
-        self.assertAlmostEqual(results["CMP-THM-07"].score, 6 / 9)
+        # R1 names no chemical set; 4 of 5 units do (unweighted, R4.12).
+        self.assertAlmostEqual(results["CMP-THM-07"].score, 4 / 5)
         self.assertTrue(0.8 < score < 1.0, score)
 
     def test_deleting_any_value_never_raises_score(self):
@@ -4482,7 +4524,8 @@ class TestAdversarialGaming(unittest.TestCase):
     def test_empty_and_junk_reactions(self):
         """reactions [{}] and [{'equation': 'x', 'reactant': 'y',
         'conversion': 0.5}] on a reactor: RXN-01..04 all 0, as with no
-        reactions; on a mixer they do not even make it reactive (N/A)."""
+        reactions; on an exact mixer they do not even make it reactive
+        (N/A)."""
         for reactions in ([{}], [{"equation": "x", "reactant": "y",
                                   "conversion": 0.5}]):
             junked = rxn_doc(reactions)
@@ -4490,7 +4533,7 @@ class TestAdversarialGaming(unittest.TestCase):
                 self.assertEqual(criterion_results(junked)[cid].score, 0.0, cid)
             self.assert_no_credit(rxn_doc(None), junked, (
                 "CMP-RXN-01", "CMP-RXN-02", "CMP-RXN-03", "CMP-RXN-04"))
-            mixer = unit_doc({"reactions": reactions})
+            mixer = unit_doc({**cls("Mixer"), "reactions": reactions})
             self.assertIsNone(criterion_results(mixer)["CMP-RXN-01"].score)
 
     def test_null_purchase_cost_and_text_design_result(self):
@@ -4786,7 +4829,7 @@ class TestRevision2PartB(unittest.TestCase):
         Boiler needs boiler_efficiency only; a RefrigerationPackage its
         agent and a plausible efficiency (1.5 counts as unstated -> 0; 0.35
         -> 1/2 without the agent); an unknown facility -> 0
-        ('facility kind unknown'); family-weighted over the population; no
+        ('facility kind unknown'); unweighted over the population; no
         facility (the valid mixer, or only a cost-only CIP) -> None."""
         doc = facility_doc()
         score, message, missing = run(C._score_uop_06, doc)
@@ -4859,7 +4902,14 @@ class TestRevision2PartB(unittest.TestCase):
         both["utilities"]["heat_utilities"] = [STEAM]
         self.assertEqual(C._missing_agent_kinds(ctx(both)), [])
         self.assertEqual(run(C._score_util_01, both)[0], 1.0)
-        self.assertEqual(C._missing_agent_kinds(ctx(valid_doc())), [])
+        self.assertEqual(C._missing_agent_kinds(ctx(label_mixer_doc())), [])
+        # R4.13: a unit of unknown family (valid_doc's one-inlet 'Mixer'
+        # label, R4.14) needs both kinds.
+        self.assertEqual(C._missing_agent_kinds(ctx(valid_doc())), [
+            "utilities.heat_utilities: no heat agent declared, although "
+            "units of unknown family (R4.13) may exchange heat",
+            "utilities.power_utilities: no power utility declared, although "
+            "units of unknown family (R4.13) may draw or deliver electricity"])
 
     def test_facility_doc_deletions_never_raise(self):
         """Deletion monotonicity (R1.0) over facility_doc: deleting any value
@@ -5104,10 +5154,11 @@ class TestRevision3PartA(unittest.TestCase):
         """R3.8: a stream endpoint naming no declared unit ('Ghost') makes
         an undeclared referenced unit (_ScoringContext.phantom_units; the
         boundary 'None', non-strings and declared ids never do). It joins
-        CMP-UOP-01, CMP-UOP-02 and CMP-TOP-02 (both port sides) at 0 with
-        UNKNOWN_FAMILY_WEIGHT: a fully specified pump (weight 1) beside it
-        -> UOP-01 1/3, UOP-02 1/3; _phantom_pairs gives the zero pairs and
-        the 'referenced by a stream endpoint but not declared' locators,
+        CMP-UOP-01, CMP-UOP-02 and CMP-TOP-02 (both port sides) at 0,
+        counting once like every unit (R4.12): a fully specified pump
+        beside it -> UOP-01 1/2, UOP-02 1/2; _phantom_scores gives the zero
+        scores and the 'referenced by a stream endpoint but not declared'
+        locators,
         _phantom_note the message suffix. With no units at all, streams
         into 'A' still score those criteria 0 (not not-applicable)."""
         doc = one_unit_doc(spec_unit("Pump", {"P": 101325.0, "dP_design": 1.0}))
@@ -5115,19 +5166,19 @@ class TestRevision3PartA(unittest.TestCase):
         doc["streams"].append(stream("odd", 5, "None"))
         sc = ctx(doc)
         self.assertEqual(sc.phantom_units, ["Ghost"])
-        self.assertEqual(C._phantom_pairs(sc, "x"), (
-            [(0.0, C.UNKNOWN_FAMILY_WEIGHT)],
+        self.assertEqual(C._phantom_scores(sc, "x"), (
+            [0.0],
             ["units[Ghost]: referenced by a stream endpoint but not declared, "
              "so x"]))
         self.assertEqual(C._phantom_note(sc),
                          "; 1 referenced but undeclared unit id(s) score 0")
         self.assertEqual(C._phantom_note(ctx(one_unit_doc({}))), "")
         score, message, missing = run(C._score_uop_01, doc)
-        self.assertAlmostEqual(score, 1 / 3)
+        self.assertAlmostEqual(score, 1 / 2)
         self.assertIn("1 referenced but undeclared unit id(s) score 0", message)
         self.assertIn("units[Ghost]: referenced by a stream endpoint but not "
                       "declared, so its class is unknown", missing)
-        self.assertAlmostEqual(run(C._score_uop_02, doc)[0], 1 / 3)
+        self.assertAlmostEqual(run(C._score_uop_02, doc)[0], 1 / 2)
         score, _m, missing = run(C._score_top_02, doc)
         self.assertLess(score, run(C._score_top_02, one_unit_doc(
             spec_unit("Pump", {"P": 101325.0, "dP_design": 1.0})))[0])
@@ -6345,36 +6396,51 @@ class TestRevision4PartB(unittest.TestCase):
                                  {k: r.score for k, r in rb.items()})
 
     def test_mixer_relabel_does_not_pay(self):
-        """R4.8 review case on a sparse doc (SPARSE_EDGES: R1 and C1 have 2
-        outlets): relabelling R1, C1 and H1 'Mixer' used to raise the
-        overall score by ~0.10 (mixer family: no operating specifications,
-        cost-free, order-free inlets). Now R1 and C1 are contradicted by
-        their outlets -> (None, None, 0.0), exactly as if their unit_type
-        were deleted (INVALID == MISSING: every criterion equal); H1 (1 in /
-        1 out) stays a plausible mixer family (None, 'mixer', 0.5) but is
-        costed (R4.3: no cost-free status without an exact class). The
-        combined relabel gains < 0.01 -- what remains is deleting R1's only
-        family evidence shedding the reactive need (a pre-existing
-        need-by-family gap outside R4.8) and H1's plausible relabel."""
+        """R4.8 / R4.13 / R4.14 review case on a sparse doc (SPARSE_EDGES:
+        R1 and C1 have 2 outlets, H1 one inlet and one outlet): relabelling
+        R1, C1 and H1 'Mixer' used to raise the overall score (mixer family:
+        no operating specifications, cost-free, order-free inlets, no
+        reaction or utility needs). Now every relabelled claim is
+        implausible -- R1's and C1's by their outlets (R4.8), H1's by its
+        single inlet (R4.14: a label-only mixer needs >= 2 inlets) -- so each
+        unit is (None, None, 0.0) and scores exactly as if its unit_type
+        were deleted (INVALID == MISSING: every criterion equal); an unknown
+        family carries every family-dependent need (R4.13), so R1 keeps its
+        reaction and heat-utility needs. Neither the combined relabel nor
+        any single one raises the overall score or any criterion; M1 (two
+        inlets) stays a plausible label-only mixer (None, 'mixer', 0.5)."""
         base = sparse_doc(SPARSE_TYPES, SPARSE_EDGES)
+        base_results = criterion_results(base)
         relabelled = sparse_doc(dict(SPARSE_TYPES, R1="Mixer", C1="Mixer",
                                      H1="Mixer"), SPARSE_EDGES)
         classes = dict(zip(SPARSE_TYPES, ctx(relabelled).unit_classes))
-        self.assertEqual(classes["R1"], (None, None, 0.0))
-        self.assertEqual(classes["C1"], (None, None, 0.0))
-        self.assertEqual(classes["H1"], (None, "mixer", 0.5))
+        for uid in ("R1", "C1", "H1"):
+            self.assertEqual(classes[uid], (None, None, 0.0), uid)
+        self.assertEqual(classes["M1"], (None, "mixer", 0.5))
         self.assertIn(3, ctx(relabelled).costed)
-        for uid in ("R1", "C1"):
+        self.assertLessEqual(overall(relabelled), overall(base))
+        for uid in ("R1", "C1", "H1"):
             as_mixer = sparse_doc(dict(SPARSE_TYPES, **{uid: "Mixer"}),
                                   SPARSE_EDGES)
             unlabelled = sparse_doc(dict(SPARSE_TYPES, **{uid: ""}),
                                     SPARSE_EDGES)
+            after = criterion_results(as_mixer)
             with self.subTest(unit=uid):
                 self.assertEqual(
-                    {k: r.score for k, r in criterion_results(as_mixer).items()},
+                    {k: r.score for k, r in after.items()},
                     {k: r.score for k, r in
                      criterion_results(unlabelled).items()})
-        self.assertLess(overall(relabelled) - overall(base), 0.01)
+                self.assertLessEqual(overall(as_mixer), overall(base))
+                for cid, before in base_results.items():
+                    if before.status == "scored":
+                        self.assertEqual(after[cid].status, "scored", cid)
+                        self.assertLessEqual(after[cid].score,
+                                             before.score + 1e-12, cid)
+        # R1 keeps its reactive and heat-utility needs once relabelled.
+        results = criterion_results(relabelled)
+        for cid in ("CMP-RXN-01", "CMP-RXN-02", "CMP-RXN-03", "CMP-RXN-04",
+                    "CMP-UTIL-03", "CMP-UTIL-05"):
+            self.assertEqual(results[cid].status, "scored", cid)
 
     def test_mass_balance(self):
         """_mass_balance on one_unit_doc: balanced -> (True, True, ''); the
@@ -6446,6 +6512,308 @@ class TestRevision4PartB(unittest.TestCase):
                         self.assertLess(overall(reduced), base_score)
                     else:
                         self.assertEqual(overall(reduced), base_score)
+
+
+
+# ------------------------------------ Revision 4 (R4.12-R4.14) sweeps
+
+SWEEP_MW = {"Water": 18.015, "Glucose": 180.156, "Ethanol": 46.07,
+            "CO2": 44.01}
+
+
+def _sweep_sp(flows, phase, T=None, P=None):
+    """Stream properties of {component: kmol/h} `flows` in one phase (mass
+    flow from SWEEP_MW, so every balance closes); T / P only when given."""
+    total = sum(flows.values())
+    sp = {"total_molar_flow": total,
+          "total_mass_flow": sum(f * SWEEP_MW[n] for n, f in flows.items()),
+          "phases": {phase: {"total_molar_flow": total, "composition": [
+              {"component_name": n, "mol_fraction": f / total}
+              for n, f in flows.items()]}}}
+    if T is not None:
+        sp["temperature"] = T
+    if P is not None:
+        sp["pressure"] = P
+    return sp
+
+
+# id, source, sink, flows (kmol/h), phase, T, P, price: feeds A + B -> M1
+# 'Mixer' -> P1 -> H1 -> R1 (Glucose -> 2 Ethanol + 2 CO2, X = 0.9; CO2
+# vented) -> P2 -> F1 (vapor / liquid) -> S1 (split 0.5) -> two products.
+SWEEP_EDGES = (
+    ("feedA", "None", "M1", {"Water": 90.0, "Glucose": 10.0}, "l", 300.0,
+     101325.0, 0.1),
+    ("feedB", "None", "M1", {"Water": 50.0}, "l", 300.0, 101325.0, 0.0),
+    ("s1", "M1", "P1", {"Water": 140.0, "Glucose": 10.0}, "l", None, None,
+     None),
+    ("s2", "P1", "H1", {"Water": 140.0, "Glucose": 10.0}, "l", None, None,
+     None),
+    ("s3", "H1", "R1", {"Water": 140.0, "Glucose": 10.0}, "l", None, None,
+     None),
+    ("vent", "R1", "None", {"CO2": 18.0}, "g", 310.0, 101325.0, 0.0),
+    ("s4", "R1", "P2", {"Water": 140.0, "Glucose": 1.0, "Ethanol": 18.0},
+     "l", None, None, None),
+    ("s5", "P2", "F1", {"Water": 140.0, "Glucose": 1.0, "Ethanol": 18.0},
+     "l", None, None, None),
+    ("vap", "F1", "None", {"Water": 10.0, "Ethanol": 8.0}, "g", 350.0,
+     101325.0, 0.5),
+    ("liq", "F1", "S1", {"Water": 130.0, "Glucose": 1.0, "Ethanol": 10.0},
+     "l", None, None, None),
+    ("out1", "S1", "None", {"Water": 65.0, "Glucose": 0.5, "Ethanol": 5.0},
+     "l", 350.0, 101325.0, 0.05),
+    ("out2", "S1", "None", {"Water": 65.0, "Glucose": 0.5, "Ethanol": 5.0},
+     "l", 350.0, 101325.0, 0.05))
+SWEEP_TYPES = {"M1": "Mixer", "P1": "Feed pump", "H1": "Heat exchanger",
+               "R1": "Fermentation reactor", "P2": "Transfer pump",
+               "F1": "Flash drum", "S1": "Splitter"}
+SWEEP_CLASSES = {"M1": "Mixer", "P1": "Pump", "H1": "HXutility",
+                 "R1": "AnaerobicBioreactor", "P2": "Pump", "F1": "Flash",
+                 "S1": "Splitter"}
+SWEEP_SPECS = {"P1": {"P": 2.0e5}, "H1": {"T": 310.0}, "R1": {"tau": 10.0},
+               "P2": {"P": 1.5e5}, "F1": {"T": 350.0, "P": 101325.0},
+               "S1": {"split": 0.5}}
+SWEEP_REACTION = {"index": 0, "equation": "Glucose -> 2 Ethanol + 2 CO2",
+                  "reactant": "Glucose", "conversion": 0.9}
+
+
+def sweep_doc(identity="unit_type"):
+    """A sparse, consistent flowsheet for the R4.12-R4.14 deletion sweeps
+    (SWEEP_EDGES): a mixer with two feeds, two pumps, a heat exchanger, a
+    fermentation reactor with one well-formed reaction and a vent (2
+    outlets), a flash and a splitter. Each unit states its identity ONLY
+    through `identity` -- 'unit_type' (SWEEP_TYPES, descriptive labels, no
+    design_simulation_method) or 'design_simulation_method'
+    (SWEEP_CLASSES on the biosteam URL, no unit_type) -- plus a few spec
+    keys (SWEEP_SPECS); P1 and H1 record utility results. Feeds and
+    products state T and P, internal streams only flows and one-phase
+    compositions (every mass and species balance closes); chemicals carry
+    formula + molar mass but no registry id; the heat and power agents are
+    declared, no property package, costs or TEA year."""
+    streams = []
+    for sid, source, sink, flows, phase, T, P, price in SWEEP_EDGES:
+        stream_ = {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+                   "stream_properties": _sweep_sp(flows, phase, T, P)}
+        if price is not None:
+            stream_["price"] = price
+        streams.append(stream_)
+    units = []
+    for uid in SWEEP_TYPES:
+        unit = {"id": uid}
+        if identity == "unit_type":
+            unit["unit_type"] = SWEEP_TYPES[uid]
+        else:
+            unit["design_simulation_method"] = (f"{SWEEP_CLASSES[uid]} on "
+                                                f"{BST_URL}")
+        if uid in SWEEP_SPECS:
+            unit["design_input_specs"] = dict(SWEEP_SPECS[uid])
+        units.append(unit)
+    by_id = {u["id"]: u for u in units}
+    by_id["R1"]["reactions"] = [dict(SWEEP_REACTION)]
+    by_id["P1"]["utility_consumption_results"] = {"grid": 1.0}
+    by_id["H1"]["utility_consumption_results"] = {"steam": 50.0}
+    formulas = {"Water": "H2O", "Glucose": "C6H12O6", "Ethanol": "C2H6O",
+                "CO2": "CO2"}
+    chemicals = [{"id": n, "formula": formulas[n], "molar_mass": mw}
+                 for n, mw in SWEEP_MW.items()]
+    utilities = {
+        "heat_utilities": [{"id": "steam", "temperature": 412.0,
+                            "pressure": 344738.0, "composition": [
+                                {"phase": "g", "component_name": "Water",
+                                 "mol_fraction": 1.0}]}],
+        "power_utilities": [{"id": "grid", "electrical_energy_price": 0.07}]}
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD"},
+            "units": units, "streams": streams, "chemicals": chemicals,
+            "utilities": utilities}
+
+
+class TestRevision4PartC(unittest.TestCase):
+    """Revision 4 part C: unweighted per-unit averages (R4.12), unknown-
+    family units carrying every family-dependent need (R4.13), label-only
+    mixer plausibility (R4.14), and the deletion sweeps over sparse
+    documents that pin all three.
+
+    The sweeps are STRICT: a scored criterion turning not-applicable is a
+    violation even from a score of exactly 1. Dropping a criterion at the
+    maximum cannot raise the overall mean, but it is exactly how a shed
+    need shows while the need happens to be met (deleting a fermenter's
+    unit_type used to take CMP-RXN-01 from 1 to not-applicable), so
+    allowing it would let applicability follow data unseen."""
+
+    def assert_sweep_clean(self, doc):
+        with name_lookup(set()):
+            raised, lowered, n = deletion_violations(doc, skip=frozenset())
+        paths = dict(deletable_paths(doc, skip=frozenset()))
+        for path in (("units", 0, "id"),
+                     ("units", 3, "reactions", 0, "equation"),
+                     ("units", 5, "design_input_specs", "T"),
+                     ("streams", 2, "source_unit_id"),
+                     ("streams", 6, "sink_unit_id"),
+                     ("streams", 4, "stream_properties", "phases", "l",
+                      "composition", 1, "component_name")):
+            self.assertEqual(paths.get(path), "leaf", path)
+        self.assertGreater(n, 240)
+        self.assertEqual(raised, [])
+        self.assertGreater(lowered, n // 2)
+
+    def test_sparse_descriptive_doc_deletion_sweep(self):
+        """sweep_doc('unit_type'): units identified ONLY by a descriptive
+        unit_type (every family at 0.5: mixer, two pumps, heat exchanger,
+        reactor with a well-formed reaction and a vent, flash, splitter);
+        deleting EVERY field one at a time -- unit_type, spec keys,
+        reaction fields, utility results, unit and stream ids, stream
+        endpoints, component names, stream states -- raises neither the
+        overall score nor any criterion, and turns no scored criterion
+        not-applicable (strict). Before R4.12/R4.13 (and the unsourced-
+        stream rule of CMP-UOP-04) this found, e.g., P1's unit_type raising
+        CMP-UTIL-04 (weight 1 -> 2), R1's raising CMP-TOP-02 and turning
+        CMP-RXN-01 not-applicable, and s1's source_unit_id raising
+        CMP-UOP-04."""
+        doc = sweep_doc("unit_type")
+        families = {u["id"]: c for u, c in zip(doc["units"],
+                                               ctx(doc).unit_classes)}
+        self.assertEqual(families, {
+            "M1": (None, "mixer", 0.5), "P1": (None, "pump", 0.5),
+            "H1": (None, "hx_utility", 0.5), "R1": (None, "reactor", 0.5),
+            "P2": (None, "pump", 0.5), "F1": (None, "flash", 0.5),
+            "S1": (None, "splitter", 0.5)})
+        self.assertNotIn("design_simulation_method",
+                         {k for u in doc["units"] for k in u})
+        self.assert_sweep_clean(doc)
+
+    def test_sparse_dsm_doc_deletion_sweep(self):
+        """sweep_doc('design_simulation_method'): the same flowsheet with
+        units identified ONLY by 'Class on <biosteam url>' (every class
+        exact, confidence 1: the mixer and splitter cost-free, the
+        AnaerobicBioreactor with its two outlets); the strict sweep over
+        every field -- each design_simulation_method included -- finds no
+        violation."""
+        doc = sweep_doc("design_simulation_method")
+        sc = ctx(doc)
+        self.assertEqual(sc.unit_classes,
+                         [(SWEEP_CLASSES[u["id"]],
+                           C._class_family(SWEEP_CLASSES[u["id"]]), 1.0)
+                          for u in doc["units"]])
+        self.assertNotIn("unit_type", {k for u in doc["units"] for k in u})
+        self.assertEqual(sc.costed, [1, 2, 3, 4, 5])
+        self.assert_sweep_clean(doc)
+
+    def test_unknown_family_carries_every_need(self):
+        """R4.13 on one-unit sparse docs (feed -> U1 -> product): deleting
+        U1's only family evidence (unit_type 'Fermentation reactor' with a
+        reaction, 'Heat exchanger', 'Pump') leaves every scored criterion
+        scored and no higher; the unknown-family unit is reactive ('family
+        unknown'; CMP-RXN-01..04 stay scored), needs heat and power agents
+        (CMP-UTIL-01/02/03/05 scored, both missing kinds listed), always
+        draws a utility (CMP-UTIL-04) and is species-guarded / physical
+        unless it declares a well-formed reaction; an identified custom
+        class of unknown family waives the guard (its code may transform
+        species), as for a custom splitter."""
+        edges = (("feed", "None", "U1"), ("prod", "U1", "None"))
+        for unit_type in ("Fermentation reactor", "Heat exchanger", "Pump"):
+            doc = sparse_doc({"U1": unit_type}, edges)
+            if unit_type.startswith("Fermentation"):
+                doc["units"][0]["reactions"] = [dict(SWEEP_REACTION)]
+            base = criterion_results(doc)
+            reduced = deleted(doc, ("units", 0, "unit_type"))
+            after = criterion_results(reduced)
+            sc = ctx(reduced)
+            with self.subTest(unit_type=unit_type):
+                self.assertEqual(sc.unit_classes, [(None, None, 0.0)])
+                for cid, before in base.items():
+                    if before.status == "scored":
+                        self.assertEqual(after[cid].status, "scored", cid)
+                        self.assertLessEqual(after[cid].score,
+                                             before.score + 1e-12, cid)
+                for cid in ("CMP-RXN-01", "CMP-RXN-02", "CMP-RXN-03",
+                            "CMP-RXN-04", "CMP-UTIL-01", "CMP-UTIL-02",
+                            "CMP-UTIL-03", "CMP-UTIL-05"):
+                    self.assertEqual(after[cid].status, "scored", cid)
+                self.assertEqual(C._reactive_reason(sc, 0), "family unknown")
+                self.assertEqual(len(C._missing_agent_kinds(sc)), 2)
+                self.assertTrue(C._draws_utility(sc, 0))
+                reacts = "reactions" in reduced["units"][0]
+                self.assertEqual(C._species_guarded(sc, 0), not reacts)
+                self.assertEqual(C._physical_unit(sc, 0), not reacts)
+                self.assertLessEqual(overall(reduced), overall(doc))
+        custom = sparse_doc({"U1": ""}, edges)
+        custom["units"][0]["design_simulation_method"] = (
+            f"Frobnicator on {CUSTOM_URL}")
+        sc = ctx(custom)
+        self.assertEqual(sc.unit_classes[0][:2], ("Frobnicator", None))
+        self.assertFalse(C._species_guarded(sc, 0))
+
+    def test_unit_families_and_needs_family(self):
+        """_unit_families: the set of declared units' families, None for
+        each unit of unknown family (valid_doc's one-inlet 'Mixer' label,
+        R4.14); _needs_family: True when a family of the set is in the
+        needing set, or when None is in it (R4.13), else False."""
+        self.assertEqual(C._unit_families(ctx(label_mixer_doc())), {"mixer"})
+        self.assertEqual(C._unit_families(ctx(valid_doc())), {None})
+        self.assertEqual(C._unit_families(ctx({})), set())
+        heat = C.HEAT_UTILITY_FAMILIES
+        self.assertTrue(C._needs_family({"flash", "mixer"}, heat))
+        self.assertTrue(C._needs_family({None, "mixer"}, heat))
+        self.assertFalse(C._needs_family({"mixer", "pump"}, heat))
+        self.assertFalse(C._needs_family(set(), heat))
+
+    def test_label_only_mixer_needs_two_inlets(self):
+        """R4.14: _port_contradiction -- a mixer family claim without an
+        exact class (class_name None) with < 2 non-empty-or-unknown-flow
+        inlets is contradicted ('1 non-empty inlet(s), a mixer claim
+        without an exact class needs at least 2'), with 2 it is not; the
+        exactly named core Mixer uses its static port table only (1 inlet
+        fine); unknown ports (None) contradict nothing. Through
+        _unit_class: unit_type 'Mixer' with ports (1, 1) -> (None, None,
+        0.0), (2, 1) -> (None, 'mixer', 0.5), None -> (None, 'mixer', 0.5);
+        'Mixer on <biosteam url>' with (1, 1) -> ('Mixer', 'mixer', 1.0).
+        On a document a second inlet of unknown flow counts, a
+        stated-empty one does not (_ScoringContext.nonempty_ports), and
+        _class_note names the contradicted label."""
+        self.assertEqual(C._port_contradiction(None, "mixer", False, (1, 1)),
+                         "1 non-empty inlet(s), a mixer claim without an "
+                         "exact class needs at least 2")
+        self.assertIsNone(C._port_contradiction(None, "mixer", False, (2, 1)))
+        self.assertIsNone(C._port_contradiction("Mixer", "mixer", True, (1, 1)))
+        self.assertIsNone(C._port_contradiction(None, "mixer", False, None))
+        self.assertIsNone(C._port_contradiction(None, "pump", False, (1, 1)))
+        label = {"id": "U1", "unit_type": "Mixer"}
+        self.assertEqual(C._unit_class(label, ports=(1, 1)), (None, None, 0.0))
+        self.assertEqual(C._unit_class(label, ports=(2, 1)),
+                         (None, "mixer", 0.5))
+        self.assertEqual(C._unit_class(label), (None, "mixer", 0.5))
+        self.assertEqual(C._unit_class(dict(label, **cls("Mixer")),
+                                       ports=(1, 1)), ("Mixer", "mixer", 1.0))
+        doc = label_mixer_doc()
+        self.assertEqual(ctx(doc).unit_classes[0], (None, "mixer", 0.5))
+        sp = doc["streams"][2]["stream_properties"]
+        for key in ("total_mass_flow", "total_molar_flow", "phases",
+                    "composition"):
+            del sp[key]
+        self.assertEqual(ctx(doc).unit_classes[0], (None, "mixer", 0.5))
+        sp.update(total_mass_flow=0.0, total_molar_flow=0.0)
+        self.assertEqual(ctx(doc).unit_classes[0], (None, None, 0.0))
+        note = C._class_note(ctx(doc), 0)
+        self.assertIn("unit_type family 'mixer' (1 non-empty inlet(s)", note)
+
+    def test_uop_04_keeps_unsourced_streams(self):
+        """CMP-UOP-04: a stream without a stated source_unit_id (missing,
+        not a string, empty) stays in the population and scores 0 (its
+        state is no unit outlet state), so deleting an internal stream's
+        source cannot drop a partly stated stream (sweep_doc's s1 raised
+        0.70 -> 0.72) and deleting a feed's or a product's source cannot
+        add a fully stated one or drop one."""
+        doc = sweep_doc()
+        base = run(C._score_uop_04, doc)[0]
+        for position in (0, 2, 10):  # feedA, s1, out1
+            sid = doc["streams"][position]["id"]
+            reduced = deleted(doc, ("streams", position, "source_unit_id"))
+            score, message, missing = run(C._score_uop_04, reduced)
+            with self.subTest(stream=sid):
+                self.assertLess(score, base)
+                self.assertIn("1 stream(s) without a stated source score 0",
+                              message)
+                self.assertIn(f"streams[{sid}].source_unit_id (not stated",
+                              "\n".join(missing))
 
 
 if __name__ == "__main__":

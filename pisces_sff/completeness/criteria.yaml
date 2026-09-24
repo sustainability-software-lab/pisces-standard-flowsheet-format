@@ -279,8 +279,7 @@ criteria:
       an activity-coefficient class such as DortmundActivityCoefficients; a
       fugacity-coefficient class; a Poynting-correction class, either
       spelling), since only those rebuild the package; "x" or a bare "NRTL"
-      count as absent. Units are family-weighted, so a column's package
-      counts more than a pump's.
+      count as absent. Each unit counts once.
 
   - id: CMP-THM-07
     category: thermo
@@ -301,7 +300,7 @@ criteria:
       every unit states a full, valid package (mixture, gamma, phi and PCF
       each naming a thermosteam model class, as for CMP-THM-06) and all of
       them are identical, which is single-thermo evidence implying one
-      chemical set; else 0. Family-weighted.
+      chemical set; else 0. Each unit counts once.
 
   # ---------------------------------------------------------------- topology
   - id: CMP-TOP-01
@@ -351,7 +350,7 @@ criteria:
       liquid outlets, a splitter with explicit split fractions) and the
       unit's balances close. A unit without an id, whose ports no stream can
       name, scores 0, and so do both sides of every unit id a stream
-      endpoint references but no unit declares. Family-weighted.
+      endpoint references but no unit declares. Each unit counts once.
 
   # ------------------------------------------------------------------- feeds
   - id: CMP-FEED-01
@@ -468,17 +467,26 @@ criteria:
       holds the unit's specification keys belongs to that family, else half
       credit; with no stated family, such an unambiguous key-set family
       earns 0.75. The key set never swaps a stated family, and an inferred
-      class stays a family: only family-level rules and weights apply to
-      it. A class or family claim contradicted by the unit's ports -- more
+      class stays a family: only family-level rules apply to it. A class
+      or family claim contradicted by the unit's ports -- more
       material-carrying (not stated-empty) inlets or outlets than the class
       can have (a static table of every core class's port counts from the
       biosteam source, most permissive over its history since 2022), or
       than its family's convention allows (a mixer has one outlet; a pump,
-      valve or utility exchanger one inlet and one outlet) -- counts as
+      valve or utility exchanger one inlet and one outlet), or a mixer
+      family claimed without an exact class (a 'Mixer' label) on fewer
+      than two inlets that are not stated empty (a one-inlet 'mixer' mixes
+      nothing and would hide a reactor or an exchanger) -- counts as
       unstated; a bare 'heat exchanger' with two inlets and outlets is a
-      process-process exchanger. A unit id that stream endpoints reference
-      but no unit declares scores 0. Units are weighted by family (reactors
-      and columns most, pumps and tanks least).
+      process-process exchanger. A unit whose family stays unknown carries
+      every family-dependent need (reactions, heat and power agents,
+      utility results, costing). A unit id that stream endpoints reference
+      but no unit declares scores 0. Every per-unit average in this
+      scorer is unweighted -- each unit counts once: a weight read from
+      unit_type or design_simulation_method would move when either is
+      deleted, raising criteria whose per-unit score does not depend on
+      them; major equipment keeps its emphasis through its richer
+      requirement sets.
 
   - id: CMP-UOP-02
     category: unit_ops
@@ -543,7 +551,7 @@ criteria:
       missing); when the data cannot tell, it applies. Units of unknown
       family, and unit ids that stream endpoints reference but no unit
       declares, score zero because nothing tells the importer what to
-      specify. Units are family-weighted.
+      specify. Each unit counts once.
 
   - id: CMP-UOP-03
     category: unit_ops
@@ -573,7 +581,7 @@ criteria:
       its parameters -- the exporter writes an empty object for it). Every
       other unit -- class inferred from its specification keys, family only,
       or unknown -- scores 0 because its parameter universe is unknown.
-      Units are family-weighted.
+      Each unit counts once.
 
   - id: CMP-UOP-04
     category: unit_ops
@@ -592,7 +600,8 @@ criteria:
       stream stating a zero total flow needs no composition). Consistency
       guard: a physical-only unit (mixer, exchanger, pump, valve, compressor,
       turbine, flash, column, evaporator, steam mixer, tank, or a splitter
-      not identified as a custom class) that declares no reactions cannot
+      -- or a unit of unknown family -- not identified as a custom class)
+      that declares no reactions cannot
       create or destroy species; when one appears or vanishes across it, or
       its species flows cannot be computed for every connected stream, its
       outlets' compositions do not count as stated. Mass-balance guard:
@@ -603,7 +612,10 @@ criteria:
       whose chemistry the class fixes (combustors, dryers, boilers,
       facilities, equilibrium reactors), whose classes may account mass
       implicitly (BioSTEAM's DrumDryer emits the combustion products of its
-      natural gas without drawing the oxygen from any inlet).
+      natural gas without drawing the oxygen from any inlet). A stream
+      whose source_unit_id is not stated (only the "None" sentinel affirms
+      the boundary) may be internal, so it stays in the population and
+      scores 0: its state is no unit's outlet state.
 
   - id: CMP-UOP-05
     category: unit_ops
@@ -655,7 +667,7 @@ criteria:
       facilities) except cost-only facilities (CIP, fire water, air
       distribution, wastewater cost lumps); a facility whose kind is unknown
       scores 0. These requirements are scored here, not in CMP-UOP-02, so
-      nothing is counted twice. Family-weighted.
+      nothing is counted twice. Each unit counts once.
 
   # --------------------------------------------------------------- reactions
   - id: CMP-RXN-01
@@ -672,17 +684,21 @@ criteria:
       without its reaction set. The population is defined by need alone: the
       units of a reactor family (continuous reactors, batch, aerated and
       gas-fed bioreactors, and units whose type names a neutralizer,
-      hydrotreater, gasifier, pyrolysis or hydrolysis step), each of which
+      hydrotreater, gasifier, pyrolysis or hydrolysis step) and every unit
+      whose family is unknown (no class, no keyword family, or a claim its
+      ports contradict: it could be a reactor, and only affirmative
+      evidence waives a need), each of which
       must declare at least one well-formed reaction: an equation or
       stoichiometry naming at least one consumed and one produced species
       ([{}] or an equation "x" counts as none). Declared reactions and
       species appearing in a unit's outlets no longer make a unit reactive
       (a population read from data let deleting that data shrink it);
-      species appearing across a physical-only unit is instead a
-      consistency guard on CMP-UOP-04 and on derivations. Families whose
+      species appearing across a physical-only unit (or one of unknown
+      family) is instead a consistency guard on CMP-UOP-04 and on
+      derivations. Families whose
       chemistry the class itself fixes (combustors, boilers,
       boiler-turbogenerators, facilities, Gibbs reactors, dryers) are not in
-      the population. Family-weighted.
+      the population. Each unit counts once.
 
   - id: CMP-RXN-02
     category: reactions
@@ -703,7 +719,7 @@ criteria:
       conversion attached to no parseable stoichiometry earns nothing -- else
       the mean of {well-formed, the reactant is one of its consumed species,
       a numeric conversion in [0, 1]}. Scored per
-      unit (family-weighted) over its reactions, for the reactive units of
+      unit (each counting once) over its reactions, for the reactive units of
       CMP-RXN-01 -- one without reactions scores 0 -- plus every other unit
       that declares reactions (a boiler's combustion set, ...). Deleting a
       field of a reaction never raises the score; deleting whole reactions
@@ -721,7 +737,7 @@ criteria:
       The same list of reactions yields different outlets as a
       ParallelReaction (every conversion based on the inlet) or a
       SeriesReaction (each based on the previous result). Scored per unit
-      over the CMP-RXN-02 population (family-weighted): with two
+      over the CMP-RXN-02 population: with two
       or more reactions, an index on every reaction is the minimal signal of
       their order (1, else 0); a single reaction has no order to state (1);
       a reactive unit without a well-formed reaction scores 0, since its
@@ -750,7 +766,7 @@ criteria:
       to 1e-3 relative, with every molar mass resolvable -- when both hold,
       as for an isomerisation, the basis is immaterial; the phase when the
       equation tags every species with a phase or every stream of the unit
-      is single-phase. Family-weighted.
+      is single-phase. Each unit counts once.
 
   # ----------------------------------------------------------------- costing
   - id: CMP-COST-01
@@ -770,7 +786,7 @@ criteria:
       makes (a 'Mixer' or 'Separator' unit_type, or a family inferred from
       specification keys, is no evidence a unit carries no cost) -- each
       needing a purchase_costs object holding at least one numeric cost of at
-      least zero ({"a": null} records nothing). Family-weighted.
+      least zero ({"a": null} records nothing). Each unit counts once.
 
   - id: CMP-COST-02
     category: costing
@@ -787,7 +803,7 @@ criteria:
       investment is built on installed equipment cost. Each cost item of a
       costed unit (every item named by its purchase costs, installed costs or
       correlations) needs its installed cost, a number of at least zero; a
-      costed unit with no items scores 0. Family-weighted.
+      costed unit with no items scores 0. Each unit counts once.
 
   - id: CMP-COST-03
     category: costing
@@ -806,7 +822,7 @@ criteria:
       schema's documented marker of a dimensionless result. Per costed unit:
       no numeric result (absent, empty, or only non-numeric values such as
       {"a": "b"}) 0, some numeric result without a unit 0.5, else 1.
-      Family-weighted.
+      Each unit counts once.
 
   - id: CMP-COST-04
     category: costing
@@ -827,7 +843,7 @@ criteria:
       design results; any other costed unit scores the mean credit over its
       cost items (every item named by its purchase costs, installed costs or
       correlations, so deleting one entry never drops an item), and 0 when it
-      has none. Family-weighted.
+      has none. Each unit counts once.
 
   - id: CMP-COST-05
     category: costing
@@ -864,7 +880,7 @@ criteria:
       states a count ('Number of reactors', ...) with a numeric value, or
       when a power-law correlation states a positive size_upper_bound and
       its basis has a numeric design result S (BioSTEAM then buys N =
-      ceil(S / size_upper_bound) pieces), else 0. Family-weighted.
+      ceil(S / size_upper_bound) pieces), else 0. Each unit counts once.
 
   - id: CMP-COST-07
     category: costing
@@ -884,7 +900,7 @@ criteria:
       correlation stating a lifetime; derived credit for a core BioSTEAM
       class identified at confidence 1 (its class-default lifetime applies,
       which the importer gets by instantiating the class); else 0. The
-      message counts both. Family-weighted.
+      message counts both. Each unit counts once.
 
   # --------------------------------------------------------------- utilities
   - id: CMP-UTIL-01
@@ -923,7 +939,8 @@ criteria:
       agents; likewise a missing "power utility" entry when a unit draws or
       delivers electricity (pumps, compressors, turbines, solids handling,
       boiler-turbogenerators) but no power utility is declared -- a declared
-      power utility does not stand in for steam.
+      power utility does not stand in for steam. A unit of unknown family
+      could be any of these, so it needs utilities of both kinds.
 
   - id: CMP-UTIL-02
     category: utilities
@@ -977,8 +994,8 @@ criteria:
       records a positive (heating) duty for still needs its limit. Half
       credit each for efficiency (in (0, 1]) and limit (a plausible
       temperature). Applicable when a unit exchanges heat with a utility
-      agent or a heat agent is declared; with that need and no heat agent
-      it scores 0.
+      agent (or is of unknown family, so may) or a heat agent is declared;
+      with that need and no heat agent it scores 0.
 
   - id: CMP-UTIL-04
     category: utilities
@@ -995,11 +1012,12 @@ criteria:
       show how utilities are allocated between units. Half credit per
       results object present; entries without a numeric value count as
       absent. A unit that always draws a utility (pump, utility heat
-      exchanger, compressor, distillation column, evaporator, flash) scores
+      exchanger, compressor, distillation column, evaporator, flash; or a
+      unit of unknown family, which may be one) scores
       0 when neither object holds a numeric entry, unless the data show it
       draws nothing: every connected stream states a zero flow (an idle
       unit), or a flash's specs state it adiabatic (Q = 0).
-      Family-weighted.
+      Each unit counts once.
 
   - id: CMP-UTIL-05
     category: utilities

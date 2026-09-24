@@ -342,16 +342,24 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         CMP-UOP-02 0.9921 -> 0.9950, CMP-COST-01/02 0.9462 -> 0.9670,
         CMP-COST-07 0.500 -> 0.511, overall up 0.0007); both units resolve
         to keyword families only (splitter, evaporator; confidence < 1) and
-        stay in the costed population. R4.8: no claim on the corn file is
-        contradicted by its ports (_port_notes empty for every unit: every
-        design_simulation_method class survives, and the four HXprocess
-        units' bare 'Heat exchanger' unit_type reads as hx_process, not as
-        a contradicted hx_utility). R4.10: every internal
+        stay in the costed population. R4.8: no class claim on the corn file
+        is contradicted by its ports (every design_simulation_method class
+        survives, and the four HXprocess units' bare 'Heat exchanger'
+        unit_type reads as hx_process, not as a contradicted hx_utility);
+        R4.14: the one port note is MX's unit_type label 'Mixer' -- an
+        exact core Mixer with a single non-empty inlet, which keeps its
+        class (the static port table), while the label alone would not be
+        a plausible mixer claim. R4.10: every internal
         stream's total_mass_flow x1.1 -> CMP-UOP-04 < 1 (was 1.000), the
         failing units' outlets listed as 'stated, but unbalanced'."""
         sc = C._ScoringContext(self.corn)
-        self.assertEqual([C._port_notes(sc, p) for p in range(len(sc.units))
-                          if C._port_notes(sc, p)], [])
+        self.assertEqual(
+            {sc.units[p]["id"]: C._port_notes(sc, p)
+             for p in range(len(sc.units)) if C._port_notes(sc, p)},
+            {"MX": ["unit_type family 'mixer' (1 non-empty inlet(s), a mixer "
+                    "claim without an exact class needs at least 2)"]})
+        self.assertEqual(sc.unit_classes[sc.unit_positions["MX"]],
+                         ("Mixer", "mixer", 1.0))
         relabelled = copy.deepcopy(self.corn)
         for unit in relabelled["units"]:
             if unit["id"] in ("C603", "Ev607"):
