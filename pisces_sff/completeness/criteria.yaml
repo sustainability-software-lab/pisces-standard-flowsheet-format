@@ -108,6 +108,16 @@
 # species' balance) to close within 1 %; species flows are compared on the
 # molar basis when every port states mol data, else on the mass basis when
 # every port states mass data (per-phase flows with mol or mass fractions).
+# A stream's total mass is its total_mass_flow, else the sum over its
+# phases of a stated mass flow or of a molar flow times the mean molar
+# mass of the phase's composition (every molar mass resolved: declared,
+# else from the formula), so a molar-basis stream table closes its mass
+# balances like its mass-basis twin. A species' flow counts as changed
+# across a unit (or the flowsheet) only when the change exceeds both 1 %
+# of the species' own flow and 0.1 % of the inlet total on the basis
+# compared (the flowsheet's boundary inlet total): a printed table
+# rounding each stream on its own (wt% to 2 decimals, integer kg/h) stays
+# below that, while material conversion exceeds both.
 # A stream endpoint that is not stated (a missing source_unit_id or
 # sink_unit_id key, null or blank) is dangling, never the boundary: such a
 # stream may be a missing port of any unit whose balance cannot rule it
@@ -654,7 +664,9 @@ criteria:
       class's code are implausible when species convert across them without a
       well-formed reaction -- a species appears or vanishes or, where the
       unit's total mass closes (else a missing port could explain it), any
-      species' flow changes by more than 1 %; a Junction or Scaler also
+      species' flow changes by more than 1 % of itself and 0.1 % of the
+      unit's inlet total (below that, a rounded table's noise); a Junction
+      or Scaler also
       when it records a duty or changes T or P, a Junction when its mass
       balance does not close. Classes whose own code converts species
       (verified in the biosteam and Bioindustrial-Park sources: DrumDryer
@@ -865,7 +877,8 @@ criteria:
       but no unit declares are 'unverified' too, and their flows follow the
       mass-balance guard below, so deleting a unit's id or a port's
       endpoint never lifts a guard. Mass-balance guard:
-      when every inlet and outlet of a unit states its mass flow and the
+      when every inlet and outlet of a unit states its mass flow (or a
+      molar amount whose molar masses resolve) and the
       totals disagree by more than 1 %, its outlets' flows do not count as
       stated (nothing tells which stated flow is wrong; a stated-zero flow
       then earns no composition exemption either) -- except for families
@@ -1003,12 +1016,15 @@ criteria:
       nothing); the pseudo-member ('unexplained conversion possible among
       <units>', scoring 0) is present when some of them declare no
       well-formed reaction and are not ruled out one by one (total mass
-      closing and every species' flow computable and balancing within 1
-      %), and the flowsheet-level evidence is absent: every feed's and
-      product's species flows computable, the overall mass balance closing
-      within 1 %, no stream without a stated endpoint, and every species
-      produced or consumed across the flowsheet taking part in a declared
-      well-formed reaction somewhere. Deleting data only removes evidence,
+      closing -- a molar-basis stream's mass taken from its molar amounts
+      and the molar masses -- and every species' flow computable and none
+      changing by more than 1 % of itself and 0.1 % of the unit's inlet
+      total), and the flowsheet-level evidence is absent: every feed's and
+      product's species flows and total mass computable, the overall mass
+      balance closing within 1 %, no stream without a stated endpoint, and
+      every species produced or consumed across the flowsheet (beyond 1 %
+      of itself and 0.1 % of the boundary inlet total) taking part in a
+      declared well-formed reaction somewhere. Deleting data only removes evidence,
       so the pseudo-member can only appear. Other claims cannot host
       chemistry: conversion across them makes the family unknown instead
       (see CMP-UOP-01).
@@ -1057,7 +1073,11 @@ criteria:
       that one reaction and the unit's own species-flow changes (outlets
       minus inlets, molar or mass basis, every port computable, no stream
       without a stated endpoint) are proportional to its coefficients
-      within 2 %. A reaction that does not conserve mass as written
+      within 2 % -- as written, or, with every participant's molar mass
+      known, read on the other basis (nu x MW against mass flows, nu / MW
+      against molar flows), a species outside the reaction changing by no
+      more than 1 % of itself or 0.1 % of the inlet total counting as
+      unchanged. A reaction that does not conserve mass as written
       ('Glucose -> 5 Ethanol') is not discarded: a faithful re-import would
       reproduce it, but it cannot be told apart from a transcription
       error, so the part earns 0.5 with the note "reaction does not
@@ -1135,10 +1155,13 @@ criteria:
       CMP-RXN-01 pseudo-member for hidden chemistry score 0, a reaction
       that is not well-formed scores 0, and one conserving mass on neither
       basis, see CMP-RXN-02, never has a derivable basis) earns only
-      derived credit, half for each part: the basis when sum(nu*MW) = 0 (a
-      molar reaction conserves mass) or sum(nu) = 0 (a mass-basis reaction)
-      holds to 1e-3 relative, with every molar mass resolvable -- when both
-      hold, as for an isomerisation, the basis is immaterial; the phase
+      derived credit, half for each part: the basis when the reaction's
+      closure (see CMP-RXN-02: |sum(nu*MW)| on a mol basis, |sum(nu)| on a
+      wt basis, relative to its reactant side, every molar mass
+      resolvable) holds within 1 % on exactly one basis -- that one, so a
+      3-significant-figure equation has its basis -- or holds on both and
+      within 1e-3 on one of them (on both, as for an isomerisation, the
+      basis is immaterial; on neither, it stays ambiguous); the phase
       when the equation tags every species with a phase or every stream of
       the unit is single-phase -- a phase stating neither a flow nor a
       composition leaves its stream's phases unknown -- and no stream

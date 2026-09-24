@@ -167,8 +167,20 @@ FRACTION_SUM_TOL = 1e-3
 # CLOSURE_RTOL of the throughput.
 CLOSURE_RTOL = 0.01
 
-# CMP-RXN-04: relative tolerance of the mass balance sum(nu*MW) (molar basis)
-# and of sum(nu) (mass basis) when deriving a reaction's basis.
+# R8.6: a species' flow changes across a unit (or the flowsheet) only when
+# the change exceeds BOTH CLOSURE_RTOL of the species' own flow (the larger
+# of in and out) AND SPECIES_THROUGHPUT_RTOL of the throughput -- the
+# unit's inlet total (the flowsheet's boundary inlet total) on the basis
+# compared (_species_changed). A printed stream table rounds each stream
+# on its own (wt% to 2 decimals, integer kg/h), so a minor species may
+# differ by more than 1 % of itself while the imbalance is ~1e-5 of the
+# throughput; material conversion (95 % of a feed's glucose) exceeds both.
+SPECIES_THROUGHPUT_RTOL = 1e-3
+
+# CMP-RXN-04 (R8.8): a reaction's basis is derivable when its R6.2 closure
+# holds within RXN_CLOSURE_RTOL on one basis and not on the other; when it
+# holds on both (an isomerisation, or nearly one), only a closure within
+# BASIS_RTOL on one of them decides it (_basis_derivable).
 BASIS_RTOL = 1e-3
 
 # R6.2: a reaction whose participants all have molar masses is well-formed
@@ -198,10 +210,6 @@ RXN_CONFIRM_RTOL = 0.02
 # Same absolute zero-flow threshold as the validator's ZERO_FLOW (STR-13);
 # duplicated to stay import-light, equality pinned by a Tier 1 test.
 ZERO_FLOW = 1e-12
-
-# Relative threshold (of a unit's total molar throughput) above which a species
-# that has no inlet (outlet) flow counts as appearing (disappearing): CMP-RXN-01.
-SPECIES_RTOL = 1e-6
 
 BOUNDARY = 'None'  # C-01 system-boundary sentinel for source/sink_unit_id
 
@@ -3967,13 +3975,97 @@ def _physical_unit(sc, position):
             and not sc.unit_reacts[position])
 
 
-def _stream_mass(stream):
+def _mean_molar_mass(composition, molar_masses):
+    """R8.5: the mean molar mass (g/mol) of a plausible composition
+    (_composition_ok) whose every component has a resolved molar mass in
+    `molar_masses` ({chemical id: g/mol}): sum(x_i * MW_i) over its mol
+    fractions, else 1 / sum(w_i / MW_i) over its mass fractions -- the
+    first kind every entry states validly, summing to 1 within
+    FRACTION_SUM_TOL; else None. Deleting a molar mass or a fraction can
+    only make it None."""
+    if not _composition_ok(composition):
+        return None
+    mws = [_as_dict(molar_masses).get(e['component_name'])
+           for e in composition]
+    if not all(mws):
+        return None
+    for key in ('mol_fraction', 'mass_fraction'):
+        fractions = [_valid_fraction(e.get(key)) for e in composition]
+        if (any(x is None for x in fractions)
+                or abs(sum(fractions) - 1.0) > FRACTION_SUM_TOL):
+            continue
+        if key == 'mol_fraction':
+            return sum(x * mw for x, mw in zip(fractions, mws))
+        inverse = sum(w / mw for w, mw in zip(fractions, mws))
+        return 1.0 / inverse if inverse > 0.0 else None
+    return None
+
+
+def _phase_mass(phase, sp, single, molar_masses):
+    """R8.5: mass flow of one phase of a stream (stream_properties `sp`):
+    its valid total_mass_flow -- for the only phase that may carry
+    material (`single`: _sole_phase), the stream's (_phase_flow) -- 0.0
+    when stated empty (_empty_phase), else its valid total_molar_flow
+    (likewise) x the mean molar mass of its composition
+    (_mean_molar_mass); else None."""
+    phase = _as_dict(phase)
+    mass = _phase_flow(phase, sp, single, 'total_mass_flow')
+    if mass is not None:
+        return mass
+    if _empty_phase(phase):
+        return 0.0
+    moles = _phase_flow(phase, sp, single, 'total_molar_flow')
+    if moles is None or moles <= ZERO_FLOW:
+        return moles
+    mw = _mean_molar_mass(phase.get('composition'), molar_masses)
+    return None if mw is None else moles * mw
+
+
+def _phase_total_mass(sp, molar_masses):
+    """R8.5: mass flow of a stream (stream_properties `sp`) stating no
+    valid total_mass_flow, from its phases: the sum of every phase's mass
+    (_phase_mass: a stated mass flow, else a molar flow x its
+    composition's mean molar mass, the only phase of a single-phase stream
+    taking the stream's totals); for the legacy flat composition of one
+    phase, the stream's total_molar_flow x its mean molar mass. None when
+    any phase's mass is not computable (a molar mass unresolved, a
+    fraction invalid, a flow missing, or several phases sharing one stream
+    total: their split is unknown)."""
+    phases = sp.get('phases')
+    if isinstance(phases, dict) and phases:
+        total = 0.0
+        for symbol, phase in phases.items():
+            mass = _phase_mass(phase, sp, _sole_phase(phases, symbol),
+                               molar_masses)
+            if mass is None:
+                return None
+            total += mass
+        return total
+    composition = sp.get('composition')
+    moles = _valid_flow(sp.get('total_molar_flow'))
+    if (moles is None or not isinstance(composition, list)
+            or len({e.get('phase') if isinstance(e.get('phase'), str)
+                    else None for e in _dicts(composition)}) != 1):
+        return None
+    mw = _mean_molar_mass(composition, molar_masses)
+    return None if mw is None else moles * mw
+
+
+def _stream_mass(stream, molar_masses=None):
     """Mass a stream carries: 0.0 when it states a zero total flow (mass or
-    molar: no mass), else its valid total_mass_flow, else None."""
+    molar: no mass), else its valid total_mass_flow, else (R8.5) the mass
+    its phases carry (_phase_total_mass: stated phase mass flows, or molar
+    flows x mean molar masses from the document's resolved `molar_masses`,
+    sc.molar_masses -- so a molar-basis stream table closes its total
+    mass balance like its mass-basis twin), else None. Deleting a molar
+    mass, a fraction or a flow only removes the fallback."""
     if _is_empty_stream(stream):
         return 0.0
-    return _valid_flow(_as_dict(stream.get('stream_properties'))
-                       .get('total_mass_flow'))
+    sp = _as_dict(_as_dict(stream).get('stream_properties'))
+    mass = _valid_flow(sp.get('total_mass_flow'))
+    if mass is None:
+        mass = _phase_total_mass(sp, molar_masses or {})
+    return mass
 
 
 def _mass_balance(sc, position):
@@ -3987,10 +4079,12 @@ def _mass_balance(sc, position):
     outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
     if not ins + outs:
         return False, False, 'no connected streams'
-    masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
+    masses = [_stream_mass(sc.streams[i], sc.molar_masses)
+              for i in ins + outs]
     if any(m is None for m in masses):
-        return (False, False,
-                'a connected stream states no valid total_mass_flow')
+        return (False, False, 'a connected stream states no valid '
+                'total_mass_flow (nor a phase amount with resolved molar '
+                'masses: R8.5)')
     m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
     if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
         return True, False, (f'mass balance does not close (in {m_in:.6g}, '
@@ -4009,12 +4103,13 @@ def _dangling_port(sc, position):
     port). A stream of unknown mass is never ruled out. Called on a unit
     whose mass balance is evaluable."""
     uid = sc.units[position].get('id')
-    masses = [[_stream_mass(sc.streams[i]) for i in index.get(uid, [])]
+    masses = [[_stream_mass(sc.streams[i], sc.molar_masses)
+               for i in index.get(uid, [])]
               for index in (sc.unit_inlets, sc.unit_outlets)]
     m_in, m_out = sum(masses[0]), sum(masses[1])
     for i in sc.dangling:
         stream = sc.streams[i]
-        mass = _stream_mass(stream)
+        mass = _stream_mass(stream, sc.molar_masses)
         if mass == 0.0:
             continue
         for key, side in (('sink_unit_id', 'inlet'), ('source_unit_id',
@@ -4053,7 +4148,7 @@ def _gap_port(sc, m_in, m_out):
     for i in sc.dangling:
         stream = sc.streams[i]
         if (_is_dangling(stream.get(key))
-                and _stream_mass(stream) != 0.0):
+                and _stream_mass(stream, sc.molar_masses) != 0.0):
             return (f'{sc.stream_labels[i]} ({key} not stated) may be a '
                     f'missing {side}')
     return ''
@@ -5991,7 +6086,8 @@ def _score_uop_04(sc):  # CMP-UOP-04
         if (not evaluable or closes or not ins or not outs
                 or _may_change_mass(sc, position)):
             continue
-        m_in, m_out = (sum(_stream_mass(sc.streams[i]) for i in side)
+        m_in, m_out = (sum(_stream_mass(sc.streams[i], sc.molar_masses)
+                           for i in side)
                        for side in (ins, outs))
         if not _gap_port(sc, m_in, m_out):
             for i in outs:
@@ -6008,7 +6104,8 @@ def _score_uop_04(sc):  # CMP-UOP-04
         for i in outs:
             suspect.setdefault(i, (label, f'{_NOT_COMPUTABLE}: the unit is '
                                           f'referenced but not declared'))
-        masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
+        masses = [_stream_mass(sc.streams[i], sc.molar_masses)
+                  for i in ins + outs]
         if ins and outs and all(m is not None for m in masses):
             m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
             if (abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out)
@@ -6358,12 +6455,28 @@ def _score_uop_06(sc):  # CMP-UOP-06
 
 #%% Criteria -- reactions
 
+def _species_changed(flow_in, flow_out, throughput):
+    """R8.6: True when a species' flow changes from `flow_in` to
+    `flow_out` across a unit (or the flowsheet) by more than BOTH
+    CLOSURE_RTOL of its own flow (the larger of the two) AND
+    SPECIES_THROUGHPUT_RTOL of `throughput` (the inlet total on the basis
+    compared), and more than ZERO_FLOW. A printed table's independent
+    rounding of each stream (a trace species at wt% to 2 decimals) stays
+    below the throughput share; material conversion exceeds both."""
+    return abs(flow_out - flow_in) > max(
+        ZERO_FLOW, CLOSURE_RTOL * max(flow_in, flow_out),
+        SPECIES_THROUGHPUT_RTOL * throughput)
+
+
 def _species_change(sc, unit_id):
     """Species that appear in (or vanish from) a unit's outlets relative to
-    its inlets, as evidence strings ('CO2 appears'); [] when the unit lacks
-    inlets or outlets or nothing changes; None when the connected streams'
-    species flows are not computable on one basis -- molar, else mass
-    (_side_species, R5.3) -- so a change cannot be ruled out."""
+    its inlets, as evidence strings ('CO2 appears'): a species with no
+    inlet (outlet) flow whose outlet (inlet) flow is a change
+    (_species_changed, R8.6: beyond SPECIES_THROUGHPUT_RTOL of the unit's
+    inlet total); [] when the unit lacks inlets or outlets or nothing
+    changes; None when the connected streams' species flows are not
+    computable on one basis -- molar, else mass (_side_species, R5.3) --
+    so a change cannot be ruled out."""
     if not isinstance(unit_id, str):
         return []
     ins, outs = sc.unit_inlets.get(unit_id, []), sc.unit_outlets.get(unit_id, [])
@@ -6373,12 +6486,13 @@ def _species_change(sc, unit_id):
     if found is None:
         return None
     _basis, flows_in, flows_out = found
-    total = max(sum(flows_in.values()), sum(flows_out.values()))
-    tol = max(ZERO_FLOW, SPECIES_RTOL * total)
+    throughput = sum(flows_in.values())
     appear = [n for n, v in flows_out.items()
-              if v > tol and flows_in.get(n, 0.0) <= ZERO_FLOW]
+              if flows_in.get(n, 0.0) <= ZERO_FLOW
+              and _species_changed(0.0, v, throughput)]
     vanish = [n for n, v in flows_in.items()
-              if v > tol and flows_out.get(n, 0.0) <= ZERO_FLOW]
+              if flows_out.get(n, 0.0) <= ZERO_FLOW
+              and _species_changed(v, 0.0, throughput)]
     return ([f'{n} appears' for n in sorted(appear)]
             + [f'{n} vanishes' for n in sorted(vanish)])
 
@@ -6386,8 +6500,9 @@ def _species_change(sc, unit_id):
 def _species_conversion(sc, unit_id):
     """R6.1: ([produced], [consumed]) species across unit `unit_id` -- those
     whose total flow out exceeds / falls short of the flow in by more than
-    CLOSURE_RTOL of the larger of the two and more than SPECIES_RTOL of the
-    throughput, on one basis (_side_species: molar, else mass, R5.3); a
+    CLOSURE_RTOL of the larger of the two and more than
+    SPECIES_THROUGHPUT_RTOL of the unit's inlet total (_species_changed,
+    R8.6), on one basis (_side_species: molar, else mass, R5.3); a
     superset of _species_change's appearing / vanishing species. ([], [])
     when the unit lacks inlets or outlets or every species balances; None
     when the connected streams' species flows are not computable."""
@@ -6399,12 +6514,11 @@ def _species_conversion(sc, unit_id):
     if found is None:
         return None
     _basis, flows_in, flows_out = found
-    total = max(sum(flows_in.values()), sum(flows_out.values()))
-    floor = max(ZERO_FLOW, SPECIES_RTOL * total)
+    throughput = sum(flows_in.values())
     produced, consumed = [], []
     for name in sorted(set(flows_in) | set(flows_out)):
         a, b = flows_in.get(name, 0.0), flows_out.get(name, 0.0)
-        if abs(b - a) > max(floor, CLOSURE_RTOL * max(a, b)):
+        if _species_changed(a, b, throughput):
             (produced if b > a else consumed).append(name)
     return produced, consumed
 
@@ -6414,8 +6528,10 @@ def _no_conversion(sc, position):
     affirmatively that nothing converts across it -- a hosting unit ruled
     out per unit (_ruled_out): its total mass closes (_mass_closure, no
     dangling stream possibly a missing port) and every species' flow is
-    computable and balances within CLOSURE_RTOL (_species_conversion finds
-    none). Deleting any of that evidence can only make it False."""
+    computable and none changes (_species_conversion finds none: R8.6,
+    beyond CLOSURE_RTOL of its own flow and SPECIES_THROUGHPUT_RTOL of the
+    unit's inlet total). Deleting any of that evidence can only make it
+    False."""
     if not _mass_closure(sc, position)[0]:
         return False
     return _species_conversion(sc, sc.units[position].get('id')) == ([], [])
@@ -6520,9 +6636,11 @@ def _flowsheet_explained(sc):
     non-empty product, every boundary stream (feeds, products, and
     streams bounded at both ends, which cancel out) has species flows
     computable on one basis (molar, else mass: _basis_flows), every feed
-    and product a known total mass (_stream_mass) with the overall mass
-    balance closing within CLOSURE_RTOL, and every species produced or
-    consumed across the flowsheet beyond CLOSURE_RTOL (judged as
+    and product a known total mass (_stream_mass, R8.5: a molar-basis
+    stream's too) with the overall mass balance closing within
+    CLOSURE_RTOL, and every species produced or consumed across the
+    flowsheet (_species_changed, R8.6: beyond CLOSURE_RTOL of its own flow
+    and SPECIES_THROUGHPUT_RTOL of the boundary inlet total, as
     _species_conversion judges one unit) takes part in a declared
     well-formed reaction on some unit (sc.well_formed). Deleting data only
     removes evidence, so it can only turn False."""
@@ -6540,9 +6658,12 @@ def _flowsheet_evidence(sc):
     if not all(any(not _is_empty_stream(sc.streams[i]) for i in side)
                for side in (ins, outs)):
         return False, 'no non-empty feed and product stream'
-    masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
+    masses = [_stream_mass(sc.streams[i], sc.molar_masses)
+              for i in ins + outs]
     if any(m is None for m in masses):
-        return False, 'a feed or product states no valid total_mass_flow'
+        return False, ('a feed or product states no valid total_mass_flow '
+                       '(nor a phase amount with resolved molar masses: '
+                       'R8.5)')
     m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
     if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
         return False, (f'the overall mass balance does not close (in '
@@ -6560,8 +6681,7 @@ def _flowsheet_evidence(sc):
                 acc[name] = acc.get(name, 0.0) + value
         sides.append(acc)
     flows_in, flows_out = sides
-    total = max(sum(flows_in.values()), sum(flows_out.values()))
-    floor = max(ZERO_FLOW, SPECIES_RTOL * total)
+    throughput = sum(flows_in.values())  # R8.6: the boundary inlet total
     declared = set()
     for _i, _j, reaction in sc.reactions:
         if sc.well_formed(reaction):
@@ -6570,8 +6690,7 @@ def _flowsheet_evidence(sc):
     unexplained = []
     for name in sorted(set(flows_in) | set(flows_out)):
         a, b = flows_in.get(name, 0.0), flows_out.get(name, 0.0)
-        if (abs(b - a) > max(floor, CLOSURE_RTOL * max(a, b))
-                and name not in declared):
+        if _species_changed(a, b, throughput) and name not in declared:
             unexplained.append(f"{name} {'produced' if b > a else 'consumed'}")
     if unexplained:
         return False, (f"{', '.join(unexplained[:3])} across the flowsheet "
@@ -6710,11 +6829,15 @@ def _proportional_change(change, coeffs):
 def _reaction_confirmed(sc, position, reaction):
     """R7.4: True when unit `position` carries exactly this one reaction
     object and its own streams' species-flow changes (outlets minus
-    inlets) are proportional to the reaction's coefficients as written
+    inlets) are proportional to the reaction's coefficients
     (_proportional_change, over its _coefficient_sources) on a basis on
-    which every port's species flows are computable (_species_flows:
-    molar for a mol-basis reaction, mass for a wt-basis one) -- a faithful
-    export of a model whose reaction does not conserve mass. No stream may
+    which every port's species flows are computable (_species_flows) --
+    as written (molar flows for a mol-basis reaction, mass flows for a
+    wt-basis one) or, R8.7, converted with the resolved molar masses
+    (_basis_coefficients: nu x MW on mass flows, nu / MW on molar ones);
+    a species outside the reaction changing within the R8.6 tolerance
+    (_species_changed) counts as unchanged -- a faithful export of a model
+    whose reaction does not conserve mass. No stream may
     lack a stated endpoint (R5.8: it may be a missing port, and such a
     unit's mass closure, which the reaction breaks, cannot rule that out).
     Deleting stream data or an endpoint only removes the confirmation."""
@@ -6732,14 +6855,44 @@ def _reaction_confirmed(sc, position, reaction):
         flows = [_species_flows(sc.streams[i], basis) for i in ins + outs]
         if any(f is None for f in flows):
             continue
-        change = {}
+        flows_in, flows_out = {}, {}
         for k, species in enumerate(flows):
-            sign = -1.0 if k < len(ins) else 1.0
+            side = flows_in if k < len(ins) else flows_out
             for name, value in species.items():
-                change[name] = change.get(name, 0.0) + sign * value
-        if any(_proportional_change(change, coeffs) for coeffs in sources):
-            return True
+                side[name] = side.get(name, 0.0) + value
+        throughput = sum(flows_in.values())
+        for coeffs in sources:
+            for scaled in _basis_coefficients(coeffs, basis,
+                                              sc.molar_masses):
+                # R8.6: a species outside the reaction whose flow does not
+                # change beyond the species tolerance (a rounded table's
+                # trace) is no change.
+                change = {name: flows_out.get(name, 0.0)
+                          - flows_in.get(name, 0.0)
+                          for name in set(flows_in) | set(flows_out)
+                          if scaled.get(name) or _species_changed(
+                              flows_in.get(name, 0.0),
+                              flows_out.get(name, 0.0), throughput)}
+                if _proportional_change(change, scaled):
+                    return True
     return False
+
+
+def _basis_coefficients(coeffs, basis, molar_masses):
+    """R7.4 / R8.7: the coefficient sets a reaction's species-flow changes
+    on `basis` ('molar' / 'mass' species flows) may be proportional to:
+    its coefficients as written (a mol-basis reaction on molar flows, a
+    wt-basis one on mass flows) and, when every participant's molar mass
+    resolves (`molar_masses`, sc.molar_masses), their converse -- nu_i x
+    MW_i on mass flows (a mol-basis reaction), nu_i / MW_i on molar flows
+    (a wt-basis one). Deleting a molar mass only drops the converse."""
+    sets = [coeffs]
+    mws = {name: _as_dict(molar_masses).get(name) for name in coeffs}
+    if coeffs and all(mws.values()):
+        sets.append({name: (nu * mws[name] if basis == 'mass'
+                            else nu / mws[name])
+                     for name, nu in coeffs.items()})
+    return sets
 
 
 def _may_change_mass(sc, position):
@@ -6979,17 +7132,30 @@ def _closure_error(sc, reaction):
         if not coeffs:
             errors.append(0.0)
             continue
-        masses = [sc.vctx.molar_mass(cid) for cid in coeffs]
-        if any(m is None for m in masses):
-            continue
-        nus = list(coeffs.values())
-        mass_in = sum(-nu * m for nu, m in zip(nus, masses) if nu < 0)
-        coeff_in = sum(-nu for nu in nus if nu < 0)
-        if mass_in <= 0.0 or coeff_in <= 0.0:
-            continue
-        errors.append(min(abs(sum(nu * m for nu, m in zip(nus, masses)))
-                          / mass_in, abs(sum(nus)) / coeff_in))
+        found = _basis_errors(sc, coeffs)
+        if found is not None:
+            errors.append(min(found))
     return min(errors) if errors else None
+
+
+def _basis_errors(sc, coeffs):
+    """R6.2 / R8.8: (mol-basis, wt-basis) relative mass imbalance of one
+    set of resolved coefficients `coeffs` ({chemical id: signed nu}):
+    |sum(nu * MW)| / sum over consumed species of |nu| * MW, and
+    |sum(nu)| / sum over consumed species of |nu|, with every molar mass
+    resolved as the validator resolves it (declared, else from the
+    formula); None when a molar mass is missing or nothing is
+    consumed."""
+    masses = [sc.vctx.molar_mass(cid) for cid in coeffs]
+    if not coeffs or any(m is None for m in masses):
+        return None
+    nus = list(coeffs.values())
+    mass_in = sum(-nu * m for nu, m in zip(nus, masses) if nu < 0)
+    coeff_in = sum(-nu for nu in nus if nu < 0)
+    if mass_in <= 0.0 or coeff_in <= 0.0:
+        return None
+    return (abs(sum(nu * m for nu, m in zip(nus, masses))) / mass_in,
+            abs(sum(nus)) / coeff_in)
 
 
 def _conserves_mass(sc, reaction):
@@ -7024,24 +7190,25 @@ def _has_phase_tags(equation):
 
 
 def _basis_derivable(sc, reaction):
-    """True when the reaction's basis follows from its coefficients: one of
-    sum(nu*MW) ~ 0 (molar basis conserves mass) and sum(nu) ~ 0 (mass basis)
-    holds, to BASIS_RTOL relative, with every molar mass resolvable
-    (declared or from the formula, as the validator resolves it); when both
-    hold (an isomerisation) the basis is immaterial (R2.10)."""
+    """True when the reaction's basis follows from its coefficients (its
+    stoichiometry, else its equation: _reaction_coefficients), every molar
+    mass resolvable (declared or from the formula, as the validator
+    resolves it). R8.8: its R6.2 closure (_basis_errors: the mol-basis
+    |sum(nu*MW)| and the wt-basis |sum(nu)|, relative to the reactant
+    side) holds within RXN_CLOSURE_RTOL on exactly one basis -- that one
+    (a 3-significant-figure equation, ~0.3 % off, has its basis); when it
+    holds on both (an isomerisation, or nearly one), a closure within
+    BASIS_RTOL on either decides it -- on both, the basis is immaterial
+    (R2.10); on one, that one -- else it is ambiguous; a reaction
+    closing on neither (R7.4) has no derivable basis."""
     coeffs = _reaction_coefficients(sc, reaction)
-    if not coeffs:
+    errors = _basis_errors(sc, coeffs) if coeffs else None
+    if errors is None:
         return False
-    masses = [sc.vctx.molar_mass(cid) for cid in coeffs]
-    if any(m is None for m in masses):
-        return False
-    nus = list(coeffs.values())
-    terms = [nu * m for nu, m in zip(nus, masses)]
-    molar_basis = abs(sum(terms)) <= BASIS_RTOL * sum(abs(t) for t in terms)
-    mass_basis = abs(sum(nus)) <= BASIS_RTOL * sum(abs(nu) for nu in nus)
-    # Both hold for an isomerisation (A -> B of equal molar mass): the basis
-    # is then immaterial (R2.10), so it is derivable as well.
-    return molar_basis or mass_basis
+    holds = [error <= RXN_CLOSURE_RTOL for error in errors]
+    if all(holds):
+        return any(error <= BASIS_RTOL for error in errors)
+    return any(holds)
 
 
 def _single_phase_ports(sc, position):
@@ -7064,7 +7231,8 @@ def _reaction_basis_phase(sc, position, ri, reaction):
     phase}, each DERIVED_CREDIT when derivable (neither is representable); 0
     for a reaction that is not well-formed (R2.0). R7.4: one that does not
     conserve mass as written is scored too -- its basis is never derivable
-    (_basis_derivable's BASIS_RTOL is tighter than RXN_CLOSURE_RTOL)."""
+    (_basis_derivable needs its closure within RXN_CLOSURE_RTOL on one
+    basis, R8.8)."""
     where = f'{sc.unit_labels[position]}.reactions[{ri}]'
     note = _malformed_note(sc, reaction)
     if note:

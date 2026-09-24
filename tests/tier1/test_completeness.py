@@ -3223,10 +3223,14 @@ class TestReactionCriteria(unittest.TestCase):
 
     def test_reaction_basis_phase(self):
         """_reaction_basis_phase: basis and phase both derivable ->
-        DERIVED_CREDIT with two '(derivable...)' locators; basis not
-        derivable (mass closes within RXN_CLOSURE_RTOL, R6.2, but not
-        within BASIS_RTOL: 'Glucose -> 2 Ethanol + 2.02 CO2', 0.5 % off),
-        phase derivable -> DERIVED_CREDIT / 2; a reaction conserving mass on
+        DERIVED_CREDIT with two '(derivable...)' locators; R8.8: the
+        basis is derivable when the closure holds within RXN_CLOSURE_RTOL
+        on one basis only ('Glucose -> 2 Ethanol + 2.02 CO2', 0.5 % off on
+        the mol basis, far off on the wt basis -> DERIVED_CREDIT, was
+        DERIVED_CREDIT / 2 under BASIS_RTOL); holding on both within 1 %
+        but on neither within BASIS_RTOL ('A -> 1.005 B', MW 10 and 9.9)
+        it is ambiguous -> DERIVED_CREDIT / 2 with the phase derivable;
+        a reaction conserving mass on
         neither basis ('Glucose -> 3 Ethanol', 23 % off) is no longer
         discarded (R7.4, was 0 under R6.2): its basis is never derivable,
         its phase is -> DERIVED_CREDIT / 2; one naming no species -> 0."""
@@ -3237,6 +3241,12 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertIn("(derivable from the mass balance)", missing[0])
         score, _m = C._reaction_basis_phase(
             sc, 0, 0, {"equation": "Glucose -> 2 Ethanol + 2.02 CO2"})
+        self.assertEqual(score, C.DERIVED_CREDIT)
+        near = rxn_doc(None)
+        near["chemicals"] += [{"id": "A", "molar_mass": 10.0},
+                              {"id": "B", "molar_mass": 9.9}]
+        score, _m = C._reaction_basis_phase(
+            ctx(near), 0, 0, {"equation": "A -> 1.005 B"})
         self.assertEqual(score, C.DERIVED_CREDIT / 2)
         score, missing = C._reaction_basis_phase(
             sc, 0, 0, {"equation": "Glucose -> 3 Ethanol"})
@@ -4609,7 +4619,9 @@ class TestValidityGating(unittest.TestCase):
     def test_closure_and_physical_unit(self):
         """_closure (R2.2): a balanced one-unit doc closes; outlets carrying
         10x the inlet mass -> (False, 'mass balance does not close ...'); a
-        stream without total_mass_flow -> False; a physical unit
+        stream without total_mass_flow -> still closes (R8.5: its molar
+        amount x the molar mass), False once the molar mass and formula are
+        deleted too; a physical unit
         (_physical_unit: PHYSICAL_FAMILIES, no well-formed reaction) whose
         species change although the mass closes -> False; a reactor with the
         same streams closes (no per-species test). Results are cached in
@@ -4625,6 +4637,9 @@ class TestValidityGating(unittest.TestCase):
         self.assertIn("mass balance does not close", why)
         doc = one_unit_doc(spec_unit("Pump"))
         del doc["streams"][1]["stream_properties"]["total_mass_flow"]
+        # R8.5: its molar amount x Ethanol's molar mass still gives its mass
+        self.assertTrue(C._closure(ctx(doc), 0)[0])
+        del doc["chemicals"][0]["molar_mass"], doc["chemicals"][0]["formula"]
         self.assertFalse(C._closure(ctx(doc), 0)[0])
         swapped = {"l": {"total_molar_flow": 1.0, "composition": [
             {"component_name": "Water", "mol_fraction": 1.0}]}}
@@ -4906,11 +4921,12 @@ def facility_doc():
 def splitter_doc(class_name="Splitter"):
     """feed (Water 90 + Glucose 10 kmol/h) -> S1, a core splitter-family
     class `class_name` (default the pure Splitter) with an explicit split,
-    -> outA + outB; outA also carries 0.01 kmol/h of CO2 that no inlet has,
-    so CO2 appears across a physical-only unit without reactions (R2.4
-    consistency guard; R5.1: it also contradicts a PURE splitter claim).
-    Mass and species balances still close within 1 %, so only the
-    appearance evidence trips the guard."""
+    -> outA + outB; outA also carries 0.2 kmol/h of CO2 that no inlet has
+    (0.2 % of the 100 kmol/h inlet total, beyond R8.6's
+    SPECIES_THROUGHPUT_RTOL), so CO2 appears across a physical-only unit
+    without reactions (R2.4 consistency guard; R5.1: it also contradicts a
+    PURE splitter claim). Mass and species balances still close within
+    1 %, so only the appearance evidence trips the guard."""
     mw = {"Water": 18.015, "Glucose": 180.156, "CO2": 44.01}
     def sp(flows):
         return {"temperature": 300.0, "pressure": 101325.0,
@@ -4919,7 +4935,7 @@ def splitter_doc(class_name="Splitter"):
                 "phases": _phase("l", flows)}
     edges = (("feed", "None", "S1", {"Water": 90.0, "Glucose": 10.0}),
              ("outA", "S1", "None", {"Water": 45.0, "Glucose": 5.0,
-                                     "CO2": 0.01}),
+                                     "CO2": 0.2}),
              ("outB", "S1", "None", {"Water": 45.0, "Glucose": 5.0}))
     streams = [{"id": sid, "source_unit_id": src, "sink_unit_id": snk,
                 "stream_properties": sp(flows), "price": 0.1}
@@ -6782,7 +6798,9 @@ class TestRevision4PartB(unittest.TestCase):
         """_mass_balance on one_unit_doc: balanced -> (True, True, ''); the
         product's mass x1.1 -> (True, False, 'mass balance does not close
         (in 46.07, out 50.677)'); a stream without total_mass_flow ->
-        (False, False, ...); no streams -> (False, False, 'no connected
+        balanced again (R8.5: its molar amount x the molar mass), and
+        (False, False, ...) once Ethanol's molar mass and formula are
+        deleted too; no streams -> (False, False, 'no connected
         streams')."""
         doc = one_unit_doc(spec_unit("Pump"))
         self.assertEqual(C._mass_balance(ctx(doc), 0), (True, True, ""))
@@ -6790,6 +6808,9 @@ class TestRevision4PartB(unittest.TestCase):
         self.assertEqual(C._mass_balance(ctx(doc), 0), (
             True, False, "mass balance does not close (in 46.07, out 50.677)"))
         del doc["streams"][1]["stream_properties"]["total_mass_flow"]
+        # R8.5: 1 kmol/h x 46.07 g/mol from the phase, so it closes again
+        self.assertEqual(C._mass_balance(ctx(doc), 0), (True, True, ""))
+        del doc["chemicals"][0]["molar_mass"], doc["chemicals"][0]["formula"]
         self.assertEqual(C._mass_balance(ctx(doc), 0)[:2], (False, False))
         doc["streams"] = []
         self.assertEqual(C._mass_balance(ctx(doc), 0),
@@ -8526,7 +8547,8 @@ class TestRevision6(unittest.TestCase):
         missing unit id -> ([], []); a port without phases or composition
         -> None. _no_conversion: P1 -> True (mass closes, every species
         balances), R1 -> False; deleting s1's total_mass_flow (P1's outlet)
-        -> False (the evidence is gone)."""
+        keeps it (R8.5: s1's phase amounts and the molar masses give its
+        mass), deleting its phases too -> False (the evidence is gone)."""
         sc = ctx(r5_doc())
         self.assertEqual(C._species_conversion(sc, "R1"),
                          (["CO2", "Ethanol"], ["Glucose"]))
@@ -8541,6 +8563,8 @@ class TestRevision6(unittest.TestCase):
         self.assertIsNone(C._species_conversion(ctx(doc), "P1"))
         doc = r5_doc()
         del doc["streams"][1]["stream_properties"]["total_mass_flow"]
+        self.assertTrue(C._no_conversion(ctx(doc), 0))
+        del doc["streams"][1]["stream_properties"]["phases"]
         self.assertFalse(C._no_conversion(ctx(doc), 0))
 
     def test_physics_contradictions_r6_kinds(self):
@@ -9533,7 +9557,9 @@ class TestRevision7(unittest.TestCase):
         ('streams[s1] states no endpoint'); R1's reaction is deleted ('CO2
         produced, Ethanol produced, Glucose consumed across the flowsheet
         without a declared well-formed reaction'); a product loses its
-        mass flow ('states no valid total_mass_flow'); or feedB's mass
+        mass flow and every chemical its molar mass and formula ('states no
+        valid total_mass_flow' -- without the molar masses deleted, R8.5
+        derives its mass from its molar amount); or feedB's mass
         flow is doubled ('the overall mass balance does not close')."""
         sc = ctx(sweep_doc())
         self.assertEqual(C._flowsheet_explained(sc), (True, ""))
@@ -9549,8 +9575,16 @@ class TestRevision7(unittest.TestCase):
             (("units", 3, "reactions"),
              "CO2 produced, Ethanol produced, Glucose consumed across the "
              "flowsheet without a declared well-formed reaction"),
-            (("streams", 8, "stream_properties", "total_mass_flow"),
-             "a feed or product states no valid total_mass_flow"))
+            )
+        cut = deleted(doc, ("streams", 8, "stream_properties",
+                            "total_mass_flow"))
+        self.assertEqual(C._flowsheet_explained(ctx(cut)), (True, ""))
+        for chem in cut["chemicals"]:
+            del chem["molar_mass"], chem["formula"]
+        explained, reason = C._flowsheet_explained(ctx(cut))
+        self.assertFalse(explained)
+        self.assertIn("a feed or product states no valid total_mass_flow",
+                      reason)
         for path, why in cases:
             explained, reason = C._flowsheet_explained(
                 ctx(deleted(doc, path)))
@@ -9792,8 +9826,9 @@ def r7b_two_phase_doc(basis="volume"):
 
 def _r7b_molar(sid, source, sink, flows):
     """A liquid stream of {component: kmol/h} `flows` at 305.15 K and 1
-    atm stating the molar basis only (total_molar_flow, mol_fraction): no
-    total mass balance is evaluable (R4.10)."""
+    atm stating the molar basis only (total_molar_flow, mol_fraction): its
+    total mass follows only from the molar amounts and the document's
+    molar masses (R8.5, _stream_mass)."""
     n = sum(flows.values())
     return {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
             "stream_properties": {
@@ -10617,8 +10652,11 @@ class TestRevision7b(unittest.TestCase):
 
     def test_nonconserving_sweeps(self):
         """Strict deletion sweeps: over r7b_rxn_doc (the confirmed
-        non-conserving reaction, molar data only, so no total mass balance
-        is evaluable) nothing raises the overall score or any criterion --
+        non-conserving reaction, molar data only: R8.5 takes its total
+        masses from the molar amounts and molar masses, so its balance
+        evaluates and fails as the reaction makes it, 3603 in and 4055 out,
+        and the R4.10 guard spares it) nothing raises the overall score or
+        any criterion --
         deleting stream data or an endpoint only removes the confirmation
         (1 -> 0.5), deleting the equation makes the reaction malformed
         (0). Nor over r7b_mass_rxn_doc, whose mass totals do not close
@@ -11469,6 +11507,585 @@ class TestRevision8A(unittest.TestCase):
                     doc, skip=frozenset(), exclude=reaction_list)
             self.assertGreater(n, 100)
             self.assertEqual(raised, [], label)
+
+
+# ------------------------------------------------ Revision 8, group B
+
+R8_HDA_MW = {"Toluene": 92.141, "H2": 2.016, "Benzene": 78.114,
+             "CH4": 16.043}
+# Units of every quantity the R8 group B documents state.
+R8B_UNITS = ("K", "Pa", "kg/hr", "kmol/hr", "hr", "USD/kg")
+
+
+def _r8_basis_stream(sid, source, sink, T, P, kmol, mw, phase="l",
+                     basis="mass", price=None):
+    """A stream of {component: kmol/h} `kmol` in one `phase` at T K and P
+    Pa, stated on `basis`: 'mass' (kg/h totals and mass fractions),
+    'molar' (kmol/h totals and mol fractions, no total_mass_flow
+    anywhere) or 'both' (the molar shape plus the stream's
+    total_mass_flow)."""
+    mass = {n: f * mw[n] for n, f in kmol.items()}
+    sp = {"temperature": T, "pressure": P}
+    if basis == "mass":
+        total = sum(mass.values())
+        sp["total_mass_flow"] = total
+        state = {"total_mass_flow": total, "composition": [
+            {"component_name": n, "mass_fraction": f / total}
+            for n, f in mass.items()]}
+    else:
+        total = sum(kmol.values())
+        sp["total_molar_flow"] = total
+        state = {"total_molar_flow": total, "composition": [
+            {"component_name": n, "mol_fraction": f / total}
+            for n, f in kmol.items()]}
+        if basis == "both":
+            sp["total_mass_flow"] = sum(mass.values())
+    sp["phases"] = {phase: state}
+    stream_ = {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+               "stream_properties": sp}
+    if price is not None:
+        stream_["price"] = price
+    return stream_
+
+
+def _r8_qug(doc):
+    """Declare kg/hr and kmol/hr flow aliases, K, Pa, hr and USD/kg on
+    `doc` (both bases, so twins differ in their streams only)."""
+    doc["quantity_units_global"] = {
+        "temperature": {"aliases": ["temperature", "T"],
+                        "quantity_units": "K"},
+        "pressure": {"aliases": ["pressure", "P"], "quantity_units": "Pa"},
+        "mass_flow": {"aliases": ["total_mass_flow"],
+                      "quantity_units": "kg/hr"},
+        "molar_flow": {"aliases": ["total_molar_flow"],
+                       "quantity_units": "kmol/hr"},
+        "time": {"aliases": ["tau"], "quantity_units": "hr"},
+        "price": {"aliases": ["price"], "quantity_units": "USD/kg"}}
+    return doc
+
+
+def r8_hda_doc(basis="mass"):
+    """Probe SP-1-2 (hda.py): an honest toluene hydrodealkylation
+    flowsheet -- toluene and hydrogen feeds and a toluene recycle -> M1
+    'Mixer' -> H1 'Fired heater' -> R1 'Hydrodealkylation reactor'
+    ('Toluene + H2 -> Benzene + CH4', X = 0.75) -> F1 'Flash drum' (vapor
+    product; liquid) -> T1 'Crude benzene storage tank' -> D1 'Benzene
+    column' (benzene product; the recycle) -- every balance closing, its
+    stream table on `basis` (_r8_basis_stream) with the molar masses
+    declared. Round 8 (B5): the molar twin scored 0.094 below the mass
+    one, its total mass never evaluable."""
+    recycle = 100.0 / 3
+    units = [
+        {"id": "M1", "unit_type": "Mixer"},
+        {"id": "H1", "unit_type": "Fired heater",
+         "design_input_specs": {"T": 900.0}},
+        {"id": "R1", "unit_type": "Hydrodealkylation reactor",
+         "design_input_specs": {"T": 900.0, "P": 3.0e6, "tau": 0.02},
+         "reactions": [{"reactant": "Toluene", "conversion": 0.75,
+                        "equation": "Toluene + H2 -> Benzene + CH4"}]},
+        {"id": "F1", "unit_type": "Flash drum",
+         "design_input_specs": {"T": 310.0, "P": 2.9e6}},
+        {"id": "T1", "unit_type": "Crude benzene storage tank",
+         "design_input_specs": {"tau": 4.0}},
+        {"id": "D1", "unit_type": "Benzene column",
+         "design_input_specs": {"N_stages": 20, "reflux": 1.5,
+                                "P": 101325.0}}]
+    edges = (
+        ("tol", "None", "M1", 298.15, 3.1e6, {"Toluene": 100.0}, "l", 0.9),
+        ("h2", "None", "M1", 298.15, 3.1e6, {"H2": 120.0}, "g", 1.5),
+        ("rcy", "D1", "M1", 383.0, 3.1e6, {"Toluene": recycle}, "l", None),
+        ("s1", "M1", "H1", 320.0, 3.1e6,
+         {"Toluene": 100.0 + recycle, "H2": 120.0}, "g", None),
+        ("s2", "H1", "R1", 900.0, 3.05e6,
+         {"Toluene": 100.0 + recycle, "H2": 120.0}, "g", None),
+        ("s3", "R1", "F1", 900.0, 3.0e6, {"Toluene": recycle, "H2": 20.0,
+                                          "Benzene": 100.0, "CH4": 100.0},
+         "g", None),
+        ("vap", "F1", "None", 310.0, 2.9e6,
+         {"H2": 20.0, "CH4": 100.0, "Benzene": 1.0}, "g", 0.1),
+        ("liq", "F1", "T1", 310.0, 2.9e6,
+         {"Benzene": 99.0, "Toluene": recycle}, "l", None),
+        ("s5", "T1", "D1", 310.0, 2.0e5,
+         {"Benzene": 99.0, "Toluene": recycle}, "l", None),
+        ("bz", "D1", "None", 353.0, 101325.0, {"Benzene": 99.0}, "l", 1.1))
+    streams = [_r8_basis_stream(sid, src, snk, T, P, kmol, R8_HDA_MW, phase,
+                                basis, price)
+               for sid, src, snk, T, P, kmol, phase, price in edges]
+    return _r8_qug({
+        "metadata": {"sff_version": "0.2.1", "TEA_currency": "USD",
+                     "TEA_year": 2015,
+                     "feedstocks": [{"stream_id": "tol"}],
+                     "products": [{"stream_id": "bz"}]},
+        "units": units, "streams": streams,
+        "chemicals": [{"id": c, "molar_mass": mw}
+                      for c, mw in R8_HDA_MW.items()],
+        "utilities": {}})
+
+
+def _r8_twin(doc, basis, mw):
+    """`doc` with every one-phase stream (stating T and P) restated on
+    `basis` (_r8_basis_stream) from its species flows -- molar, else mass
+    over `mw` -- and both flow aliases declared (_r8_qug)."""
+    doc = copy.deepcopy(doc)
+    for k, stream_ in enumerate(doc["streams"]):
+        sp = stream_["stream_properties"]
+        (phase, state), = sp["phases"].items()
+        molar = state.get("total_molar_flow", sp.get("total_molar_flow"))
+        if molar is not None:
+            kmol = {e["component_name"]: e["mol_fraction"] * molar
+                    for e in state["composition"]}
+        else:
+            mass = state.get("total_mass_flow", sp.get("total_mass_flow"))
+            kmol = {e["component_name"]: e["mass_fraction"] * mass
+                    / mw[e["component_name"]] for e in state["composition"]}
+        doc["streams"][k] = _r8_basis_stream(
+            stream_["id"], stream_["source_unit_id"],
+            stream_["sink_unit_id"], sp["temperature"], sp["pressure"], kmol,
+            mw, phase, basis, stream_.get("price"))
+    return _r8_qug(doc)
+
+
+R8_ROUND_MW = {"Water": 18.01528, "Glucose": 180.15588, "KCl": 74.5513,
+               "Ethanol": 46.06844, "CO2": 44.0095}
+
+
+def _r8_table_stream(sid, source, sink, flows, rounding, price=None,
+                     bare=False):
+    """A liquid stream at 300 K and 1 atm of {component: kg/h} `flows` as
+    a printed table shows it: 'exact'; 'wt' (mass fractions rounded to 4
+    decimals -- wt% to 2 decimals -- the largest species taking the
+    remainder, so they sum to 1); 'int' (each species flow rounded to an
+    integer kg/h, the total recomputed). With `bare`, only the mass flow,
+    T and P are stated."""
+    if rounding == "int":
+        flows = {n: float(round(f)) for n, f in flows.items()}
+    mass = sum(flows.values())
+    sp = {"temperature": 300.0, "pressure": 101325.0,
+          "total_mass_flow": mass}
+    if not bare:
+        fractions = {n: f / mass for n, f in flows.items()}
+        if rounding == "wt":
+            fractions = {n: round(x, 4) for n, x in fractions.items()}
+            big = max(fractions, key=fractions.get)
+            fractions[big] += 1.0 - sum(fractions.values())
+        sp["phases"] = {"l": {"total_mass_flow": mass, "composition": [
+            {"component_name": n, "mass_fraction": x}
+            for n, x in fractions.items()]}}
+    stream_ = {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+               "stream_properties": sp}
+    if price is not None:
+        stream_["price"] = price
+    return stream_
+
+
+def r8_round_doc(rounding="exact", sparse=False, converted=0.0,
+                 label="Mixer"):
+    """Probe SP-2-2 (v3.py)-like honest printed stream table (kg/h, mass
+    basis): feeds 'water' (Water 5000.4, KCl 0.4) and 'syrup' (Water
+    900.3, Glucose 1000, KCl 3.4) -> M1 `label` -> s1 -> T1 'Storage
+    tank' -> s2 -> P1 'Pump' -> 'product', every stream rounded as
+    `rounding` says (_r8_table_stream): KCl, a trace species, then
+    differs across M1 by 5 % ('wt') or 33 % ('int') of its own flow but
+    only ~3e-5 / 1.4e-4 of the throughput. `sparse`: s1 states only its
+    mass flow, T and P, so neither M1 nor the hosting tank T1 can be
+    ruled out per unit and the flowsheet-level evidence (R7.1) decides.
+    `converted`: that fraction of the glucose converts across M1 into
+    ethanol and CO2 (0.5114 / 0.4886 by mass: mass conserved) with no
+    reaction declared anywhere."""
+    glucose = 1000.0 * (1.0 - converted)
+    s1 = {"Water": 5900.7, "Glucose": glucose, "KCl": 3.8}
+    if converted:
+        s1["Ethanol"] = 511.4 * converted
+        s1["CO2"] = 488.6 * converted
+    units = [{"id": "M1", "unit_type": label},
+             {"id": "T1", "unit_type": "Storage tank",
+              "design_input_specs": {"tau": 4.0}},
+             {"id": "P1", "unit_type": "Pump"}]
+    streams = [
+        _r8_table_stream("water", "None", "M1",
+                         {"Water": 5000.4, "KCl": 0.4}, rounding, 0.0),
+        _r8_table_stream("syrup", "None", "M1",
+                         {"Water": 900.3, "Glucose": 1000.0, "KCl": 3.4},
+                         rounding, 0.3),
+        _r8_table_stream("s1", "M1", "T1", s1, rounding, bare=sparse),
+        _r8_table_stream("s2", "T1", "P1", s1, rounding),
+        _r8_table_stream("product", "P1", "None", s1, rounding, 0.4)]
+    return _r8_qug({
+        "metadata": {"sff_version": "0.2.1", "TEA_currency": "USD",
+                     "TEA_year": 2020,
+                     "feedstocks": [{"stream_id": "syrup"}],
+                     "products": [{"stream_id": "product"}]},
+        "units": units, "streams": streams,
+        "chemicals": [{"id": c, "molar_mass": mw}
+                      for c, mw in R8_ROUND_MW.items()],
+        "utilities": {}})
+
+
+class TestRevision8B(unittest.TestCase):
+    """Revision 8, group B: a stream's total mass from its molar amounts
+    (R8.5), species changes judged against the throughput too (R8.6), the
+    R7.4 confirmation read on either basis (R8.7), and the RXN-04 basis
+    from the R6.2 closure tolerance (R8.8)."""
+
+    # ---- R8.5 molar-basis total mass ------------------------------------
+
+    def test_mean_molar_mass(self):
+        """_mean_molar_mass: sum(x_i * MW_i) over mol fractions, else
+        1 / sum(w_i / MW_i) over mass fractions (the first kind every
+        entry states validly, summing to 1); None when a molar mass does
+        not resolve, the composition is implausible, or none is given."""
+        mw = {"Water": 18.0, "Glucose": 180.0}
+        mol = [{"component_name": "Water", "mol_fraction": 0.9},
+               {"component_name": "Glucose", "mol_fraction": 0.1}]
+        self.assertAlmostEqual(C._mean_molar_mass(mol, mw), 34.2)
+        wt = [{"component_name": "Water", "mass_fraction": 0.5},
+              {"component_name": "Glucose", "mass_fraction": 0.5}]
+        self.assertAlmostEqual(C._mean_molar_mass(wt, mw),
+                               1.0 / (0.5 / 18.0 + 0.5 / 180.0))
+        mixed = copy.deepcopy(wt)
+        mixed[0]["mol_fraction"] = 0.9  # not every entry: the mass kind
+        self.assertAlmostEqual(C._mean_molar_mass(mixed, mw),
+                               C._mean_molar_mass(wt, mw))
+        self.assertIsNone(C._mean_molar_mass(mol, {"Water": 18.0}))
+        self.assertIsNone(C._mean_molar_mass(mol, None))
+        off = copy.deepcopy(mol)
+        off[1]["mol_fraction"] = 0.3
+        self.assertIsNone(C._mean_molar_mass(off, mw))
+        self.assertIsNone(C._mean_molar_mass(None, mw))
+
+    def test_phase_and_stream_mass(self):
+        """_stream_mass / _phase_total_mass / _phase_mass (R8.5): a stream
+        stating no total_mass_flow carries the sum of its phases' masses --
+        a stated phase mass flow, or a molar flow (the only phase of a
+        single-phase stream taking the stream's) x its composition's mean
+        molar mass; the legacy flat composition of one phase likewise.
+        None without the molar masses (or one of them), with several
+        phases sharing one stream total (their split is unknown), or a
+        flat composition over two phases. A stated total_mass_flow wins; a
+        phase stated empty carries none."""
+        mw = R5_MW
+        stream_ = _r7b_molar("s", "None", "R1",
+                             {"Water": 100.0, "Glucose": 10.0})
+        expected = 100.0 * mw["Water"] + 10.0 * mw["Glucose"]
+        self.assertAlmostEqual(C._stream_mass(stream_, mw), expected)
+        self.assertIsNone(C._stream_mass(stream_))
+        self.assertIsNone(C._stream_mass(stream_, {"Water": 18.0}))
+        sp = stream_["stream_properties"]
+        del sp["phases"]["l"]["total_molar_flow"]  # the stream's total
+        self.assertAlmostEqual(C._stream_mass(stream_, mw), expected)
+        sp["total_mass_flow"] = 5.0
+        self.assertEqual(C._stream_mass(stream_, mw), 5.0)
+        two = {"total_molar_flow": 110.0, "phases": {
+            "l": {"total_molar_flow": 100.0, "composition": [
+                {"component_name": "Water", "mol_fraction": 1.0}]},
+            "g": {"total_mass_flow": 7.0, "composition": [
+                {"component_name": "CO2", "mass_fraction": 1.0}]}}}
+        self.assertAlmostEqual(C._phase_total_mass(two, mw),
+                               100.0 * mw["Water"] + 7.0)
+        shared = copy.deepcopy(two)
+        del shared["phases"]["l"]["total_molar_flow"]
+        del shared["phases"]["g"]["total_mass_flow"]
+        self.assertIsNone(C._phase_total_mass(shared, mw))
+        shared["phases"]["g"] = {"total_molar_flow": 0.0, "composition": []}
+        self.assertAlmostEqual(C._phase_total_mass(shared, mw),
+                               110.0 * mw["Water"])
+        self.assertEqual(C._phase_mass(shared["phases"]["g"], shared, False,
+                                       mw), 0.0)
+        self.assertEqual(C._phase_mass({"total_molar_flow": 0.0}, {}, True,
+                                       {}), 0.0)
+        self.assertIsNone(C._phase_mass({"composition": []}, {}, True, mw))
+        flat = {"total_molar_flow": 2.0, "composition": [
+            {"component_name": "Water", "mol_fraction": 1.0, "phase": "l"}]}
+        self.assertAlmostEqual(C._phase_total_mass(flat, mw),
+                               2.0 * mw["Water"])
+        flat["composition"].append({"component_name": "CO2",
+                                    "mol_fraction": 1.0, "phase": "g"})
+        self.assertIsNone(C._phase_total_mass(flat, mw))
+        empty = _r7b_molar("e", "None", "R1", {"Water": 1.0})
+        empty["stream_properties"]["total_molar_flow"] = 0.0
+        self.assertEqual(C._stream_mass(empty), 0.0)
+
+    def test_molar_twin_scores_like_mass_twin(self):
+        """R8.5: probe SP-1-2's HDA flowsheet (r8_hda_doc) scores the same
+        overall and representable on the mass basis, the molar basis and
+        both (it scored 0.094 lower on the molar one: no total mass, so no
+        port convention, derivation or flowsheet-level evidence); every
+        unit's mass balance of the molar twin evaluates and closes, and
+        the flowsheet-level evidence (R7.1) holds. So do r7b_rxn_doc's
+        molar and mass twins (_r8_twin), whose non-conserving reaction is
+        now confirmed on the mass basis too (R8.7). Deleting a molar mass
+        removes the fallback: M1's balance (toluene feed) no longer
+        evaluates."""
+        with name_lookup(set()), unit_registry(R8B_UNITS):
+            reports = {basis: C.score_flowsheet_completeness(
+                r8_hda_doc(basis)) for basis in ("mass", "molar", "both")}
+            mass = C.score_flowsheet_completeness(
+                _r8_twin(r7b_rxn_doc(), "mass", R5_MW))
+            molar = C.score_flowsheet_completeness(
+                _r8_twin(r7b_rxn_doc(), "molar", R5_MW))
+        for basis in ("molar", "both"):
+            self.assertAlmostEqual(reports[basis].score,
+                                   reports["mass"].score, places=12)
+            self.assertAlmostEqual(reports[basis].representable_score,
+                                   reports["mass"].representable_score,
+                                   places=12)
+        self.assertAlmostEqual(mass.score, molar.score, places=12)
+        self.assertAlmostEqual(mass.representable_score,
+                               molar.representable_score, places=12)
+        sc = ctx(r8_hda_doc("molar"))
+        for position in range(len(sc.units)):
+            self.assertEqual(C._mass_balance(sc, position), (True, True, ""))
+        self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+        cut = deleted(r8_hda_doc("molar"), ("chemicals", 0, "molar_mass"))
+        self.assertEqual(C._mass_balance(ctx(cut), 0)[:2], (False, False))
+        self.assertIn("R8.5", C._mass_balance(ctx(cut), 0)[2])
+
+    def test_molar_twin_sweep(self):
+        """Strict deletion sweep over the molar twin r8_hda_doc('molar'):
+        deleting a molar mass, a fraction or a flow only removes the
+        R8.5 fallback, so no deletion raises the overall score or any
+        criterion, nor turns a scored one not-applicable."""
+        with name_lookup(set()):
+            raised, _lowered, n = deletion_violations(
+                r8_hda_doc("molar"), skip=frozenset())
+        self.assertGreater(n, 150)
+        self.assertEqual(raised, [])
+
+    # ---- R8.6 species-change tolerance ----------------------------------
+
+    def test_species_changed(self):
+        """_species_changed (R8.6): a change counts only beyond BOTH 1 %
+        of the species' own flow AND SPECIES_THROUGHPUT_RTOL (1e-3) of the
+        throughput (and ZERO_FLOW): rounding a trace (3.93 -> 4.14 kg/h in
+        6904 kg/h) is no change, nor is 0.5 % of a major species; 95 %
+        conversion and a species appearing at 0.2 % of the throughput
+        are; with no throughput anything beyond ZERO_FLOW is."""
+        self.assertEqual(C.SPECIES_THROUGHPUT_RTOL, 1e-3)
+        self.assertFalse(hasattr(C, "SPECIES_RTOL"))
+        self.assertFalse(C._species_changed(3.9268, 4.1427, 6904.5))
+        self.assertFalse(C._species_changed(1000.0, 1005.0, 1000.0))
+        self.assertFalse(C._species_changed(0.0, 5.0, 10000.0))
+        self.assertTrue(C._species_changed(0.0, 20.0, 10000.0))
+        self.assertTrue(C._species_changed(1000.0, 50.0, 10000.0))
+        self.assertTrue(C._species_changed(0.0, 1e-6, 0.0))
+        self.assertFalse(C._species_changed(0.0, 1e-13, 0.0))
+
+    def test_rounded_table_raises_no_contradiction(self):
+        """R8.6 on r8_round_doc: a table rounded to wt% at 2 decimals or
+        to integer kg/h moves the trace KCl across M1 by 5 % / 33 % of its
+        own flow (the old 1 %-of-itself rule read it as conversion:
+        'Mixer' implausible, family unknown) but by ~3e-5 / 1.4e-4 of the
+        throughput: no species change or conversion, the mixer claim
+        stands, the R2.4 guard passes and the unit is ruled out per unit;
+        the scores equal the exact table's."""
+        with name_lookup(set()), unit_registry(R8B_UNITS):
+            exact = C.score_flowsheet_completeness(r8_round_doc())
+            for rounding in ("wt", "int"):
+                doc = r8_round_doc(rounding)
+                sc = ctx(doc)
+                _basis, flows_in, flows_out = C._side_species(sc, "M1")
+                a, b = flows_in["KCl"], flows_out["KCl"]
+                self.assertGreater(abs(b - a), C.CLOSURE_RTOL * max(a, b))
+                self.assertLess(abs(b - a), 2e-4 * sum(flows_in.values()))
+                self.assertEqual(C._species_change(sc, "M1"), [])
+                self.assertEqual(C._species_conversion(sc, "M1"), ([], []))
+                self.assertEqual(sc.unit_classes[0][1], "mixer")
+                self.assertNotIn("conversion", sc.unit_physics[0])
+                self.assertEqual(C._species_consistency(sc, 0), (True, ""))
+                self.assertTrue(C._no_conversion(sc, 1))
+                report = C.score_flowsheet_completeness(doc)
+                self.assertAlmostEqual(report.score, exact.score, places=12)
+                self.assertAlmostEqual(report.representable_score,
+                                       exact.representable_score,
+                                       places=12)
+
+    def test_rounded_table_flowsheet_evidence(self):
+        """R8.6 at the flowsheet level: r8_round_doc(sparse=True), whose
+        hosting tank T1 cannot be ruled out per unit, keeps its
+        flowsheet-level evidence (R7.1) with every stream rounded -- the
+        trace KCl's imbalance across the boundary is ~3e-5 of the
+        boundary inlet total -- so no pseudo-member is charged and the
+        scores equal the exact sparse table's."""
+        with name_lookup(set()), unit_registry(R8B_UNITS):
+            exact = C.score_flowsheet_completeness(r8_round_doc(sparse=True))
+            for rounding in ("wt", "int"):
+                doc = r8_round_doc(rounding, sparse=True)
+                sc = ctx(doc)
+                self.assertFalse(C._no_conversion(sc, 1))
+                self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+                self.assertEqual(C._unexplained_hosts(sc), [])
+                report = C.score_flowsheet_completeness(doc)
+                self.assertAlmostEqual(report.score, exact.score, places=12)
+                self.assertAlmostEqual(report.representable_score,
+                                       exact.representable_score,
+                                       places=12)
+
+    def test_material_conversion_still_caught(self):
+        """R8.6 keeps hidden chemistry caught: 95 % of the glucose (and 3
+        %, ~0.4 % of the throughput) converting to ethanol and CO2 across
+        r8_round_doc's 'Mixer' M1 (rounded to wt% at 2 decimals, no
+        reaction declared) contradicts the mixer claim (family unknown);
+        in the sparse table the flowsheet-level evidence is absent
+        ('... across the flowsheet without a declared well-formed
+        reaction'), so the hosting tank T1 is charged the pseudo-member."""
+        for converted in (0.95, 0.03):
+            sc = ctx(r8_round_doc("wt", converted=converted))
+            self.assertEqual(sc.unit_classes[0], (None, None, 0.0))
+            self.assertIn("Ethanol appears", sc.unit_physics[0]["species"])
+            sc = ctx(r8_round_doc("wt", sparse=True, converted=converted))
+            explained, why = C._flowsheet_explained(sc)
+            self.assertFalse(explained)
+            self.assertIn("without a declared well-formed reaction", why)
+            self.assertEqual(C._unexplained_hosts(sc), [1])
+
+    def test_hidden_conversion_relabels_never_pay_off(self):
+        """No-gain relabels at the R8.6 tolerance: M1 of r8_round_doc
+        converting 95 % or 3 % of its glucose (beyond 1e-3 of its
+        throughput), labelled 'Fermenter' (a reactor claim without
+        reactions), never scores lower than with any R8_RELABELS label
+        or a bare 'Unit' whose claim the conversion can contradict. A
+        hosting claim (_hosting_claim: tank, hopper, extractor) keeps its
+        family whatever the streams show (R7.1), so the tolerance does not
+        reach it; it is skipped here."""
+        with name_lookup(set()), unit_registry(R8B_UNITS):
+            for converted in (0.95, 0.03):
+                reference = C.score_flowsheet_completeness(
+                    r8_round_doc("wt", converted=converted,
+                                 label="Fermenter"))
+                for label in R8_RELABELS + ("Unit",):
+                    doc = r8_round_doc("wt", converted=converted,
+                                       label=label)
+                    if C._hosting_claim(ctx(doc), 0):
+                        continue
+                    report = C.score_flowsheet_completeness(doc)
+                    with self.subTest(converted=converted, label=label):
+                        self.assertLessEqual(report.score,
+                                             reference.score + 1e-12)
+                        self.assertLessEqual(
+                            report.representable_score,
+                            reference.representable_score + 1e-12)
+
+    def test_rounded_table_sweeps(self):
+        """Strict deletion sweeps over r8_round_doc('wt') and its sparse
+        variant: no deletion raises the overall score or any criterion,
+        nor turns a scored one not-applicable (the throughput a change is
+        judged against only shrinks with data, never the evidence)."""
+        for sparse in (False, True):
+            with name_lookup(set()):
+                raised, _lowered, n = deletion_violations(
+                    r8_round_doc("wt", sparse=sparse), skip=frozenset())
+            self.assertGreater(n, 60)
+            self.assertEqual(raised, [], sparse)
+
+    # ---- R8.7 R7.4 confirmation on either basis --------------------------
+
+    def test_basis_coefficients(self):
+        """_basis_coefficients (R8.7): the coefficients as written, plus
+        nu x MW against mass flows (a mol-basis reaction) or nu / MW
+        against molar flows (a wt-basis one) when every participant's
+        molar mass resolves; only the written set otherwise."""
+        coeffs = {"Glucose": -1.0, "Ethanol": 5.0}
+        mass = C._basis_coefficients(coeffs, "mass", R5_MW)
+        self.assertEqual(mass[0], coeffs)
+        self.assertAlmostEqual(mass[1]["Glucose"], -R5_MW["Glucose"])
+        self.assertAlmostEqual(mass[1]["Ethanol"], 5.0 * R5_MW["Ethanol"])
+        molar = C._basis_coefficients(coeffs, "molar", R5_MW)
+        self.assertAlmostEqual(molar[1]["Ethanol"], 5.0 / R5_MW["Ethanol"])
+        self.assertEqual(C._basis_coefficients(coeffs, "mass",
+                                               {"Glucose": 180.0}),
+                         [coeffs])
+        self.assertEqual(C._basis_coefficients({}, "mass", R5_MW), [{}])
+
+    def test_confirmation_on_either_basis(self):
+        """R8.7: r7b_rxn_doc's non-conserving 'Glucose -> 5 Ethanol' is
+        confirmed on its mass twin too (the changes proportional to
+        nu x MW; before, only on the molar basis), and r7b_mass_rxn_doc's
+        wt-basis reading on its molar twin (nu / MW); CMP-RXN-02 is 1 on
+        all four. Deleting Ethanol's molar mass drops the converse (not
+        confirmed). A species outside the reaction changing within the
+        R8.6 tolerance (product water +0.95 %, more than RXN_CONFIRM_RTOL
+        of the ethanol change, so unconfirmed before R8.6) leaves the
+        confirmation; one changing beyond it (+10 %) does not."""
+        docs = {"molar": r7b_rxn_doc(),
+                "mass twin": _r8_twin(r7b_rxn_doc(), "mass", R5_MW),
+                "wt": r7b_mass_rxn_doc(),
+                "wt molar twin": _r8_twin(r7b_mass_rxn_doc(), "molar",
+                                          R5_MW)}
+        for name, doc in docs.items():
+            sc = ctx(doc)
+            with self.subTest(doc=name):
+                self.assertIs(sc.conserves(sc.units[0]["reactions"][0]),
+                              False)
+                self.assertTrue(C._reaction_confirmed(
+                    sc, 0, sc.units[0]["reactions"][0]))
+                self.assertEqual(run(C._score_rxn_02, doc)[0], 1.0)
+        cut = deleted(docs["mass twin"], ("chemicals", 2, "molar_mass"))
+        self.assertEqual(cut["chemicals"][2]["id"], "Ethanol")
+        sc = ctx(cut)
+        self.assertFalse(C._reaction_confirmed(sc, 0,
+                                               sc.units[0]["reactions"][0]))
+        for water, confirmed in ((100.95, True), (110.0, False)):
+            doc = r7b_rxn_doc()
+            doc["streams"][1] = _r7b_molar(
+                "product", "R1", "None",
+                {"Water": water, "Glucose": 1.0, "Ethanol": 45.0})
+            sc = ctx(doc)
+            self.assertIs(C._reaction_confirmed(
+                sc, 0, sc.units[0]["reactions"][0]), confirmed, water)
+
+    # ---- R8.8 RXN-04 basis ------------------------------------------------
+
+    def test_basis_errors(self):
+        """_basis_errors (R6.2 / R8.8): the (mol, wt) relative imbalances
+        of GLUCOSE_EQ (mol ~0, wt 3) -- the smaller one is _closure_error;
+        None with a molar mass missing or nothing consumed."""
+        sc = ctx(rxn_doc(None))
+        coeffs = C._reaction_coefficients(sc, {"equation": GLUCOSE_EQ})
+        mol, wt = C._basis_errors(sc, coeffs)
+        self.assertLess(mol, 1e-4)
+        self.assertAlmostEqual(wt, 3.0)
+        self.assertEqual(C._closure_error(sc, {"equation": GLUCOSE_EQ}), mol)
+        self.assertIsNone(C._basis_errors(sc, {"Ethanol": 1.0}))
+        self.assertIsNone(C._basis_errors(sc, {"Glucose": -1.0, "X": 1.0}))
+        self.assertIsNone(C._basis_errors(sc, {}))
+
+    def test_basis_from_closure_tolerance(self):
+        """_basis_derivable (R8.8): a 3-significant-figure equation
+        ('Xylose -> 1.67 Ethanol + 1.67 CO2', 0.2 % off on the mol basis;
+        under BASIS_RTOL it had no basis, probe RXN-1) and a rounded
+        wt-basis stoichiometry (0.1 % off) have their basis -- the closure
+        holds within RXN_CLOSURE_RTOL on one basis and not the other;
+        when it holds on both, BASIS_RTOL decides ('A -> B' of equal
+        molar mass: immaterial, derivable; 'A -> 1.005 B', 0.5 % off on
+        each: ambiguous, not); neither ('Glucose -> 3 Ethanol'), or a
+        molar mass missing, has none. CMP-RXN-04 of a reactor carrying
+        the xylose reaction with single-phase ports -> DERIVED_CREDIT."""
+        doc = rxn_doc(None)
+        doc["chemicals"] += [{"id": "Xylose", "formula": "C5H10O5",
+                              "molar_mass": 150.13},
+                             {"id": "A", "molar_mass": 10.0},
+                             {"id": "B", "molar_mass": 10.0},
+                             {"id": "B2", "molar_mass": 9.9},
+                             {"id": "M"}]
+        sc = ctx(doc)
+        xylose = {"equation": "Xylose -> 1.67 Ethanol + 1.67 CO2"}
+        mol, _wt = C._basis_errors(sc, C._reaction_coefficients(sc, xylose))
+        self.assertTrue(C.BASIS_RTOL < mol < C.RXN_CLOSURE_RTOL)
+        cases = ((xylose, True),
+                 ({"stoichiometry": {"Glucose": -1.0, "Ethanol": 0.511,
+                                     "CO2": 0.488}}, True),
+                 ({"equation": "A -> B"}, True),
+                 ({"equation": "A -> 1.005 B2"}, False),
+                 ({"equation": "Glucose -> 3 Ethanol"}, False),
+                 ({"equation": "A -> M"}, False))
+        for reaction_, derivable in cases:
+            self.assertIs(C._basis_derivable(sc, reaction_), derivable,
+                          reaction_)
+        doc = rxn_doc([reaction(equation=xylose["equation"],
+                                reactant="Xylose")])
+        doc["chemicals"].append({"id": "Xylose", "formula": "C5H10O5",
+                                 "molar_mass": 150.13})
+        self.assertEqual(run(C._score_rxn_04, doc)[0], C.DERIVED_CREDIT)
 
 
 class TestPinnedScores(unittest.TestCase):
