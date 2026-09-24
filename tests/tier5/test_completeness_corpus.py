@@ -449,7 +449,10 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         quantity_units_global.temperature = 'degC' scores exactly like the
         original on every criterion (within 1e-9; the review measured
         CMP-UOP-02 0.992 -> 0.912 from false T-guard hits before the fix);
-        likewise every pressure in bar, and in kPa. R3.9 / R3.10 on the
+        likewise every pressure in bar, and in kPa. The design_input_specs
+        keys the entry's aliases cover (T; P) are restated too: R5.2 reads
+        them in the entry's unit, so a T of 353.15 left in K would read as
+        353.15 degC and contradict its outlet. R3.9 / R3.10 on the
         original: CMP-UTIL-02 = 0.8 (natural_gas and s78, CH4 agents priced
         0, earn half credit) and CMP-SYS-02 = 3/14 (currency, dollar year,
         target products)."""
@@ -466,6 +469,15 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
             for holder in holders:
                 if isinstance(holder.get(field), (int, float)):
                     holder[field] = holder[field] * factor + offset
+            aliases = set(doc["quantity_units_global"][entry]["aliases"])
+            for unit_ in doc["units"]:
+                specs = unit_.get("design_input_specs") or {}
+                for key in aliases & set(specs):
+                    value = specs[key]
+                    if isinstance(value, list):
+                        specs[key] = [v * factor + offset for v in value]
+                    elif isinstance(value, (int, float)):
+                        specs[key] = value * factor + offset
             doc["quantity_units_global"][entry]["quantity_units"] = unit
             report = C.score_flowsheet_completeness(doc)
             for c in report.criteria:
@@ -600,6 +612,51 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         after = {c.criterion_id: c for c in cut.criteria}
         for cid in ("CMP-TOP-01", "CMP-TOP-02", "CMP-FEED-01", "CMP-FEED-02"):
             self.assertLessEqual(after[cid].score, was[cid].score + TOL, cid)
+
+    def test_revision_5_part_b_on_the_corpus(self):
+        """Revision 5 part B on the real files. R5.1 correction: every one
+        of the corpus's 30 MockSplitter / FakeSplitter units keeps its exact
+        class and junction family (16 legacy ones, e.g. S408 / S410 with
+        265 -> 298 K and 10 -> 1 atm across them, used to become unknown
+        family; none trips the remaining species and duty checks). R5.2:
+        SF_BST_01's CMP-UOP-05 is representable at 0.2.0 and credits some
+        unit in full (its T, P and H aliases give those specs units), while
+        units whose tau has no alias keep class-convention credit. R5.4
+        reviewer cases: removing every chemicals[].index, or truncating
+        C603's 22-element split vector to 5 entries, lowers CMP-UOP-02
+        (both used to leave it unchanged)."""
+        mocks = 0
+        for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
+            sc = C._ScoringContext(C._read_flowsheet(str(path)))
+            for position, unit in enumerate(sc.units):
+                name = C._dsm_class(unit)[0]
+                if name in C.MOCK_SPLITTER_CLASSES:
+                    mocks += 1
+                    self.assertEqual(sc.unit_classes[position],
+                                     (name, "junction", 1.0),
+                                     (path.name, unit["id"]))
+        self.assertEqual(mocks, 30)
+        was = {c.criterion_id: c for c in self.base.criteria}
+        uop05 = was["CMP-UOP-05"]
+        self.assertTrue(uop05.representable)
+        self.assertIn("unit(s) state every dimensional specification",
+                      uop05.message)
+        self.assertNotIn("0 of", uop05.message.split(" unit(s)")[0])
+        self.assertTrue(any("tau stated without a recognised quantity unit"
+                            in m for m in uop05.missing))
+        no_index = copy.deepcopy(self.corn)
+        for chem in no_index["chemicals"]:
+            chem.pop("index", None)
+        short = copy.deepcopy(self.corn)
+        c603 = next(u for u in short["units"] if u["id"] == "C603")
+        self.assertEqual(len(c603["design_input_specs"]["split"]), 22)
+        c603["design_input_specs"]["split"] = \
+            c603["design_input_specs"]["split"][:5]
+        for label, doc in (("no index", no_index), ("short split", short)):
+            after = {c.criterion_id: c for c in
+                     C.score_flowsheet_completeness(doc).criteria}
+            self.assertLess(after["CMP-UOP-02"].score,
+                            was["CMP-UOP-02"].score, label)
 
 
 if __name__ == "__main__":

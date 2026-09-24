@@ -69,7 +69,10 @@
 # built-in table, so a file in degC or bar scores like one in K and Pa; a
 # unit string the table does not know suspends the plausibility bounds (a
 # flow must still be >= 0) and the consistency guards for that quantity.
-# design_input_specs are read in BioSTEAM-native units.
+# A design_input_specs key with a physical dimension that a
+# quantity_units_global entry lists among its aliases (T, P, tau, ...) is
+# converted the same way; any other specification is read in
+# BioSTEAM-native units.
 
 categories:
   thermo: Thermodynamic basis (chemicals and property package)
@@ -134,7 +137,12 @@ criteria:
       any id while the database is unavailable, brings nothing checkable and
       earns 0.5. A malformed id ("x", "InChI=1S/x"), one whose database
       record or InChI formula layer contradicts the chemical's molar mass or
-      formula, counts as no id. The chemical id is also looked up by name
+      formula, counts as no id. A registry id the database resolves to
+      another species than the chemical's id names by name (Ethanol with
+      water's CAS 7732-18-5, Glucose with the SMILES "CCO"), when the
+      chemical states no molar mass or formula to settle which is right,
+      earns only 0.5 (unverified) and is flagged as a conflict. The chemical
+      id is also looked up by name
       exactly as thermosteam's Chemical(ID) looks it up: its search of the
       chemicals identifier database (a CAS number as such; otherwise the id
       with "_" read as a space and CamelCase split into words -- AceticAcid
@@ -183,12 +191,22 @@ criteria:
     sff_paths:
       - chemicals[].molar_mass
       - chemicals[].formula
+      - chemicals[].registry_id
+      - chemicals[].id
     rationale: >-
       Molar mass converts every flow between the mass and molar bases that
       BioSTEAM uses internally, closes stoichiometric mass balances, and sizes
-      equipment costed on kg/hr. Pseudo-components such as Fiber or Protein
-      have no database entry, so their molecular weight must be stated
-      explicitly or implied by a formula. Scored over declared plus
+      equipment costed on kg/hr. Each chemical scores the best of: a stated
+      molar mass, or one derived from a parseable formula (1); a registry id
+      the chemicals database resolves without contradiction or conflict (as
+      in CMP-THM-02) to a record with a molar mass, which thermosteam then
+      supplies (1); an id that resolves by name to one of thermosteam's
+      built-in pseudo-components, or to a database record the chemical's own
+      data verify (0.75). A name the database resolves with nothing to verify
+      it earns nothing, since it may name another species ("HP" is
+      hematoporphyrin). Pseudo-components such as SolubleProtein have no
+      database entry, so their molecular weight must be stated explicitly or
+      implied by a formula. Scored over declared plus
       referenced-but-undeclared chemicals (the latter score 0), aggregated
       as CMP-THM-02 is: unreferenced chemicals can lower the score, never
       raise it.
@@ -534,6 +552,8 @@ criteria:
       - units[].design_input_specs
       - streams[].stream_properties
       - units[].design_results
+      - quantity_units_global
+      - chemicals[].index
     rationale: >-
       Each unit class needs a minimal set of specifications before it can
       run: an HXutility an outlet temperature or duty (plus a vapor fraction
@@ -571,7 +591,17 @@ criteria:
       [0, 1], a column's key recoveries Lr and Hr and its y_top and x_bot
       strictly inside (0, 1), a distillation column's reflux factor k above
       1, two light/heavy keys, a boolean flag, else any non-empty value); a
-      blank or out-of-range value counts as unstated. A
+      blank or out-of-range value counts as unstated. Specification values
+      are read in the units the file declares: a key listed among a
+      quantity_units_global entry's aliases (T under a degC temperature
+      entry, P under a bar pressure entry) takes that entry's unit, so a
+      file in degC and bar scores exactly like the same file in K and Pa;
+      any other key is read in BioSTEAM's native units, and a unit string
+      the scorer does not know suspends the bounds and the stream
+      consistency check for that value. A split vector counts only when it
+      maps onto chemicals: a list needs one entry per chemical carrying an
+      index, with those indices exactly 0..n-1 (BioSTEAM orders a split by
+      its chemicals), and an object only declared chemical ids as keys. A
       specification recoverable from stream states, design results or a
       class default earns derived credit, and one read from stream data
       only when the unit's mass balance -- and, for a physical unit, every
@@ -665,19 +695,31 @@ criteria:
     title: Units of design specifications
     weight: 1
     criticality: supplementary
-    representable_since: null
+    representable_since: "0.0.7"
     sff_paths:
       - units[].design_input_specs
+      - quantity_units_global
     rationale: >-
-      design_input_specs values are bare numbers with no quantity units (the
-      schema's unit registries cover stream properties and design results,
-      not specifications), so a tau, dP_design or U can only be read in the
-      units the class's own conventions imply: hours, Pa and kW/m2/K for the
-      corresponding BioSTEAM class. That convention is available only when the
-      class itself is identified at confidence 1, which earns derived credit;
-      otherwise a re-importer cannot tell hours from seconds or bar from Pa.
-      Applies to every unit that needs operating specifications or facility
-      settings (the CMP-UOP-02 and CMP-UOP-06 populations).
+      design_input_specs values are bare numbers. Their unit is stated when
+      the specification key is listed among the aliases of a
+      quantity_units_global entry (0.0.7 and later) whose unit the scorer's
+      built-in table recognises for the key's dimension -- temperature (T),
+      temperature difference (dT, T_min_app), pressure (P, dP_design), heat
+      duty (Q, H, Duty), time (tau, tau_0), volume (V_max, and V in batch
+      bioreactors and crystallizers) or energy per mass (duty_per_kg);
+      otherwise it can only be read in the units the class's own conventions
+      imply (hours, Pa and kJ/hr for the corresponding BioSTEAM class), and
+      that convention is available only when the class is identified at
+      confidence 1. Dimensionless keys (split and other fractions,
+      efficiencies, flags, LHK, N_stages, ratios) need no unit. A unit
+      scores 1 when every essential requirement that applies to it
+      (CMP-UOP-02, or CMP-UOP-06 for a facility) is met by explicit keys
+      that are dimensionless or unit-stated; else derived credit for an
+      exactly known class, else 0 (so a key stated without a unit scores
+      what its absence does, and deleting one never raises the score). A
+      unit none of whose requirements applies needs no unit. Applies to
+      every unit that needs operating specifications or facility settings
+      (the CMP-UOP-02 and CMP-UOP-06 populations).
 
   - id: CMP-UOP-06
     category: unit_ops

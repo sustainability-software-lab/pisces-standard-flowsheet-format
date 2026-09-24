@@ -1217,7 +1217,9 @@ def _valid_spec(key, value, family=None):
 # guards and closure tests. The unit comes from the legacy inline
 # {value, units} pair, else from the quantity_units_global entry whose
 # aliases name the field; none stated -> the value is taken as internal.
-# design_input_specs stay BioSTEAM-native (CMP-UOP-05 scores their units).
+# A design_input_specs key with a physical dimension (_SPEC_DIMENSIONS) that
+# a quantity_units_global entry lists among its aliases takes that entry's
+# unit the same way (R5.2); any other spec value is read as BioSTEAM-native.
 # internal = value * scale + offset; unit strings are matched after removing
 # blanks, '^' and '**' ('m^3/hr' -> 'm3/hr').
 _QUANTITY_DIMENSIONS = {
@@ -1275,7 +1277,66 @@ _UNIT_FACTORS = {
         **dict.fromkeys(('ft3/hr', 'ft3/h'), (0.028316846592, 0.0)),
         **dict.fromkeys(('ft3/min', 'cfm'), (0.028316846592 * 60.0, 0.0)),
     },
+    # Design-specification dimensions (R5.2).
+    'heat_flow': {  # kJ/hr
+        **dict.fromkeys(('kJ/hr', 'kJ/h'), (1.0, 0.0)), 'J/hr': (1e-3, 0.0),
+        **dict.fromkeys(('MJ/hr', 'MJ/h'), (1e3, 0.0)),
+        **dict.fromkeys(('GJ/hr', 'GJ/h'), (1e6, 0.0)),
+        **dict.fromkeys(('W', 'J/s'), (3.6, 0.0)), 'kW': (3600.0, 0.0),
+        'MW': (3.6e6, 0.0),
+        **dict.fromkeys(('kcal/hr', 'kcal/h'), (4.184, 0.0)),
+        **dict.fromkeys(('Btu/hr', 'BTU/hr', 'Btu/h', 'BTU/h'),
+                        (1.05505585262, 0.0)),
+        **dict.fromkeys(('MMBtu/hr', 'MMBTU/hr', 'MMBtu/h', 'MMBTU/h'),
+                        (1.05505585262e3, 0.0)),
+    },
+    'time': {  # hr
+        **dict.fromkeys(('hr', 'h', 'hour', 'hours'), (1.0, 0.0)),
+        **dict.fromkeys(('min', 'minute', 'minutes'), (1.0 / 60.0, 0.0)),
+        **dict.fromkeys(('s', 'sec', 'second', 'seconds'),
+                        (1.0 / 3600.0, 0.0)),
+        **dict.fromkeys(('d', 'day', 'days'), (24.0, 0.0)),
+    },
+    'volume': {  # m3
+        'm3': (1.0, 0.0),
+        **dict.fromkeys(('L', 'l', 'liter', 'litre'), (1e-3, 0.0)),
+        'gal': (_GALLON, 0.0), 'ft3': (0.028316846592, 0.0),
+    },
+    'specific_energy': {  # kJ/kg
+        'kJ/kg': (1.0, 0.0), 'MJ/kg': (1e3, 0.0), 'J/kg': (1e-3, 0.0),
+        'kcal/kg': (4.184, 0.0), **dict.fromkeys(('Btu/lb', 'BTU/lb'),
+                                                 (2.326, 0.0)),
+    },
 }
+# A temperature DIFFERENCE (dT, T_min_app) takes every temperature unit, but
+# scales without the offset: 5 degC of approach is 5 K (R5.2).
+_UNIT_FACTORS['temperature_difference'] = {
+    unit: (scale, 0.0)
+    for unit, (scale, _offset) in _UNIT_FACTORS['temperature'].items()}
+
+# R5.2: design_input_specs keys with a physical dimension (the _UNIT_FACTORS
+# table their quantity unit is read from), checked against the biosteam
+# source; every other key -- split and other fractions, efficiencies, flags,
+# LHK, N_stages, ratios such as k, reflux or pr, ids -- is dimensionless and
+# needs no unit. The wastewater loading rates have a dimension the built-in
+# table does not cover ('loading_rate'): no unit of theirs is recognised.
+_SPEC_DIMENSIONS = {
+    **dict.fromkeys(('T', 'T_lim0', 'T_lim1', 'Temperature'), 'temperature'),
+    **dict.fromkeys(('dT', 'T_min_app'), 'temperature_difference'),
+    **dict.fromkeys(('P', 'dP_design'), 'pressure'),
+    **dict.fromkeys(('Q', 'H', 'H_lim0', 'H_lim1', 'Duty'), 'heat_flow'),
+    **dict.fromkeys(('tau', 'tau_0', 'cycle_time'), 'time'),
+    'V_max': 'volume',
+    'duty_per_kg': 'specific_energy',
+    **dict.fromkeys(('OLR', 'OLRall', 'HLR'), 'loading_rate'),
+}
+# V is a vapor fraction (flash, exchangers, evaporators: dimensionless)
+# except in the families where it is a vessel volume. It is never converted
+# (no check reads its magnitude), only its unit is scored (CMP-UOP-05).
+_FAMILY_SPEC_DIMENSIONS = {('batch_bioreactor', 'V'): 'volume',
+                           ('crystallizer', 'V'): 'volume'}
+# R5.4: design_input_specs keys holding per-chemical split vectors.
+_SPLIT_KEYS = frozenset({'split', 'solids_split', 'aqueous_split'})
 
 
 def _unit_key(unit):
@@ -1304,25 +1365,110 @@ def _quantity_unit_index(doc):
     return index
 
 
-def _to_internal(value, field, index):
+def _stated_unit(value, field, index):
+    """Unit key a quantity is stated in: a legacy inline {value, units}
+    pair's own units, else the quantity_units_global unit of `field`
+    (`index`, _quantity_unit_index; '' when entries disagree); None when
+    neither states one."""
+    inline = _unit_key(value.get('units')) if isinstance(value, dict) else None
+    return inline if inline is not None else index.get(field)
+
+
+def _to_internal(value, field, index, dimension=None):
     """`value` of quantity `field` in BioSTEAM's internal unit (R3.4): a
     legacy inline {value, units} pair converts by its own units, anything
     else by the quantity_units_global unit of the field (`index`,
-    _quantity_unit_index). No unit stated -> the number as is; a recognised
-    unit (_UNIT_FACTORS) -> the converted float; an unrecognised (or
-    ambiguous) one -> _Unconverted. A value that is not a finite number is
-    returned unchanged, so the predicates still reject it."""
+    _quantity_unit_index). `dimension` names the _UNIT_FACTORS table (default
+    _QUANTITY_DIMENSIONS[field]; a design-spec key passes its own, R5.2). No
+    unit stated -> the number as is; a recognised unit -> the converted
+    float; an unrecognised (or ambiguous) one -> _Unconverted. A value that
+    is not a finite number is returned unchanged, so the predicates still
+    reject it."""
     number = _num(value)
     if number is None:
         return value
-    inline = _unit_key(value.get('units')) if isinstance(value, dict) else None
-    unit = inline if inline is not None else index.get(field)
+    unit = _stated_unit(value, field, index)
     if unit is None:
         return number if isinstance(value, dict) else value
-    factor = _UNIT_FACTORS[_QUANTITY_DIMENSIONS[field]].get(unit)
+    table = _UNIT_FACTORS.get(dimension or _QUANTITY_DIMENSIONS[field], {})
+    factor = table.get(unit)
     if factor is None:
         return _Unconverted(number)
     return number * factor[0] + factor[1]
+
+
+def _spec_dimension(key, family=None):
+    """R5.2 physical dimension of design_input_specs[key] in a unit of
+    `family` (_FAMILY_SPEC_DIMENSIONS, else _SPEC_DIMENSIONS), or None for a
+    dimensionless key, which needs no unit."""
+    if not isinstance(key, str):
+        return None
+    return (_FAMILY_SPEC_DIMENSIONS.get((family, key))
+            or _SPEC_DIMENSIONS.get(key))
+
+
+def _spec_unit_recognised(key, unit, family=None):
+    """True when `unit` (the unit key design_input_specs[key] is stated in,
+    _stated_unit) is a unit of the key's dimension in the built-in table
+    (R5.2); False for no, a blank / ambiguous, or an unrecognised unit."""
+    dimension = _spec_dimension(key, family)
+    return bool(unit) and unit in _UNIT_FACTORS.get(dimension, {})
+
+
+def _split_basis(chemicals):
+    """R5.4: the length a list-valued split vector must have -- the number
+    of chemicals carrying an integer `index` -- when those indices are
+    exactly 0..n-1 (n >= 1), else None (no list split is readable). BioSTEAM
+    orders a split vector by the thermo's chemical order, which `index`
+    records."""
+    indices = [c['index'] for c in chemicals
+               if isinstance(c.get('index'), int)
+               and not isinstance(c.get('index'), bool)]
+    return (len(indices)
+            if indices and sorted(indices) == list(range(len(indices)))
+            else None)
+
+
+def _split_readable(value, basis, chem_ids):
+    """R5.4: False for a split vector that cannot be mapped to chemicals --
+    a list whose length is not the _split_basis `basis` (or no basis), or a
+    dict with a key that is not a declared chemical id (`chem_ids`); True
+    otherwise (a scalar split, or a readable vector)."""
+    if isinstance(value, list):
+        return basis is not None and len(value) == basis
+    if isinstance(value, dict):
+        return all(key in chem_ids for key in value)
+    return True
+
+
+def _internal_unit(unit, index, basis, chem_ids):
+    """(copy of `unit` for scoring, {spec key: stated unit key}) (R5.2 /
+    R5.4): each dimensional design_input_specs value (_SPEC_DIMENSIONS; a
+    list, such as an evaporator's pressures, element-wise) converted to
+    BioSTEAM's internal unit from its inline or quantity_units_global unit
+    (_to_internal), and a split vector that cannot be mapped to chemicals
+    (_split_readable) dropped -- INVALID == MISSING. The second value
+    records the unit key each spec key is stated in (_stated_unit), for
+    CMP-UOP-05. The document is not modified."""
+    specs = unit.get('design_input_specs')
+    if not isinstance(specs, dict):
+        return unit, {}
+    out, units = {}, {}
+    for key, value in specs.items():
+        if isinstance(key, str):
+            stated = _stated_unit(value, key, index)
+            if stated is not None:
+                units[key] = stated
+        dimension = _SPEC_DIMENSIONS.get(key) if isinstance(key, str) else None
+        if dimension is not None:
+            if isinstance(value, list):
+                value = [_to_internal(v, key, index, dimension) for v in value]
+            else:
+                value = _to_internal(value, key, index, dimension)
+        if key in _SPLIT_KEYS and not _split_readable(value, basis, chem_ids):
+            continue
+        out[key] = value
+    return dict(unit, design_input_specs=out), units
 
 
 def _converted(obj, index):
@@ -1586,7 +1732,7 @@ def _registry_query(rid):
     return None, None
 
 
-def _registry_status(chem):
+def _registry_status(chem, cid=None):
     """R3.2 status of a chemical's registry_id: 'absent' (none stated),
     'malformed' (not a well-formed CAS/InChI/InChIKey/SMILES,
     _registry_query), 'contradicted' (an InChI whose formula layer, or a
@@ -1595,9 +1741,14 @@ def _registry_status(chem):
     `chemicals` database resolves it and nothing contradicts it), 'unresolved'
     (well-formed, but the database does not know it: a real but unlisted
     number, or an invented one) or 'unavailable' (well-formed; the database
-    cannot be imported). Lookups are cached (_database_record: the
-    database only, never a built-in pseudo-component); never raises."""
-    rid = _as_dict(chem).get('registry_id')
+    cannot be imported) or 'conflicted' (R5.5: resolved, but the chemical
+    states no molar mass or formula to settle it and its id -- `cid`,
+    default the chemical's own -- resolves by name (_name_tier's lookup) to
+    a record of another formula or molar mass, _records_disagree). Lookups
+    are cached (_database_record: the database only, never a built-in
+    pseudo-component); never raises."""
+    chem = _as_dict(chem)
+    rid = chem.get('registry_id')
     if rid is None or (isinstance(rid, str) and not rid.strip()):
         return 'absent'
     kind, query = _registry_query(rid)
@@ -1610,9 +1761,30 @@ def _registry_status(chem):
     record = _database_record(query)
     if record is None:
         return 'unresolved'
-    if _record_agreement(record, chem, REGISTRY_MW_RTOL) == 'mismatch':
+    agreement = _record_agreement(record, chem, REGISTRY_MW_RTOL)
+    if agreement == 'mismatch':
         return 'contradicted'
+    if agreement == 'unverified':
+        cid = chem.get('id') if cid is None else cid
+        named = (_name_record(cid) if _nonempty_str(cid)
+                 and not _isomer_ambiguous(cid) else None)
+        if named is not None and _records_disagree(record, named):
+            return 'conflicted'
     return 'resolved'
+
+
+def _records_disagree(a, b):
+    """True when two database / built-in records name different species
+    (R5.5): their formulas both parse and differ, else their molar masses
+    (_record_molar_mass) both exist and differ by more than
+    REGISTRY_MW_RTOL; False when nothing compares."""
+    fa = _formula_counts(getattr(a, 'formula', None))
+    fb = _formula_counts(getattr(b, 'formula', None))
+    if fa is not None and fb is not None:
+        return not _same_counts(fa, fb)
+    ma, mb = _record_molar_mass(a), _record_molar_mass(b)
+    return (ma is not None and mb is not None
+            and abs(ma - mb) > REGISTRY_MW_RTOL * max(ma, mb))
 
 
 def _database_resolved(chem, cid):
@@ -1622,7 +1794,7 @@ def _database_resolved(chem, cid):
     as a built-in pseudo-component (_name_record) -- with a verified or
     unverified record (_name_tier). With the database unavailable only a
     built-in resolves."""
-    return ((chem is not None and _registry_status(chem) == 'resolved')
+    return ((chem is not None and _registry_status(chem, cid) == 'resolved')
             or _name_tier(chem, cid) in ('verified', 'unverified'))
 
 
@@ -2189,7 +2361,8 @@ _ANY_EXCHANGER_RE = re.compile(r'(?:heat )?exchanger|hx')
 _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
     ('boiler_turbogenerator', r'turbo ?generator'),
     ('heat_exchanger_network', r'heat exchanger network|\bhxn\b'),
-    ('facility', r'cooling tower'),
+    # R5.7: a fire-water tank (BioSTEAM's FireWaterTank) is a facility.
+    ('facility', r'cooling tower|fire ?water(?: storage)?(?: tank)?'),
     ('extraction', r'mixer ?settlers?|extract\w*|liquid ?liquid|'
                    r'\blle\b(?: (?:centrifuge|settler))?'),
     ('steam_injection_heater', r'steam ?mixer|jet ?cooker|steam injection'
@@ -2207,22 +2380,27 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
                          r'\bssf\b|simultaneous saccharification'
                          r'(?: (?:and )?ferment\w*)?'),
     ('hx_process', r'hx ?process|interchanger|economi[sz]er|recuperat\w*'),
+    # R5.7: a chiller or a steriliser is a utility-heated / -cooled
+    # exchanger; a fan or blower a compressor; an expander a turbine; a kiln
+    # a reactor; a knock-out drum a flash; ion exchange and an adsorber
+    # (adsorption column) a splitter.
     ('hx_utility', r'hx ?utilit\w*|heat exchanger|heater|cooler|condenser|'
-                   r'reboiler|\bhx\b'),
+                   r'reboiler|\bhx\b|chiller|sterili[sz]\w*'),
     ('pump', r'pump'),
     ('valve', r'valve'),
-    ('compressor', r'compress\w*|blower'),
-    ('turbine', r'turbine'),
+    ('compressor', r'compress\w*|blower|\bfans?\b'),
+    ('turbine', r'turbine|expander'),
     ('evaporator', r'evaporat\w*'),
-    ('flash', r'flash'),
+    ('flash', r'flash|knock ?out(?: (?:drum|pot|vessel))?'),
     ('crystallizer', r'crystalli\w*'),
     ('reactor', r'reactor|ferment\w*|saccharif\w*|digest\w*|hydroly\w*|'
                 r'liquefaction|\brx\b|\bmbr\b|seed train|neutrali[sz]\w*|'
-                r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation'),
+                r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation|\bkilns?\b'),
     ('splitter', r'splitter|\bsplit\w*|centrifuge|filter|\bpress\b|screen|'
                  r'separator|decanter|settler|sieve|scrubber|clarifier|'
-                 r'adsorp\w*(?: column)?|absorp\w*|membrane|cyclone|'
-                 r'osmosis|thickener|crushing mill'),
+                 r'adsor[bp]\w*(?: (?:column|bed))?|absorp\w*|membrane|'
+                 r'cyclone|osmosis|thickener|crushing mill|'
+                 r'ion ?exchang\w*(?: (?:column|bed|resin))?'),
     ('distillation', r'distillation|column|rectifier'),
     ('tank', r'tank|storage|vessel|hopper|\bsilo|\bbin\b|\bdrum\b'),
     ('solids_handling', r'convey\w*|\bmill|crusher|grinder|screw|'
@@ -2455,6 +2633,12 @@ def _port_contradiction(class_name, family, core, ports):
 # (solids separators, centrifuges, settlers, the T-setting Separator) are not.
 PURE_SPLITTER_CLASSES = frozenset({'Splitter', 'PhaseSplitter',
                                    'MockSplitter', 'FakeSplitter'})
+# BioSTEAM's MockSplitter (FakeSplitter is its alias) does nothing when
+# simulated -- its outlets are set elsewhere -- so their T and P may differ
+# from its inlet's legitimately (corpus S408 / S410: 265 -> 298 K, 10 -> 1
+# atm): its claim is exempt from the T / P bounds, not from the species and
+# duty checks.
+MOCK_SPLITTER_CLASSES = frozenset({'MockSplitter', 'FakeSplitter'})
 
 
 def _recorded_duty(sc, position):
@@ -2546,13 +2730,17 @@ def _physics_contradiction(class_name, family, physics):
     pure-splitter claim -- a PURE_SPLITTER_CLASSES class, or a splitter
     family claim without an exact class (`class_name` None: a unit_type
     keyword, an abstract class, a key-set inference) -- by any duty,
-    species appearing / vanishing, or T / P deviations ('splitter'). Other
+    species appearing / vanishing, or T / P deviations ('splitter'); a
+    MOCK_SPLITTER_CLASSES claim by a duty or species only (it does nothing
+    when simulated, so its outlets' T and P are set elsewhere). Other
     claims are not tested; an implausible one counts as absent."""
     physics = physics or {}
     if family == 'mixer':
         kinds = ('heat', 'species', 'mixer') if class_name in _COSTED_CLASSES \
             else ('heat', 'power', 'species', 'mixer')
         what = 'a mixer'
+    elif class_name in MOCK_SPLITTER_CLASSES:
+        kinds, what = ('heat', 'power', 'species'), 'a mock splitter'
     elif (class_name in PURE_SPLITTER_CLASSES if class_name
           else family == 'splitter'):
         kinds, what = ('heat', 'power', 'species', 'splitter'), 'a pure splitter'
@@ -3320,7 +3508,9 @@ def _main_outlet(streams):
 def _inconsistent_keys(req, sc, position, explicit):
     """Guarded explicit keys whose value disagrees with a non-empty outlet
     stream's T (> GUARD_T_ABS K) or P (> GUARD_P_RTOL relative); a 'T_main'
-    guard checks the largest-flow outlet only."""
+    guard checks the largest-flow outlet only. Values are compared in
+    internal units (R5.2); one in an unrecognised unit (_Unconverted) is
+    never compared."""
     if not req.guard:
         return []
     unit = sc.units[position]
@@ -3331,6 +3521,8 @@ def _inconsistent_keys(req, sc, position, explicit):
             if not _is_empty_stream(sc.streams[i])]
     bad = []
     for key, part in req.guard.items():
+        if isinstance(specs.get(key), _Unconverted):
+            continue
         value = _num(specs.get(key)) if key in explicit else None
         if value is None or (part == 'P' and value <= 0):
             continue
@@ -3481,13 +3673,22 @@ class _ScoringContext:
         # R2.1: elements sharing an id are collapsed to the first occurrence
         # (UNIT-01 / STR-01 flag the defect); no criterion is inflated by
         # repetition.
-        self.units = _first_by_id(_dicts(self.doc.get('units')))
         # R3.4: streams (and, below, utility agents) are read in BioSTEAM's
         # internal units, converted from the stated quantity units.
         self.quantity_units = _quantity_unit_index(self.doc)
         self.streams = [_internal_stream(s, self.quantity_units) for s in
                         _first_by_id(_dicts(self.doc.get('streams')))]
         self.chemicals = _first_by_id(_dicts(self.doc.get('chemicals')))
+        # R5.2 / R5.4: units read with their dimensional specs in internal
+        # units and unreadable split vectors dropped; spec_units[position]
+        # records the unit each spec key is stated in (CMP-UOP-05).
+        chem_ids = frozenset(c['id'] for c in self.chemicals
+                             if _nonempty_str(c.get('id')))
+        basis = _split_basis(self.chemicals)
+        internal = [_internal_unit(u, self.quantity_units, basis, chem_ids)
+                    for u in _first_by_id(_dicts(self.doc.get('units')))]
+        self.units = [u for u, _units in internal]
+        self.spec_units = [units for _u, units in internal]
         self.results = list(results)
         if registry is None:
             self.registry, self.registry_error = _design_spec_registry()
@@ -3763,13 +3964,21 @@ def _thm_02_credit(chem, cid):
     neither; 'formula' FORMULA_ONLY_CREDIT when a parseable formula (or the
     formula-like id itself) narrows it down; else 'none' 0. A malformed or
     contradicted registry id counts as absent (R2.0), and the note says
-    so."""
-    status = _registry_status(chem)
+    so. A registry id the database resolves to another species than the
+    chemical's id names, with nothing stated to settle which is right
+    ('conflicted', R5.5), is capped at REGISTRY_UNRESOLVED_CREDIT as
+    'conflicted', and the note flags the conflict."""
+    status = _registry_status(chem, cid)
     if status == 'resolved':
         return 1.0, None, 'registry'
     fault = _REGISTRY_FAULTS.get(status)
     tier = _name_tier(chem, cid)
     options = []
+    if status == 'conflicted':
+        options.append((REGISTRY_UNRESOLVED_CREDIT, 'conflicted', (
+            '.registry_id (resolves to another species than the id names by '
+            'name, and no molar mass or formula settles which is right: '
+            'unverified)')))
     if status in ('unresolved', 'unavailable'):
         options.append((REGISTRY_UNRESOLVED_CREDIT, 'unresolved', (
             '.registry_id (well-formed, but the chemicals database does not '
@@ -3849,16 +4058,49 @@ def _score_thm_02(sc):  # CMP-THM-02
             f'{tiers.count("unverified")} by an unverified one '
             f'({builtin} of these as thermosteam built-in pseudo-components), '
             f'{tiers.count("unresolved")} carry an unresolvable id'
+            + (f', {tiers.count("conflicted")} an id naming another species '
+               f'than their name' if 'conflicted' in tiers else '')
             + (f'; {unreferenced} unreferenced chemical(s) can only lower the '
                f'score' if unreferenced and len(scored) > unreferenced
                else ''), missing)
+
+
+def _thm_03_credit(chem, cid):
+    """(credit, missing suffix or None) of one declared chemical's molar
+    mass (R5.6), the MAX over: a stated molar mass (> 0) or one derived
+    from a parseable formula, 1; a registry id the database resolves
+    without contradiction or conflict (_registry_status 'resolved') to a
+    record with a molar mass, 1; an id resolving by name to a thermosteam
+    built-in pseudo-component, or to a database record the chemical's own
+    data verify (_name_tier), NAME_RESOLVED_CREDIT; else 0 (an unverified
+    database name may misidentify the species)."""
+    derive = _validator()._molar_mass_from_formula  # same rule as _Context.molar_mass
+    declared = _num(chem.get('molar_mass'))
+    formula = chem.get('formula')
+    if (declared is not None and declared > 0) or (
+            _nonempty_str(formula) and derive(formula) is not None):
+        return 1.0, None
+    if _registry_status(chem, cid) == 'resolved' and _record_molar_mass(
+            _database_record(_registry_query(chem.get('registry_id'))[1])
+    ) is not None:
+        return 1.0, None
+    tier = _name_tier(chem, cid)
+    record = _name_record(cid) if tier in ('verified', 'unverified') else None
+    if record is not None and _record_molar_mass(record) is not None and (
+            tier == 'verified' or isinstance(record, _Builtin)):
+        return NAME_RESOLVED_CREDIT, (f'.molar_mass (only from the '
+                                      f'thermosteam built-in {record.name})'
+                                      if isinstance(record, _Builtin) else
+                                      '.molar_mass (only from the database '
+                                      'record its name resolves to)')
+    return 0.0, ('.molar_mass (or a parseable formula, or a registry id '
+                 'the database resolves)')
 
 
 def _score_thm_03(sc):  # CMP-THM-03
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
-    derive = _validator()._molar_mass_from_formula  # same rule as _Context.molar_mass
     refs = _chemical_references(sc)
     scored, missing = [], []
     for chem, label, cid in population:
@@ -3866,16 +4108,17 @@ def _score_thm_03(sc):  # CMP-THM-03
             scored.append((0.0, True))
             missing.append(f'{label}: not declared')
             continue
-        declared = _num(chem.get('molar_mass'))
-        formula = chem.get('formula')
-        ok = (declared is not None and declared > 0) or (
-            _nonempty_str(formula) and derive(formula) is not None)
-        scored.append((1.0 if ok else 0.0, cid in refs))
-        if not ok:
-            missing.append(f'{label}.molar_mass (or a parseable formula)')
-    ok = sum(s for s, _ref in scored)
+        credit, note = _thm_03_credit(chem, cid)
+        scored.append((credit, cid in refs))
+        if note:
+            missing.append(label + note)
+    full = sum(1 for s, _ref in scored if s == 1.0)
+    partial = sum(1 for s, _ref in scored if 0.0 < s < 1.0)
     return (_referenced_mean(scored),
-            f'{ok:g} of {len(scored)} chemical(s) have a molar mass', missing)
+            f'{full} of {len(scored)} chemical(s) have a molar mass (stated, '
+            f'from a formula, or from a database-resolved registry id)'
+            + (f', {partial} more only from a thermosteam built-in or a '
+               f'verified name' if partial else ''), missing)
 
 
 # CMP-THM-04 credit of included_in_thermo: false on a chemical the streams
@@ -4722,26 +4965,72 @@ def _score_uop_04(sc):  # CMP-UOP-04
             missing)
 
 
+def _uop_05_unit(sc, position, facility):
+    """(credit, missing) of one CMP-UOP-05 unit (R5.2): 1 when every
+    applying essential requirement (CMP-UOP-02 rules; a facility's
+    _FACILITY_RULES) is met -- n of its keys -- by counted explicit keys
+    that are dimensionless (_spec_dimension None) or stated in a unit
+    recognised for their dimension (inline, or the quantity_units_global
+    alias); else `base`: DERIVED_CREDIT when the class is identified at
+    confidence 1 with a known family (its conventions imply BioSTEAM's
+    native units), else 0. That is the MIN over the requirements of a
+    credit in {base, 1}. The requirement set is fixed by NEED, so deleting
+    a key or an alias never raises it (a stated key without a unit scores
+    what its absence does), and a requirement that deleted evidence
+    un-waives can only lower the minimum. A unit none of whose
+    requirements applies needs no unit (1); one whose requirements are
+    unknown (unknown family or facility kind) scores `base`."""
+    label = sc.unit_labels[position]
+    name, family, confidence = sc.unit_classes[position]
+    base = (DERIVED_CREDIT if name and confidence == 1.0 and family is not None
+            else 0.0)
+    convention = ' (class conventions imply it)' if base else ''
+    if facility:
+        rules = _FACILITY_RULES.get(_facility_kind(sc, position))
+        explicit = _facility_explicit(sc, position) if rules else set()
+    else:
+        rules = _unit_rules(sc, position)
+        explicit = _explicit_keys(sc.units[position], family)
+    if rules is None:
+        return base, [f'{label}.design_input_specs: specification units '
+                      f'unknown (its needs are unknown){convention}']
+    credits, missing = [], []
+    for req in rules:
+        if not facility and not _requirement_applies(req, sc, position):
+            continue
+        known, unitless = 0, []
+        for key in sorted(_counted_keys(req, sc, position, explicit)):
+            if _spec_dimension(key, family) is None or _spec_unit_recognised(
+                    key, sc.spec_units[position].get(key), family):
+                known += 1
+            else:
+                unitless.append(key)
+        best = 1.0 if known >= req.n else base
+        credits.append(best)
+        if best < 1.0:
+            what = (f"{', '.join(unitless)} stated without a recognised "
+                    f"quantity unit" if unitless else
+                    f"one of {'|'.join(req.keys)} unstated")
+            missing.append(f'{label}.design_input_specs: {what}{convention}')
+    return min(credits, default=1.0), missing
+
+
 def _score_uop_05(sc):  # CMP-UOP-05
-    # Derived credit needs the class at confidence 1 AND a known family (an
-    # abstract class such as 'Unit' names none). Population: the units that
-    # need operating specifications (CMP-UOP-02) or facility settings
-    # (CMP-UOP-06), whose numeric settings (T_min_app, ...) carry no units
-    # either.
+    # Population: the units that need operating specifications (CMP-UOP-02)
+    # or facility settings (CMP-UOP-06), whose numeric settings (T_min_app,
+    # ...) need units too (R5.2).
+    facilities = set(_facility_population(sc))
     scores, missing = [], []
-    for position in sorted(set(_spec_population(sc))
-                           | set(_facility_population(sc))):
-        name, family, confidence = sc.unit_classes[position]
-        known = bool(name) and confidence == 1.0 and family is not None
-        scores.append(DERIVED_CREDIT if known else 0.0)
-        missing.append(f'{sc.unit_labels[position]}.design_input_specs: '
-                       f'quantity units not representable'
-                       + (' (fixed by class conventions)' if known else ''))
+    for position in sorted(set(_spec_population(sc)) | facilities):
+        score, gaps = _uop_05_unit(sc, position, position in facilities)
+        scores.append(score)
+        missing.extend(gaps)
     if not scores:
         return None, 'no units that need operating specifications', []
-    known = sum(1 for credit in scores if credit)
-    return (_mean(scores), f'not representable; units implied by class '
-            f'conventions for {known} of {len(scores)} unit(s)', missing)
+    return (_mean(scores), f'{scores.count(1.0)} of {len(scores)} unit(s) '
+            f'state every dimensional specification they need with a '
+            f'recognised quantity unit (quantity_units_global aliases)',
+            missing)
 
 
 #%% Facility bindings and settings (CMP-UOP-06)

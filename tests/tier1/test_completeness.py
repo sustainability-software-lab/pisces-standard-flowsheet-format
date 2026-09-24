@@ -315,8 +315,9 @@ class TestCriteriaRegistry(unittest.TestCase):
             self.assertIn(entry["category"], self.registry["categories"], cid)
 
     def test_representable_since_matches_schema_history(self):
-        """Not-representable (null) criteria are exactly the schema gaps
-        (incl. UOP-05, design-spec units); COST-04 since 0.1.2
+        """Not-representable (null) criteria are exactly the schema gaps;
+        UOP-05 (design-spec units) since 0.0.7 (R5.2: a spec key aliased in
+        quantity_units_global), COST-04 since 0.1.2
         (purchase_cost_correlations), SYS-04 since 0.0.6 (reproducibility
         packages); all others since 0.0.0 -- including CMP-THM-04 (R4.5:
         chemicals[].included_in_thermo is a base field)."""
@@ -325,12 +326,13 @@ class TestCriteriaRegistry(unittest.TestCase):
         self.assertEqual(since["CMP-THM-04"], "0.0.0")
         self.assertEqual(
             {c for c, v in since.items() if v is None},
-            {"CMP-THM-05", "CMP-TOP-02", "CMP-UOP-05",
+            {"CMP-THM-05", "CMP-TOP-02",
              "CMP-RXN-04", "CMP-COST-05", "CMP-COST-06", "CMP-COST-07",
              "CMP-UTIL-05", "CMP-SYS-01", "CMP-SYS-02", "CMP-SYS-03"})
         uop5 = self.registry["criteria"]["CMP-UOP-05"]
-        self.assertEqual((uop5["weight"], uop5["criticality"]),
-                         (1, "supplementary"))
+        self.assertEqual((uop5["weight"], uop5["criticality"],
+                          uop5["representable_since"]),
+                         (1, "supplementary", "0.0.7"))
         self.assertEqual(since["CMP-COST-04"], "0.1.2")
         self.assertEqual(since["CMP-SYS-04"], "0.0.6")
 
@@ -881,8 +883,9 @@ class TestUnitClass(unittest.TestCase):
         pyrolysis -> reactor, 'Neutralization tank' -> reactor, 'Wastewater
         treatment' -> reactor but the wastewater cost lump and plant-air/CIP
         facilities -> facility, a plain 'Boiler' -> boiler; R4.4 head nouns:
-        'Fire water tank' -> tank, 'LLE centrifuge' / 'Adsorption column'
-        keep their compound family); unknown -> None."""
+        'Mix tank' -> tank, 'LLE centrifuge' / 'Adsorption column' keep
+        their compound family; R5.7: 'Fire water tank' -> facility); unknown
+        -> None."""
         cases = {
             "SteamMixer": "steam_injection_heater",
             "Jet cooker": "steam_injection_heater",
@@ -898,7 +901,7 @@ class TestUnitClass(unittest.TestCase):
             "Heat exchanger network": "heat_exchanger_network",
             "Heat exchanger": "hx_utility", "HXprocess": "hx_process",
             "HydrolysateHeatExchanger": "hx_utility",
-            "Fire water tank": "tank", "Mix tank": "tank",
+            "Fire water tank": "facility", "Mix tank": "tank",
             "LLE centrifuge": "extraction", "Adsorption column": "splitter",
             "Flash tank": "flash", "Thermal oxidizer": "combustor",
             "Drum dryer": "dryer", "Gibbs equilibrium reactor":
@@ -2728,20 +2731,37 @@ class TestUnitOpCriteria(unittest.TestCase):
         self.assertIsNone(run(C._score_uop_04, doc)[0])
 
     def test_uop_05_spec_units(self):
-        """_score_uop_05 (CMP-UOP-05): mixer only -> None; a core class at
-        confidence 1 -> DERIVED_CREDIT ('fixed by class conventions'); an
-        unpinned custom class (JetCooker) -> 0, pinned -> DERIVED_CREDIT; the
-        bare 'Unit' (abstract: no class, no family) -> 0; unweighted
-        (R4.12): reactor 0.75 + bare Unit 0 -> 0.375; the population also
-        holds the CMP-UOP-06 facilities (a ProcessWaterCenter ->
-        DERIVED_CREDIT), but not cost-only ones (CIPpackage -> None)."""
+        """_score_uop_05 (CMP-UOP-05, R5.2): mixer only -> None; a core
+        class at confidence 1 whose need is unmet (HXutility, no specs) ->
+        DERIVED_CREDIT with a 'one of T|H|V unstated (class conventions
+        imply it)' locator; T stated without a quantity unit -> still
+        DERIVED_CREDIT ('T stated without a recognised quantity unit'); T
+        aliased in quantity_units_global (K) -> 1 with no locator; an
+        unpinned custom class (JetCooker) -> 0, pinned -> DERIVED_CREDIT;
+        the bare 'Unit' (abstract: no class, no family, needs unknown) -> 0
+        without the convention note; unweighted (R4.12): reactor 0.75 + bare
+        Unit 0 -> 0.375; the population also holds the CMP-UOP-06
+        facilities (a ProcessWaterCenter -> DERIVED_CREDIT), but not
+        cost-only ones (CIPpackage -> None)."""
         self.assertIsNone(run(C._score_uop_05, label_mixer_doc())[0])
-        score, _m, missing = run(C._score_uop_05,
-                                 one_unit_doc(spec_unit("HXutility")))
+        score, message, missing = run(C._score_uop_05,
+                                      one_unit_doc(spec_unit("HXutility")))
         self.assertEqual(score, C.DERIVED_CREDIT)
-        self.assertEqual(missing, ["units[U1].design_input_specs: quantity "
-                                   "units not representable (fixed by class "
-                                   "conventions)"])
+        self.assertIn("0 of 1 unit(s) state every dimensional", message)
+        self.assertEqual(missing, ["units[U1].design_input_specs: one of "
+                                   "T|H|V unstated (class conventions imply "
+                                   "it)"])
+        doc = one_unit_doc(spec_unit("HXutility", {"T": 300.0}))
+        score, _m, missing = run(C._score_uop_05, doc)
+        self.assertEqual(score, C.DERIVED_CREDIT)
+        self.assertEqual(missing, ["units[U1].design_input_specs: T stated "
+                                   "without a recognised quantity unit "
+                                   "(class conventions imply it)"])
+        doc["quantity_units_global"]["temperature"]["aliases"].append("T")
+        self.assertEqual(run(C._score_uop_05, doc), (
+            1.0, "1 of 1 unit(s) state every dimensional specification they "
+            "need with a recognised quantity unit (quantity_units_global "
+            "aliases)", []))
         jet = spec_unit("JetCooker", url=BIP_URL)
         self.assertEqual(run(C._score_uop_05, one_unit_doc(jet))[0], 0.0)
         self.assertEqual(run(C._score_uop_05, one_unit_doc(jet, pinned=True))[0],
@@ -2749,7 +2769,8 @@ class TestUnitOpCriteria(unittest.TestCase):
         bare = one_unit_doc(spec_unit("Unit"))
         score, _m, missing = run(C._score_uop_05, bare)
         self.assertEqual(score, 0.0)
-        self.assertNotIn("fixed by class conventions", missing[0])
+        self.assertNotIn("class conventions", missing[0])
+        self.assertIn("its needs are unknown", missing[0])
         doc = one_unit_doc(spec_unit("SinglePhaseReactor"))
         doc["units"].append(dict(spec_unit("Unit"), id="U2"))
         self.assertAlmostEqual(run(C._score_uop_05, doc)[0], 0.375)
@@ -4759,9 +4780,11 @@ def splitter_doc(class_name="Splitter"):
     unit = {"id": "S1", "unit_type": class_name,
             "design_simulation_method": f"{class_name} on {BST_URL}",
             "design_input_specs": {"split": [0.5, 0.5, 1.0]}}
-    chemicals = [{"id": n, "registry_id": cas, "molar_mass": mw[n]}
-                 for n, cas in (("Water", "7732-18-5"), ("Glucose", "50-99-7"),
-                                ("CO2", "124-38-9"))]
+    # R5.4: indexed 0..2, so the 3-element split vector is readable.
+    chemicals = [{"id": n, "index": i, "registry_id": cas, "molar_mass": mw[n]}
+                 for i, (n, cas) in enumerate((("Water", "7732-18-5"),
+                                               ("Glucose", "50-99-7"),
+                                               ("CO2", "124-38-9")))]
     return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD"},
             "units": [unit], "streams": streams, "chemicals": chemicals,
             "utilities": {"heat_utilities": [], "power_utilities": [],
@@ -7188,8 +7211,9 @@ class TestRevision5(unittest.TestCase):
         kW); a PURE_SPLITTER_CLASSES class, or a label-only splitter
         family claim, by 'heat', 'power', 'species' or 'splitter'; a
         splitter-family class that is not pure (SolidsCentrifuge), and any
-        other family, never; no evidence -> None. _ports_plausible joins it
-        with the port contradiction."""
+        other family, never; a MOCK_SPLITTER_CLASSES class not by
+        'splitter' (T / P) evidence; no evidence -> None. _ports_plausible
+        joins it with the port contradiction."""
         heat = {"heat": "records a non-zero heat duty (x)"}
         power = {"power": "records a non-zero power duty (grid)"}
         self.assertEqual(C._physics_contradiction("Mixer", "mixer", heat),
@@ -7202,10 +7226,15 @@ class TestRevision5(unittest.TestCase):
         self.assertIsNotNone(C._physics_contradiction(None, "mixer", power))
         split = {"splitter": "outlet pressure 1 differs from the inlet"}
         self.assertIsNone(C._physics_contradiction("Mixer", "mixer", split))
-        for name in sorted(C.PURE_SPLITTER_CLASSES) + [None]:
+        for name in sorted(C.PURE_SPLITTER_CLASSES
+                           - C.MOCK_SPLITTER_CLASSES) + [None]:
             family = C._class_family(name) if name else "splitter"
             self.assertIn("implausible for a pure splitter",
                           C._physics_contradiction(name, family, split))
+        # A MockSplitter does nothing when simulated: exempt from the T / P
+        # bounds only (tested in TestRevision5PartB).
+        for name in sorted(C.MOCK_SPLITTER_CLASSES):
+            self.assertIsNone(C._physics_contradiction(name, "junction", split))
         self.assertIsNone(C._physics_contradiction(
             "SolidsCentrifuge", "splitter", split))
         self.assertIsNone(C._physics_contradiction("Pump", "pump", heat))
@@ -7351,6 +7380,505 @@ class TestRevision5(unittest.TestCase):
                                              before.score + 1e-12, cid)
                 self.assertLess(after["CMP-FEED-02"].score,
                                 base["CMP-FEED-02"].score)
+
+
+# ------------------------------------------------ Revision 5, part B
+
+def r5_kpa_twin(doc):
+    """Copy of an r5_doc restated in K and Pa: the temperature and pressure
+    entries of quantity_units_global switch to K / Pa and every stream
+    temperature (+273.15), pressure (x 1e5) and design_input_specs T / P
+    follows, so the twin states the same physical flowsheet."""
+    doc = copy.deepcopy(doc)
+    doc["quantity_units_global"]["temperature"]["quantity_units"] = "K"
+    doc["quantity_units_global"]["pressure"]["quantity_units"] = "Pa"
+    holders = [s["stream_properties"] for s in doc["streams"]]
+    holders += [u.get("design_input_specs", {}) for u in doc["units"]]
+    for holder in holders:
+        for key, scale, offset in (("temperature", 1.0, 273.15),
+                                   ("pressure", 1e5, 0.0), ("T", 1.0, 273.15),
+                                   ("P", 1e5, 0.0)):
+            if key in holder:
+                holder[key] = holder[key] * scale + offset
+    return doc
+
+
+def r5_sweep_doc(identity="unit_type"):
+    """sweep_doc(identity) restated with R5.2 / R5.4 data: pressures in bar
+    (quantity_units_global 'pressure' with aliases pressure and P, so every
+    stream, agent and P1 / P2 / F1 spec pressure is in bar), temperatures in
+    K with T aliased (H1's and F1's T), R1's tau aliased under a 'time'
+    entry in minutes (600 min = 10 h), the chemicals indexed 0..3 and S1's
+    split a 4-element vector (one entry per indexed chemical)."""
+    doc = sweep_doc(identity)
+    doc["quantity_units_global"] = {
+        "temperature": {"aliases": ["temperature", "T"], "quantity_units": "K"},
+        "pressure": {"aliases": ["pressure", "P"], "quantity_units": "bar"},
+        "time": {"aliases": ["tau"], "quantity_units": "min"}}
+    holders = [s["stream_properties"] for s in doc["streams"]]
+    for holder in holders + doc["utilities"]["heat_utilities"]:
+        if "pressure" in holder:
+            holder["pressure"] /= 1e5
+    for unit in doc["units"]:
+        specs = unit.get("design_input_specs", {})
+        if "P" in specs:
+            specs["P"] /= 1e5
+        if "tau" in specs:
+            specs["tau"] *= 60.0
+    for i, chem in enumerate(doc["chemicals"]):
+        chem["index"] = i
+    split_unit = next(u for u in doc["units"] if u["id"] == "S1")
+    split_unit["design_input_specs"]["split"] = [0.5] * len(doc["chemicals"])
+    return doc
+
+
+class TestRevision5PartB(unittest.TestCase):
+    """Revision 5 part B: design-spec units via quantity_units_global
+    (R5.2), split vectors (R5.4), a registry id contradicting the name
+    (R5.5), CMP-THM-03 via the database (R5.6), keywords (R5.7), and the
+    MockSplitter correction to R5.1."""
+
+    # ---- R5.2 design-spec units ----------------------------------------
+
+    def test_spec_dimension_and_stated_unit(self):
+        """_spec_dimension: T -> temperature, dT -> temperature_difference,
+        tau -> time, OLR -> loading_rate; V dimensionless (None) except in a
+        batch bioreactor or crystallizer (volume); split / LHK / N_stages /
+        a non-string -> None. _stated_unit: an inline {value, units} pair's
+        own unit, else the key's quantity_units_global unit, else None.
+        _spec_unit_recognised: degC for T -> True; bar for T, '' (ambiguous),
+        None, any unit for OLR (no table) and m3 for a flash's V -> False;
+        m3 for a batch bioreactor's V -> True."""
+        self.assertEqual(C._spec_dimension("T"), "temperature")
+        self.assertEqual(C._spec_dimension("dT"), "temperature_difference")
+        self.assertEqual(C._spec_dimension("tau"), "time")
+        self.assertEqual(C._spec_dimension("OLR"), "loading_rate")
+        self.assertIsNone(C._spec_dimension("V"))
+        self.assertEqual(C._spec_dimension("V", "batch_bioreactor"), "volume")
+        self.assertEqual(C._spec_dimension("V", "crystallizer"), "volume")
+        for key in ("split", "LHK", "N_stages", 3):
+            self.assertIsNone(C._spec_dimension(key), key)
+        self.assertEqual(C._stated_unit({"value": 1.0, "units": "bar"}, "P",
+                                        {"P": "Pa"}), "bar")
+        self.assertEqual(C._stated_unit(1.0, "P", {"P": "kPa"}), "kPa")
+        self.assertIsNone(C._stated_unit(1.0, "P", {}))
+        self.assertTrue(C._spec_unit_recognised("T", "degC"))
+        for key, unit, family in (("T", "bar", None), ("T", "", None),
+                                  ("T", None, None), ("OLR", "kg/m3/d", None),
+                                  ("V", "m3", "flash")):
+            self.assertFalse(C._spec_unit_recognised(key, unit, family), key)
+        self.assertTrue(C._spec_unit_recognised("V", "m3", "batch_bioreactor"))
+
+    def test_to_internal_with_spec_dimensions(self):
+        """_to_internal with a spec dimension (R5.2): T 80 degC -> 353.15 K;
+        a temperature DIFFERENCE dT of 5 degC -> 5 (no offset), of 9 degF ->
+        5; tau 30 min -> 0.5 h; Q 1 kW -> 3600 kJ/hr; duty_per_kg 1 MJ/kg ->
+        1000 kJ/kg; V_max 500 L -> 0.5 m3; P 3 furlongs -> _Unconverted(3)
+        (unrecognised: no bounds, no guard); no unit -> the number as is."""
+        cases = (("T", 80.0, "degC", "temperature", 353.15),
+                 ("dT", 5.0, "degC", "temperature_difference", 5.0),
+                 ("dT", 9.0, "degF", "temperature_difference", 5.0),
+                 ("tau", 30.0, "min", "time", 0.5),
+                 ("Q", 1.0, "kW", "heat_flow", 3600.0),
+                 ("duty_per_kg", 1.0, "MJ/kg", "specific_energy", 1000.0),
+                 ("V_max", 500.0, "L", "volume", 0.5))
+        for key, value, unit, dimension, expected in cases:
+            self.assertAlmostEqual(C._to_internal(value, key, {key: unit},
+                                                  dimension), expected,
+                                   msg=key)
+        odd = C._to_internal(3.0, "P", {"P": "furlongs"}, "pressure")
+        self.assertIsInstance(odd, C._Unconverted)
+        self.assertEqual(float(odd), 3.0)
+        self.assertEqual(C._to_internal(3.0, "P", {}, "pressure"), 3.0)
+
+    def test_internal_unit(self):
+        """_internal_unit (R5.2 / R5.4) -> (scoring copy, {key: stated
+        unit}): T 80 under a degC alias -> 353.15, an evaporator's list of
+        pressures in bar -> element-wise Pa, tau without an alias unchanged,
+        the non-dimensional 'material' untouched; a 2-element split kept
+        when 2 chemicals carry indices 0..1, dropped (INVALID == MISSING)
+        when the basis is 3 or None; a dict split kept only when every key
+        is a declared chemical id; the stated-unit map records T and P; a
+        unit without a specs object comes back as is with {}; the input
+        unit is not modified."""
+        unit = {"id": "U", "design_input_specs": {
+            "T": 80.0, "P": [1.0, 2.0], "tau": 2.0, "material": "SS316",
+            "split": [0.5, 0.5]}}
+        index = {"T": "degC", "P": "bar"}
+        copy_, units = C._internal_unit(unit, index, 2, frozenset())
+        specs = copy_["design_input_specs"]
+        self.assertAlmostEqual(specs["T"], 353.15)
+        self.assertEqual(specs["P"], [1e5, 2e5])
+        self.assertEqual((specs["tau"], specs["material"], specs["split"]),
+                         (2.0, "SS316", [0.5, 0.5]))
+        self.assertEqual(units, {"T": "degC", "P": "bar"})
+        self.assertEqual(unit["design_input_specs"]["T"], 80.0)
+        for basis in (3, None):
+            self.assertNotIn("split", C._internal_unit(
+                unit, index, basis, frozenset())[0]["design_input_specs"])
+        unit = {"id": "U", "design_input_specs": {"split": {"Water": 0.5}}}
+        self.assertIn("split", C._internal_unit(
+            unit, {}, None, frozenset({"Water"}))[0]["design_input_specs"])
+        self.assertNotIn("split", C._internal_unit(
+            unit, {}, None, frozenset({"Ethanol"}))[0]["design_input_specs"])
+        bare = {"id": "U"}
+        self.assertEqual(C._internal_unit(bare, index, None, frozenset()),
+                         (bare, {}))
+
+    def test_degc_bar_specs_score_like_k_pa(self):
+        """R5.2 reviewer case: r5_doc (degC / bar, T and P aliased) with P1
+        P = 3 and H1 T = 80 -- correct specs -- used to be flagged
+        'inconsistent' (CMP-UOP-02 0.23 instead of 0.73, overall 0.431
+        instead of 0.4675). Now every criterion equals that of its K / Pa
+        twin (r5_kpa_twin: P = 3e5, T = 353.15) within 1e-9, CMP-UOP-02
+        names no inconsistency, and CMP-UOP-05 credits P1 and H1 in full
+        (their only dimensional specs are alias-covered with recognised
+        units). The same doc with T = 353.15 (a K value under the degC
+        alias) is inconsistent: the alias is applied."""
+        doc = r5_doc()
+        specs = {"P1": {"P": 3.0}, "H1": {"T": 80.0}}
+        for unit in doc["units"]:
+            if unit["id"] in specs:
+                unit["design_input_specs"] = dict(specs[unit["id"]])
+        twin = r5_kpa_twin(doc)
+        self.assertEqual(twin["units"][1]["design_input_specs"], {"T": 353.15})
+        a, b = criterion_results(doc), criterion_results(twin)
+        for cid, result in a.items():
+            with self.subTest(criterion=cid):
+                if result.score is None:
+                    self.assertIsNone(b[cid].score)
+                else:
+                    self.assertAlmostEqual(result.score, b[cid].score,
+                                           delta=1e-9)
+        self.assertAlmostEqual(overall(doc), overall(twin), delta=1e-9)
+        self.assertNotIn("inconsistent",
+                         "\n".join(a["CMP-UOP-02"].missing))
+        sc = ctx(doc)
+        for uid in ("P1", "H1"):
+            self.assertEqual(C._uop_05_unit(sc, sc.unit_positions[uid],
+                                            False), (1.0, []), uid)
+        doc["units"][1]["design_input_specs"]["T"] = 353.15
+        _score, _m, missing = run(C._score_uop_02, doc)
+        self.assertIn("units[H1].design_input_specs: one of T|H|V "
+                      "(inconsistent: T disagrees with the outlet stream)",
+                      missing)
+
+    def test_uop_05_unit(self):
+        """_uop_05_unit (R5.2) -> (credit, missing), the MIN over applying
+        requirements of the MAX over their counted keys: a Pump stating P
+        and dP_design (no pressure rise, so dP_design is needed) with
+        neither aliased -> DERIVED_CREDIT and a locator for each; P aliased
+        (Pa) -> still DERIVED_CREDIT (dP_design lacks a unit); dP_design
+        aliased too -> 1. A Flash (two of T, P, V, Q, y, x) stating T and P
+        with only T aliased -> DERIVED_CREDIT ('P stated without a
+        recognised quantity unit'), both -> 1: a two-key requirement needs
+        two unit-known keys. A Splitter stating only its (dimensionless) split
+        vector -> 1. A ThermalOxidizer whose registry entry lacks
+        duty_per_kg (every requirement waived) -> 1. A unit of unknown
+        family (one-inlet 'Mixer' label) -> 0 ('needs are unknown'). A
+        port-less HeatExchangerNetwork facility with T_min_app 5 and its
+        units ->
+        DERIVED_CREDIT; T_min_app aliased under a degC entry (a temperature
+        difference) -> 1."""
+        doc = one_unit_doc(spec_unit("Pump", {"P": 101325.0,
+                                              "dP_design": 5e5}))
+        credit, missing = C._uop_05_unit(ctx(doc), 0, False)
+        self.assertEqual(credit, C.DERIVED_CREDIT)
+        self.assertEqual(len(missing), 2)
+        doc["quantity_units_global"]["pressure"]["aliases"].append("P")
+        credit, missing = C._uop_05_unit(ctx(doc), 0, False)
+        self.assertEqual(credit, C.DERIVED_CREDIT)
+        self.assertEqual(missing, ["units[U1].design_input_specs: dP_design "
+                                   "stated without a recognised quantity "
+                                   "unit (class conventions imply it)"])
+        doc["quantity_units_global"]["pressure"]["aliases"].append("dP_design")
+        self.assertEqual(C._uop_05_unit(ctx(doc), 0, False), (1.0, []))
+        doc = one_unit_doc(spec_unit("Splitter", {"split": [0.5]}),
+                           outs=({}, {}))
+        self.assertEqual(C._uop_05_unit(ctx(doc), 0, False), (1.0, []))
+        doc = one_unit_doc(spec_unit("ThermalOxidizer"))
+        registry = {"ThermalOxidizer": {"design_input_spec_params": {
+            "tau": {}}}}
+        self.assertEqual(C._uop_05_unit(ctx(doc, registry=registry), 0,
+                                        False), (1.0, []))
+        credit, missing = C._uop_05_unit(ctx(valid_doc()), 0, False)
+        self.assertEqual(credit, 0.0)
+        self.assertIn("its needs are unknown", missing[0])
+        flash = one_unit_doc(spec_unit("Flash", {"T": 300.0, "P": 101325.0}),
+                             outs=({}, {}))
+        flash["quantity_units_global"]["temperature"]["aliases"].append("T")
+        credit, missing = C._uop_05_unit(ctx(flash), 0, False)
+        self.assertEqual(credit, C.DERIVED_CREDIT)
+        self.assertEqual(missing, ["units[U1].design_input_specs: P stated "
+                                   "without a recognised quantity unit "
+                                   "(class conventions imply it)"])
+        flash["quantity_units_global"]["pressure"]["aliases"].append("P")
+        self.assertEqual(C._uop_05_unit(ctx(flash), 0, False), (1.0, []))
+        doc = one_unit_doc(spec_unit("HeatExchangerNetwork", {
+            "T_min_app": 5.0, "units": ["U1"]}), ins=(), outs=())
+        sc = ctx(doc)
+        self.assertEqual(C._facility_population(sc), [0])
+        self.assertEqual(C._uop_05_unit(sc, 0, True)[0], C.DERIVED_CREDIT)
+        doc["quantity_units_global"]["approach"] = {
+            "aliases": ["T_min_app"], "quantity_units": "degC"}
+        self.assertEqual(C._uop_05_unit(ctx(doc), 0, True), (1.0, []))
+
+    # ---- R5.4 split vectors ---------------------------------------------
+
+    def test_split_basis_and_readable(self):
+        """_split_basis: the count of chemicals carrying an integer index
+        when those indices are exactly 0..n-1 ([0, 1] -> 2; a chemical
+        without one ignored -> 1), else None ([1, 2], a duplicate 0, a
+        boolean index, none at all). _split_readable: a list is readable
+        only at the basis length (2 of 2 yes; 1 of 2, or any with no basis,
+        no); a dict only when every key is a declared chemical id; a scalar
+        always."""
+        self.assertEqual(C._split_basis([{"index": 0}, {"index": 1}]), 2)
+        self.assertEqual(C._split_basis([{"index": 0}, {"id": "X"}]), 1)
+        for chems in ([{"index": 1}, {"index": 2}],
+                      [{"index": 0}, {"index": 0}], [{"index": True}], []):
+            self.assertIsNone(C._split_basis(chems), chems)
+        self.assertTrue(C._split_readable([0.5, 0.5], 2, frozenset()))
+        self.assertFalse(C._split_readable([0.5], 2, frozenset()))
+        self.assertFalse(C._split_readable([0.5], None, frozenset()))
+        self.assertTrue(C._split_readable({"Water": 0.5}, None,
+                                          frozenset({"Water"})))
+        self.assertFalse(C._split_readable({"X": 0.5}, 1, frozenset({"Water"})))
+        self.assertTrue(C._split_readable(0.5, None, frozenset()))
+
+    def test_unreadable_split_counts_as_missing(self):
+        """R5.4 on a one-Splitter doc (valid_doc's Ethanol, index 0): split
+        [0.5] -> CMP-UOP-02 1; the chemical's index deleted, or the vector
+        lengthened to [0.5, 0.5] -> the split counts as unstated and the
+        requirement falls to derived credit (DERIVED_CREDIT, from the full
+        port states); a dict split keyed by the declared Ethanol -> 1, by an
+        undeclared Water -> DERIVED_CREDIT."""
+        def uop_02(split, drop_index=False):
+            doc = one_unit_doc(spec_unit("Splitter", {"split": split}),
+                               outs=({}, {}))
+            if drop_index:
+                del doc["chemicals"][0]["index"]
+            return run(C._score_uop_02, doc)[0]
+        self.assertEqual(uop_02([0.5]), 1.0)
+        self.assertEqual(uop_02([0.5], drop_index=True), C.DERIVED_CREDIT)
+        self.assertEqual(uop_02([0.5, 0.5]), C.DERIVED_CREDIT)
+        self.assertEqual(uop_02({"Ethanol": 0.5}), 1.0)
+        self.assertEqual(uop_02({"Water": 0.5}), C.DERIVED_CREDIT)
+
+    # ---- R5.5 / R5.6 chemical identity and molar mass --------------------
+
+    R5_RECORDS = {"Ethanol": (46.06844, "C2H6O"),
+                  "Glucose": (180.15588, "C6H12O6"),
+                  "7732-18-5": (18.01528, "H2O"),
+                  "64-17-5": (46.06844, "C2H6O"),
+                  "50-99-7": (180.15588, "C6H12O6"),
+                  "SMILES=CCO": (46.06844, "C2H6O"),
+                  "12345-67-8": (None, None)}
+
+    def test_records_disagree(self):
+        """_records_disagree (R5.5): formulas that both parse decide (C2H6O
+        vs H2O -> True; same counts -> False, even with other molar
+        masses); else molar masses beyond REGISTRY_MW_RTOL (46.07 vs 18 ->
+        True; 46.07 vs 46.5 -> False); nothing comparable -> False."""
+        ns = types.SimpleNamespace
+        self.assertTrue(C._records_disagree(ns(MW=46.07, formula="C2H6O"),
+                                            ns(MW=18.0, formula="H2O")))
+        self.assertFalse(C._records_disagree(ns(MW=1.0, formula="C2H6O"),
+                                             ns(MW=46.07, formula="C2H6O")))
+        self.assertTrue(C._records_disagree(ns(MW=46.07), ns(MW=18.0)))
+        self.assertFalse(C._records_disagree(ns(MW=46.07), ns(MW=46.5)))
+        self.assertFalse(C._records_disagree(ns(), ns(MW=18.0)))
+
+    def test_registry_id_contradicting_the_name(self):
+        """R5.5 reviewer cases: {'id': 'Ethanol', 'registry_id':
+        '7732-18-5'} (water's CAS) and Glucose with SMILES 'CCO' (ethanol),
+        neither stating a molar mass or formula -> _registry_status
+        'conflicted' and _thm_02_credit capped at REGISTRY_UNRESOLVED_CREDIT
+        (tier 'conflicted', a note naming the conflict) instead of 1; the
+        id may be passed as `cid`. Ethanol with its own CAS -> 'resolved',
+        1. A molar mass settles it: 46.07 against water's CAS ->
+        'contradicted' (the name tier wins, 0.75); 18.02 -> 'resolved' (1).
+        _score_thm_02 counts the conflict in its message."""
+        with name_lookup(self.R5_RECORDS):
+            ethanol = {"id": "Ethanol", "registry_id": "7732-18-5"}
+            self.assertEqual(C._registry_status(ethanol), "conflicted")
+            self.assertEqual(C._registry_status(
+                {"registry_id": "7732-18-5"}, "Ethanol"), "conflicted")
+            credit, note, tier = C._thm_02_credit(ethanol, "Ethanol")
+            self.assertEqual((credit, tier), (C.REGISTRY_UNRESOLVED_CREDIT,
+                                              "conflicted"))
+            self.assertIn("resolves to another species than the id names",
+                          note)
+            glucose = {"id": "Glucose", "registry_id": "CCO"}
+            self.assertEqual(C._thm_02_credit(glucose, "Glucose")[::2],
+                             (C.REGISTRY_UNRESOLVED_CREDIT, "conflicted"))
+            self.assertEqual(C._thm_02_credit(
+                {"id": "Ethanol", "registry_id": "64-17-5"}, "Ethanol"),
+                (1.0, None, "registry"))
+            self.assertEqual(C._registry_status(dict(ethanol,
+                                                     molar_mass=46.07)),
+                             "contradicted")
+            self.assertEqual(C._thm_02_credit(dict(ethanol, molar_mass=46.07),
+                                              "Ethanol")[0],
+                             C.NAME_RESOLVED_CREDIT)
+            self.assertEqual(C._thm_02_credit(dict(ethanol, molar_mass=18.02),
+                                              "Ethanol")[0], 1.0)
+            doc = valid_doc()
+            doc["chemicals"][0] = dict(ethanol, index=0)
+            score, message, _missing = run(C._score_thm_02, doc)
+            self.assertEqual(score, C.REGISTRY_UNRESOLVED_CREDIT)
+            self.assertIn("1 an id naming another species than their name",
+                          message)
+
+    def test_thm_03_credit(self):
+        """_thm_03_credit (R5.6), the MAX over: a stated molar mass or a
+        parseable formula -> 1; a registry id the database resolves to a
+        record with a molar mass (CAS-resolved Glucose, no molar mass) -> 1;
+        a thermosteam built-in name (Cellulose) -> NAME_RESOLVED_CREDIT with
+        a 'built-in' note; an unverified database name (Glucose alone), a
+        conflicted id (Ethanol + water's CAS), or a resolved id whose record
+        has no molar mass -> 0 with a molar_mass locator. With the database
+        unavailable a CAS earns nothing, a built-in still 0.75.
+        _score_thm_03 on valid_doc with Ethanol's molar mass and formula
+        replaced by its CAS -> 1."""
+        with name_lookup(self.R5_RECORDS):
+            self.assertEqual(C._thm_03_credit({"molar_mass": 46.07}, "X"),
+                             (1.0, None))
+            self.assertEqual(C._thm_03_credit({"formula": "H2O"}, "X"),
+                             (1.0, None))
+            self.assertEqual(C._thm_03_credit(
+                {"id": "Glucose", "registry_id": "50-99-7"}, "Glucose"),
+                (1.0, None))
+            credit, note = C._thm_03_credit({"id": "Cellulose"}, "Cellulose")
+            self.assertEqual(credit, C.NAME_RESOLVED_CREDIT)
+            self.assertIn("only from the thermosteam built-in", note)
+            for chem in ({"id": "Glucose"},
+                         {"id": "Ethanol", "registry_id": "7732-18-5"},
+                         {"id": "X", "registry_id": "12345-67-8"}):
+                credit, note = C._thm_03_credit(chem, chem["id"])
+                self.assertEqual(credit, 0.0, chem)
+                self.assertIn(".molar_mass (or a parseable formula", note)
+            doc = valid_doc()
+            chem = doc["chemicals"][0]
+            del chem["molar_mass"], chem["formula"]
+            chem["registry_id"] = "64-17-5"
+            score, message, missing = run(C._score_thm_03, doc)
+            self.assertEqual((score, missing), (1.0, []))
+            self.assertIn("1 of 1 chemical(s) have a molar mass", message)
+        with name_lookup(search=None):
+            self.assertEqual(C._thm_03_credit(
+                {"id": "Glucose", "registry_id": "50-99-7"}, "Glucose")[0], 0.0)
+            self.assertEqual(C._thm_03_credit({"id": "Cellulose"},
+                                              "Cellulose")[0],
+                             C.NAME_RESOLVED_CREDIT)
+
+    # ---- R5.7 keywords ----------------------------------------------------
+
+    def test_r5_7_keywords(self):
+        """_keyword_family (R5.7): ion exchange (column / exchanger /
+        IonExchange) -> splitter; knock-out / knockout drum, knock-out pot
+        -> flash; fire water tank (FireWaterTank) -> facility, but a fire
+        water pump stays a pump; (glycol) chiller -> hx_utility; fan,
+        induced draft fan, blower -> compressor, 'Fanning' -> None;
+        (gas) expander -> turbine; (rotary) kiln -> reactor; sterilizer /
+        steriliser / media sterilization -> hx_utility; adsorber, carbon
+        adsorber, adsorption column -> splitter."""
+        cases = {"Ion exchange": "splitter", "Ion exchange column": "splitter",
+                 "Ion exchanger": "splitter", "IonExchange": "splitter",
+                 "Knock-out drum": "flash", "Knockout drum": "flash",
+                 "Knock out pot": "flash", "KnockOutDrum": "flash",
+                 "Fire water tank": "facility", "FireWaterTank": "facility",
+                 "Fire water pump": "pump", "Chiller": "hx_utility",
+                 "Glycol chiller": "hx_utility", "Fan": "compressor",
+                 "Induced draft fan": "compressor", "Blower": "compressor",
+                 "Fanning": None, "Expander": "turbine",
+                 "Gas expander": "turbine", "Kiln": "reactor",
+                 "Rotary kiln": "reactor", "Sterilizer": "hx_utility",
+                 "Steriliser": "hx_utility",
+                 "Media sterilization": "hx_utility", "Adsorber": "splitter",
+                 "Carbon adsorber": "splitter",
+                 "Adsorption column": "splitter"}
+        for text, family in cases.items():
+            self.assertEqual(C._keyword_family(text), family, text)
+
+    # ---- R5.1 correction: MockSplitter -----------------------------------
+
+    def test_mock_splitter_exempt_from_t_p_bounds(self):
+        """R5.1 correction: a MockSplitter (FakeSplitter) does nothing when
+        simulated, so outlets at 298 K / 1 atm beside a 265 K / 10 atm
+        inlet (corpus S408 / S410) leave its claim standing -- class
+        MockSplitter, family junction, confidence 1 -- while a Splitter with
+        the same streams becomes unknown family; a recorded heat duty
+        (_physics_contradiction: 'implausible for a mock splitter') still
+        contradicts it."""
+        def doc_of(name, results=None):
+            unit = spec_unit(name)
+            if results is not None:
+                unit["utility_consumption_results"] = results
+            return one_unit_doc(unit, ins=({"T": 265.0, "P": 1013250.0},),
+                                outs=({"T": 298.0}, {"T": 298.0}))
+        for name in sorted(C.MOCK_SPLITTER_CLASSES):
+            sc = ctx(doc_of(name))
+            self.assertIn("splitter", sc.unit_physics[0])
+            self.assertEqual(sc.unit_classes[0], (name, "junction", 1.0))
+        self.assertIsNone(ctx(doc_of("Splitter")).unit_classes[0][1])
+        sc = ctx(doc_of("MockSplitter", {"steam": 5.0}))
+        self.assertIsNone(sc.unit_classes[0][1])
+        self.assertIn("implausible for a mock splitter: records a non-zero "
+                      "heat duty", C._physics_contradiction(
+                          "MockSplitter", "junction", sc.unit_physics[0]))
+
+    # ---- deletion sweeps over alias-covered specs and a split vector -----
+
+    def test_r5_sweep_docs_deletion_sweeps(self):
+        """r5_sweep_doc (pressures in bar with P aliased, T aliased in K,
+        tau aliased in minutes, chemicals indexed, S1's split a 4-element
+        vector), both identities: the specs convert (F1's P reads 101325 Pa,
+        consistent with its outlets: CMP-UOP-02 names no inconsistency),
+        CMP-UOP-05 credits H1 (T) and F1 (T and P) in full, while P1 still
+        lacks dP_design (no pressure rise shown); the STRICT sweep over
+        every field -- aliases lists, quantity units, chemical indices,
+        split and spec keys included -- raises neither the overall score
+        nor any criterion. Deleting any one chemical's index lowers
+        CMP-UOP-02 (S1's split vector becomes unreadable); dropping P from
+        the pressure aliases lowers CMP-UOP-05 and raises nothing."""
+        for identity in ("unit_type", "design_simulation_method"):
+            with self.subTest(identity=identity):
+                doc = r5_sweep_doc(identity)
+                sc = ctx(doc)
+                f1 = sc.unit_positions["F1"]
+                self.assertAlmostEqual(
+                    sc.units[f1]["design_input_specs"]["P"], 101325.0)
+                self.assertNotIn("inconsistent",
+                                 "\n".join(run(C._score_uop_02, doc)[2]))
+                for uid in ("H1", "F1"):
+                    self.assertEqual(C._uop_05_unit(
+                        sc, sc.unit_positions[uid], False), (1.0, []), uid)
+                # P1 needs dP_design too (no pressure rise shown), unstated.
+                self.assertIn("one of dP_design unstated", C._uop_05_unit(
+                    sc, sc.unit_positions["P1"], False)[1][0])
+                with name_lookup(set()):
+                    raised, lowered, n = deletion_violations(
+                        doc, skip=frozenset())
+                self.assertGreater(n, 250)
+                self.assertEqual(raised, [])
+                self.assertGreater(lowered, n // 2)
+                base = criterion_results(doc)
+                for i in range(len(doc["chemicals"])):
+                    after = criterion_results(deleted(
+                        doc, ("chemicals", i, "index")))
+                    self.assertLess(after["CMP-UOP-02"].score,
+                                    base["CMP-UOP-02"].score, i)
+                fewer = copy.deepcopy(doc)
+                fewer["quantity_units_global"]["pressure"]["aliases"].remove(
+                    "P")
+                after = criterion_results(fewer)
+                self.assertLess(after["CMP-UOP-05"].score,
+                                base["CMP-UOP-05"].score)
+                for cid, before in base.items():
+                    if before.status == "scored":
+                        self.assertLessEqual(after[cid].score,
+                                             before.score + 1e-12, cid)
 
 
 if __name__ == "__main__":
