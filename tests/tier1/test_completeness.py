@@ -2140,16 +2140,23 @@ class TestThermoCriteria(unittest.TestCase):
 
     def test_thm_03_molar_mass(self):
         """_score_thm_03 (CMP-THM-03): declared -> 1; formula-derived only ->
-        1; neither -> 0 with a molar_mass locator; an undeclared referenced
-        id -> 0 for it."""
+        1; neither, with the id resolving by name to nothing -> 0 with a
+        molar_mass locator; neither, with 'Ethanol' resolving by name to a
+        database record nothing stated verifies -> 0.5 (R6.8); an
+        undeclared referenced id -> 0 for it."""
         doc = valid_doc()
         self.assertEqual(run(C._score_thm_03, doc)[0], 1.0)
         remove(doc, "chemicals/0/molar_mass")
         self.assertEqual(run(C._score_thm_03, doc)[0], 1.0)
         remove(doc, "chemicals/0/formula")
-        score, _m, missing = run(C._score_thm_03, doc)
+        with name_lookup(set()):
+            score, _m, missing = run(C._score_thm_03, doc)
         self.assertEqual(score, 0.0)
         self.assertIn("chemicals[Ethanol].molar_mass", missing[0])
+        with name_lookup({"Ethanol"}):
+            score, _m, missing = run(C._score_thm_03, doc)
+        self.assertEqual(score, C.NAME_UNVERIFIED_CREDIT)
+        self.assertIn("unverified", missing[0])
         doc = valid_doc()
         doc["streams"][0]["stream_properties"]["phases"]["l"]["composition"].append(
             {"component_name": "Water", "mol_fraction": 0.0})
@@ -2448,9 +2455,10 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         flow (90 and 10 kg/h, the small one missing T -> 0.875); deleting the
         big feed's mass flow keeps the molar flow, so the score stays 0.875
         (the old mass-share weighting rose here); an EMPTY feed (total flow
-        0) into the exactly known Mixer stays in the population and scores
-        1 even without T -> 1.0, the message counting '1 empty feed(s) ...
-        1 credited as placeholder port(s)'; beside a half-stated
+        0) into an exactly known HXprocess (two fixed inlets, one free; its
+        mass balance closes) stays in the population and scores 1 even
+        without T -> 1.0, the message counting '1 empty feed(s) ... 1
+        credited as placeholder port(s)' (R6.3); beside a half-stated
         feed it counts as 1 -> (0.5 + 1) / 2; deleting its flows makes it an
         unknown-flow feed scored by its state (lower, never higher). R2.12:
         with no feed stating a non-zero flow a stated zero counts as a
@@ -2463,8 +2471,9 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         self.assertAlmostEqual(run(C._score_feed_01, doc)[0], 0.875)
         del doc["streams"][0]["stream_properties"]["total_mass_flow"]
         self.assertAlmostEqual(run(C._score_feed_01, doc)[0], 0.875)
-        empty = one_unit_doc(spec_unit("Mixer"), ins=({}, {"mass": 0.0,
-                                                           "T": None}))
+        empty = one_unit_doc(spec_unit("HXprocess"),
+                             ins=({}, {"mass": 0.0, "T": None}),
+                             outs=({"mass": 46.07},))
         empty["streams"][1]["stream_properties"]["total_molar_flow"] = 0.0
         score, message, _missing = run(C._score_feed_01, empty)
         self.assertEqual(score, 1.0)
@@ -2545,12 +2554,15 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         streams -> 0; both priced (0 counts) -> 1; a 0 price on a natural-gas
         feed into a utility port (DrumDryer) -> 0.5 for it (0.75 overall),
         while a 0 price on a product of that dryer stays 1, and so does a 0
-        price on an ethanol feed into it (R2.9: not its port material); an
-        EMPTY (zero-flow)
-        boundary stream stays in the population and scores 1 without a
-        price (unpriced empty feed beside an unpriced product -> 0.5);
-        deleting its stream_properties makes it an unpriced non-empty stream
-        -> 0 (lower, never higher); no boundary streams -> None."""
+        price on an ethanol feed into it (R2.9: not its port material). R6.3:
+        an EMPTY (zero-flow) feed into valid_doc's label-only 'Mixer' earns
+        no placeholder credit, so it scores on its (absent) price -> 0, its
+        locator saying the class is not known exactly; into a free fixed
+        inlet of an exactly known HXprocess (mass balance closing) it scores
+        1 without a price (beside two unpriced streams -> 1/3, the message
+        counting '1 empty placeholder port(s)'); deleting its
+        stream_properties makes it an unpriced stream of unknown flow -> 0
+        (lower, never higher); no boundary streams -> None."""
         doc = valid_doc()
         self.assertEqual(run(C._score_feed_02, doc)[0], 0.0)
         mutate(doc, "streams/0/price", 0.5)
@@ -2573,9 +2585,17 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         empty["streams"][0]["stream_properties"]["total_mass_flow"] = 0.0
         self.assertTrue(C._is_empty_stream(empty["streams"][0]))
         score, message, missing = run(C._score_feed_02, empty)
-        self.assertEqual((score, missing), (0.5, ["streams[prod].price"]))
-        self.assertIn("1 empty, needing no price", message)
-        del empty["streams"][0]["stream_properties"]
+        self.assertEqual(score, 0.0)
+        self.assertIn("streams[feed].price (a zero flow at units[U1], whose "
+                      "class is not known exactly", missing[0])
+        empty = one_unit_doc(spec_unit("HXprocess"),
+                             ins=({}, {"mass": 0.0}), outs=({"mass": 46.07},))
+        empty["streams"][1]["stream_properties"]["total_molar_flow"] = 0.0
+        score, message, missing = run(C._score_feed_02, empty)
+        self.assertAlmostEqual(score, 1 / 3)
+        self.assertEqual(missing, ["streams[in0].price", "streams[out0].price"])
+        self.assertIn("1 empty placeholder port(s), needing no price", message)
+        del empty["streams"][1]["stream_properties"]
         self.assertEqual(run(C._score_feed_02, empty)[0], 0.0)
         mutate(doc, "streams/0/source_unit_id", "U1")
         mutate(doc, "streams/1/sink_unit_id", "U1")
@@ -2660,9 +2680,10 @@ class TestUnitOpCriteria(unittest.TestCase):
     def test_uop_02_essential_specs(self):
         """_score_uop_02 (CMP-UOP-02): mixer only -> None; HXutility with a T
         matching its outlet -> 1; the same T against a 300 K outlet -> 0.5
-        (T|H|V 0 with an 'inconsistent' locator, the consistency guard; the
-        phase-change V requirement waived on liquid in / liquid out and so
-        met, R5.9); HXutility with only an outlet T -> (DERIVED_CREDIT + 1)
+        (T|H|V 0 with an 'inconsistent' locator, the consistency guard, which
+        -- R6.6 -- suggests a quantity_units_global alias, since T states no
+        quantity unit; the phase-change V requirement waived on liquid in /
+        liquid out and so met, R5.9); HXutility with only an outlet T -> (DERIVED_CREDIT + 1)
         / 2; unknown family (R4.14: valid_doc's one-inlet 'Mixer' label) ->
         0."""
         self.assertIsNone(run(C._score_uop_02, label_mixer_doc())[0])
@@ -2672,7 +2693,9 @@ class TestUnitOpCriteria(unittest.TestCase):
         score, _m, missing = run(C._score_uop_02,
                                  unit_doc(cls("HXutility"), {"T": 350.0}))
         self.assertEqual(score, 0.5)
-        self.assertIn("(inconsistent: T disagrees with the outlet stream)",
+        self.assertIn("(inconsistent: T disagrees with the outlet stream; T "
+                      "states no quantity unit", missing[0])
+        self.assertIn("declare a quantity_units_global alias for it",
                       missing[0])
         score, _m, missing = run(C._score_uop_02, unit_doc(cls("HXutility"), {}))
         self.assertEqual(score, (C.DERIVED_CREDIT + 1.0) / 2)
@@ -3471,20 +3494,28 @@ class TestUtilityCriteria(unittest.TestCase):
 
     def test_util_02_prices(self):
         """_score_util_02 (CMP-UTIL-02): priced heat agent and legacy-priced
-        power agent -> 1; unpriced other agent -> 2/3 overall; a referenced
-        but undeclared agent counts 0 (-> 1/3 beside priced steam: R5.1,
-        the duty U1 records on it contradicts U1's mixer label, so U1 of
-        unknown family also needs a power agent, missing -> 0); a Pump
+        power agent -> 1; unpriced other agent -> 2/3 overall when the mixer
+        references all three; R6.4: with no unit referencing any agent the
+        score is the lowest agent's (the unpriced one) -> 0; a referenced
+        but undeclared agent counts 0 (-> 1/3 beside priced, referenced
+        steam: R5.1, the duty U1 records on it contradicts U1's mixer label,
+        so U1 of unknown family also needs a power agent, missing -> 0;
+        with steam referenced by no unit -> 0, R6.4); a Pump
         with no agent -> 0; no need -> None."""
         doc = with_agents([STEAM], [{"id": "grid", "price": 0.07}],
-                          [{"id": "gas"}])
+                          [{"id": "gas"}], consumption={
+                              "steam": 5.0, "grid": 1.0, "gas": 1.0})
         score, _m, missing = run(C._score_util_02, doc)
         self.assertAlmostEqual(score, 2 / 3)
         self.assertEqual(missing, ["utilities.other_utilities[gas].price"])
+        del doc["units"][0]["utility_consumption_results"]
+        self.assertEqual(run(C._score_util_02, doc)[0], 0.0)
         score, _m, missing = run(C._score_util_02, with_agents(
-            [STEAM], consumption={"power": 3.0}))
+            [STEAM], consumption={"power": 3.0, "steam": 5.0}))
         self.assertAlmostEqual(score, 1 / 3)
         self.assertIn("no agent 'power' to price", missing[0])
+        self.assertEqual(run(C._score_util_02, with_agents(
+            [STEAM], consumption={"power": 3.0}))[0], 0.0)
         self.assertEqual(run(C._score_util_02, one_unit_doc(spec_unit("Pump")))[0], 0.0)
         self.assertIsNone(run(C._score_util_02, label_mixer_doc())[0])
 
@@ -4345,7 +4376,10 @@ class TestNeedBasedApplicability(unittest.TestCase):
         not_applicable: every chemical resolves; and CMP-UOP-06: the
         document has no facility), and the overall score is high but below
         1 (non-representable criteria); every unit is fully specified
-        (CMP-UOP-02 = 1, R1's batch flag included)."""
+        (CMP-UOP-02 = 1, R1's batch flag included). R6.3: the empty 'spare'
+        feed enters the Mixer M1, whose inlet count is variable, so it is
+        no placeholder port: CMP-FEED-01 = (1 + 1 + 0.5) / 3 (spare: T and P
+        only) and its locator says why."""
         with name_lookup(RICH_NAMES):
             results = {r.criterion_id: r for r in C._evaluate_criteria(
                 ctx(rich_doc(), PASSING),
@@ -4354,8 +4388,10 @@ class TestNeedBasedApplicability(unittest.TestCase):
         na = {cid for cid, r in results.items() if r.status == "not_applicable"}
         self.assertEqual(na, {"CMP-THM-05", "CMP-UOP-06"})
         self.assertEqual(results["CMP-UOP-02"].score, 1.0)
-        self.assertEqual(results["CMP-FEED-01"].score, 1.0)
-        # 'waste' unpriced; the empty 'spare' feed counts as 1 (4 of 5).
+        self.assertAlmostEqual(results["CMP-FEED-01"].score, 2.5 / 3)
+        self.assertIn("whose Mixer inlet count is not fixed",
+                      " ".join(results["CMP-FEED-01"].missing))
+        # 'waste' unpriced; the empty 'spare' feed is priced (4 of 5).
         self.assertEqual(results["CMP-FEED-02"].score, 0.8)
         self.assertEqual(results["CMP-RXN-03"].score, 1.0)
         # C1 (custom) 0.75; P1, H1, R1 core -> 1 (unweighted, R4.12).
@@ -4986,8 +5022,9 @@ class TestRevision2PartB(unittest.TestCase):
     def test_missing_agent_kinds_per_kind_need(self):
         """_missing_agent_kinds (R2.7): an HXutility with only a power
         utility declared -> one synthetic 'heat agent' entry, so
-        CMP-UTIL-01 and CMP-UTIL-02 score 1/2 (the power utility 1, the
-        missing heat agent 0) instead of 1; a Pump with only a heat agent ->
+        CMP-UTIL-01 and CMP-UTIL-02 score 0 instead of 1 (the missing heat
+        agent 0; R6.4: the power utility, which no unit references, can
+        only lower the score); a Pump with only a heat agent ->
         a 'power utility' entry; both kinds declared -> none; the valid
         mixer -> none (no need)."""
         grid = {"id": "grid", "electrical_energy_price": 0.07}
@@ -4998,10 +5035,10 @@ class TestRevision2PartB(unittest.TestCase):
         self.assertEqual(len(kinds), 1)
         self.assertIn("no heat agent declared", kinds[0])
         score, message, missing = run(C._score_util_01, doc)
-        self.assertEqual(score, 0.5)
+        self.assertEqual(score, 0.0)
         self.assertIn("1 needed kind(s) missing", message)
         self.assertIn(kinds[0], missing)
-        self.assertEqual(run(C._score_util_02, doc)[0], 0.5)
+        self.assertEqual(run(C._score_util_02, doc)[0], 0.0)
         pump = one_unit_doc(spec_unit("Pump"))
         pump["utilities"]["heat_utilities"] = [STEAM]
         kinds = C._missing_agent_kinds(ctx(pump))
@@ -5618,7 +5655,8 @@ class TestRevision3PartB(unittest.TestCase):
         CMP-UTIL-02 on rich_doc plus a natural-gas other utility priced 0
         -> (3 + 0.5) / 4 with a 'fuel agent' locator and message; priced
         0.2 -> 1.0; air priced 0 -> 1.0; a heat agent priced -1 -> that
-        agent scores 0."""
+        agent scores 0, and the score falls to 2 / 3 (R6.4: the unreferenced
+        air agent, at 1, cannot raise the referenced agents' mean)."""
         self.assertIsNone(C._valid_price("heat_utilities", -1.0))
         self.assertIsNone(C._valid_price("heat_utilities", float("nan")))
         self.assertEqual(C._valid_price("heat_utilities", 0), 0.0)
@@ -5647,7 +5685,9 @@ class TestRevision3PartB(unittest.TestCase):
                                                         composition=air)]
             self.assertEqual(run(C._score_util_02, doc)[0], 1.0)
             doc["utilities"]["heat_utilities"][0]["regeneration_price"] = -1.0
-            self.assertAlmostEqual(run(C._score_util_02, doc)[0], 3 / 4)
+            # R6.4: the air agent no unit references (1) now lies above the
+            # referenced agents' mean (2 / 3), so it cannot raise it.
+            self.assertAlmostEqual(run(C._score_util_02, doc)[0], 2 / 3)
 
     def test_quantity_unit_helpers(self):
         """R3.4 helpers: _unit_key strips blanks, '^' and '**' ('m^3 / hr'
@@ -5761,28 +5801,52 @@ class TestRevision3PartB(unittest.TestCase):
                                     converted["CMP-UOP-02"].score, entry)
 
     def test_empty_feed_padding(self):
-        """R3.7 review case: one feed stating only its flow (0.25) plus six
-        zero-flow feeds into a unit of unknown class ('Widget') -> each pad
-        scores as missing its flow, so CMP-FEED-01 = 0.25 / 7 (it was
-        (0.25 + 6) / 7 = 0.893), the message counting '6 empty feed(s)
-        (zero flow), 0 credited' and each pad's flow locator explaining why;
-        the same pads into an exactly known Mixer (confidence 1: fixed
-        placeholder ports) -> (0.25 + 6) / 7 with '6 credited'.
-        _placeholder_port_feed: True only for a declared sink of confidence
-        1."""
+        """R3.7 / R6.3 review case: one feed stating only its flow (0.25)
+        plus six zero-flow feeds padding U1. Into a unit of unknown class
+        ('Widget') -> each pad scores as missing its flow, so CMP-FEED-01 =
+        0.25 / 7 (it was (0.25 + 6) / 7 = 0.893), the message counting '6
+        empty feed(s) (zero flow), 0 credited' and each pad's flow locator
+        explaining why; R6.3: into an exactly known Mixer (variable inlet
+        count) -> still 0.25 / 7, the locator saying the inlet count is not
+        fixed; into an exact Pump (one fixed inlet, taken by the real feed)
+        -> 0.25 / 7, 'beyond the free fixed inlet ports'; into an exact
+        HXprocess (two fixed inlets, its balance closing) -> exactly one pad
+        credited, (0.25 + 1) / 7. _fixed_port_counts: (2, 2) for the
+        HXprocess, (None, 1) for the Mixer, (None, None) for the Widget;
+        _placeholder_ports credits one HXprocess pad and names why for the
+        other five; a pad whose sink is an undeclared 'Ghost' unit is never
+        credited."""
         widget = padded_doc({"unit_type": "Widget"})
         score, message, missing = run(C._score_feed_01, widget)
         self.assertAlmostEqual(score, 0.25 / 7)
         self.assertIn("6 empty feed(s) (zero flow), 0 credited", message)
         self.assertIn("class is not known exactly", " ".join(missing))
-        self.assertFalse(C._placeholder_port_feed(ctx(widget), 2))
+        self.assertEqual(C._fixed_port_counts(ctx(widget), 0), (None, None))
         mixer = padded_doc(spec_unit("Mixer"))
-        score, message, _missing = run(C._score_feed_01, mixer)
-        self.assertAlmostEqual(score, (0.25 + 6) / 7)
-        self.assertIn("6 credited", message)
-        self.assertTrue(C._placeholder_port_feed(ctx(mixer), 2))
-        mixer["streams"][2]["sink_unit_id"] = "Ghost"
-        self.assertFalse(C._placeholder_port_feed(ctx(mixer), 2))
+        score, message, missing = run(C._score_feed_01, mixer)
+        self.assertAlmostEqual(score, 0.25 / 7)
+        self.assertIn("0 credited", message)
+        self.assertIn("whose Mixer inlet count is not fixed", " ".join(missing))
+        self.assertEqual(C._fixed_port_counts(ctx(mixer), 0), (None, 1))
+        pump = padded_doc(spec_unit("Pump"))
+        score, message, missing = run(C._score_feed_01, pump)
+        self.assertAlmostEqual(score, 0.25 / 7)
+        self.assertIn("beyond the free fixed inlet ports of units[U1]: Pump "
+                      "has 1, 1 taken", " ".join(missing))
+        hxp = padded_doc(spec_unit("HXprocess"))
+        score, message, _missing = run(C._score_feed_01, hxp)
+        self.assertAlmostEqual(score, (0.25 + 1) / 7)
+        self.assertIn("6 empty feed(s) (zero flow), 1 credited", message)
+        sc = ctx(hxp)
+        self.assertEqual(C._fixed_port_counts(sc, 0), (2, 2))
+        pads = list(range(2, 8))
+        credited, why = C._placeholder_ports(sc, pads, 0, lambda i: 0.0)
+        self.assertEqual(credited, {2})
+        self.assertEqual(sorted(why), pads[1:])
+        hxp["streams"][2]["sink_unit_id"] = "Ghost"
+        credited, why = C._placeholder_ports(ctx(hxp), pads, 0, lambda i: 0.0)
+        self.assertNotIn(2, credited)
+        self.assertIn("no declared unit", why[2])
 
     def test_isolated_streams_stay_in_feed_populations(self):
         """R3.8 gap found by the extended deletion test: deleting the
@@ -6319,8 +6383,9 @@ class TestRevision4PartA(unittest.TestCase):
         CMP-THM-04 = (4 x 1 [Water/Ethanol/CO2 true, Glucose false in 'l'] +
         1 [Fiber true] + 0.75 [Cellulose built-in] + 0.5 [Methanol false,
         unseen] + 0 [X1]) / 8; CMP-THM-02 below the referenced mean (X1's
-        0.25 is let in, Methanol's 1 is not); CMP-FEED-01 = 1 (feedB's flat
-        composition is tagged); CMP-UTIL-01 = 1 (both heat agents state one
+        0.25 is let in, Methanol's 1 is not); CMP-FEED-01 = 2.5 / 3 (feedB's
+        flat composition is tagged; R6.3: the empty 'spare' feed into the
+        variable-inlet Mixer M1 is no placeholder port, 0.5); CMP-UTIL-01 = 1 (both heat agents state one
         phase); CMP-INT-04 = 1 (QU-01 and QU-02 pass); CMP-SYS-02 = 3/14."""
         with name_lookup(R4_RECORDS):
             results = criterion_results(r4_rich_doc())
@@ -6328,7 +6393,7 @@ class TestRevision4PartA(unittest.TestCase):
                                (5 + 0.75 + 0.5 + 0) / 8)
         referenced = (4 * 1.0) / 4
         self.assertLess(results["CMP-THM-02"].score, referenced)
-        for cid, expected in (("CMP-FEED-01", 1.0), ("CMP-UTIL-01", 1.0),
+        for cid, expected in (("CMP-FEED-01", 2.5 / 3), ("CMP-UTIL-01", 1.0),
                               ("CMP-INT-04", 1.0), ("CMP-SYS-02", 3 / 14)):
             self.assertAlmostEqual(results[cid].score, expected, msg=cid)
 
@@ -7806,9 +7871,11 @@ class TestRevision5PartB(unittest.TestCase):
         parseable formula -> 1; a registry id the database resolves to a
         record with a molar mass (CAS-resolved Glucose, no molar mass) -> 1;
         a thermosteam built-in name (Cellulose) -> NAME_RESOLVED_CREDIT with
-        a 'built-in' note; an unverified database name (Glucose alone), a
-        conflicted id (Ethanol + water's CAS), or a resolved id whose record
-        has no molar mass -> 0 with a molar_mass locator. With the database
+        a 'built-in' note; R6.8: an unverified database name (Glucose alone,
+        or a conflicted id -- Ethanol + water's CAS -- whose name still
+        resolves) -> NAME_UNVERIFIED_CREDIT with an 'unverified' note; a
+        resolved id whose record has no molar mass on an id no name
+        resolves -> 0 with a molar_mass locator. With the database
         unavailable a CAS earns nothing, a built-in still 0.75.
         _score_thm_03 on valid_doc with Ethanol's molar mass and formula
         replaced by its CAS -> 1."""
@@ -7824,11 +7891,14 @@ class TestRevision5PartB(unittest.TestCase):
             self.assertEqual(credit, C.NAME_RESOLVED_CREDIT)
             self.assertIn("only from the thermosteam built-in", note)
             for chem in ({"id": "Glucose"},
-                         {"id": "Ethanol", "registry_id": "7732-18-5"},
-                         {"id": "X", "registry_id": "12345-67-8"}):
+                         {"id": "Ethanol", "registry_id": "7732-18-5"}):
                 credit, note = C._thm_03_credit(chem, chem["id"])
-                self.assertEqual(credit, 0.0, chem)
-                self.assertIn(".molar_mass (or a parseable formula", note)
+                self.assertEqual(credit, C.NAME_UNVERIFIED_CREDIT, chem)
+                self.assertIn("unverified: it may name another species", note)
+            chem = {"id": "X", "registry_id": "12345-67-8"}
+            credit, note = C._thm_03_credit(chem, chem["id"])
+            self.assertEqual(credit, 0.0)
+            self.assertIn(".molar_mass (or a parseable formula", note)
             doc = valid_doc()
             chem = doc["chemicals"][0]
             del chem["molar_mass"], chem["formula"]
@@ -8609,6 +8679,301 @@ class TestRevision6(unittest.TestCase):
         self.assertGreater(n, 240)
         self.assertEqual(raised, [])
         self.assertGreater(lowered, n // 2)
+
+
+# ------------------------------------------ Revision 6, part B (R6.3-R6.9)
+
+def _empty_sp(T=300.0, P=101325.0):
+    """Stream properties of a stated-empty stream (zero mass and molar
+    flow, an empty liquid phase) at T / P."""
+    return {"temperature": T, "pressure": P, "total_mass_flow": 0.0,
+            "total_molar_flow": 0.0,
+            "phases": {"l": {"total_molar_flow": 0.0, "composition": []}}}
+
+
+def r6_pad_doc(n, sink="P1"):
+    """r5_doc with its feed degraded (no phases, no temperature, no price)
+    plus `n` stated-empty feeds into `sink` (the review's padding case,
+    probes b15 / b2)."""
+    doc = r5_doc()
+    sp = doc["streams"][0]["stream_properties"]
+    del sp["phases"], sp["temperature"]
+    doc["streams"] += [{"id": f"pad{k}", "source_unit_id": "None",
+                        "sink_unit_id": sink,
+                        "stream_properties": _empty_sp(25.0, 1.0)}
+                       for k in range(n)]
+    return doc
+
+
+CHILLED_WATER = {"id": "chilled_water", "temperature": 280.15,
+                 "pressure": 101325.0, "regeneration_price": 1e-4,
+                 "heat_transfer_efficiency": 1.0, "temperature_limit": 300.15,
+                 "composition": [{"phase": "l", "component_name": "Water",
+                                  "mol_fraction": 1.0}]}
+
+
+def r6b_sweep_doc():
+    """sweep_doc('design_simulation_method') with feedB routed through an
+    exact HXprocess X1 (x_out -> M1) whose second side is a pair of
+    stated-empty placeholder streams -- hot_in (a feed into X1's second
+    fixed inlet) and hot_out (a product from its second fixed outlet),
+    R6.3 -- and a fully specified heat agent 'chilled_water' that no unit
+    references (R6.4)."""
+    doc = sweep_doc("design_simulation_method")
+    doc["units"].append({"id": "X1",
+                         "design_simulation_method": f"HXprocess on {BST_URL}"})
+    next(s for s in doc["streams"] if s["id"] == "feedB")["sink_unit_id"] = "X1"
+    doc["streams"] += [
+        {"id": "x_out", "source_unit_id": "X1", "sink_unit_id": "M1",
+         "stream_properties": _sweep_sp({"Water": 50.0}, "l")},
+        {"id": "hot_in", "source_unit_id": "None", "sink_unit_id": "X1",
+         "stream_properties": _empty_sp()},
+        {"id": "hot_out", "source_unit_id": "X1", "sink_unit_id": "None",
+         "stream_properties": _empty_sp()}]
+    doc["utilities"]["heat_utilities"].append(dict(CHILLED_WATER))
+    return doc
+
+
+class TestRevision6PartB(unittest.TestCase):
+    """Revision 6, R6.3 - R6.9: the placeholder-port cap, unreferenced
+    utility agents, zero prices into unresolved units, gauge units and the
+    alias hint, volumetric-only flows and unverified names."""
+
+    def test_placeholder_cap_padding(self):
+        """R6.3, probes b15 / b2: 30 stated-empty feeds padded onto r5_doc's
+        exact Pump P1 (one fixed inlet, already taken by the degraded feed)
+        earn nothing -- CMP-FEED-01 (0.5) and CMP-FEED-02 (0) are unchanged
+        (they rose to 0.984 / 0.909) and the overall score does not rise;
+        the same 20 pads onto an exact Mixer M0 put in front of P1 (a
+        variable inlet count) earn nothing either."""
+        def mixer_front(doc):
+            doc["units"].insert(0, dict(spec_unit("Mixer"), id="M0"))
+            doc["streams"][0]["sink_unit_id"] = "M0"
+            doc["streams"].append({
+                "id": "m_out", "source_unit_id": "M0", "sink_unit_id": "P1",
+                "stream_properties": copy.deepcopy(
+                    doc["streams"][1]["stream_properties"])})
+            return doc
+
+        for n, sink in ((30, "P1"), (20, "M0")):
+            wrap = mixer_front if sink == "M0" else (lambda doc: doc)
+            base = criterion_results(wrap(r6_pad_doc(0)))
+            after = criterion_results(wrap(r6_pad_doc(n, sink)))
+            with self.subTest(sink=sink):
+                for cid in ("CMP-FEED-01", "CMP-FEED-02"):
+                    self.assertLessEqual(after[cid].score,
+                                         base[cid].score + 1e-12, cid)
+                self.assertIn(f"{n} empty feed(s) (zero flow), 0 credited",
+                              after["CMP-FEED-01"].message)
+        doc = r6_pad_doc(30)
+        self.assertLessEqual(overall(doc), overall(r6_pad_doc(0)) + 1e-12)
+        self.assertEqual(run(C._score_feed_01, doc)[0], 0.5)
+        self.assertEqual(run(C._score_feed_02, doc)[0], 0.0)
+
+    def test_r6b_placeholders_and_unreferenced_agent(self):
+        """r6b_sweep_doc: X1's hot_in and hot_out are credited as
+        placeholder ports (CMP-FEED-01 '1 empty feed(s) (zero flow), 1
+        credited'; CMP-FEED-02 '2 empty placeholder port(s)'); the
+        unreferenced chilled_water agent changes no CMP-UTIL-01/02/03 score
+        (R6.4; the plain mean would raise CMP-UTIL-02 from 0.5 to 2/3 and
+        CMP-UTIL-03 from 0.5 to 0.75), each message noting '1 agent(s) no
+        unit references can only lower the score'; a half-specified
+        unreferenced agent lowers CMP-UTIL-01. The STRICT deletion sweep
+        over every field (ids, endpoints, classes included) raises neither
+        the overall score nor any criterion."""
+        doc = r6b_sweep_doc()
+        feed01 = run(C._score_feed_01, doc)[1]
+        self.assertIn("1 empty feed(s) (zero flow), 1 credited", feed01)
+        self.assertIn("2 empty placeholder port(s)",
+                      run(C._score_feed_02, doc)[1])
+        plain = copy.deepcopy(doc)
+        plain["utilities"]["heat_utilities"].pop()
+        for scorer in (C._score_util_01, C._score_util_02, C._score_util_03):
+            score, message, _m = run(scorer, doc)
+            self.assertEqual(score, run(scorer, plain)[0], scorer.__name__)
+            self.assertIn("1 agent(s) no unit references can only lower the "
+                          "score", message)
+        self.assertEqual(run(C._score_util_02, doc)[0], 0.5)
+        self.assertEqual(run(C._score_util_03, doc)[0], 0.5)
+        half = copy.deepcopy(doc)
+        del half["utilities"]["heat_utilities"][1]["temperature"]
+        self.assertLess(run(C._score_util_01, half)[0],
+                        run(C._score_util_01, doc)[0])
+        with name_lookup(set()):
+            raised, lowered, n = deletion_violations(doc, skip=frozenset())
+        self.assertGreater(n, 280)
+        self.assertEqual(raised, [])
+        self.assertGreater(lowered, n // 2)
+
+    def test_agent_mean(self):
+        """_agent_mean / _agent_referenced / _unreferenced_note (R6.4): with
+        referenced entries, the lowest mean over nested sets
+        (_referenced_mean: an unreferenced 1 beside a referenced 0.5 ->
+        0.5, an unreferenced 0 -> 0.25); with none referenced, the lowest
+        single score ([1, 0.5] -> 0.5, never the plain mean 0.75); empty ->
+        None. _agent_referenced: a string id among the refs only (a list id
+        -> False). The note counts the unreferenced entries, '' for none."""
+        self.assertEqual(C._agent_mean([(0.5, True), (1.0, False)]), 0.5)
+        self.assertEqual(C._agent_mean([(0.5, True), (0.0, False)]), 0.25)
+        self.assertEqual(C._agent_mean([(1.0, False), (0.5, False)]), 0.5)
+        self.assertIsNone(C._agent_mean([]))
+        refs = {"steam": "units[H1]"}
+        self.assertTrue(C._agent_referenced({"id": "steam"}, refs))
+        self.assertFalse(C._agent_referenced({"id": "cw"}, refs))
+        self.assertFalse(C._agent_referenced({"id": ["steam"]}, refs))
+        self.assertEqual(C._unreferenced_note([(1.0, True)]), "")
+        self.assertIn("2 agent(s) no unit references",
+                      C._unreferenced_note([(1.0, False), (0.0, False)]))
+
+    def test_zero_price_into_unresolved_sink(self):
+        """R6.5, probe del2: _unresolved_sink describes a feed's sink that
+        no unit declares ('(referenced, not declared)') or of unknown family
+        ('(unknown family)'), None for a known family; _feed_02_entry: a 0
+        price there -> 0.5 with a 'may be a utility port' locator, into an
+        exact Pump -> 1, unpriced -> 0, a nonzero price -> 1. On SF_BST_01
+        deleting the drum dryer D610's id no longer raises CMP-FEED-02 (its
+        natural-gas feed kept half credit, its air feed now earns half)."""
+        doc = one_unit_doc(spec_unit("Pump"))
+        doc["streams"][0]["price"] = 0.0
+        sc = ctx(doc)
+        self.assertIsNone(C._unresolved_sink(sc, 0))
+        self.assertEqual(C._feed_02_entry(sc, 0, True), (1.0, None))
+        widget = one_unit_doc({"unit_type": "Widget"})
+        widget["streams"][0]["price"] = 0.0
+        sc = ctx(widget)
+        self.assertEqual(C._unresolved_sink(sc, 0), "units[U1] (unknown family)")
+        score, note = C._feed_02_entry(sc, 0, True)
+        self.assertEqual(score, 0.5)
+        self.assertIn("may be a utility port BioSTEAM prices itself", note)
+        self.assertEqual(C._feed_02_entry(sc, 0, False), (1.0, None))
+        widget["streams"][0]["sink_unit_id"] = "Ghost"
+        sc = ctx(widget)
+        self.assertEqual(C._unresolved_sink(sc, 0),
+                         "units[Ghost] (referenced, not declared)")
+        self.assertEqual(C._feed_02_entry(sc, 0, True)[0], 0.5)
+        del widget["streams"][0]["price"]
+        self.assertEqual(C._feed_02_entry(ctx(widget), 0, True),
+                         (0.0, "streams[in0].price"))
+        widget["streams"][0]["price"] = 2.0
+        self.assertEqual(C._feed_02_entry(ctx(widget), 0, True), (1.0, None))
+        path = CORPUS_DIR / "SF_BST_01.json"
+        corn = json.loads(path.read_text(encoding="utf-8"))
+        d610 = next(i for i, u in enumerate(corn["units"]) if u["id"] == "D610")
+        before = run(C._score_feed_02, corn)[0]
+        self.assertLess(run(C._score_feed_02,
+                            deleted(corn, ("units", d610, "id")))[0], before)
+
+    def test_gauge_units_and_alias_hint(self):
+        """R6.6: gauge units read relative to 1 atm -- 10 psig -> 10 x 6894.76
+        + 101325 Pa, 1 barg -> 201325 Pa, 0 kPa(g) -> 101325 Pa; bara reads
+        absolute -- while a pressure DIFFERENCE (dP_design, dimension
+        'pressure_difference') drops the offset (5 psig of rise -> 5 psi);
+        _spec_unit_recognised accepts barg for P and psig for dP_design. A
+        barg twin of r5_doc (every pressure restated as gauge) scores every
+        criterion within 1e-9 of the original. A guard-tripping spec with no
+        alias names the alias remedy; with an alias it does not."""
+        index = {"pressure": "psig", "P": "barg", "dP_design": "psig",
+                 "q": "kPa(g)", "a": "bara"}
+        self.assertAlmostEqual(C._to_internal(10.0, "pressure", index),
+                               10 * 6894.757293168 + 101325.0)
+        self.assertAlmostEqual(C._to_internal(1.0, "P", index, "pressure"),
+                               201325.0)
+        self.assertAlmostEqual(C._to_internal(0.0, "q", index, "pressure"),
+                               101325.0)
+        self.assertAlmostEqual(C._to_internal(2.0, "a", index, "pressure"),
+                               2e5)
+        self.assertEqual(C._spec_dimension("dP_design"), "pressure_difference")
+        self.assertAlmostEqual(
+            C._to_internal(5.0, "dP_design", index, "pressure_difference"),
+            5 * 6894.757293168)
+        self.assertTrue(C._spec_unit_recognised("P", "barg"))
+        self.assertTrue(C._spec_unit_recognised("dP_design", "psig"))
+        doc = r5_doc()
+        doc["units"][0]["design_input_specs"] = {"P": 3.0}
+        twin = copy.deepcopy(doc)
+        twin["quantity_units_global"]["pressure"]["quantity_units"] = "barg"
+        holders = [s["stream_properties"] for s in twin["streams"]]
+        for holder in holders + [twin["units"][0]["design_input_specs"]]:
+            for key in ("pressure", "P"):
+                if key in holder:
+                    holder[key] -= 1.01325
+        plain, gauge = criterion_results(doc), criterion_results(twin)
+        for cid, result in plain.items():
+            with self.subTest(cid=cid):
+                if result.score is None:
+                    self.assertIsNone(gauge[cid].score)
+                else:
+                    self.assertAlmostEqual(gauge[cid].score, result.score,
+                                           delta=1e-9)
+        bare = copy.deepcopy(doc)
+        bare["quantity_units_global"]["pressure"]["aliases"] = ["pressure"]
+        text = "\n".join(run(C._score_uop_02, bare)[2])
+        self.assertIn("P states no quantity unit", text)
+        self.assertIn("declare a quantity_units_global alias", text)
+        bare["units"][0]["design_input_specs"]["P"] = 5.0
+        bare["quantity_units_global"]["pressure"]["aliases"] = ["pressure", "P"]
+        self.assertNotIn("declare a quantity_units_global alias",
+                         "\n".join(run(C._score_uop_02, bare)[2]))
+
+    def test_volumetric_only_flow(self):
+        """R6.7: _volumetric_flow_credit -> DERIVED_CREDIT for a valid,
+        non-zero total_volumetric_flow with valid T, P and a composition
+        fixing the density (per-phase fractions without phase flows count)
+        on a stream stating no mass or molar total; 0 without T, with a
+        negative or zero volume flow, without a composition, or beside a
+        stated total (a stated zero included: an empty stream, so zero-flow
+        pads earn nothing from it). A Pump doc whose
+        feed and product state only a volumetric flow (and their phase
+        molar flows, so the pump's species balance stays checkable):
+        _feed_01_entry
+        scores the feed (1 + 1 + 0.75 + 1) / 4 with an 'only derivable
+        from total_volumetric_flow' locator, CMP-FEED-01 and CMP-UOP-04
+        likewise; restoring the mass flow gives 1 (MAX over tiers);
+        deleting the volumetric flow or the temperature only lowers it."""
+        doc = one_unit_doc(spec_unit("Pump"))
+        for s in doc["streams"]:
+            sp = s["stream_properties"]
+            del sp["total_mass_flow"], sp["total_molar_flow"]
+            sp["total_volumetric_flow"] = 0.06
+        stream_ = doc["streams"][0]
+        self.assertEqual(C._volumetric_flow_credit(stream_), C.DERIVED_CREDIT)
+        fractions_only = copy.deepcopy(stream_)
+        del fractions_only["stream_properties"]["phases"]["l"][
+            "total_molar_flow"]
+        self.assertEqual(C._volumetric_flow_credit(fractions_only),
+                         C.DERIVED_CREDIT)
+        for key, value in (("temperature", None), ("phases", None),
+                           ("total_volumetric_flow", -1.0),
+                           ("total_volumetric_flow", 0.0),
+                           ("total_mass_flow", 0.0)):
+            bad = copy.deepcopy(stream_)
+            if value is None:
+                del bad["stream_properties"][key]
+            else:
+                bad["stream_properties"][key] = value
+            self.assertEqual(C._volumetric_flow_credit(bad), 0.0, key)
+        expected = (3 + C.DERIVED_CREDIT) / 4
+        score, full, missing = C._feed_01_entry(ctx(doc), 0)
+        self.assertEqual((score, full), (expected, False))
+        self.assertIn("(only derivable from total_volumetric_flow)", missing[0])
+        self.assertEqual(run(C._score_feed_01, doc)[0], expected)
+        self.assertEqual(run(C._score_uop_04, doc)[0], expected)
+        restored = copy.deepcopy(doc)
+        restored["streams"][0]["stream_properties"]["total_mass_flow"] = 46.07
+        self.assertEqual(C._feed_01_entry(ctx(restored), 0)[0], 1.0)
+        for key in ("total_volumetric_flow", "temperature"):
+            self.assertLess(run(C._score_feed_01, deleted(
+                doc, ("streams", 0, "stream_properties", key)))[0], expected)
+
+    def test_schema_gap_docs_entries(self):
+        """R6.5 / R6.9 docs: the completeness page lists the '<Class> on
+        <source URL>' design_simulation_method convention among the schema
+        gaps and notes that included_in_thermo flags contradicted by the
+        stream data put a document outside the deletion guarantee."""
+        page = DOCS_PAGE.read_text(encoding="utf-8")
+        for phrase in ("<Class> on <source URL>",
+                       "flags contradicted by the stream data"):
+            self.assertTrue(phrase in page, phrase)
 
 
 if __name__ == "__main__":

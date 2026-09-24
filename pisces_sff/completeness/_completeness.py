@@ -852,6 +852,33 @@ def _stream_state(stream, empty_exempt=True):
             'composition': bool(composition)}
 
 
+def _volumetric_flow_credit(stream):
+    """R6.7: DERIVED_CREDIT for the flow part of a stream's state when it
+    states no valid mass or molar total (_total_flow: absent or invalid --
+    INVALID == MISSING) but a valid, non-zero total_volumetric_flow
+    (internal m3/hr) with a valid temperature and pressure and a
+    composition that fixes its density -- per phase (_phases_ok, or every
+    stated phase with a plausible composition, _composition_ok) or the
+    legacy flat list -- since BioSTEAM derives the totals from them; else
+    0. It is the tier below a stated total (MAX over tiers). A stream
+    stating a zero total (an empty stream, credited or not as a
+    placeholder, R6.3) or a zero volume flow earns nothing from it, so
+    padding with zero-flow streams stays worthless and deleting a stated
+    zero total never adds the tier to a consistent empty stream."""
+    sp = _as_dict(_as_dict(stream).get('stream_properties'))
+    volume = _valid_flow(sp.get('total_volumetric_flow'))
+    if (_total_flow(sp) is not None or volume is None or volume <= ZERO_FLOW
+            or _valid_T(sp.get('temperature')) is None
+            or _valid_P(sp.get('pressure')) is None):
+        return 0.0
+    phases = sp.get('phases')
+    fixed = (_phases_ok(phases, sp) or _composition_ok(sp.get('composition'))
+             or (isinstance(phases, dict) and bool(phases) and all(
+                 _composition_ok(_as_dict(phase).get('composition'))
+                 for phase in phases.values())))
+    return DERIVED_CREDIT if fixed else 0.0
+
+
 # Locator suffix of each stream-state part, for `missing` entries.
 _STATE_PATHS = {
     'T': 'stream_properties.temperature',
@@ -859,6 +886,8 @@ _STATE_PATHS = {
     'flow': 'stream_properties.total_mass_flow|total_molar_flow',
     'composition': 'stream_properties.phases[*].composition',
 }
+# R6.7: suffix of a flow locator whose part earns the volumetric tier.
+_VOLUMETRIC_NOTE = ' (only derivable from total_volumetric_flow)'
 
 
 def _phase_entries(stream):
@@ -1240,6 +1269,7 @@ _QUANTITY_DIMENSIONS = {
 }
 _F_SCALE = 5.0 / 9.0
 _PSI = 6894.757293168
+_ATM = 101325.0  # Pa: the zero of a gauge pressure unit (R6.6)
 _GALLON = 3.785411784e-3  # m3 (US gallon)
 _UNIT_FACTORS = {
     'temperature': {
@@ -1257,6 +1287,17 @@ _UNIT_FACTORS = {
         'atm': (101325.0, 0.0), 'psi': (_PSI, 0.0), 'psia': (_PSI, 0.0),
         'mmHg': (133.322387415, 0.0), 'torr': (101325.0 / 760.0, 0.0),
         'Torr': (101325.0 / 760.0, 0.0),
+        # Explicitly absolute spellings.
+        **dict.fromkeys(('bara', 'bar(a)'), (1e5, 0.0)),
+        **dict.fromkeys(('kPaa', 'kPa(a)'), (1e3, 0.0)),
+        **dict.fromkeys(('MPaa', 'MPa(a)'), (1e6, 0.0)), 'psi(a)': (_PSI, 0.0),
+        # R6.6: gauge units read relative to 1 atm (offset 101325 Pa).
+        **dict.fromkeys(('psig', 'psi(g)'), (_PSI, _ATM)),
+        **dict.fromkeys(('barg', 'bar(g)'), (1e5, _ATM)),
+        **dict.fromkeys(('mbarg', 'mbar(g)'), (1e2, _ATM)),
+        **dict.fromkeys(('kPag', 'kPa(g)'), (1e3, _ATM)),
+        **dict.fromkeys(('MPag', 'MPa(g)'), (1e6, _ATM)),
+        **dict.fromkeys(('atmg', 'atm(g)'), (101325.0, _ATM)),
     },
     'mass_flow': {
         **dict.fromkeys(('kg/hr', 'kg/h'), (1.0, 0.0)),
@@ -1324,6 +1365,11 @@ _UNIT_FACTORS = {
 _UNIT_FACTORS['temperature_difference'] = {
     unit: (scale, 0.0)
     for unit, (scale, _offset) in _UNIT_FACTORS['temperature'].items()}
+# Likewise a pressure DIFFERENCE (dP_design) takes every pressure unit
+# without the gauge offset: 5 psig of rise is 5 psi (R6.6).
+_UNIT_FACTORS['pressure_difference'] = {
+    unit: (scale, 0.0)
+    for unit, (scale, _offset) in _UNIT_FACTORS['pressure'].items()}
 
 # R5.2: design_input_specs keys with a physical dimension (the _UNIT_FACTORS
 # table their quantity unit is read from), checked against the biosteam
@@ -1334,7 +1380,7 @@ _UNIT_FACTORS['temperature_difference'] = {
 _SPEC_DIMENSIONS = {
     **dict.fromkeys(('T', 'T_lim0', 'T_lim1', 'Temperature'), 'temperature'),
     **dict.fromkeys(('dT', 'T_min_app'), 'temperature_difference'),
-    **dict.fromkeys(('P', 'dP_design'), 'pressure'),
+    'P': 'pressure', 'dP_design': 'pressure_difference',
     **dict.fromkeys(('Q', 'H', 'H_lim0', 'H_lim1', 'Duty'), 'heat_flow'),
     **dict.fromkeys(('tau', 'tau_0', 'cycle_time'), 'time'),
     'V_max': 'volume',
@@ -2423,6 +2469,12 @@ _PORT_LIMITS = {
 # multi-inlet Separator, VentScrubber, AmineAbsorption, filters and presses.
 _FAMILY_PORT_LIMITS = {'mixer': (None, 1), 'pump': (1, 1), 'valve': (1, 1),
                        'hx_utility': (1, 1), 'hx_process': (2, 2)}
+# R6.3: fixed (inlets, outlets) port counts of corpus-known custom
+# (Bioindustrial-Park) classes, read from their source like _PORT_LIMITS:
+# PlantAir_CIP_WasteWater_Facilities (corn/units.py) subclasses bst.Facility
+# without overriding BioSTEAM's fixed-size 1 / 1 Unit default. Only the
+# placeholder-port cap reads it (_fixed_port_counts).
+_NONCORE_PORT_LIMITS = {'PlantAir_CIP_WasteWater_Facilities': (1, 1)}
 # R4.14: inlets (non-empty or of unknown flow) a mixer family claim needs
 # when no exact class backs it.
 MIXER_MIN_INLETS = 2
@@ -3832,13 +3884,23 @@ def _requirement_score(req, sc, position, explicit):
     return (e + DERIVED_CREDIT * min(d, req.n - e)) / req.n
 
 
-def _requirement_locator(label, req, score, inconsistent=(), blocked=''):
+def _requirement_locator(label, req, score, inconsistent=(), blocked='',
+                         unaliased=()):
     """Missing locator of one unmet requirement; `blocked` names why a
-    derivation from stream data was unavailable (_closure)."""
+    derivation from stream data was unavailable (_closure). R6.6: the
+    `unaliased` inconsistent keys state no quantity unit (read in
+    BioSTEAM's native unit), so the note suggests declaring a
+    quantity_units_global alias for them."""
     count = 'one' if req.n == 1 else str(req.n)
     if inconsistent:
         note = (f" (inconsistent: {', '.join(inconsistent)} disagrees with "
-                f"the outlet stream)")
+                f"the outlet stream")
+        if unaliased:
+            note += (f"; {', '.join(unaliased)} states no quantity unit, so "
+                     f"it is read in BioSTEAM's native unit -- if it is "
+                     f"stated in another, declare a quantity_units_global "
+                     f"alias for it")
+        note += ')'
     elif score > 0:
         note = ' (only derivable)'
     else:
@@ -3902,7 +3964,9 @@ def _rules_score(sc, position, rules):
                            for conditions in req.derive.values())
             missing.append(_requirement_locator(
                 label, req, score, bad,
-                blocked='' if closes or not streamed else why))
+                blocked='' if closes or not streamed else why,
+                unaliased=[k for k in bad
+                           if k not in sc.spec_units[position]]))
     return _mean(scores), missing
 
 
@@ -4391,8 +4455,9 @@ def _thm_03_credit(chem, cid):
     without contradiction or conflict (_registry_status 'resolved') to a
     record with a molar mass, 1; an id resolving by name to a thermosteam
     built-in pseudo-component, or to a database record the chemical's own
-    data verify (_name_tier), NAME_RESOLVED_CREDIT; else 0 (an unverified
-    database name may misidentify the species)."""
+    data verify (_name_tier), NAME_RESOLVED_CREDIT; to a database record
+    nothing stated verifies, NAME_UNVERIFIED_CREDIT (R6.8: it may name
+    another species); else 0."""
     derive = _validator()._molar_mass_from_formula  # same rule as _Context.molar_mass
     declared = _num(chem.get('molar_mass'))
     formula = chem.get('formula')
@@ -4405,13 +4470,19 @@ def _thm_03_credit(chem, cid):
         return 1.0, None
     tier = _name_tier(chem, cid)
     record = _name_record(cid) if tier in ('verified', 'unverified') else None
-    if record is not None and _record_molar_mass(record) is not None and (
-            tier == 'verified' or isinstance(record, _Builtin)):
-        return NAME_RESOLVED_CREDIT, (f'.molar_mass (only from the '
-                                      f'thermosteam built-in {record.name})'
-                                      if isinstance(record, _Builtin) else
-                                      '.molar_mass (only from the database '
-                                      'record its name resolves to)')
+    if record is not None and _record_molar_mass(record) is not None:
+        if tier == 'verified' or isinstance(record, _Builtin):
+            return NAME_RESOLVED_CREDIT, (
+                f'.molar_mass (only from the thermosteam built-in '
+                f'{record.name})' if isinstance(record, _Builtin) else
+                '.molar_mass (only from the database record its name '
+                'resolves to)')
+        # R6.8: an unverified database name (nothing stated to check it
+        # against) earns NAME_UNVERIFIED_CREDIT, as in CMP-THM-02.
+        return NAME_UNVERIFIED_CREDIT, ('.molar_mass (only from the database '
+                                        'record its name resolves to, '
+                                        'unverified: it may name another '
+                                        'species)')
     return 0.0, ('.molar_mass (or a parseable formula, or a registry id '
                  'the database resolves)')
 
@@ -4437,7 +4508,8 @@ def _score_thm_03(sc):  # CMP-THM-03
             f'{full} of {len(scored)} chemical(s) have a molar mass (stated, '
             f'from a formula, or from a database-resolved registry id)'
             + (f', {partial} more only from a thermosteam built-in or a '
-               f'verified name' if partial else ''), missing)
+               f'(verified or unverified) database name' if partial else ''),
+            missing)
 
 
 # CMP-THM-04 credit of included_in_thermo: false on a chemical the streams
@@ -4804,6 +4876,41 @@ def _feed_phases_stated(stream):
         and e['phase'] in _PHASE_SYMBOLS for e in entries)
 
 
+def _feed_01_entry(sc, position, zero_note=None):
+    """(score, fully stated, missing locators) of feed `position` on its
+    state (T, P, flow, composition; equal parts). `zero_note` not None: the
+    feed's stated zero flow earns no placeholder credit (_score_feed_01), so
+    its flow counts as missing (no composition exemption either) and
+    `zero_note` explains why on the flow locator. R6.7: a missing flow part
+    earns _volumetric_flow_credit (MAX over tiers). R4.6: a plausible
+    composition without its phases stated earns
+    UNTAGGED_COMPOSITION_CREDIT."""
+    stream = sc.streams[position]
+    state = _stream_state(stream, empty_exempt=False)
+    if zero_note is not None:
+        state['flow'] = False
+    parts = {key: float(ok) for key, ok in state.items()}
+    volumetric = 0.0 if state['flow'] else _volumetric_flow_credit(stream)
+    parts['flow'] = max(parts['flow'], volumetric)
+    untagged = state['composition'] and not _feed_phases_stated(stream)
+    if untagged:  # R4.6
+        parts['composition'] = UNTAGGED_COMPOSITION_CREDIT
+    missing = []
+    for key, ok in state.items():
+        if ok:
+            continue
+        note = ''
+        if key == 'flow':
+            note = (zero_note or '') + (_VOLUMETRIC_NOTE if volumetric else '')
+        missing.append(f'{sc.stream_labels[position]}.{_STATE_PATHS[key]}{note}')
+    if untagged:
+        missing.append(f'{sc.stream_labels[position]}.stream_properties.'
+                       f'composition[*].phase (untagged: BioSTEAM would '
+                       f'assume liquid)')
+    return (sum(parts.values()) / len(parts),
+            all(state.values()) and not untagged, missing)
+
+
 def _score_feed_01(sc):  # CMP-FEED-01
     # Equal weights; every feed counts (R1.0); every part of a feed's state
     # must be plausible (R2.0: T in (0, T_MAX) K, P > 0, flow >= 0, a
@@ -4816,11 +4923,13 @@ def _score_feed_01(sc):  # CMP-FEED-01
     # composition). Deleting the only non-zero flow thus lowers the empty
     # feeds from 1 to their missing-flow score; writing zeros everywhere
     # earns nothing. (A mass-share weighting was dropped: deleting a large
-    # feed's flow switched it to equal weights.) R3.7: the empty-feed credit
-    # also needs the sink unit's class known exactly (confidence 1: its
-    # fixed ports make a placeholder feed legitimate,
-    # _placeholder_port_feed); padding a unit of unknown class with
-    # zero-flow feeds earns nothing -- each scores as missing its flow.
+    # feed's flow switched it to equal weights.) R3.7 / R6.3: the empty-feed
+    # credit also needs a FREE FIXED inlet port of the sink unit
+    # (_placeholder_ports: an exactly known class with a fixed inlet count,
+    # less the inlets that are not stated empty, and the unit's total mass
+    # closure); padding a unit of unknown class, a variable-inlet class
+    # (Mixer) or a family-only claim with zero-flow feeds earns nothing, and
+    # empties beyond the free ports score as missing-flow feeds.
     # A stream with both endpoints at the boundary (isolated: a feed whose
     # sink_unit_id was lost) stays in the population, so deleting an
     # endpoint never sheds an incomplete feed (R3.8). R4.6: a plausible
@@ -4831,15 +4940,22 @@ def _score_feed_01(sc):  # CMP-FEED-01
     # stated (dangling) may be a feed -- a feed whose source or sink key was
     # lost is one -- so it stays in the population, but it is never a
     # boundary stream: it scores 0 and anchors nothing (else detaching an
-    # internal stream would add a fully stated 'feed').
+    # internal stream would add a fully stated 'feed'). R6.7: a feed stating
+    # only a volumetric flow (with T, P and composition) earns
+    # DERIVED_CREDIT for its flow part.
     feeds = sorted(sc.feeds + sc.isolated)
     if not feeds + sc.dangling:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
                 ['streams: no feed (source_unit_id "None", sink a unit)'])
     anchored = any(_states_flow(sc.streams[i]) for i in feeds)
     empties = [i for i in feeds if _is_empty_stream(sc.streams[i])]
-    credited = [i for i in empties
-                if anchored and _placeholder_port_feed(sc, i)]
+    if anchored:
+        credited, why = _placeholder_ports(
+            sc, empties, 0, lambda i: _feed_01_entry(sc, i, '')[0])
+    else:
+        credited = set()
+        why = dict.fromkeys(empties, ' (a zero flow, while no feed states a '
+                                     'non-zero one)')
     scores, missing, full = [], [], 0
     for i in sc.dangling:
         scores.append(0.0)
@@ -4848,47 +4964,96 @@ def _score_feed_01(sc):  # CMP-FEED-01
         if i in credited:
             scores.append(1.0)
             continue
-        state = _stream_state(sc.streams[i], empty_exempt=False)
-        why = ''
-        if i in empties:
-            state['flow'] = False
-            why = (' (a zero flow, while no feed states a non-zero one)'
-                   if not anchored else ' (a zero flow into a unit whose '
-                   'class is not known exactly: no fixed placeholder port)')
-        parts = dict(state)
-        untagged = state['composition'] and not _feed_phases_stated(
-            sc.streams[i])
-        if untagged:  # R4.6
-            parts['composition'] = UNTAGGED_COMPOSITION_CREDIT
-        scores.append(sum(parts.values()) / len(parts))
-        full += all(state.values()) and not untagged
-        missing.extend(f'{sc.stream_labels[i]}.{_STATE_PATHS[k]}'
-                       + (why if k == 'flow' else '')
-                       for k, ok in state.items() if not ok)
-        if untagged:
-            missing.append(f'{sc.stream_labels[i]}.stream_properties.'
-                           f'composition[*].phase (untagged: BioSTEAM would '
-                           f'assume liquid)')
+        score, complete, locators = _feed_01_entry(sc, i, why.get(i))
+        scores.append(score)
+        full += complete
+        missing.extend(locators)
     message = f'{full + len(credited)} of {len(feeds)} feed(s) fully stated'
     if sc.dangling:
         message += (f'; {len(sc.dangling)} dangling stream(s) (an endpoint '
                     f'not stated) score 0')
     if empties:
         message += (f'; {len(empties)} empty feed(s) (zero flow), '
-                    f'{len(credited)} credited as placeholder port(s) of a '
-                    f'unit of exactly known class')
+                    f'{len(credited)} credited as placeholder port(s) (free '
+                    f'fixed inlets of a unit of exactly known class)')
     if not anchored:
         message += '; no feed states a non-zero flow'
     return _mean(scores), message, missing
 
 
-def _placeholder_port_feed(sc, position):
-    """True when feed `position` enters a declared unit whose class is known
-    exactly (confidence 1): its fixed ports make an empty placeholder feed
-    legitimate (R3.7)."""
-    sink = sc.streams[position].get('sink_unit_id')
-    unit = sc.unit_positions.get(sink) if isinstance(sink, str) else None
-    return unit is not None and sc.unit_classes[unit][2] >= 1.0
+def _fixed_port_counts(sc, position):
+    """R6.3: (inlets, outlets) port counts fixed by unit `position`'s
+    exactly known class (confidence 1): an exact core class's _PORT_LIMITS
+    entry, a corpus-known custom class's _NONCORE_PORT_LIMITS entry; None on
+    a side the class leaves variable (a Mixer's inlets) or that no table
+    lists, and (None, None) for any claim below confidence 1 (a family, a
+    label, a key-set inference), which fixes no port count."""
+    name, _family, confidence = sc.unit_classes[position]
+    if confidence < 1.0 or not isinstance(name, str):
+        return None, None
+    table = _PORT_LIMITS if sc.unit_core[position] else _NONCORE_PORT_LIMITS
+    return table.get(name, (None, None))
+
+
+_PORT_SIDES = ('inlet', 'outlet')
+
+
+def _placeholder_ports(sc, positions, side, fallback):
+    """R6.3: (credited, why) -- which EMPTY streams (_is_empty_stream) among
+    boundary streams `positions` earn placeholder-port credit, and, for
+    every other empty one, a locator note saying why not. `side` 0: feeds,
+    held by their sink unit's inlets; 1: products, by their source unit's
+    outlets. A unit holds at most its free fixed ports on that side
+    (_fixed_port_counts less its streams there that are not stated empty,
+    unknown flows included -- sc.unit_ports), and only when its total mass
+    closure is shown (_mass_closure: no material-carrying port is missing).
+    Variable-port classes, claims below confidence 1 and undeclared units
+    hold none. Where a unit's empties exceed its free ports, those with the
+    lowest `fallback` score (their score as missing-flow streams) are
+    credited, which maximises the criterion; deleting a field can then only
+    lower a fallback, or turn an empty stream into one of unknown flow that
+    takes a port and leaves the pool, never raise the sum."""
+    key = ('sink_unit_id', 'source_unit_id')[side]
+    noun = _PORT_SIDES[side]
+    by_unit, why = {}, {}
+    for i in positions:
+        if not _is_empty_stream(sc.streams[i]):
+            continue
+        uid = sc.streams[i].get(key)
+        unit = (sc.unit_positions.get(uid) if isinstance(uid, str)
+                and not _is_boundary(uid) else None)
+        if unit is None:
+            why[i] = (' (a zero flow with no declared unit to hold it as a '
+                      'placeholder port)')
+        else:
+            by_unit.setdefault(unit, []).append(i)
+    credited = set()
+    for unit, empties in by_unit.items():
+        label = sc.unit_labels[unit]
+        name, _family, confidence = sc.unit_classes[unit]
+        fixed = _fixed_port_counts(sc, unit)[side]
+        closes, reason = _mass_closure(sc, unit)
+        if confidence < 1.0:
+            note = (f' (a zero flow at {label}, whose class is not known '
+                    f'exactly: no fixed placeholder port)')
+        elif fixed is None:
+            note = (f' (a zero flow at {label}, whose {name} {noun} count is '
+                    f'not fixed: no placeholder port)')
+        elif not closes:
+            note = (f' (a zero flow at {label}, whose total mass closure is '
+                    f'not shown ({reason}): its ports may be incomplete)')
+        else:
+            taken = sc.unit_ports[unit][side]
+            free = max(0, fixed - taken)
+            ranked = sorted(empties, key=lambda i: (fallback(i), i))
+            credited.update(ranked[:free])
+            empties = ranked[free:]
+            note = (f' (a zero flow beyond the free fixed {noun} ports of '
+                    f'{label}: {name} has {fixed}, {taken} taken by streams '
+                    f'not stated empty)')
+        for i in empties:
+            why[i] = note
+    return credited, why
 
 
 # Chemical ids (lowercase) of each utility-port material (R2.9).
@@ -4965,8 +5130,9 @@ def _utility_port_feed(sc, position):
 
 def _score_feed_02(sc):  # CMP-FEED-02
     # Every boundary stream counts (R1.0); an EMPTY one (total flow
-    # numerically 0) needs no price and scores 1, so deleting its flow (or
-    # its stream_properties) can only lower its credit -- excluding it let
+    # numerically 0) held as a placeholder port (R6.3, below) needs no price
+    # and scores 1, so deleting its flow (or its stream_properties) can only
+    # lower its credit -- excluding it let
     # that deletion move a priced empty stream into the population. An
     # isolated stream (both endpoints at the boundary) counts too: deleting
     # an unpriced product's source_unit_id must not drop it (R3.8). R5.8: a
@@ -4974,39 +5140,86 @@ def _score_feed_02(sc):  # CMP-FEED-02
     # it stays in the population, but it is never credited as one: it
     # scores 0, even when empty (else detaching a priced or empty internal
     # stream's endpoint would add a credited 'boundary' stream).
+    # R6.3: an EMPTY stream needs no price only as a placeholder port
+    # (_placeholder_ports: a free fixed port of an exactly known class whose
+    # total mass closure is shown, feeds at the sink unit's inlets, products
+    # at the source unit's outlets); any other empty stream is scored on its
+    # price like a stream of unknown flow. R6.5: a 0 price on a feed into a
+    # unit that is not declared or is of unknown family earns half credit:
+    # that unit may be one whose utility port BioSTEAM prices itself.
     positions = sc.feeds + sc.outlets + sc.isolated
     if not positions + sc.dangling:
         return None, 'no boundary streams', []
     feeds = set(sc.feeds)
+    entry = lambda i: _feed_02_entry(sc, i, i in feeds)
+    fallback = lambda i: entry(i)[0]
+    credited, why = _placeholder_ports(sc, sc.feeds + sc.isolated, 0,
+                                       fallback)
+    outlets, why_out = _placeholder_ports(sc, sc.outlets, 1, fallback)
+    credited |= outlets
+    why.update(why_out)
     scores = [0.0 for _i in sc.dangling]
     missing = [_dangling_note(sc, i) for i in sc.dangling]
-    empty = 0
+    priced = 0
     for i in positions:
-        if _is_empty_stream(sc.streams[i]):
-            empty += 1
+        if i in credited:
             scores.append(1.0)
             continue
-        price = _num(sc.streams[i].get('price'))
-        port = _utility_port_feed(sc, i) if i in feeds else None
-        if price is None:
-            scores.append(0.0)
-            missing.append(f'{sc.stream_labels[i]}.price')
-        elif price == 0 and port:
-            # BioSTEAM prices a 0-priced utility-port material itself
-            # (bst.stream_utility_prices or a class default), which SFF
-            # cannot state.
-            scores.append(0.5)
-            missing.append(f'{sc.stream_labels[i]}.price: 0 on the {port[1]} '
-                           f'port of {port[0]} (priced by BioSTEAM, not '
-                           f'representable)')
-        else:
-            scores.append(1.0)
-    ok = scores.count(1.0) - empty
-    return (_mean(scores), f'{ok} of {len(positions) - empty} non-empty '
-            f'boundary stream(s) priced' + (f' ({empty} empty, needing no '
-                                            f'price)' if empty else '')
+        score, note = entry(i)
+        scores.append(score)
+        priced += score == 1.0
+        if note:
+            missing.append(note + (why.get(i, '') if note.endswith('.price')
+                                   else ''))
+    needing = len(positions) - len(credited)
+    return (_mean(scores), f'{priced} of {needing} boundary stream(s) needing '
+            f'a price priced' + (f' ({len(credited)} empty placeholder '
+                                 f'port(s), needing no price)'
+                                 if credited else '')
             + (f'; {len(sc.dangling)} dangling stream(s) (an endpoint not '
                f'stated) score 0' if sc.dangling else ''), missing)
+
+
+def _feed_02_entry(sc, position, feed):
+    """(score, missing locator or None) of boundary stream `position` on
+    its price (CMP-FEED-02): unstated -> 0; 0 on a feed (`feed` True) into
+    a utility port (_utility_port_feed) or into a unit that is not declared
+    or is of unknown family (_unresolved_sink, R6.5) -> 0.5; else 1."""
+    label = sc.stream_labels[position]
+    price = _num(sc.streams[position].get('price'))
+    if price is None:
+        return 0.0, f'{label}.price'
+    if price != 0 or not feed:
+        return 1.0, None
+    port = _utility_port_feed(sc, position)
+    if port:
+        # BioSTEAM prices a 0-priced utility-port material itself
+        # (bst.stream_utility_prices or a class default), which SFF
+        # cannot state.
+        return 0.5, (f'{label}.price: 0 on the {port[1]} port of {port[0]} '
+                     f'(priced by BioSTEAM, not representable)')
+    sink = _unresolved_sink(sc, position)
+    if sink:
+        return 0.5, (f'{label}.price: 0 into {sink}, which may be a utility '
+                     f'port BioSTEAM prices itself (half credit)')
+    return 1.0, None
+
+
+def _unresolved_sink(sc, position):
+    """R6.5: a description of feed `position`'s sink when it is a unit id no
+    unit declares ('units[X] (referenced, not declared)') or a declared unit
+    of unknown family ('units[X] (unknown family)'), else None. Such a unit
+    may have a utility port BioSTEAM prices itself, so a 0 price there is
+    not affirmatively a free feed."""
+    sink = sc.streams[position].get('sink_unit_id')
+    if not _nonempty_str(sink) or _is_boundary(sink):
+        return None
+    unit = sc.unit_positions.get(sink)
+    if unit is None:
+        return f'units[{sink}] (referenced, not declared)'
+    if sc.unit_classes[unit][1] is None:
+        return f'{sc.unit_labels[unit]} (unknown family)'
+    return None
 
 #%% Criteria -- unit operations
 
@@ -5271,15 +5484,23 @@ def _score_uop_04(sc):  # CMP-UOP-04
                          flow=False)
         if i in suspect:
             state['composition'] = False
-        scores.append(sum(state.values()) / len(state))
+        # R6.7: a stream stating no mass or molar total earns the
+        # volumetric tier for its flow part (MAX over tiers), unless the
+        # composition that tier needs is suspect. (An unbalanced outlet
+        # states its totals, so it earns nothing from its volume flow.)
+        volumetric = (0.0 if state['flow'] or i in suspect
+                      else _volumetric_flow_credit(sc.streams[i]))
+        parts = {key: float(ok) for key, ok in state.items()}
+        parts['flow'] = max(parts['flow'], volumetric)
+        scores.append(sum(parts.values()) / len(parts))
         full += all(state.values())
         for key, ok in state.items():
             if ok:
                 continue
-            note = ''
+            note = _VOLUMETRIC_NOTE if key == 'flow' and volumetric else ''
             if key == 'flow' and i in unbalanced:
                 label, why = unbalanced[i]
-                note = f' (stated, but unbalanced at {label}: {why})'
+                note += f' (stated, but unbalanced at {label}: {why})'
             elif (key == 'composition' and i in suspect
                   and sc.stream_states[i][key]):
                 label, why = suspect[i]
@@ -6369,6 +6590,39 @@ def _heat_need(sc):
 _NO_UTILITY_NEED = 'no unit needs utilities and no agent is declared or referenced'
 
 
+def _agent_mean(scored):
+    """R6.4 aggregate of CMP-UTIL-01/02/03 over [(score, referenced)], where
+    `referenced` marks an agent some unit's results name (and the synthetic
+    undeclared / missing-kind entries, which stand for a need): the lowest
+    mean over the nested sets S (referenced <= S <= all, S not empty), as
+    _referenced_mean aggregates chemicals (R4.7) -- so agents no unit
+    references can lower the score, never raise it (ten fully specified
+    standard agents padded beside a half-specified referenced one change
+    nothing). With nothing referenced, the same rule gives the lowest single
+    score (not R4.7's plain mean): deleting a unit's last utility result
+    then only widens the family minimised over, never raises the score."""
+    if not scored:
+        return None
+    if not any(ref for _s, ref in scored):
+        return min(s for s, _ref in scored)
+    return _referenced_mean(scored)
+
+
+def _agent_referenced(agent, refs):
+    """True when a declared agent's (string) id is a key of `refs`
+    (_utility_refs: named by some unit's utility results)."""
+    aid = agent.get('id')
+    return isinstance(aid, str) and aid in refs
+
+
+def _unreferenced_note(scored):
+    """Message suffix counting the unreferenced agents of [(score,
+    referenced)] (_agent_mean), or ''."""
+    count = sum(1 for _s, ref in scored if not ref)
+    return (f'; {count} agent(s) no unit references can only lower the score'
+            if count else '')
+
+
 def _missing_agent_kinds(sc):
     """Locators of the synthetic missing-agent entries of CMP-UTIL-01/02
     (R2.7), each scoring 0: a heat agent when a unit is in a heat-exchanging
@@ -6404,25 +6658,25 @@ def _score_util_01(sc):  # CMP-UTIL-01
     if not refs and not sc.agents:
         return (0.0, 'utility-using units but no agent declared or referenced',
                 ['utilities: no agents declared'])
-    scores, missing = [], []
+    scored, missing = [], []  # [(score, referenced)] (R6.4, _agent_mean)
     for agent_id, unit_label in refs.items():
         if agent_id not in declared:
-            scores.append(0.0)
+            scored.append((0.0, True))
             missing.append(f"utilities: no agent '{agent_id}' (referenced by "
                            f"{unit_label})")
     for group, agent, label in sc.agents:
         gaps = _agent_gaps(group, agent)
         size = _AGENT_PARTS.get(group, _OTHER_AGENT_PARTS)
-        scores.append(1.0 - len(gaps) / size)
+        scored.append((1.0 - len(gaps) / size, _agent_referenced(agent, refs)))
         missing.extend(f'{label}.{gap}' for gap in gaps)
     kinds = _missing_agent_kinds(sc)
-    scores.extend(0.0 for _k in kinds)
+    scored.extend((0.0, True) for _k in kinds)
     missing.extend(kinds)
-    full = scores.count(1.0)
-    return (_mean(scores), f'{full} of {len(scores)} referenced/declared '
+    full = sum(1 for s, _ref in scored if s == 1.0)
+    return (_agent_mean(scored), f'{full} of {len(scored)} referenced/declared '
             f'agent(s) resolve and are fully specified'
-            + (f' ({len(kinds)} needed kind(s) missing)' if kinds else ''),
-            missing)
+            + (f' ({len(kinds)} needed kind(s) missing)' if kinds else '')
+            + _unreferenced_note(scored), missing)
 
 
 # Accepted price fields per agent group, and the locator naming what to add.
@@ -6480,28 +6734,33 @@ def _score_util_02(sc):  # CMP-UTIL-02
     missing = [f"utilities: no agent '{agent_id}' to price (referenced by "
                f"{unit_label})" for agent_id, unit_label in undeclared]
     missing.extend(kinds)
-    scores = []  # declared agents; undeclared and missing kinds score 0
+    # [(score, referenced)] (R6.4, _agent_mean): undeclared and missing
+    # kinds score 0 and stand for a need.
+    scored = [(0.0, True)] * (len(undeclared) + len(kinds))
+    refs = _utility_refs(sc)
     for group, agent, label in sc.agents:
         fields, locator = _PRICE_FIELDS[group]
         prices = [p for p in (_valid_price(group, agent.get(f)) for f in fields)
                   if p is not None]
+        referenced = _agent_referenced(agent, refs)
         if not prices:
-            scores.append(0.0)
+            scored.append((0.0, referenced))
             missing.append(f'{label}.{locator}')
         elif group == 'other_utilities' and prices[0] == 0 \
                 and _fuel_agent(agent):
             # R3.9: BioSTEAM prices a 0-priced fuel from bst.stream_prices,
             # which SFF cannot state (as CMP-FEED-02's utility ports).
-            scores.append(0.5)
+            scored.append((0.5, referenced))
             missing.append(f'{label}.price: 0 on a fuel agent (priced by '
                            f'BioSTEAM, not representable)')
         else:
-            scores.append(1.0)
-    fuels = scores.count(0.5)
-    return (sum(scores) / total, f'{scores.count(1.0)} of {total} '
+            scored.append((1.0, referenced))
+    fuels = sum(1 for s, _ref in scored if s == 0.5)
+    priced = sum(1 for s, _ref in scored if s == 1.0)
+    return (_agent_mean(scored), f'{priced} of {total} '
             f'referenced/declared agent(s) priced'
             + (f' ({fuels} fuel agent(s) priced 0: half credit)' if fuels
-               else ''), missing)
+               else '') + _unreferenced_note(scored), missing)
 
 
 def _agent_roles(sc):
@@ -6561,7 +6820,8 @@ def _score_util_03(sc):  # CMP-UTIL-03
         return (0.0, 'heat-exchanging units but no heat-utility agent declared',
                 ['utilities.heat_utilities: none declared'])
     roles = _agent_roles(sc)
-    scores, missing = [], []
+    refs = _utility_refs(sc)
+    scored, missing = [], []  # [(score, referenced)] (R6.4, _agent_mean)
     for agent, label in heat:
         aid = agent.get('id')
         efficiency = _spec_efficiency(agent.get('heat_transfer_efficiency'))
@@ -6569,13 +6829,15 @@ def _score_util_03(sc):  # CMP-UTIL-03
                  or _phase_change_agent(
                      agent, roles.get(aid, set()) if isinstance(aid, str)
                      else set()))
-        scores.append(0.5 * efficiency + 0.5 * limit)
+        scored.append((0.5 * efficiency + 0.5 * limit,
+                       _agent_referenced(agent, refs)))
         if not efficiency:
             missing.append(f'{label}.heat_transfer_efficiency')
         if not limit:
             missing.append(f'{label}.temperature_limit (sensible-heat agent)')
-    full = scores.count(1.0)
-    return _mean(scores), f'{full} of {len(heat)} heat agent(s) fully bounded', missing
+    full = sum(1 for s, _ref in scored if s == 1.0)
+    return (_agent_mean(scored), f'{full} of {len(heat)} heat agent(s) fully '
+            f'bounded' + _unreferenced_note(scored), missing)
 
 
 _UTILITY_RESULT_KEYS = ('utility_consumption_results',

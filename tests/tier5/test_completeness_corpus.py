@@ -102,7 +102,9 @@ def targeted_paths(doc):
     of internal streams: both keys of s35 (a 12 kg/h stream into the
     batch fermenter V405, whose sink deletion raised CMP-TOP-02 0.8732 ->
     0.8785 and CMP-FEED-02) and of the first, middle and last internal
-    stream."""
+    stream. Revision 6 (R6.5) adds the drum dryer D610's id (the unit then
+    becomes undeclared, and its zero-priced feeds lost their utility-port
+    half credit: CMP-FEED-02 rose 0.9667 -> 0.9833)."""
     units, streams = doc["units"], doc["streams"]
     described = [(i, C._is_core_class(*C._dsm_class(u)))
                  for i, u in enumerate(units)
@@ -179,6 +181,9 @@ def targeted_paths(doc):
                             internal[-1])):
         paths += [("streams", i, "sink_unit_id"),
                   ("streams", i, "source_unit_id")]
+    d610 = _first([i for i, u in enumerate(units) if u.get("id") == "D610"],
+                  "no unit D610")
+    paths.append(("units", d610, "id"))
     paths += [(section,) for section in SECTIONS]
     return paths
 
@@ -699,6 +704,34 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         self.assertLess(max(closing), 2.5e-4)
         self.assertGreater(min(e for e in errors if e > C.RXN_CLOSURE_RTOL),
                            0.015)
+
+    def test_revision_6_part_b_on_the_corn_file(self):
+        """R6.3 on SF_BST_01: its four real placeholder feeds and two
+        placeholder products keep their credit -- each fills a free fixed
+        port of its unit in the static port tables (_fixed_port_counts: the
+        ProcessWaterCenter T608 (4, 3), one inlet and two outlets taken;
+        the custom PlantAir_CIP_WasteWater_Facilities (1, 1), both free) and
+        both units' mass balances close -- so CMP-FEED-01 = 1 ('4 empty
+        feed(s) (zero flow), 4 credited') and CMP-FEED-02 names '6 empty
+        placeholder port(s)'. R6.5: deleting D610's id lowers CMP-FEED-02
+        (its dryer_air feed, priced 0, now enters an undeclared unit)."""
+        sc = C._ScoringContext(self.corn)
+        counts = {sc.units[p]["id"]: C._fixed_port_counts(sc, p)
+                  for p in range(len(sc.units))
+                  if sc.units[p].get("id") in ("T608", "other_facilities")}
+        self.assertEqual(counts, {"T608": (4, 3), "other_facilities": (1, 1)})
+        feed01 = {c.criterion_id: c for c in self.base.criteria}
+        self.assertEqual(feed01["CMP-FEED-01"].score, 1.0)
+        self.assertIn("4 empty feed(s) (zero flow), 4 credited",
+                      feed01["CMP-FEED-01"].message)
+        self.assertIn("6 empty placeholder port(s)",
+                      feed01["CMP-FEED-02"].message)
+        d610 = next(i for i, u in enumerate(self.corn["units"])
+                    if u.get("id") == "D610")
+        report = C.score_flowsheet_completeness(
+            without(self.corn, ("units", d610, "id")))
+        after = {c.criterion_id: c.score for c in report.criteria}
+        self.assertLess(after["CMP-FEED-02"], feed01["CMP-FEED-02"].score)
 
 
 if __name__ == "__main__":

@@ -204,8 +204,9 @@ criteria:
       in CMP-THM-02) to a record with a molar mass, which thermosteam then
       supplies (1); an id that resolves by name to one of thermosteam's
       built-in pseudo-components, or to a database record the chemical's own
-      data verify (0.75). A name the database resolves with nothing to verify
-      it earns nothing, since it may name another species ("HP" is
+      data verify (0.75); an id that resolves by name to a database record
+      nothing stated verifies (0.5, as in CMP-THM-02: the molar mass is
+      probably right, but the name may denote another species -- "HP" is
       hematoporphyrin). Pseudo-components such as SolubleProtein have no
       database entry, so their molecular weight must be stated explicitly or
       implied by a formula. Scored over declared plus
@@ -396,6 +397,7 @@ criteria:
       - streams[].stream_properties.pressure
       - streams[].stream_properties.total_mass_flow
       - streams[].stream_properties.total_molar_flow
+      - streams[].stream_properties.total_volumetric_flow
       - streams[].stream_properties.phases
       - streams[].stream_properties.composition
     rationale: >-
@@ -416,22 +418,35 @@ criteria:
       and scores 0. Feeds weigh equally and every feed counts: one whose state
       says it is empty (total flow numerically zero, an unused placeholder
       port) scores 1, since its zero flow states all such a port needs --
-      but only when some feed states a non-zero flow and the unit it enters
-      has a class known exactly (confidence 1), whose fixed ports make a
-      placeholder feed legitimate. Otherwise a stated zero counts as a
-      missing flow with no composition exemption: with no non-zero feed
-      nothing sets the problem's scale, and zero-flow feeds padding a unit of
-      unknown class state nothing (so writing zeros earns nothing). The
-      message reports how many feeds are empty and how many of those earn
-      the placeholder credit. A stream with both endpoints at the boundary
+      but only when some feed states a non-zero flow and the feed fills a
+      free fixed inlet of the unit it enters: that unit's class is known
+      exactly (confidence 1) and fixes its inlet count (BioSTEAM then
+      creates every inlet, used or not), at most that count less the
+      unit's inlets that are not stated empty are credited, and the unit's
+      total mass balance must close (no material-carrying port missing).
+      A variable-inlet class such as Mixer, a family or label claim, and a
+      unit whose free fixed inlets are used up hold no placeholder. Every
+      other stated zero counts as a missing flow with no composition
+      exemption: with no non-zero feed nothing sets the problem's scale,
+      and zero-flow feeds padding a unit state nothing it could not already
+      hold (so writing zeros earns nothing). The message reports how many
+      feeds are empty and how many of those earn the placeholder credit;
+      where a unit's empties exceed its free ports, those that would score
+      lowest as missing-flow feeds are credited. A stream with both endpoints at the boundary
       counts as a feed. A dangling stream (an endpoint not stated: a
       missing key, null or blank -- never the boundary) may be a feed, so
       it stays in the population but scores 0 and anchors nothing: losing
       a feed's endpoint never drops it, and detaching an internal stream
       never adds a credited feed. A feed whose
       flow is unknown scores its stated parts (temperature, pressure,
-      composition). (Leaving empty feeds out, or weighting by mass-flow
-      share, let deleting a flow raise the score.)
+      composition); a feed stating no mass or molar total but a non-zero
+      volumetric flow, with a valid temperature, pressure and a composition
+      that fixes its density, earns 0.75 (derived) for the flow part, since
+      BioSTEAM derives the totals from them -- the best of the tiers counts
+      (a stated zero total never earns it, so zero-flow padding stays
+      worthless). (Leaving
+      empty feeds out, or weighting by mass-flow share, let deleting a flow
+      raise the score.)
 
   - id: CMP-FEED-02
     category: feeds
@@ -442,12 +457,17 @@ criteria:
     sff_paths:
       - streams[].price
       - streams[].sink_unit_id
+      - streams[].source_unit_id
     rationale: >-
       Stream.price on feeds and products drives the material cost and sales
       revenue of the TEA, and therefore every minimum selling price or NPV.
       Every boundary stream counts (one with both endpoints at the boundary
       too): an empty one (total flow numerically zero) needs no price and
-      scores 1; every other one needs a price. A dangling stream (an
+      scores 1 when it fills a free fixed port of its unit -- as in
+      CMP-FEED-01, on the inlet side for a feed and the outlet side for a
+      product, the unit's class known exactly with that port count fixed and
+      its total mass balance closing; every other one, empty or not, needs
+      a price. A dangling stream (an
       endpoint not stated: a missing key, null or blank -- never the
       boundary) may be a boundary stream, so it counts too but scores 0,
       even when empty or priced: losing an endpoint never drops an unpriced
@@ -463,8 +483,12 @@ criteria:
       feed's mol fractions (from mol data, else from mass fractions and the
       chemicals' molar masses); a feed whose composition is unknown may be one and
       is treated as one, so deleting a composition never raises the score.
-      Air and every other zero-priced feed are scored like any stated
-      price.
+      A zero price on a feed into a unit no unit entry declares, or into a
+      unit of unknown family, also earns half credit: that unit may have a
+      utility port BioSTEAM prices itself, so the zero does not
+      affirmatively state a free feed (and deleting a unit's id or its
+      class never raises the score). Air and every other zero-priced feed
+      are scored like any stated price.
 
   # ---------------------------------------------------------------- unit ops
   - id: CMP-UOP-01
@@ -618,7 +642,9 @@ criteria:
       are read in the units the file declares: a key listed among a
       quantity_units_global entry's aliases (T under a degC temperature
       entry, P under a bar pressure entry) takes that entry's unit, so a
-      file in degC and bar scores exactly like the same file in K and Pa;
+      file in degC and bar scores exactly like the same file in K and Pa
+      (gauge units such as psig, barg or kPag read 1 atm above their
+      absolute twins, except for a pressure difference such as dP_design);
       any other key is read in BioSTEAM's native units, and a unit string
       the scorer does not know suspends the bounds and the stream
       consistency check for that value. A split vector counts only when it
@@ -635,7 +661,9 @@ criteria:
       vanishes across it (nor can the check be ruled out by uncomputable
       species flows); an
       explicit T or P that
-      contradicts the unit's outlet streams earns nothing. A conditional
+      contradicts the unit's outlet streams earns nothing (when that key
+      states no quantity unit, the missing locator suggests declaring a
+      quantity_units_global alias for it, the usual cause). A conditional
       requirement (the vapor fraction on a phase change, phase0/phase1 of a
       process exchanger, dP_design) is waived only when the data show its
       condition false (both phase sets known and equal, a pressure rise of
@@ -702,7 +730,11 @@ criteria:
       initial guess, give a re-simulated flowsheet verification targets, and
       are the base from which missing unit specifications can be derived.
       Each state part counts only when plausible, as for CMP-FEED-01 (a
-      stream stating a zero total flow needs no composition). Consistency
+      stream stating a zero total flow needs no composition; a stream
+      stating no mass or molar total earns 0.75 for its flow part from a
+      non-zero volumetric flow with a valid temperature, pressure and
+      composition, unless the consistency guard leaves that composition
+      unverified). Consistency
       guard: a physical-only unit (mixer, exchanger, pump, valve, compressor,
       turbine, flash, column, evaporator, steam mixer, tank, or a splitter
       -- or a unit of unknown family -- not identified as a custom class)
@@ -1095,7 +1127,15 @@ criteria:
       delivers electricity (pumps, compressors, turbines, solids handling,
       boiler-turbogenerators) but no power utility is declared -- a declared
       power utility does not stand in for steam. A unit of unknown family
-      could be any of these, so it needs utilities of both kinds.
+      could be any of these, so it needs utilities of both kinds. Agents no
+      unit's utility results reference can lower the score but never raise
+      it: the score is the lowest mean over the sets holding every
+      referenced entry (the referenced agents plus the referenced-but-
+      undeclared and missing-kind entries) and any of the unreferenced
+      agents, as CMP-THM-02 treats unreferenced chemicals -- so padding a
+      file with fully specified standard agents changes nothing. With no
+      agent referenced at all the same rule gives the lowest single agent
+      score, so deleting a unit's last utility result never raises it.
 
   - id: CMP-UTIL-02
     category: utilities
@@ -1121,7 +1161,9 @@ criteria:
       cannot state (as CMP-FEED-02 treats utility-port feeds). Same
       applicability as CMP-UTIL-01; scored over declared agents plus
       referenced but undeclared ones and the missing heat-agent or
-      power-utility kinds of CMP-UTIL-01 (all of which score 0).
+      power-utility kinds of CMP-UTIL-01 (all of which score 0), and
+      aggregated as CMP-UTIL-01 is: agents no unit references can lower
+      the score, never raise it.
 
   - id: CMP-UTIL-03
     category: utilities
@@ -1150,7 +1192,9 @@ criteria:
       credit each for efficiency (in (0, 1]) and limit (a plausible
       temperature). Applicable when a unit exchanges heat with a utility
       agent (or is of unknown family, so may) or a heat agent is declared;
-      with that need and no heat agent it scores 0.
+      with that need and no heat agent it scores 0. Aggregated over the
+      declared heat agents as CMP-UTIL-01 is: agents no unit references can
+      lower the score, never raise it.
 
   - id: CMP-UTIL-04
     category: utilities
@@ -1303,7 +1347,11 @@ criteria:
       validator's QU-01 (every quantity field has a quantity_units_global
       alias) and QU-02 (every quantity-unit string is parseable) both pass,
       0.5 when exactly one does (a QU-02 result that is missing earns
-      nothing), and 0 otherwise. Legacy files carry units inline on each
+      nothing), and 0 otherwise. The criterion follows the validator even
+      where the scorer's own unit reader is more lenient: the scorer reads
+      unit strings QU-02 rejects (psia, psig or barg, for example) to
+      convert the values it scores, but a file that states them is not
+      conformant, so this criterion does not credit them. Legacy files carry units inline on each
       quantity, so there the score is
       the fraction of quantities carrying units, where a bare numeric design
       result (no inline units at all) counts as a quantity without units.
