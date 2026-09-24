@@ -787,6 +787,38 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                               ("SF_BST_04.json", "U504"),
                               ("SF_BST_04.json", "U506")}, kept)
 
+    def test_label_only_sorption_and_biofilm_labels(self):
+        """The corpus read label-only: every sorption or regeneration
+        separator label (_sorption_label: 'Adsorption', 'Cation exchange',
+        'Anion exchange', 'Amine absorption', 'Molecular sieve') keeps the
+        splitter family, heat duties (regeneration steam) included, and
+        every 'Polishing filter' reads as the reactor family its class
+        (biosteam.wastewater's PolishingFilter) is."""
+        kept, filters = set(), 0
+        for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
+            doc = copy.deepcopy(C._read_flowsheet(str(path)))
+            for unit in doc["units"]:
+                unit.pop("design_simulation_method", None)
+            sc = C._ScoringContext(doc)
+            for position, unit in enumerate(sc.units):
+                label = unit.get("unit_type")
+                where = (path.name, unit.get("id"), label)
+                if C._sorption_label(label):
+                    self.assertEqual(sc.unit_classes[position][1],
+                                     "splitter", where)
+                    kept.add((path.name, unit.get("id")))
+                elif label == "Polishing filter":
+                    self.assertEqual(sc.unit_classes[position][1],
+                                     "reactor", where)
+                    filters += 1
+        self.assertLessEqual({("SF_BST_01.json", "X504"),
+                              ("SF_BST_02.json", "A301"),
+                              ("SF_BST_02.json", "A410"),
+                              ("SF_BST_02.json", "A420"),
+                              ("SF_BST_02.json", "A430"),
+                              ("SF_BST_15.json", "U301")}, kept)
+        self.assertGreater(filters, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

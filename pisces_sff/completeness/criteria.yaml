@@ -73,7 +73,9 @@
 #     streams or duties contradict -- a 'Mixer' heating its feed, a
 #     'Splitter' drawing power, a 'Centrifuge' taking steam, species
 #     converting across a 'Membrane' or 'Pelletizer' label (a separator
-#     label drawing power or dropping pressure is not one) -- where
+#     label drawing power or dropping pressure is not one, nor a sorption
+#     or regeneration separator -- a molecular sieve, adsorber, ion
+#     exchanger, absorber or scrubber -- taking a heat duty) -- where
 #     deleting the data that shows the contradiction restores the claim
 #     and sheds the needs its unknown family carried (CMP-UOP-01); a
 #     reaction that does not conserve mass with the document's own molar
@@ -124,10 +126,18 @@
 # else from the formula), so a molar-basis stream table closes its mass
 # balances like its mass-basis twin. A species' flow counts as changed
 # across a unit (or the flowsheet) only when the change exceeds both 1 %
-# of the species' own flow and 0.1 % of the inlet total on the basis
-# compared (the flowsheet's boundary inlet total): a printed table
-# rounding each stream on its own (wt% to 2 decimals, integer kg/h) stays
-# below that, while material conversion exceeds both.
+# of the species' own flow and 0.1 % of the inlet MASS total (the
+# flowsheet's boundary inlet total; molar flows are weighed with the
+# resolved molar masses, so a table stating both bases reaches the same
+# verdict on either, and deleting one basis changes nothing; when a
+# molar mass does not resolve, only the 1 % rule applies): a printed
+# table rounding each stream on its own (wt% to 2 decimals, integer
+# kg/h) stays below that, while material conversion exceeds both. A
+# molar-basis table whose chemicals carry no molar mass or formula (the
+# name alone resolving to a record) gets neither its total mass nor the
+# 0.1 % share: a name-resolved molar mass is unverified, so it earns
+# credit in CMP-THM-03 but never serves as evidence here, and such a
+# table scores below its mass-basis twin (a recorded limitation).
 # A stream endpoint that is not stated (a missing source_unit_id or
 # sink_unit_id key, null or blank) is dangling, never the boundary: such a
 # stream may be a missing port of any unit whose balance cannot rule it
@@ -462,9 +472,12 @@ criteria:
       Sides with several material-carrying streams earn derived
       credit only when the order follows from the data (a flash's vapor and
       liquid outlets, a splitter with explicit split fractions) and the
-      unit's balances close. A claim held to reactor rules for the
-      reactions it declares (see CMP-UOP-02) takes the lower of its own
-      family's port convention and a reactor's: it may be that reactor. A unit without an id, whose ports no stream can
+      unit's balances close. A claim held to reactor rules (see
+      CMP-UOP-02: one declaring reactions of its own, or a tank that may
+      host hidden chemistry) takes the lower of its own family's port
+      convention and a reactor's: it may be that reactor, so a 'Holding
+      tank' label cannot trade a fermenter's port needs for a tank's
+      order-free inlets. A unit without an id, whose ports no stream can
       name, scores 0, and so do both sides of every unit id a stream
       endpoint references but no unit declares. Each unit counts once.
 
@@ -668,7 +681,10 @@ criteria:
       so it is judged by what no such unit does: any other separator
       label (centrifuge, filter, press, screen, sieve, membrane, settler,
       chromatography, ...) or splitter key-set inference may draw power
-      and drop pressure, and is implausible with a heat duty, an outlet
+      and drop pressure, and is implausible with a heat duty (except under
+      a sorption or regeneration head -- a molecular sieve, adsorber, ion
+      exchanger, absorber or scrubber, whose temperature swing is its
+      duty, and whose outlets may then leave the band below), an outlet
       more than 5 K outside its inlets' temperature range, a pressure rise
       of more than 1 % without a power duty (a built-in pump's work: the
       sludge-handling units and reverse osmosis of biosteam.wastewater
@@ -837,7 +853,9 @@ criteria:
       the flowsheet-level evidence of CMP-RXN-01 is absent) scores the
       lower of that and the best reactor variant: it must be specified as
       the reactor it may be too, so relabelling a fermenter as a holding
-      tank cannot pay off. Declared chemistry is never ruled out: a claim
+      tank cannot pay off (it also keeps the reactor's port convention in
+      CMP-TOP-02 and the reactor's heat need in CMP-UTIL-01..05).
+      Declared chemistry is never ruled out: a claim
       without a class of any family but a reactor's -- and such a tank
       claim -- that declares reactions of its own is held to the lower of
       its rules and the best reactor variant whatever the evidence says
@@ -848,8 +866,15 @@ criteria:
       declares is well-formed and makes nothing its own combustion cannot.
       Columns and extractors declaring no reaction are never held to
       reactor rules (a reactive column is still specified as a column),
-      and every other label declaring none cannot host chemistry at all
-      (see CMP-UOP-01).
+      though one not ruled out carries a reactor's heat need (CMP-UTIL-03:
+      an 'Extractor' exchanges no heat of its own), and every other label
+      declaring none cannot host chemistry at all (see CMP-UOP-01). A
+      separator class with rules of its own (AmineAbsorption's
+      CO2_recovery, a liquids centrifuge's partition coefficients, an
+      adsorption column's isotherm) scores at least the derived credit its
+      split earns from full port states, as the class-less separator
+      reading does: whatever a separator computes its outlets from, they
+      are its split.
       Units of unknown
       family, and unit ids that stream endpoints reference but no unit
       declares, score zero because nothing tells the importer what to
@@ -1055,8 +1080,16 @@ criteria:
       (boilers, boiler-turbogenerators, heat-exchanger networks, other
       facilities) except cost-only facilities (CIP, fire water, air
       distribution, wastewater cost lumps); a facility whose kind is unknown
-      scores 0. These requirements are scored here, not in CMP-UOP-02, so
-      nothing is counted twice. Each unit counts once.
+      scores 0. A facility label on a unit that declares reactions its
+      facility kind does not account for (a 'Cooling tower' declaring a
+      fermentation, held to reactor rules in CMP-UOP-02) scores here no
+      higher than its best reactor rule set, so the facility need cannot
+      lift the mean. A known limitation: a facility claim of one kind
+      relabelled as another (a boiler-turbogenerator stating only its
+      agent, labelled 'Cooling tower') is held to the other kind's
+      requirements, which its results do not contradict. These
+      requirements are scored here, not in CMP-UOP-02, so nothing is
+      counted twice. Each unit counts once.
 
   # --------------------------------------------------------------- reactions
   - id: CMP-RXN-01
@@ -1076,7 +1109,9 @@ criteria:
       hydrotreater, hydrocracker, gasifier, reformer, converter, calciner,
       autoclave, CSTR, kettle, pyrolysis, hydrolysis, ammonia-addition,
       (over)liming, conditioning, acidification, (trans)esterification or
-      mashing step, or a vessel a reaction word directly modifies --
+      mashing step or a biofilm reactor -- a polishing, trickling or
+      (an)aerobic filter, a biofilter -- or a vessel a reaction word
+      directly modifies --
       'Overliming tank', 'Mash tank', 'Reaction vessel'); every claim held
       to reactor rules for the reactions it declares (see CMP-UOP-02: it
       could be that reactor, as its unknown family would be once its label
@@ -1373,9 +1408,11 @@ criteria:
       when a power-law correlation states a positive size_upper_bound and
       its basis has a numeric design result S (BioSTEAM then buys N =
       ceil(S / size_upper_bound) pieces), or when the unit is a core
-      BioSTEAM class known exactly: rebuilt from its class, every CostItem.N
-      is recomputed from the class's own @cost size bounds and
-      Unit.parallel keeps its class default, the same class-default credit
+      BioSTEAM class known exactly: rebuilt from its class, its own design
+      re-sizes the equipment (every CostItem.N of an @cost-decorated class
+      is recomputed from its size bounds; a procedurally costed class such
+      as a Pump or HXutility has no @cost items) and Unit.parallel keeps
+      its class default, the same class-default credit
       CMP-COST-07 gives a lifetime (a parallel count the original model set
       by hand is not recovered in either case). Else 0. Each unit counts
       once.
@@ -1505,8 +1542,10 @@ criteria:
       records a positive (heating) duty for still needs its limit. Half
       credit each for efficiency (in (0, 1]) and limit (a plausible
       temperature). Applicable when a unit exchanges heat with a utility
-      agent (or is of unknown family, so may) or a heat agent is declared;
-      with that need and no heat agent it scores 0. Aggregated over the
+      agent (or is of unknown family, so may; or may be a reactor: a claim
+      declaring reactions of its own, or a tank, column or extractor that
+      may host hidden chemistry, see CMP-UOP-02) or a heat agent is
+      declared; with that need and no heat agent it scores 0. Aggregated over the
       declared heat agents as CMP-UTIL-01 is: agents no unit references can
       lower the score, never raise it.
 
