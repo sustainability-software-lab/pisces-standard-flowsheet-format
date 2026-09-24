@@ -671,8 +671,15 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         (8 files, MEA and water consumed), AmmoniaAdditionTank T203 (4,
         unpinned, its neutralization), DrumDryer (25, natural gas burnt),
         ProcessWaterCenter (18), ThermalOxidizer (1), BoilerTurbogenerator
-        (17) -- and no corpus unit hosts chemistry under a claim that does
-        not fix it (_hosts_chemistry). R6.2, the tolerance choice: of the
+        (17). R7.1: no corpus unit makes a HOSTING claim (_hosting_claim:
+        a tank, column or extractor without an exact class's code), so no
+        file carries the flowsheet-level pseudo-member
+        (_unexplained_hosts) nor a tank held to reactor rules
+        (_chemistry_rules); and no honest unit loses its family to the
+        widened non-hosting set (evaporator, crystallizer, solids
+        handling, steam-injection heater, dryer): every unit of unknown
+        family names the bare class Unit and no unit_type keyword family.
+        R6.2, the tolerance choice: of the
         6587 structurally well-formed reactions whose participants all
         have molar masses, 6223 close within 0.025 % and the 364 others are
         off by more than 1.5 % (atom-imbalanced as written), so
@@ -681,11 +688,17 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         errors = []
         for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
             sc = C._ScoringContext(C._read_flowsheet(str(path)))
+            self.assertEqual(C._unexplained_hosts(sc), [], path.name)
             for position, unit in enumerate(sc.units):
                 where = (path.name, unit.get("id"))
                 self.assertFalse([n for n in C._physics_notes(sc, position)
                                   if n.startswith("class '")], where)
-                self.assertFalse(C._hosts_chemistry(sc, position), where)
+                self.assertFalse(C._hosting_claim(sc, position), where)
+                self.assertIsNone(C._chemistry_rules(sc, position), where)
+                if sc.unit_classes[position][1] is None:
+                    self.assertEqual(C._dsm_class(unit)[0], "Unit", where)
+                    self.assertIsNone(
+                        C._keyword_family(unit.get("unit_type")), where)
                 name = C._dsm_class(unit)[0]
                 if name in C._BUILTIN_CHEMISTRY:
                     self.assertEqual(sc.unit_classes[position][0], name, where)

@@ -2924,8 +2924,11 @@ class TestReactionCriteria(unittest.TestCase):
         (valid_doc's one-inlet 'Mixer' label, R4.14; a 'Widget'; R5.1 / R6.1:
         an exact Mixer, HXutility or ProcessWaterCenter across which CO2
         appears, which contradicts each claim) -> 'family unknown' (it could
-        be a reactor). R6.1(b): a label-only 'Holding tank' across which CO2
-        appears -> 'tank claim that can host chemistry'."""
+        be a reactor). R7.1: a label-only 'Holding tank' across which CO2
+        appears -> None (a hosting claim never enters individually); the
+        flowsheet-level pseudo-member covers it instead (_unexplained_hosts
+        -> [0]: CO2 is produced across the flowsheet without a declared
+        reaction)."""
         for doc in (valid_doc(), unit_doc({"unit_type": "Widget"})):
             self.assertEqual(C._reactive_reason(ctx(doc), 0), "family unknown")
         self.assertEqual(C._reactive_reason(ctx(unit_doc(cls("NRELFermentation"))), 0),
@@ -2948,9 +2951,9 @@ class TestReactionCriteria(unittest.TestCase):
             ctx(unit_doc(cls("ProcessWaterCenter"))), 0))
         self.assertIsNone(C._reactive_reason(
             ctx(unit_doc(cls("GibbsEquilibriumReactor"))), 0))
-        self.assertEqual(C._reactive_reason(ctx(self._appearing_doc(
-            {"unit_type": "Holding tank"})), 0),
-            "tank claim that can host chemistry")
+        sc = ctx(self._appearing_doc({"unit_type": "Holding tank"}))
+        self.assertIsNone(C._reactive_reason(sc, 0))
+        self.assertEqual(C._unexplained_hosts(sc), [0])
 
     def test_rxn_01_reactive_units(self):
         """_score_rxn_01 (CMP-RXN-01): no reactive unit -> None; species
@@ -5083,8 +5086,9 @@ class TestRevision2PartB(unittest.TestCase):
         leaves the guard tripped (species flows no longer computable: the
         UOP-04 entry now says 'unverified'), so no score rises -- nor does
         any other deletion. The claim-standing case is S1 relabelled a
-        label-only 'Holding tank' (R6.1(b): reactive, family kept); the
-        guard trips on it as above, and the deletion sweep runs on it (the
+        label-only 'Holding tank' (R7.1: a hosting claim keeps its family;
+        not reactive itself, the flowsheet-level pseudo-member covers it);
+        the guard trips on it as above, and the deletion sweep runs on it (the
         contradicted sieve is an inconsistent document, outside the
         guarantee). With the pure Splitter class (the default
         splitter_doc) the appearance contradicts the claim too (R5.1).
@@ -5097,15 +5101,15 @@ class TestRevision2PartB(unittest.TestCase):
                       "appears", C._class_note(sc, 0))
         self.assertFalse(C._species_consistency(sc, 0)[0])
         # A claim that stands while the guard trips: a label-only 'Holding
-        # tank' (R6.1(b): a tank may host chemistry, so the claim keeps its
-        # family -- the unit is reactive instead).
+        # tank' (R7.1: a tank may host chemistry, so the claim keeps its
+        # family -- the flowsheet-level pseudo-member covers it instead).
         doc = copy.deepcopy(sieve)
         doc["units"][0] = {"id": "S1", "unit_type": "Holding tank",
                            "design_input_specs": {"tau": 2.0}}
         sc = ctx(doc)
         self.assertEqual(sc.unit_classes[0], (None, "tank", 0.5))
-        self.assertEqual(C._reactive_reason(sc, 0),
-                         "tank claim that can host chemistry")
+        self.assertIsNone(C._reactive_reason(sc, 0))
+        self.assertEqual(C._unexplained_hosts(sc), [0])
         self.assertFalse(C._species_consistency(sc, 0)[0])
         score, _message, missing = run(C._score_uop_04, doc)
         self.assertEqual(score, 0.75)
@@ -8331,8 +8335,11 @@ class TestRevision6(unittest.TestCase):
         core class -> 'none', or 'capable' for one taking optional
         reactions (MESHDistillation); an unpinned curated biorefinery class
         (SeedHoldTank) -> 'none'; an unknown unpinned custom class and a
-        label-only claim -> by family ('capable' tank / dryer, 'none' pump /
-        junction, 'builtin' combustor / facility); no family -> 'free'."""
+        label-only claim -> by family (R7.1: 'capable' only for the HOSTING
+        tank / distillation / staged column / extraction; 'none' pump /
+        junction and, since R7.1, evaporator / crystallizer / solids
+        handling / steam-injection heater; 'builtin' combustor / facility
+        and, since R7.1, dryer); no family -> 'free'."""
         cases = (((None, "reactor", False, 0.5), "reactor"),
                  (("NRELBatchBioreactor", "batch_bioreactor", False, 0.75),
                   "reactor"),
@@ -8345,7 +8352,16 @@ class TestRevision6(unittest.TestCase):
                  (("SeedHoldTank", "tank", False, 0.75), "none"),
                  (("FooTank", "tank", False, 0.75), "capable"),
                  ((None, "tank", False, 0.5), "capable"),
-                 ((None, "dryer", False, 0.5), "capable"),
+                 ((None, "distillation", False, 0.5), "capable"),
+                 ((None, "staged_column", False, 0.75), "capable"),
+                 ((None, "extraction", False, 0.5), "capable"),
+                 (("FooColumn", "distillation", False, 0.75), "capable"),
+                 ((None, "dryer", False, 0.5), "builtin"),
+                 (("FooDryer", "dryer", False, 0.75), "builtin"),
+                 ((None, "evaporator", False, 0.5), "none"),
+                 ((None, "crystallizer", False, 0.5), "none"),
+                 ((None, "solids_handling", False, 0.5), "none"),
+                 ((None, "steam_injection_heater", False, 0.5), "none"),
                  ((None, "pump", False, 0.5), "none"),
                  ((None, "junction", False, 0.5), "none"),
                  ((None, "combustor", False, 0.5), "builtin"),
@@ -8490,36 +8506,50 @@ class TestRevision6(unittest.TestCase):
         self.assertTrue(C._ports_plausible("FooPump", "pump", False, (1, 1),
                                            species, 1.0))
 
-    def test_hosts_chemistry_and_rules(self):
-        """_hosts_chemistry / _chemistry_rules / _rules_score (R6.1(b)): the
-        label-only 'Holding tank' of r6_tank_doc with balancing ports ->
-        not hosting (rules None, not reactive); with its ports' phases
-        deleted -> hosting (reactor rules, reactive, in the CMP-UOP-02
-        population); declaring a well-formed reaction -> hosting whatever
-        its streams show. _unit_spec_score of a hosting unit is the LOWER
-        of _rules_score over its own rules (tau stated: 1) and over the
-        reactor rules (T and tau: 0.5)."""
+    def test_hosting_claim_and_chemistry_rules(self):
+        """_hosting_claim / _no_conversion / _ruled_out / _chemistry_rules /
+        _rules_score (R7.1) on the label-only 'Holding tank' P2 of
+        r6_tank_doc, a HOSTING claim (the pump P1 is not). Balancing ports
+        -> ruled out per unit: no reactor rules. Ports' phases deleted ->
+        not ruled out per unit, but ruled out flowsheet-wide (sweep_doc's
+        boundary streams close and R1's reaction explains every converted
+        species): still no reactor rules, not reactive. The vent's phases
+        deleted too (no flowsheet-level evidence) -> the three reactor
+        variants (reactor, batch_bioreactor, aerated_bioreactor), each
+        scoring 0.25 (tau stated, T not derivable: the tank's species flows
+        are not computable), and _unit_spec_score is the LOWER of its own
+        rules (1.0) and the best reactor variant (the first, 0.25);
+        _reactive_reason stays None (the pseudo-member covers P2)."""
         sc = ctx(r6_tank_doc())
         self.assertEqual(sc.unit_classes[4], (None, "tank", 0.5))
-        self.assertFalse(C._hosts_chemistry(sc, 4))
+        self.assertTrue(C._hosting_claim(sc, 4))
+        self.assertFalse(C._hosting_claim(sc, 1))
+        self.assertTrue(C._no_conversion(sc, 4))
+        self.assertTrue(C._ruled_out(sc, 4))
         self.assertIsNone(C._chemistry_rules(sc, 4))
-        self.assertIsNone(C._reactive_reason(sc, 4))
         self.assertEqual(C._rules_score(sc, 4, C._unit_rules(sc, 4)),
                          (1.0, []))
         sc = ctx(r6_tank_doc(balanced=False))
-        self.assertTrue(C._hosts_chemistry(sc, 4))
-        self.assertIs(C._chemistry_rules(sc, 4), C._FAMILY_RULES["reactor"])
-        self.assertEqual(C._reactive_reason(sc, 4),
-                         "tank claim that can host chemistry")
+        self.assertFalse(C._no_conversion(sc, 4))
+        self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+        self.assertTrue(C._ruled_out(sc, 4))
+        self.assertIsNone(C._chemistry_rules(sc, 4))
+        self.assertIsNone(C._reactive_reason(sc, 4))
+        doc = r6_tank_doc(balanced=False)
+        del doc["streams"][5]["stream_properties"]["phases"]  # the vent
+        sc = ctx(doc)
+        self.assertFalse(C._ruled_out(sc, 4))
+        rules = C._chemistry_rules(sc, 4)
+        self.assertEqual([f for f, _r in rules],
+                         ["reactor", "batch_bioreactor", "aerated_bioreactor"])
+        self.assertIs(rules[0][1], C._FAMILY_RULES["reactor"])
         self.assertIn(4, C._spec_population(sc))
+        self.assertIsNone(C._reactive_reason(sc, 4))
         own = C._rules_score(sc, 4, C._unit_rules(sc, 4))
-        reactor = C._rules_score(sc, 4, C._FAMILY_RULES["reactor"])
+        variants = [C._rules_score(sc, 4, r, f) for f, r in rules]
         self.assertEqual(own[0], 1.0)
-        self.assertLess(reactor[0], own[0])
-        self.assertEqual(C._unit_spec_score(sc, 4), reactor)
-        doc = r6_tank_doc()
-        doc["units"][4]["reactions"] = [dict(SWEEP_REACTION)]
-        self.assertTrue(C._hosts_chemistry(ctx(doc), 4))
+        self.assertEqual([v[0] for v in variants], [0.25, 0.25, 0.25])
+        self.assertEqual(C._unit_spec_score(sc, 4), variants[0])
 
     def test_reaction_step_keywords(self):
         """R6.1(d): ammonia addition, (over)liming, conditioning,
@@ -8545,8 +8575,12 @@ class TestRevision6(unittest.TestCase):
         0.5095-0.5115. None now scores above the reactor-labelled version
         (overall or representable); every exact relabel is physically
         implausible (unknown family), and every relabelled R1 is in the
-        CMP-RXN-01 population. (Chemical names resolve against no database
-        here, name_lookup, so the scores do not depend on the environment.)"""
+        CMP-RXN-01 population -- or, for the HOSTING 'Amine absorber' and
+        'Esterification column' (R7.1), covered by the flowsheet-level
+        pseudo-member (_unexplained_hosts == [2]: no reaction explains the
+        ethanol and CO2 the flowsheet produces). (Chemical names resolve
+        against no database here, name_lookup, so the scores do not depend
+        on the environment.)"""
         with name_lookup(set()):
             reference = C.score_flowsheet_completeness(r6_doc(*R6_REACTOR))
         cases = ([("Unit", name) for name in R6_EXACT]
@@ -8560,7 +8594,10 @@ class TestRevision6(unittest.TestCase):
                 self.assertLessEqual(report.score, reference.score + 1e-12)
                 self.assertLessEqual(report.representable_score,
                                      reference.representable_score + 1e-12)
-                self.assertIn(2, dict(C._reactive_units(sc)))
+                if C._hosting_claim(sc, 2):
+                    self.assertEqual(C._unexplained_hosts(sc), [2])
+                else:
+                    self.assertIn(2, dict(C._reactive_units(sc)))
                 if class_name:
                     self.assertEqual(sc.unit_classes[2], (None, None, 0.0))
                     self.assertIn("is physically implausible",
@@ -8569,10 +8606,10 @@ class TestRevision6(unittest.TestCase):
     def test_label_only_tank_sweeps(self):
         """Strict deletion sweeps (TestRevision4PartC.assert_sweep_clean)
         over r6_tank_doc: the label-only 'Holding tank' with balancing ports
-        (not reactive: deleting any of that evidence only adds the reaction
-        need and the reactor rules back) and without them (reactive, its
-        CMP-UOP-02 score the reactor rules' lower one). Neither raises the
-        overall score or any criterion, nor turns one not-applicable."""
+        (ruled out per unit) and without them (ruled out flowsheet-wide,
+        R7.1: deleting any of that evidence only adds the pseudo-member and
+        the reactor rules). Neither raises the overall score or any
+        criterion, nor turns one not-applicable."""
         TestRevision4PartC.assert_sweep_clean(self, r6_tank_doc())
         with name_lookup(set()):
             raised, lowered, n = deletion_violations(
@@ -8981,6 +9018,556 @@ class TestRevision6PartB(unittest.TestCase):
         for phrase in ("<Class> on <source URL>",
                        "flags contradicted by the stream data"):
             self.assertTrue(phrase in page, phrase)
+
+
+# ------------------------------------------ Revision 7 (R7.1 / R7.2) tests
+
+# A MESH column's essential keys (MESHDistillation: stages, feed stages,
+# reflux, boilup; P).
+R7_MESH = {"N_stages": 10, "feed_stages": [5], "reflux": 2.0, "boilup": 1.5,
+           "P": 101325.0}
+# A BinaryDistillation's essential keys.
+R7_BINARY = {"LHK": ["Ethanol", "Water"], "P": 101325.0, "Lr": 0.95,
+             "Hr": 0.99, "k": 1.25, "partial_condenser": False}
+R7_REACTION = {"index": 0, "equation": "Glucose -> 2 Ethanol + 2 CO2",
+               "reactant": "Glucose", "conversion": 0.95}
+# The reviewer's R7.2 honest column labels (a MESH column under each).
+R7_COLUMN_LABELS = ("Distillation column", "Beer column",
+                    "Rectification column")
+# R7 reviewer relabels of the r5_doc fermenter R1 (R6.1 lists above too).
+R7_RELABELS = ("Holding tank", "Beer column", "Conveyor", "Evaporator",
+               "MESH column", "Stripping column", "Extractor", "Crystallizer",
+               "Jet cooker", "Belt dryer")
+
+
+def r7_sweep_doc(evidence=True):
+    """sweep_doc('unit_type') with the transfer pump P2 relabelled a
+    label-only 'Holding tank' (tau) and the flash F1 a label-only 'Beer
+    column' stating a MESH column's keys (R7_MESH: a distillation claim
+    whose key set infers the staged-column variant, R7.2). Both are
+    HOSTING claims whose ports s4 / s5 lose their phases (species flows
+    not computable: neither is ruled out per unit, R7.1). `evidence`: the
+    boundary streams keep their compositions (flowsheet-level evidence --
+    R1's reaction explains every converted species -- rules both out);
+    else the vent loses its phases too, so the pseudo-member appears."""
+    doc = sweep_doc("unit_type")
+    doc["units"][4]["unit_type"] = "Holding tank"
+    doc["units"][4]["design_input_specs"] = {"tau": 2.0}
+    doc["units"][5]["unit_type"] = "Beer column"
+    doc["units"][5]["design_input_specs"] = dict(R7_MESH)
+    for position in (6, 7):  # s4, s5
+        del doc["streams"][position]["stream_properties"]["phases"]
+    if not evidence:
+        del doc["streams"][5]["stream_properties"]["phases"]  # the vent
+    return doc
+
+
+def _r7_full(sid, source, sink, T, flows):
+    """A liquid stream of {component: kg/h} `flows` at T K and 1 atm with
+    mass fractions (the mass basis, R5.3)."""
+    mass = sum(flows.values())
+    return {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+            "stream_properties": {
+                "temperature": T, "pressure": 101325.0,
+                "total_mass_flow": mass,
+                "phases": {"l": {"total_mass_flow": mass, "composition": [
+                    {"component_name": n, "mass_fraction": f / mass}
+                    for n, f in flows.items()]}}}}
+
+
+def _r7_bare(sid, source, sink, mass, T):
+    """An internal stream stating only its mass flow, T and P (species
+    flows not computable)."""
+    return {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+            "stream_properties": {"total_mass_flow": mass, "temperature": T,
+                                  "pressure": 101325.0}}
+
+
+def r7_sparse_doc(vent_composition=True):
+    """The R7 reviewer's honest 7-unit sparse flowsheet (kg/h, K, Pa): a
+    'Slurry tank' T1 -> 'Mash heater' H1 -> 'Fermenter' R1 (tau, V_wf,
+    batch, one well-formed reaction; a CO2 vent) -> 'Beer storage tank'
+    T2 -> 'Beer column' D1 -> 'Rectifier' D2 (binary-distillation keys)
+    -> 'Molecular sieve' S1. The feed and every product state their
+    composition; internal streams only mass flow, T and P, so no hosting
+    unit (T1, T2, D1, D2) is ruled out per unit. `vent_composition`: the
+    vent states its composition too (flowsheet-level evidence present:
+    the mass balance closes and R1's reaction explains glucose, ethanol
+    and CO2); else it states only its flow."""
+    binary = dict(R7_BINARY, Lr=0.99, Hr=0.99, k=1.2)
+    specs = (("T1", "Slurry tank", {"tau": 4}),
+             ("H1", "Mash heater", {"T": 305.15}),
+             ("R1", "Fermenter", {"T": 305.15, "tau": 36, "V_wf": 0.9,
+                                  "batch": False}),
+             ("T2", "Beer storage tank", {"tau": 8}),
+             ("D1", "Beer column", dict(binary)),
+             ("D2", "Rectifier", dict(binary)),
+             ("S1", "Molecular sieve", {"split": {"Ethanol": 0.995,
+                                                  "Water": 0.02}}))
+    units = [{"id": uid, "unit_type": label, "design_input_specs": spec}
+             for uid, label, spec in specs]
+    units[2]["reactions"] = [dict(R7_REACTION)]
+    streams = [
+        _r7_full("feed", "None", "T1", 298.15,
+                 {"Water": 28800.0, "Glucose": 7200.0}),
+        _r7_bare("s1", "T1", "H1", 36000.0, 298.15),
+        _r7_bare("s2", "H1", "R1", 36000.0, 305.15),
+        _r7_bare("s3", "R1", "T2", 32660.0, 305.15),
+        (_r7_full("vent", "R1", "None", 305.15,
+                  {"CO2": 3300.0, "Ethanol": 40.0}) if vent_composition
+         else _r7_bare("vent", "R1", "None", 3340.0, 305.15)),
+        _r7_bare("s4", "T2", "D1", 32660.0, 305.15),
+        _r7_bare("s5", "D1", "D2", 4000.0, 365.0),
+        _r7_full("stillage", "D1", "None", 373.0,
+                 {"Water": 28300.0, "Glucose": 360.0}),
+        _r7_bare("s6", "D2", "S1", 3600.0, 351.5),
+        _r7_full("phlegm", "D2", "None", 373.0, {"Water": 400.0}),
+        _r7_full("ethanol", "S1", "None", 351.5,
+                 {"Ethanol": 3490.0, "Water": 10.0}),
+        _r7_full("recyc", "S1", "None", 351.5,
+                 {"Ethanol": 10.0, "Water": 90.0})]
+    for stream_ in streams:
+        stream_["price"] = {"feed": 0.02, "ethanol": 0.7}.get(stream_["id"],
+                                                              0.0)
+    qug = {"temperature": {"aliases": ["temperature", "T"],
+                           "quantity_units": "K"},
+           "pressure": {"aliases": ["pressure", "P"], "quantity_units": "Pa"},
+           "mass_flow": {"aliases": ["total_mass_flow"],
+                         "quantity_units": "kg/hr"},
+           "time": {"aliases": ["tau"], "quantity_units": "hr"}}
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD",
+                         "TEA_year": 2018,
+                         "products": [{"stream_id": "ethanol"}]},
+            "quantity_units_global": qug, "units": units, "streams": streams,
+            "chemicals": [{"id": c, "molar_mass": mw}
+                          for c, mw in R5_MW.items()],
+            "utilities": {}}
+
+
+def r7_column_doc(unit_type, specs, class_name=None):
+    """The R7.2 reviewer's one-column flowsheet: a feed (900 Water + 100
+    Ethanol kmol/h, 360 K) into C1, a distillate and a bottoms product
+    (every stream stating both bases); C1 labelled `unit_type` with
+    design_input_specs `specs`, and 'class_name on <biosteam url>' only
+    when `class_name` is given. K / Pa / kg/hr / kmol/hr declared."""
+    mw = {"Water": 18.01528, "Ethanol": 46.06844}
+
+    def one(sid, source, sink, T, flows):
+        n = sum(flows.values())
+        m = sum(v * mw[c] for c, v in flows.items())
+        return {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+                "stream_properties": {
+                    "temperature": T, "pressure": 101325.0,
+                    "total_mass_flow": m, "total_molar_flow": n,
+                    "phases": {"l": {
+                        "total_molar_flow": n, "total_mass_flow": m,
+                        "composition": [
+                            {"component_name": c, "mol_fraction": v / n,
+                             "mass_fraction": v * mw[c] / m}
+                            for c, v in flows.items()]}}}}
+    unit = {"id": "C1", "unit_type": unit_type,
+            "design_input_specs": dict(specs)}
+    if class_name:
+        unit["design_simulation_method"] = f"{class_name} on {BST_URL}"
+    streams = [one("feed", "None", "C1", 360.0,
+                   {"Water": 900.0, "Ethanol": 100.0}),
+               one("dist", "C1", "None", 351.5,
+                   {"Water": 10.0, "Ethanol": 95.0}),
+               one("bot", "C1", "None", 373.0,
+                   {"Water": 890.0, "Ethanol": 5.0})]
+    for stream_, price in zip(streams, (0.1, 0.8, 0.0)):
+        stream_["price"] = price
+    qug = {"temperature": {"aliases": ["temperature", "T"],
+                           "quantity_units": "K"},
+           "pressure": {"aliases": ["pressure", "P"], "quantity_units": "Pa"},
+           "mass_flow": {"aliases": ["total_mass_flow"],
+                         "quantity_units": "kg/hr"},
+           "molar_flow": {"aliases": ["total_molar_flow"],
+                          "quantity_units": "kmol/hr"}}
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD",
+                         "TEA_year": 2020,
+                         "products": [{"stream_id": "dist"}]},
+            "quantity_units_global": qug, "units": [unit],
+            "streams": streams,
+            "chemicals": [{"id": c, "molar_mass": m,
+                           "formula": {"Water": "H2O",
+                                       "Ethanol": "C2H6O"}[c]}
+                          for c, m in mw.items()],
+            "utilities": {}}
+
+
+def r7_fermenter_doc(unit_type, specs):
+    """r6_doc with the fermenter R1 a label-only `unit_type` stating
+    design_input_specs `specs` (degC / h) and the well-formed reaction
+    R7_REACTION (the rx.py reviewer case)."""
+    doc = r6_doc(unit_type)
+    doc["units"][2]["design_input_specs"] = dict(specs)
+    doc["units"][2]["reactions"] = [dict(R7_REACTION)]
+    return doc
+
+
+class TestRevision7(unittest.TestCase):
+    """Revision 7: hidden chemistry as ONE flowsheet-level pseudo-member
+    with flowsheet evidence (R7.1: label-only tank / column / extractor
+    claims keep their family and never enter the reactive population
+    individually; the other label-only families cannot host chemistry;
+    reactor rules reach only hosting tanks not ruled out) and label-only
+    claims scored by their best legitimate rule-set variant (R7.2)."""
+
+    # ---- R7.2 helpers --------------------------------------------------
+
+    def test_rule_variant_families(self):
+        """_rule_variant_families: 'distillation' -> (distillation,
+        staged_column) and back; each reactor family -> itself first, then
+        the other two of (reactor, batch_bioreactor, aerated_bioreactor);
+        any other family (tank, equilibrium_reactor) or None -> itself
+        alone."""
+        self.assertEqual(C._rule_variant_families("distillation"),
+                         ("distillation", "staged_column"))
+        self.assertEqual(C._rule_variant_families("staged_column"),
+                         ("staged_column", "distillation"))
+        self.assertEqual(C._rule_variant_families("reactor"),
+                         ("reactor", "batch_bioreactor",
+                          "aerated_bioreactor"))
+        self.assertEqual(C._rule_variant_families("batch_bioreactor"),
+                         ("batch_bioreactor", "reactor",
+                          "aerated_bioreactor"))
+        for family in ("tank", "equilibrium_reactor", None):
+            self.assertEqual(C._rule_variant_families(family), (family,))
+
+    def test_rule_variants(self):
+        """_rule_variants: a label-only 'Beer column' -> [(distillation,
+        its family rules), (staged_column, ...)]; an exact core
+        BinaryDistillation -> its own rules only; an unpinned named custom
+        class (NRELBatchBioreactor, 0.75) -> its own rules only (its class
+        knowledge describes that class); a class-level rule set (exact
+        SteamMixer) -> itself; a unit of unknown family -> []."""
+        sc = ctx(r7_column_doc("Beer column", R7_MESH))
+        self.assertEqual(C._rule_variants(sc, 0),
+                         [("distillation", C._FAMILY_RULES["distillation"]),
+                          ("staged_column",
+                           C._FAMILY_RULES["staged_column"])])
+        sc = ctx(r7_column_doc("Unit", R7_BINARY, "BinaryDistillation"))
+        self.assertEqual(sc.unit_classes[0][2], 1.0)
+        self.assertEqual(C._rule_variants(sc, 0),
+                         [("distillation", C._FAMILY_RULES["distillation"])])
+        sc = ctx(unit_doc({"unit_type": "Fermenter",
+                           "design_simulation_method":
+                               f"NRELBatchBioreactor on {BIP_URL}"}))
+        self.assertEqual(sc.unit_classes[0],
+                         ("NRELBatchBioreactor", "batch_bioreactor", 0.75))
+        self.assertEqual([f for f, _r in C._rule_variants(sc, 0)],
+                         ["batch_bioreactor"])
+        sc = ctx(unit_doc(cls("SteamMixer")))
+        self.assertEqual(C._rule_variants(sc, 0),
+                         [("steam_injection_heater",
+                           C._CLASS_RULES["SteamMixer"])])
+        self.assertEqual(C._rule_variants(ctx(unit_doc(
+            {"unit_type": "Widget"})), 0), [])
+
+    def test_best_variant_and_family_predicates(self):
+        """_best_variant: the MAX over [(family, rules), ...], the first on
+        ties, empty rule sets skipped -- a 'Beer column' stating a MESH
+        column's keys scores 1.0 by the staged-column rules although the
+        distillation rules leave LHK, Lr, Hr and k unstated. _rules_score
+        judges keys by the given family's predicates: k = 1.0 does not
+        count for a distillation column (reflux factor above 1, R3.11)
+        but does for another family."""
+        sc = ctx(r7_column_doc("Beer column", R7_MESH))
+        variants = C._rule_variants(sc, 0)
+        own = C._rules_score(sc, 0, variants[0][1], "distillation")
+        self.assertLess(own[0], 1.0)
+        self.assertEqual(C._best_variant(sc, 0, variants), (1.0, []))
+        self.assertEqual(C._best_variant(sc, 0, [("mixer", ())] + variants),
+                         (1.0, []))
+        tie = C._best_variant(sc, 0, [variants[0], variants[0]])
+        self.assertEqual(tie, own)
+        sc = ctx(r7_column_doc("Beer column", dict(R7_BINARY, k=1.0)))
+        rules = C._FAMILY_RULES["distillation"]
+        self.assertLess(C._rules_score(sc, 0, rules, "distillation")[0],
+                        C._rules_score(sc, 0, rules, "staged_column")[0])
+
+    def test_uop_05_credit(self):
+        """_uop_05_credit over one rule set: the staged-column rules of the
+        MESH-keyed 'Beer column' -> (1.0, []) (P declared in Pa, the other
+        keys dimensionless); the distillation rules -> (0.0, [... 'one of
+        LHK unstated', ...]) (base 0: no exact class). _uop_05_unit takes
+        the better variant: 1.0."""
+        sc = ctx(r7_column_doc("Beer column", R7_MESH))
+        explicit = C._explicit_keys(sc.units[0])
+        staged = C._uop_05_credit(sc, 0, C._FAMILY_RULES["staged_column"],
+                                  "staged_column", 0.0, False, explicit)
+        self.assertEqual(staged, (1.0, []))
+        binary = C._uop_05_credit(sc, 0, C._FAMILY_RULES["distillation"],
+                                  "distillation", 0.0, False, explicit)
+        self.assertEqual(binary[0], 0.0)
+        self.assertIn("units[C1].design_input_specs: one of LHK unstated",
+                      binary[1])
+        self.assertEqual(C._uop_05_unit(sc, 0, False), (1.0, []))
+
+    def test_label_only_columns_score_like_a_mesh_column(self):
+        """R7.2 reviewer case (col.py): a column stating {N_stages,
+        feed_stages, reflux, boilup, P} labelled 'Distillation column' /
+        'Beer column' / 'Rectification column' scores exactly like 'MESH
+        column' (overall and representable, CMP-UOP-02 = 1): its MESH key
+        set confirms the distillation claim as its staged-column variant
+        (confidence 0.75, the class note saying so) and its specification
+        is scored by the staged-column rules. Symmetrically, 'MESH column'
+        stating a binary column's keys scores CMP-UOP-02 = 1."""
+        with name_lookup(set()):
+            reference = C.score_flowsheet_completeness(
+                r7_column_doc("MESH column", R7_MESH))
+            for label in R7_COLUMN_LABELS:
+                doc = r7_column_doc(label, R7_MESH)
+                report = C.score_flowsheet_completeness(doc)
+                with self.subTest(label=label):
+                    self.assertAlmostEqual(report.score, reference.score,
+                                           places=12)
+                    self.assertAlmostEqual(report.representable_score,
+                                           reference.representable_score,
+                                           places=12)
+                    sc = ctx(doc)
+                    self.assertEqual(sc.unit_classes[0],
+                                     (None, "distillation", 0.75))
+                    self.assertIn("confirmed as its 'staged_column' "
+                                  "rule-set variant (R7.2)",
+                                  C._class_note(sc, 0))
+                    self.assertEqual(run(C._score_uop_02, doc)[0], 1.0)
+            self.assertEqual(run(C._score_uop_02, r7_column_doc(
+                "MESH column", R7_BINARY))[0], 1.0)
+
+    def test_label_only_fermenter_batch_keys(self):
+        """R7.2 reviewer case (rx.py): a label-only 'Fermenter' stating an
+        NREL batch bioreactor's {T, tau, N} is not asked for V_wf or batch
+        -- its CMP-UOP-02 locators name only tau_0 (a class default only
+        for an exact class, so a label must state it): 0.75, above the
+        stirred-tank rules' 0.5 alone -- and scores exactly like 'Batch
+        fermenter' (the key set confirms neither claim, 0.5: a
+        BatchCrystallizer takes T, tau and N too)."""
+        batch = {"T": 80.0, "tau": 36, "N": 4}
+        with name_lookup(set()):
+            fermenter = C.score_flowsheet_completeness(
+                r7_fermenter_doc("Fermenter", batch))
+            labelled = C.score_flowsheet_completeness(
+                r7_fermenter_doc("Batch fermenter", batch))
+        self.assertAlmostEqual(fermenter.score, labelled.score, places=12)
+        sc = ctx(r7_fermenter_doc("Fermenter", batch))
+        self.assertEqual(sc.unit_classes[2], (None, "reactor", 0.5))
+        score, missing = C._unit_spec_score(sc, 2)
+        self.assertEqual(missing, ["units[R1].design_input_specs: one of "
+                                   "tau_0"])
+        self.assertEqual(score, 0.75)
+        self.assertEqual(C._rules_score(sc, 2, C._FAMILY_RULES["reactor"])[0],
+                         0.5)
+
+    # ---- R7.1 ----------------------------------------------------------
+
+    def test_flowsheet_explained(self):
+        """_flowsheet_explained / _flowsheet_evidence (R7.1) on sweep_doc:
+        (True, '') -- no dangling stream, every feed and product computable
+        with its mass, the overall balance closing, and glucose, ethanol
+        and CO2 all in R1's reaction; cached on the context. Evidence is
+        absent when: the vent loses its phases ('species flows not
+        computable ... for every boundary stream'); s1 loses its source
+        ('streams[s1] states no endpoint'); R1's reaction is deleted ('CO2
+        produced, Ethanol produced, Glucose consumed across the flowsheet
+        without a declared well-formed reaction'); a product loses its
+        mass flow ('states no valid total_mass_flow'); or feedB's mass
+        flow is doubled ('the overall mass balance does not close')."""
+        sc = ctx(sweep_doc())
+        self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+        self.assertEqual(sc.flowsheet_evidence, (True, ""))
+        self.assertEqual(C._flowsheet_evidence(sc), (True, ""))
+        doc = sweep_doc()
+        cases = (
+            (("streams", 5, "stream_properties", "phases"),
+             "species flows not computable (molar or mass basis) for every "
+             "boundary stream"),
+            (("streams", 2, "source_unit_id"),
+             "streams[s1] states no endpoint"),
+            (("units", 3, "reactions"),
+             "CO2 produced, Ethanol produced, Glucose consumed across the "
+             "flowsheet without a declared well-formed reaction"),
+            (("streams", 8, "stream_properties", "total_mass_flow"),
+             "a feed or product states no valid total_mass_flow"))
+        for path, why in cases:
+            explained, reason = C._flowsheet_explained(
+                ctx(deleted(doc, path)))
+            self.assertFalse(explained, path)
+            self.assertIn(why, reason, path)
+        heavy = sweep_doc()
+        heavy["streams"][1]["stream_properties"]["total_mass_flow"] *= 2
+        self.assertIn("the overall mass balance does not close",
+                      C._flowsheet_explained(ctx(heavy))[1])
+
+    def test_unexplained_hosts_and_hidden_chemistry(self):
+        """_unexplained_hosts / _hidden_chemistry (R7.1) on r7_sweep_doc:
+        with flowsheet evidence -> [] and None (the tank P2 and the column
+        F1 are ruled out flowsheet-wide although not per unit); without
+        (the vent's phases deleted) -> [4, 5], cached, and ONE locator
+        'flowsheet: unexplained conversion possible among units[P2],
+        units[F1] (... no flowsheet-level evidence: species flows not
+        computable ...), so <what>'. A hosting unit declaring a well-formed
+        reaction is no candidate; nor is one ruled out per unit
+        (r6_tank_doc's balancing tank, the vent's phases deleted)."""
+        sc = ctx(r7_sweep_doc())
+        self.assertEqual(C._unexplained_hosts(sc), [])
+        self.assertIsNone(C._hidden_chemistry(sc, "x"))
+        sc = ctx(r7_sweep_doc(evidence=False))
+        self.assertEqual(C._unexplained_hosts(sc), [4, 5])
+        self.assertEqual(sc.hidden_hosts, [4, 5])
+        locator = C._hidden_chemistry(sc, "its reactions are unknown")
+        self.assertTrue(locator.startswith(
+            "flowsheet: unexplained conversion possible among units[P2], "
+            "units[F1] (tank, column or extractor claims"), locator)
+        self.assertIn("no flowsheet-level evidence: species flows not "
+                      "computable", locator)
+        self.assertTrue(locator.endswith(", so its reactions are unknown"))
+        doc = r7_sweep_doc(evidence=False)
+        doc["units"][4]["reactions"] = [dict(SWEEP_REACTION)]
+        self.assertEqual(C._unexplained_hosts(ctx(doc)), [5])
+        doc = r6_tank_doc()
+        del doc["streams"][5]["stream_properties"]["phases"]
+        self.assertEqual(C._unexplained_hosts(ctx(doc)), [])
+
+    def test_reaction_criteria_pseudo_member(self):
+        """CMP-RXN-01..04 with the pseudo-member (R7.1): on r7_sweep_doc
+        without evidence each population is R1 plus the pseudo-member
+        scoring 0 -- each score half its value with evidence (RXN-01 1.0
+        -> 0.5) -- each message noting the pseudo-member (_HIDDEN_NOTE)
+        and each missing list carrying its locator. The hosting tank and
+        column never enter individually: the reactive units stay {R1}."""
+        names = ("_score_rxn_01", "_score_rxn_02", "_score_rxn_03",
+                 "_score_rxn_04")
+        with_evidence = {n: run(getattr(C, n), r7_sweep_doc()) for n in names}
+        doc = r7_sweep_doc(evidence=False)
+        for name in names:
+            score, message, missing = run(getattr(C, name), doc)
+            with self.subTest(name=name):
+                self.assertAlmostEqual(score, with_evidence[name][0] / 2)
+                self.assertNotIn(C._HIDDEN_NOTE, with_evidence[name][1])
+                self.assertIn(C._HIDDEN_NOTE, message)
+                self.assertTrue(any(m.startswith("flowsheet: unexplained "
+                                                 "conversion possible")
+                                    for m in missing))
+        self.assertEqual(with_evidence["_score_rxn_01"][0], 1.0)
+        self.assertEqual(dict(C._reactive_units(ctx(doc))),
+                         {3: "reactor family"})
+
+    def test_reactor_rules_reach_only_hosting_tanks(self):
+        """R7.1 on r7_sparse_doc: with the vent's composition the honest
+        flowsheet carries no pseudo-member and no unit is held to reactor
+        rules (no V_wf / batch locator on the tanks or columns). With only
+        the vent's flow stated the pseudo-member covers T1, T2, D1 and D2,
+        and _chemistry_rules reaches the tanks T1 / T2 only -- never the
+        columns D1 / D2 (they are specified as columns)."""
+        sc = ctx(r7_sparse_doc())
+        self.assertEqual(C._unexplained_hosts(sc), [])
+        self.assertEqual([C._chemistry_rules(sc, p) for p in range(7)],
+                         [None] * 7)
+        missing = run(C._score_uop_02, r7_sparse_doc())[2]
+        self.assertFalse([m for m in missing
+                          if "V_wf" in m or "batch" in m], missing)
+        sc = ctx(r7_sparse_doc(vent_composition=False))
+        self.assertEqual([sc.units[p]["id"] for p in C._unexplained_hosts(sc)],
+                         ["T1", "T2", "D1", "D2"])
+        self.assertEqual([sc.units[p]["id"] for p in range(7)
+                          if C._chemistry_rules(sc, p)], ["T1", "T2"])
+
+    def test_honest_sparse_doc_scores(self):
+        """R7 reviewer case (sparse4.py): the honest 7-unit sparse
+        flowsheet scored 0.419 in the reviewer's environment with every
+        hosting unit charged its own missing reactions and reactor rules
+        (0.5315 with the suspicion switched off). It is no longer charged:
+        CMP-RXN-01 / 02 / 03 = 1, CMP-UOP-02 = 6/7 and CMP-UOP-05 = 5/7
+        (only H1's V and S1's moisture content are missing), which with
+        the installed chemical database gives the reviewer's 0.5315 (the
+        overall is not pinned here: the thermo criteria depend on the
+        environment). Without the vent's composition (no flowsheet-level
+        evidence) it scores strictly less, with CMP-RXN-01 = 0.5 (R1 plus
+        the pseudo-member)."""
+        with name_lookup(set()):
+            report = C.score_flowsheet_completeness(r7_sparse_doc())
+            bare = C.score_flowsheet_completeness(
+                r7_sparse_doc(vent_composition=False))
+        by_id = {c.criterion_id: c.score for c in report.criteria}
+        for cid in ("CMP-RXN-01", "CMP-RXN-02", "CMP-RXN-03"):
+            self.assertEqual(by_id[cid], 1.0, cid)
+        self.assertAlmostEqual(by_id["CMP-UOP-02"], 6 / 7)
+        self.assertAlmostEqual(by_id["CMP-UOP-05"], 5 / 7)
+        self.assertLess(bare.score, report.score)
+        self.assertEqual({c.criterion_id: c.score for c in bare.criteria}[
+            "CMP-RXN-01"], 0.5)
+
+    def test_non_hosting_label_claims(self):
+        """R7.1: a label-only evaporator, crystallizer, conveyor, jet
+        cooker or dryer claim across which ethanol and CO2 appear (r6_doc,
+        the fermenter relabelled) is implausible -- the unit's family is
+        unknown and it enters the reactive population. A dryer claim is
+        contradicted only beyond its combustion (_physics_contradiction:
+        CO2 and water produced, methane consumed -> None; ethanol produced
+        -> 'implausible for a dryer claim'); an evaporator claim by any
+        converted species ('implausible for a unit that hosts no
+        chemistry'); a tank, column or extractor claim never."""
+        for label in ("Evaporator", "Crystallizer", "Screw conveyor",
+                      "Jet cooker", "Belt dryer"):
+            sc = ctx(r6_doc(label))
+            with self.subTest(label=label):
+                self.assertEqual(sc.unit_classes[2], (None, None, 0.0))
+                self.assertIn(2, dict(C._reactive_units(sc)))
+
+        def changed(produced=(), consumed=()):
+            return {"changed": tuple({n: C._species_keys(n) for n in names}
+                                     for names in (produced, consumed))}
+        self.assertIsNone(C._physics_contradiction(
+            None, "dryer", changed(("CO2", "Water"), ("CH4",))))
+        self.assertIn("implausible for a dryer claim: Ethanol produced",
+                      C._physics_contradiction(None, "dryer",
+                                               changed(("Ethanol",))))
+        species = {"species": "Ethanol appears without declared reactions"}
+        self.assertIn("implausible for a unit that hosts no chemistry",
+                      C._physics_contradiction(None, "evaporator", species,
+                                               False))
+        for family in ("tank", "distillation", "staged_column", "extraction"):
+            self.assertIsNone(C._physics_contradiction(None, family, species,
+                                                       False), family)
+
+    def test_r7_relabels_never_pay_off(self):
+        """R7 reviewer cases on r5_doc (the syn2 flowsheet): relabelling
+        the fermenter R1 'Holding tank', 'Beer column', 'Conveyor',
+        'Evaporator', 'MESH column', 'Stripping column', 'Extractor',
+        'Crystallizer', 'Jet cooker' or 'Belt dryer' never scores above the
+        reactor-labelled R6_REACTOR (overall or representable): a hosting
+        claim meets the same pseudo-member and its stream-derived specs
+        are blocked by the species-consistency guard (every hosting family
+        is physical-only, R2.2); a non-hosting one is implausible."""
+        with name_lookup(set()):
+            reference = C.score_flowsheet_completeness(r6_doc(*R6_REACTOR))
+            for label in R7_RELABELS:
+                report = C.score_flowsheet_completeness(r6_doc(label))
+                with self.subTest(label=label):
+                    self.assertLessEqual(report.score,
+                                         reference.score + 1e-12)
+                    self.assertLessEqual(report.representable_score,
+                                         reference.representable_score
+                                         + 1e-12)
+
+    def test_r7_sweeps(self):
+        """Strict deletion sweeps (every value, ids and endpoints included)
+        over r7_sweep_doc with and without flowsheet-level evidence (the
+        pseudo-member absent / present; a label-only hosting tank and a
+        'Beer column' stating MESH keys) and over r7_sparse_doc with and
+        without the vent's composition: no deletion raises the overall
+        score or any criterion, nor turns a scored one not-applicable, and
+        most lower the score."""
+        for doc in (r7_sweep_doc(), r7_sweep_doc(evidence=False),
+                    r7_sparse_doc(), r7_sparse_doc(vent_composition=False)):
+            with name_lookup(set()):
+                raised, lowered, n = deletion_violations(doc,
+                                                         skip=frozenset())
+            self.assertGreater(n, 200)
+            self.assertEqual(raised, [])
+            self.assertGreater(lowered, n // 2)
 
 
 if __name__ == "__main__":

@@ -2003,11 +2003,15 @@ CLASS_IMPLIED_CHEMISTRY_FAMILIES = frozenset({
     'equilibrium_reactor', 'dryer'})
 # Physical-only families (R2.2): absent declared reactions, every species
 # balances one by one across such a unit, so a derivation from its stream
-# data also needs every species' balance to close.
+# data also needs every species' balance to close. Every HOSTING family
+# (R7.1: tank, distillation, MESH-type column, extractor) is one: without
+# declared (stage) reactions it only separates or holds, and species
+# converting across it leave its stream data unfit to derive a column's
+# or a vessel's specifications from.
 PHYSICAL_FAMILIES = frozenset({
     'mixer', 'hx_utility', 'hx_process', 'pump', 'valve', 'compressor',
-    'turbine', 'flash', 'distillation', 'evaporator',
-    'steam_injection_heater', 'tank', 'splitter'})
+    'turbine', 'flash', 'distillation', 'staged_column', 'extraction',
+    'evaporator', 'steam_injection_heater', 'tank', 'splitter'})
 # Families whose units always draw a utility (CMP-UTIL-04, R2.0): power for
 # pumps and compressors, heat for utility exchangers, columns, evaporators
 # and flashes (a flash is waived only when stated adiabatic, Q = 0).
@@ -2033,27 +2037,30 @@ COST_FREE_CLASSES = frozenset({'Mixer', 'MockMixer', 'BlowdownMixer',
 _COSTED_CLASSES = frozenset({'AmmoniaMixer', 'EnzymeHydrolysateMixer',
                              'SulfuricAcidMixer'})
 
-# ---- R6.1: which claims can host chemistry ----
+# ---- R6.1 / R7.1: which claims can host chemistry ----
 # Families whose claim, unless an exact class's code is known, CANNOT host
-# chemistry (R6.1(a)): no BioSTEAM unit of these families converts species,
-# so species converted across such a claim (flows computable, no
+# chemistry (R6.1(a), widened by R7.1): no BioSTEAM unit of these families
+# converts species -- an evaporator, crystallizer, conveyor or mill, or
+# steam-injection heater concentrates, crystallizes, moves or heats what it
+# is fed -- so species converted across such a claim (flows computable, no
 # well-formed reaction declared) make it implausible.
 NO_CHEMISTRY_FAMILIES = frozenset({
     'pump', 'valve', 'compressor', 'turbine', 'hx_utility', 'hx_process',
-    'flash', 'mixer', 'splitter', 'junction', 'heat_exchanger_network'})
-# Families whose units CAN host chemistry (R6.1(b)): a vessel, column,
-# extractor, crystallizer, evaporator, cooker, conveyor or dryer may carry
-# a biorefinery's neutralization, liquefaction or combustion. Such a claim
-# without an exact core class keeps its family but stays in the reactive
-# population unless its streams show that nothing converts
-# (_no_conversion).
-CHEMISTRY_CAPABLE_FAMILIES = frozenset({
-    'tank', 'distillation', 'staged_column', 'extraction', 'crystallizer',
-    'evaporator', 'steam_injection_heater', 'solids_handling', 'dryer'})
+    'flash', 'mixer', 'splitter', 'junction', 'heat_exchanger_network',
+    'evaporator', 'crystallizer', 'solids_handling',
+    'steam_injection_heater'})
+# HOSTING families (R7.1): a vessel, column or extractor may carry a
+# biorefinery's neutralization, liquefaction or reactive separation. Such a
+# claim without an exact class's code keeps its family whatever its streams
+# show; it never enters the reactive population itself -- one flowsheet-level
+# pseudo-member stands for all of them (_unexplained_hosts) -- and only a
+# tank claim is also held to reactor rules (_chemistry_rules).
+HOSTING_FAMILIES = frozenset({'tank', 'distillation', 'staged_column',
+                              'extraction'})
 # Exact core classes that accept an optional reaction set (biosteam
 # stage.py / distillation.py: MESHDistillation and MultiStageEquilibrium take
 # stage_reactions, StageEquilibrium and PhasePartition a reaction): they can
-# host chemistry, so they are treated like CHEMISTRY_CAPABLE_FAMILIES claims.
+# host chemistry, so they are treated like HOSTING_FAMILIES claims.
 _OPTIONAL_CHEMISTRY_CLASSES = frozenset({
     'MESHDistillation', 'MultiStageEquilibrium', 'StageEquilibrium',
     'PhasePartition'})
@@ -2090,12 +2097,15 @@ _BUILTIN_CHEMISTRY = {
 # The same for a claim of a family whose chemistry the class fixes, made
 # without an exact class's code (a label, an unpinned custom class): a
 # combustor or boiler burns its feeds; a facility at most discards species
-# (a process-water center keeps only water) and produces none.
+# (a process-water center keeps only water) and produces none; a dryer at
+# most burns its fuel (R7.1: its built-in combustion, as a DrumDryer fires
+# natural gas) and converts nothing beyond it.
 _FAMILY_CHEMISTRY = {
     'combustor': (_COMBUSTION_PRODUCTS, None),
     'boiler': (_COMBUSTION_PRODUCTS, None),
     'boiler_turbogenerator': (_COMBUSTION_PRODUCTS, None),
     'facility': ((), None),
+    'dryer': (_COMBUSTION_PRODUCTS, None),
 }
 # Junction-family classes that conserve nothing species by species by
 # design (a Scaler multiplies its inlet, a Duplicator copies it to every
@@ -2917,16 +2927,17 @@ def _chemistry_claim(class_name, family, core, confidence):
     _BUILTIN_CHEMISTRY class, at any confidence: its own code converts the
     species of its signature); 'class_code' (a custom class located in the
     pinned model package, confidence 1: its code may convert anything,
-    EXC-02); 'capable' (an exact core class of _OPTIONAL_CHEMISTRY_CLASSES,
-    or a claim without a known class's code -- `class_name` None, or a
-    custom class below confidence 1 that the curated _CLASS_TABLE does not
-    know -- of a CHEMISTRY_CAPABLE_FAMILIES family); 'none' (any other
+    EXC-02); 'capable' (a HOSTING claim, R7.1: an exact core class of
+    _OPTIONAL_CHEMISTRY_CLASSES, or a claim without a known class's code --
+    `class_name` None, or a custom class below confidence 1 that the
+    curated _CLASS_TABLE does not know -- of a HOSTING_FAMILIES family:
+    tank, distillation, staged column, extraction); 'none' (any other
     exact core class or unpinned curated biorefinery class, or such a
-    claim of a NO_CHEMISTRY_FAMILIES family: it cannot host chemistry);
-    'builtin'
-    too for such a claim of a _FAMILY_CHEMISTRY family (combustor, boiler,
-    boiler-turbogenerator, facility); else 'free' (an equilibrium reactor
-    claim, or no family)."""
+    claim of a NO_CHEMISTRY_FAMILIES family -- since R7.1 including
+    evaporator, crystallizer, solids handling and steam-injection heater:
+    it cannot host chemistry); 'builtin' too for such a claim of a
+    _FAMILY_CHEMISTRY family (combustor, boiler, boiler-turbogenerator,
+    facility, and since R7.1 dryer); else 'free' (no family)."""
     if family in REACTOR_FAMILIES:
         return 'reactor'
     if class_name is not None:
@@ -2942,7 +2953,7 @@ def _chemistry_claim(class_name, family, core, confidence):
                     else 'none')
     if family in NO_CHEMISTRY_FAMILIES:
         return 'none'
-    if family in CHEMISTRY_CAPABLE_FAMILIES:
+    if family in HOSTING_FAMILIES:
         return 'capable'
     if family in _FAMILY_CHEMISTRY:
         return 'builtin'
@@ -2994,18 +3005,21 @@ def _physics_contradiction(class_name, family, physics, core=None,
     duty or species appearing / vanishing only (it does nothing when
     simulated, so its outlets' T and P are set elsewhere).
 
-    R6.1(a): every other claim that cannot host chemistry
+    R6.1(a) / R7.1: every other claim that cannot host chemistry
     (_chemistry_claim 'none': an exact core class without built-in
-    chemistry, or a pump, valve, compressor, turbine, exchanger, flash or
-    junction claim without an exact class's code) by converted species; a
+    chemistry, or a pump, valve, compressor, turbine, exchanger, flash,
+    junction, evaporator, crystallizer, solids-handling or steam-injection
+    heater claim without an exact class's code) by converted species; a
     junction claim also by any duty, the exact Junction and Scaler by the
     pure-splitter T / P bounds, the Junction by a total mass balance that
     does not close ('mass'), and the junctions that conserve nothing
     species by species (_NONCONSERVING_JUNCTIONS, and any label-only
     junction claim) only by species appearing / vanishing. R6.1(c): a
-    _BUILTIN_CHEMISTRY class, or a combustor / boiler / facility claim
-    without an exact class's code (_FAMILY_CHEMISTRY), by a conversion
-    outside its signature (_builtin_contradiction). `core` (default: on the curated core list)
+    _BUILTIN_CHEMISTRY class, or a combustor / boiler / facility / dryer
+    claim without an exact class's code (_FAMILY_CHEMISTRY), by a
+    conversion outside its signature (_builtin_contradiction). A HOSTING
+    claim (tank, column, extractor, R7.1) is never contradicted by
+    converted species. `core` (default: on the curated core list)
     and `confidence` (default 1) qualify an exact class claim. Other claims
     are not tested; an implausible one counts as absent."""
     physics = physics or {}
@@ -3103,12 +3117,18 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
     (_physics_contradictions), None when unknown -- likewise invalidates
     every mixer claim and pure-splitter claim it contradicts
     (_physics_contradiction); with no other valid claim the family is
-    unknown, so the unit carries every need (R4.13). R6.1: so does every
-    claim that cannot host chemistry across which species convert (an
-    exact core class without built-in chemistry, a pump / valve /
-    compressor / turbine / exchanger / flash / junction claim without an
-    exact class's code), and a built-in chemistry class converting species
-    outside its signature."""
+    unknown, so the unit carries every need (R4.13). R6.1 / R7.1: so does
+    every claim that cannot host chemistry across which species convert
+    (an exact core class without built-in chemistry, a pump / valve /
+    compressor / turbine / exchanger / flash / junction / evaporator /
+    crystallizer / solids-handling / steam-injection heater claim without
+    an exact class's code), and a built-in chemistry class or claim
+    (a dryer's combustion) converting species outside its signature.
+
+    R7.2: a key-set family that is a legitimate rule-set variant of the
+    stated one (_rule_variant_families: a MESH column's keys under a
+    'Distillation column' label, a batch bioreactor's under 'Fermenter')
+    confirms it like an equal family (0.75)."""
     unit = _as_dict(unit)
     registry = _as_dict(registry)
     name, source = _dsm_class(unit)
@@ -3138,7 +3158,8 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
         named = None
     stated = keyword or named
     if stated:
-        agrees = inferred is not None and inferred[1] == stated
+        agrees = (inferred is not None
+                  and inferred[1] in _rule_variant_families(stated))
         return None, stated, (0.75 if agrees else 0.5)
     if inferred:
         return None, inferred[1], 0.75
@@ -3416,37 +3437,95 @@ def _unit_rules(sc, position):
     return _FAMILY_RULES.get(family)
 
 
-def _hosts_chemistry(sc, position):
-    """R6.1(b): True when unit `position` makes a claim that can host
-    chemistry without an exact core class's code (_chemistry_claim
-    'capable') and either declares a well-formed reaction or lacks the
-    evidence that nothing converts across it (_no_conversion): it may be a
-    reactor, so it is reactive (_reactive_reason) and carries a reactor's
-    operating-specification needs too (_chemistry_rules)."""
+# R7.2: the legitimate rule-set variants of a family claim made without an
+# exact class (a label, an abstract or unpinned custom class, a key-set
+# inference): the families whose rules describe the BioSTEAM classes such a
+# unit may be. A column is a BinaryDistillation / ShortcutColumn or a
+# MESHDistillation (and a MESH-type label a binary column); a reactor or
+# bioreactor a continuous stirred tank (batch flag included), an NREL-type
+# batch bioreactor or an aerated bioreactor. The unit's own family comes
+# first (ties keep its locators).
+_REACTOR_VARIANTS = ('reactor', 'batch_bioreactor', 'aerated_bioreactor')
+_RULE_VARIANTS = {
+    'distillation': ('distillation', 'staged_column'),
+    'staged_column': ('staged_column', 'distillation'),
+    **{family: (family,) + tuple(f for f in _REACTOR_VARIANTS if f != family)
+       for family in _REACTOR_VARIANTS},
+}
+
+
+def _rule_variant_families(family):
+    """R7.2: the families whose rules legitimately describe a claim of
+    `family` made without an exact class (_RULE_VARIANTS; the family
+    itself first), or (family,)."""
+    return _RULE_VARIANTS.get(family, (family,))
+
+
+def _rule_variants(sc, position):
+    """R7.2: [(family, rules), ...] unit `position` may be scored by in
+    CMP-UOP-02 / CMP-UOP-05 -- its own (family, _unit_rules), plus, for a
+    family claim that names no class (a unit_type label, an abstract or
+    unverifiable class, a key-set inference), every other legitimate
+    variant's family rules (_rule_variant_families). Its score is the MAX
+    over them: the max of monotone scores is monotone, so deleting a key
+    still never raises it. [] when the family is unknown. A named class
+    keeps its own rules, exact or not: its class knowledge (a registry
+    entry lacking `batch`, a class-attribute default, R2.8) describes that
+    class, not a variant, and class_default credit never reaches a claim
+    naming none."""
+    rules = _unit_rules(sc, position)
+    if rules is None:
+        return []
+    name, family, _confidence = sc.unit_classes[position]
+    if name is not None or rules is not _FAMILY_RULES.get(family):
+        return [(family, rules)]
+    return [(f, _FAMILY_RULES[f]) for f in _rule_variant_families(family)]
+
+
+def _hosting_claim(sc, position):
+    """R7.1: True when unit `position` makes a HOSTING claim
+    (_chemistry_claim 'capable'): a tank, distillation or MESH column or
+    extractor claim without an exact class's code, or an exact core class
+    taking an optional reaction set. Such a claim keeps its family whatever
+    its streams show."""
     name, family, confidence = sc.unit_classes[position]
-    if _chemistry_claim(name, family, sc.unit_core[position],
-                        confidence) != 'capable':
-        return False
-    return sc.unit_reacts[position] or not _no_conversion(sc, position)
+    return _chemistry_claim(name, family, sc.unit_core[position],
+                            confidence) == 'capable'
+
+
+def _ruled_out(sc, position):
+    """R7.1: True when unexplained chemistry on unit `position` is
+    positively ruled out -- per unit (_no_conversion: its species flows
+    computable, each balancing within CLOSURE_RTOL, its total mass
+    closing) or flowsheet-wide (_flowsheet_explained). Deleting data only
+    removes evidence, so it can only turn False."""
+    return _no_conversion(sc, position) or _flowsheet_explained(sc)[0]
 
 
 def _chemistry_rules(sc, position):
-    """R6.1(b): the reactor family's essential requirements when unit
-    `position` hosts chemistry under a family claim that does not fix it
-    (_hosts_chemistry), else None. CMP-UOP-02 then scores the unit by the
-    LOWER of its own rules and these (it must be specified both as what it
-    claims to be and as the reactor it may be), CMP-UOP-05 over both --
-    relabelling a fermenter 'Conveyor' or 'Dryer' cannot trade a reactor's
-    needs for a family whose needs its streams satisfy."""
-    return _FAMILY_RULES['reactor'] if _hosts_chemistry(sc, position) else None
+    """R7.1: the reactor rule-set variants ([(family, rules), ...] over
+    _REACTOR_VARIANTS, R7.2) when unit `position` is a HOSTING tank claim
+    (_hosting_claim, family 'tank') not ruled out (_ruled_out), else None.
+    CMP-UOP-02 then scores the unit by the LOWER of its own rules' best
+    variant and the reactor rules' best one (it must be specified both as
+    the vessel it claims to be and as the reactor it may be), CMP-UOP-05
+    likewise -- relabelling a fermenter 'Holding tank' cannot trade a
+    reactor's needs for a tank's. Never for columns or extractors (they
+    carry chemistry only as reactive separations, specified as columns),
+    nor for claims that cannot host chemistry (a conversion across those
+    makes them implausible instead, R6.1(a) / R7.1)."""
+    if (sc.unit_classes[position][1] != 'tank'
+            or not _hosting_claim(sc, position)
+            or _ruled_out(sc, position)):
+        return None
+    return [(f, _FAMILY_RULES[f]) for f in _REACTOR_VARIANTS]
 
 
 def _spec_population(sc):
     """Positions of units that need operating specifications (CMP-UOP-02;
     CMP-UOP-05 adds the CMP-UOP-06 facilities): unknown family, a
-    non-empty rule set (facility families have none: R2.5), or a unit
-    hosting chemistry under a claim that does not fix it
-    (_chemistry_rules, R6.1(b))."""
+    non-empty rule set (facility families have none: R2.5), or a hosting
+    tank held to reactor rules too (_chemistry_rules, R7.1)."""
     return [p for p in range(len(sc.units))
             if _unit_rules(sc, p) != () or _chemistry_rules(sc, p)]
 
@@ -3926,30 +4005,45 @@ def _unit_spec_score(sc, position):
     can only lower the mean (dropping the requirement instead let a stated
     key join a mean it then raised).
 
-    R6.1(b): a unit hosting chemistry under a claim that does not fix it
-    (_chemistry_rules) scores the LOWER of its own rules' mean and the
-    reactor rules' mean (an empty own rule set leaves the reactor's):
-    deleting the evidence that nothing converts can only add the second
-    set, never raise the score."""
-    rules = _unit_rules(sc, position)
-    if rules is None:
+    R7.2: a family claim without an exact class scores the MAX over its
+    legitimate rule-set variants (_rule_variants: a 'Beer column' stating
+    a MESH column's keys is scored as one, a 'Fermenter' stating an NREL
+    batch bioreactor's is not asked for V_wf / batch).
+
+    R7.1: a hosting tank not ruled out (_chemistry_rules) scores the LOWER
+    of that and the best reactor variant's mean (an empty own rule set
+    leaves the reactor's): deleting the evidence that rules the tank out
+    can only add the second part, never raise the score."""
+    variants = _rule_variants(sc, position)
+    if not variants:
         label = sc.unit_labels[position]
         return 0.0, [f'{label}: unit family unknown, so its essential '
                      f'specifications cannot be determined']
-    results = [_rules_score(sc, position, rule_set)
-               for rule_set in (rules, _chemistry_rules(sc, position))
-               if rule_set]
+    results = [_best_variant(sc, position, rule_sets)
+               for rule_sets in (variants, _chemistry_rules(sc, position))
+               if rule_sets and any(rules for _f, rules in rule_sets)]
     if not results:
         return None, []
     return min(results, key=lambda result: result[0])
 
 
-def _rules_score(sc, position, rules):
+def _best_variant(sc, position, rule_sets):
+    """R7.2: (mean, missing) of the first of `rule_sets` ([(family,
+    rules), ...]) whose _rules_score is highest; empty rule sets are
+    skipped."""
+    scored = [_rules_score(sc, position, rules, family)
+              for family, rules in rule_sets if rules]
+    return max(scored, key=lambda result: result[0])
+
+
+def _rules_score(sc, position, rules, family=None):
     """(mean, missing) of unit `position` over the requirements `rules`
     (_unit_spec_score): a waived requirement scores 1 (R5.9), the others
-    _requirement_score with a locator each when below 1."""
+    _requirement_score with a locator each when below 1. `family` (default:
+    the unit's) is the family whose predicates judge its keys -- a rule-set
+    variant's own (R7.2)."""
     unit, label = sc.units[position], sc.unit_labels[position]
-    explicit = _explicit_keys(unit, sc.unit_classes[position][1])
+    explicit = _explicit_keys(unit, family or sc.unit_classes[position][1])
     scores, missing = [], []
     for req in rules:
         if not _requirement_applies(req, sc, position):
@@ -4103,6 +4197,9 @@ class _ScoringContext:
         self.closures = {}  # _closure cache: position -> (closes, reason)
         self.mass_closures = {}  # _mass_closure cache (R5.3 / R5.8)
         self.consistency = {}  # _species_consistency cache (R2.4)
+        # R7.1 caches: _flowsheet_explained, _unexplained_hosts.
+        self.flowsheet_evidence = None
+        self.hidden_hosts = None
         self.unit_reacts = [any(self.well_formed(r)
                                 for r in _dicts(u.get('reactions')))
                             for u in self.units]
@@ -5257,10 +5354,13 @@ def _class_note(sc, position):
                 f"metadata.reproducibility.flowsheet_model_package pins "
                 f"(url + commit|version)")
     if confidence == 0.75:
-        hint = (_infer_class_from_specs(unit, sc.registry) or (None,))[0]
+        hint, inferred = (_infer_class_from_specs(unit, sc.registry)
+                          or (None, None))
+        variant = (f" as its '{inferred}' rule-set variant (R7.2)"
+                   if inferred and inferred != family else '')
         return (f"{label}.design_simulation_method: class not stated (family "
-                f"'{family}' confirmed by every design-spec registry class "
-                f"holding its design_input_specs keys"
+                f"'{family}' confirmed{variant} by every design-spec "
+                f"registry class holding its design_input_specs keys"
                 + (f"; tightest '{hint}'" if hint else '') + ')' + suffix)
     if confidence == 0.5:
         return (f"{label}.design_simulation_method: class not stated (family "
@@ -5546,7 +5646,13 @@ def _uop_05_unit(sc, position, facility):
     requirements applies needs no unit (1); one whose requirements are
     unknown (unknown family or facility kind) scores `base`. A waived
     requirement counts as met (credit 1, R5.9, as in CMP-UOP-02), the
-    identity of the minimum, so skipping it is the same thing."""
+    identity of the minimum, so skipping it is the same thing.
+
+    As in CMP-UOP-02, a family claim without an exact class takes the MAX
+    over its legitimate rule-set variants (R7.2, _rule_variants), and a
+    hosting tank not ruled out the lower of that and the best reactor
+    variant (R7.1, _chemistry_rules): max and min of monotone credits stay
+    monotone."""
     label = sc.unit_labels[position]
     name, family, confidence = sc.unit_classes[position]
     base = (DERIVED_CREDIT if name and confidence == 1.0 and family is not None
@@ -5554,17 +5660,40 @@ def _uop_05_unit(sc, position, facility):
     convention = ' (class conventions imply it)' if base else ''
     if facility:
         rules = _FACILITY_RULES.get(_facility_kind(sc, position))
-        explicit = _facility_explicit(sc, position) if rules else set()
-    else:
-        # R6.1(b): a unit hosting chemistry under a claim that does not fix
-        # it is measured over the reactor rules too (the minimum over both).
-        rules = _unit_rules(sc, position)
-        if rules is not None:
-            rules = tuple(rules) + tuple(_chemistry_rules(sc, position) or ())
-        explicit = _explicit_keys(sc.units[position], family)
-    if rules is None:
+        if rules is None:
+            return base, [f'{label}.design_input_specs: specification '
+                          f'units unknown (its needs are unknown)'
+                          f'{convention}']
+        return _uop_05_credit(sc, position, rules, family, base, True,
+                              _facility_explicit(sc, position) if rules
+                              else set())
+    # R7.2: the best legitimate rule-set variant of a claim without an
+    # exact class; R7.1: a hosting tank not ruled out is measured over the
+    # reactor variants too (the lower of the two).
+    variants = _rule_variants(sc, position)
+    if not variants:
         return base, [f'{label}.design_input_specs: specification units '
                       f'unknown (its needs are unknown){convention}']
+    results = []
+    for rule_sets in (variants, _chemistry_rules(sc, position)):
+        if rule_sets:
+            results.append(max(
+                (_uop_05_credit(sc, position, rules, f, base, False,
+                                _explicit_keys(sc.units[position], f))
+                 for f, rules in rule_sets),
+                key=lambda result: result[0]))
+    return min(results, key=lambda result: result[0])
+
+
+def _uop_05_credit(sc, position, rules, family, base, facility, explicit):
+    """(credit, missing) of unit `position` over one rule set `rules`
+    (_uop_05_unit): the MIN over its requirements of 1 (met by `explicit`
+    keys that are dimensionless or stated in a unit recognised for their
+    dimension in `family`) or `base`; a waived requirement counts as met
+    (1, R5.9; facility settings are never waived); 1 for no
+    requirements."""
+    label = sc.unit_labels[position]
+    convention = ' (class conventions imply it)' if base else ''
     credits, missing = [], []
     for req in rules:
         if not facility and not _requirement_applies(req, sc, position):
@@ -5827,8 +5956,9 @@ def _species_conversion(sc, unit_id):
 
 
 def _no_conversion(sc, position):
-    """R6.1(b): True when unit `position`'s streams show affirmatively that
-    nothing converts across it: its total mass closes (_mass_closure, no
+    """R6.1(b) / R7.1: True when unit `position`'s streams show
+    affirmatively that nothing converts across it -- a hosting unit ruled
+    out per unit (_ruled_out): its total mass closes (_mass_closure, no
     dangling stream possibly a missing port) and every species' flow is
     computable and balances within CLOSURE_RTOL (_species_conversion finds
     none). Deleting any of that evidence can only make it False."""
@@ -5905,25 +6035,118 @@ def _reactive_reason(sc, position):
     reactive: a population defined by data let deleting that data shrink
     it.
 
-    R6.1(b): a claim that can host chemistry without an exact core class's
-    code (_chemistry_claim 'capable': a tank, column, extractor,
-    crystallizer, evaporator, cooker, conveyor or dryer named by a label,
-    an abstract class, a key-set inference or an unpinned custom class;
-    or an exact core class taking an optional reaction set) keeps its
-    family but needs reactions ('<family> claim that can host chemistry')
-    unless its streams show that nothing converts (_hosts_chemistry,
-    _no_conversion) -- deleting that evidence only adds the need back. One
-    declaring a well-formed reaction stays reactive whatever its streams
-    show, so deleting its evidence never adds a unit that carries
-    reactions."""
+    R7.1: a HOSTING claim (_hosting_claim: a tank, column or extractor
+    without an exact class's code, or a core class taking an optional
+    reaction set) never enters individually, evident conversion or not:
+    one flowsheet-level pseudo-member stands for all of them
+    (_unexplained_hosts), so an evident and an unverifiable hosting unit
+    weigh the same and moving between them changes nothing."""
     family = sc.unit_classes[position][1]
     if family is None:
         return 'family unknown'
     if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
-    if _hosts_chemistry(sc, position):
-        return f'{family} claim that can host chemistry'
     return None
+
+
+def _flowsheet_explained(sc):
+    """R7.1 flowsheet-level evidence, as (explained, reason) -- reason says
+    why not ('' when explained); cached per context. Explained when no
+    stream lacks a stated endpoint (R5.8: a dangling stream may be a
+    missing boundary stream), the flowsheet has a non-empty feed and a
+    non-empty product, every boundary stream (feeds, products, and
+    streams bounded at both ends, which cancel out) has species flows
+    computable on one basis (molar, else mass: _basis_flows), every feed
+    and product a known total mass (_stream_mass) with the overall mass
+    balance closing within CLOSURE_RTOL, and every species produced or
+    consumed across the flowsheet beyond CLOSURE_RTOL (judged as
+    _species_conversion judges one unit) takes part in a declared
+    well-formed reaction on some unit (sc.well_formed). Deleting data only
+    removes evidence, so it can only turn False."""
+    if sc.flowsheet_evidence is None:
+        sc.flowsheet_evidence = _flowsheet_evidence(sc)
+    return sc.flowsheet_evidence
+
+
+def _flowsheet_evidence(sc):
+    """Uncached _flowsheet_explained."""
+    if sc.dangling:
+        return False, (f'{sc.stream_labels[sc.dangling[0]]} states no '
+                       f'endpoint, so the flowsheet boundary is unknown')
+    ins, outs = sc.feeds, sc.outlets
+    if not all(any(not _is_empty_stream(sc.streams[i]) for i in side)
+               for side in (ins, outs)):
+        return False, 'no non-empty feed and product stream'
+    masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
+    if any(m is None for m in masses):
+        return False, 'a feed or product states no valid total_mass_flow'
+    m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
+    if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
+        return False, (f'the overall mass balance does not close (in '
+                       f'{m_in:.6g}, out {m_out:.6g})')
+    found = _basis_flows([sc.streams[i] for i in ins + outs + sc.isolated])
+    if found is None:
+        return False, (f'{_NOT_COMPUTABLE} (molar or mass basis) for every '
+                       f'boundary stream')
+    _basis, flows = found
+    sides = []
+    for part in (flows[:len(ins)], flows[len(ins):len(ins) + len(outs)]):
+        acc = {}
+        for species in part:
+            for name, value in species.items():
+                acc[name] = acc.get(name, 0.0) + value
+        sides.append(acc)
+    flows_in, flows_out = sides
+    total = max(sum(flows_in.values()), sum(flows_out.values()))
+    floor = max(ZERO_FLOW, SPECIES_RTOL * total)
+    declared = set()
+    for _i, _j, reaction in sc.reactions:
+        if sc.well_formed(reaction):
+            for side in sc.reaction_sides(reaction):
+                declared.update(side)
+    unexplained = []
+    for name in sorted(set(flows_in) | set(flows_out)):
+        a, b = flows_in.get(name, 0.0), flows_out.get(name, 0.0)
+        if (abs(b - a) > max(floor, CLOSURE_RTOL * max(a, b))
+                and name not in declared):
+            unexplained.append(f"{name} {'produced' if b > a else 'consumed'}")
+    if unexplained:
+        return False, (f"{', '.join(unexplained[:3])} across the flowsheet "
+                       f"without a declared well-formed reaction")
+    return True, ''
+
+
+def _unexplained_hosts(sc):
+    """R7.1: positions of the HOSTING units (_hosting_claim) that declare
+    no well-formed reaction and are not ruled out per unit
+    (_no_conversion), when flowsheet-level evidence is absent
+    (_flowsheet_explained); else []. Cached per context. When non-empty,
+    ONE pseudo-member ('unexplained conversion possible among <units>')
+    joins the CMP-RXN-01..04 populations scoring 0 (_hidden_chemistry):
+    deleting data only removes evidence, so the pseudo-member can only
+    appear, and an evident and an unverifiable hosting unit are covered by
+    the same one."""
+    if sc.hidden_hosts is None:
+        hosts = [p for p in range(len(sc.units))
+                 if _hosting_claim(sc, p) and not sc.unit_reacts[p]
+                 and not _no_conversion(sc, p)]
+        sc.hidden_hosts = hosts if hosts and not (
+            _flowsheet_explained(sc)[0]) else []
+    return sc.hidden_hosts
+
+
+def _hidden_chemistry(sc, what):
+    """R7.1: the missing locator of the CMP-RXN-01..04 pseudo-member
+    (_unexplained_hosts), saying `what` it lacks, or None when there is
+    none."""
+    hosts = _unexplained_hosts(sc)
+    if not hosts:
+        return None
+    return (f"flowsheet: unexplained conversion possible among "
+            f"{', '.join(sc.unit_labels[p] for p in hosts)} (tank, column or "
+            f"extractor claims without well-formed reactions whose streams "
+            f"do not rule conversion out, and no flowsheet-level evidence: "
+            f"{_flowsheet_explained(sc)[1]}), so {what}")
 
 
 def _reactive_units(sc):
@@ -5948,7 +6171,8 @@ def _reaction_units(sc):
 
 def _score_rxn_01(sc):  # CMP-RXN-01
     reactive = _reactive_units(sc)
-    if not reactive:
+    hidden = _hidden_chemistry(sc, 'no reaction set is declared for it')
+    if not reactive and not hidden:
         return None, 'no reactive units', []
     # A unit carries reactions only with >= 1 well-formed one (R2.0).
     scores, missing = [], []
@@ -5958,9 +6182,18 @@ def _score_rxn_01(sc):  # CMP-RXN-01
         if not carries:
             missing.append(f'{sc.unit_labels[position]}.reactions: none '
                            f'well-formed declared ({reason})')
-    ok = len(reactive) - len(missing)
-    return (_mean(scores), f'{ok} of {len(reactive)} reactive unit(s) carry '
-            f'reactions', missing)
+    if hidden:  # R7.1: one pseudo-member for the hosting claims, scoring 0
+        scores.append(0.0)
+        missing.append(hidden)
+    ok = scores.count(1.0)
+    return (_mean(scores), f'{ok} of {len(scores)} reactive unit(s) carry '
+            f'reactions' + _HIDDEN_NOTE * bool(hidden), missing)
+
+
+# R7.1: message suffix of a CMP-RXN-01..04 population holding the
+# pseudo-member.
+_HIDDEN_NOTE = ('; one of them is the flowsheet-level pseudo-member for '
+                'hosting claims that may hide conversion')
 
 
 _MALFORMED_REACTION = (': not well-formed (its equation|stoichiometry names '
@@ -6007,9 +6240,14 @@ def _per_reactive_unit(sc, reaction_score):
     """(mean, missing, n units scoring 1, n reactive units) over the
     reaction units (_reaction_units, each counting once: R4.12) of each
     unit's mean reaction_score(sc, position, index, reaction) -> (score,
-    missing); a reactive unit without reactions contributes 0. The mean is
+    missing); a reactive unit without reactions contributes 0, and so does
+    the R7.1 pseudo-member (_hidden_chemistry) when present. The mean is
     None when the population is empty."""
     unit_scores, missing, full = [], [], 0
+    hidden = _hidden_chemistry(sc, 'its reactions are unknown')
+    if hidden:
+        unit_scores.append(0.0)
+        missing.append(hidden)
     for position, reason in _reaction_units(sc):
         label = sc.unit_labels[position]
         reactions = [(ri, r) for ri, r in
@@ -6037,7 +6275,8 @@ def _score_rxn_02(sc):  # CMP-RXN-02
     if not n:
         return None, 'no reactive units and no declared reactions', []
     return (score, f'{full} of {n} reactive / reaction-declaring unit(s) '
-            f'define every reaction completely', missing)
+            f'define every reaction completely'
+            + _HIDDEN_NOTE * bool(_unexplained_hosts(sc)), missing)
 
 
 def _score_rxn_03(sc):  # CMP-RXN-03
@@ -6047,11 +6286,16 @@ def _score_rxn_03(sc):  # CMP-RXN-03
     # criterion not-applicable. Per unit: >= 2 reactions -> 1 when every one
     # is indexed, else 0; exactly one -> 1 (no order to state); none -> 0
     # (its reaction set, and so their order, is unknown). Only well-formed
-    # reactions make a reaction set (R2.0): a unit with none scores 0.
+    # reactions make a reaction set (R2.0): a unit with none scores 0. The
+    # R7.1 pseudo-member (_hidden_chemistry) scores 0 too.
     reactive = _reaction_units(sc)
-    if not reactive:
+    hidden = _hidden_chemistry(sc, 'its reaction order is unknown')
+    if not reactive and not hidden:
         return None, 'no reactive units and no declared reactions', []
     scores, missing, multi = [], [], 0
+    if hidden:
+        scores.append(0.0)
+        missing.append(hidden)
     for position, reason in reactive:
         label = sc.unit_labels[position]
         reactions = _dicts(sc.units[position].get('reactions'))
@@ -6068,9 +6312,10 @@ def _score_rxn_03(sc):  # CMP-RXN-03
                          or not isinstance(r.get('index'), int))]
         scores.append(0.0 if unindexed else 1.0)
         missing.extend(f'{label}.reactions[{ri}].index' for ri in unindexed)
-    return (_mean(scores), f'{scores.count(1.0)} of {len(reactive)} '
+    return (_mean(scores), f'{scores.count(1.0)} of {len(scores)} '
             f'reactive / reaction-declaring unit(s) state their reaction '
-            f'order ({multi} with two or more reactions)', missing)
+            f'order ({multi} with two or more reactions)'
+            + _HIDDEN_NOTE * bool(hidden), missing)
 
 
 def _coefficient_sources(sc, reaction):
@@ -6223,7 +6468,8 @@ def _score_rxn_04(sc):  # CMP-RXN-04
         return None, 'no reactive units and no declared reactions', []
     return (score, f'not representable; basis and phase derivable '
             f'(DERIVED_CREDIT) where the data imply them, over {n} reactive '
-            f'/ reaction-declaring unit(s)', missing)
+            f'/ reaction-declaring unit(s)'
+            + _HIDDEN_NOTE * bool(_unexplained_hosts(sc)), missing)
 
 #%% Criteria -- costing
 

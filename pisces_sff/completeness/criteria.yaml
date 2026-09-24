@@ -530,9 +530,11 @@ criteria:
       as if no class were named. Without a named class, a stated family (a
       unit_type keyword, or the named abstract class's family) takes
       precedence: it earns 0.75 when every design-spec registry class that
-      holds the unit's specification keys belongs to that family, else half
-      credit; with no stated family, such an unambiguous key-set family
-      earns 0.75. The key set never swaps a stated family, and an inferred
+      holds the unit's specification keys belongs to that family or to one
+      of its legitimate rule-set variants (a MESH column's keys under a
+      'Distillation column' label, a batch or aerated bioreactor's under
+      'Fermenter': see CMP-UOP-02), else half credit; with no stated
+      family, such an unambiguous key-set family earns 0.75. The key set never swaps a stated family, and an inferred
       class stays a family: only family-level rules apply to it. A class
       or family claim contradicted by the unit's ports -- more
       material-carrying (not stated-empty) inlets or outlets than the class
@@ -563,8 +565,9 @@ criteria:
       is tested the same way: an exact core class without built-in
       chemistry, an unpinned biorefinery class of the scorer's curated
       table (its source read), and a pump, valve, compressor, turbine,
-      exchanger, flash, splitter or junction claim without an exact class's
-      code are implausible when species convert across them without a
+      exchanger, flash, splitter, junction, evaporator, crystallizer,
+      conveyor or mill, or steam-injection heater claim without an exact
+      class's code are implausible when species convert across them without a
       well-formed reaction -- a species appears or vanishes or, where the
       unit's total mass closes (else a missing port could explain it), any
       species' flow changes by more than 1 %; a Junction or Scaler also
@@ -575,11 +578,15 @@ criteria:
       CHP burning their feeds, AmineAbsorption consuming its MEA and make-up
       water, ProcessWaterCenter keeping only water, the biorefineries'
       AmmoniaAdditionTank neutralizing ammonium hydroxide with sulfuric
-      acid), and combustor, boiler or facility claims without a class's
-      code, are implausible only for a conversion that chemistry cannot
-      make (a drum dryer produces no ethanol); a custom class located in the
-      pinned model package is exempt, since its code may carry any
-      chemistry. A unit whose family stays unknown carries
+      acid), and combustor, boiler, facility or dryer claims without a
+      class's code (a dryer at most burns its fuel), are implausible only
+      for a conversion that chemistry cannot make (a drum dryer produces no
+      ethanol); a custom class located in the pinned model package is
+      exempt, since its code may carry any chemistry. A tank, distillation
+      or MESH-type column or extractor claim without an exact class's code
+      can host chemistry, so its streams never contradict it: it keeps its
+      family, and CMP-RXN-01 covers the conversion it may hide. A unit
+      whose family stays unknown carries
       every family-dependent need (reactions, heat and power agents,
       utility results, costing). A unit id that stream endpoints reference
       but no unit declares scores 0. Every per-unit average in this
@@ -674,15 +681,26 @@ criteria:
       irrelevant is itself the information (unchanged phases fix the phase
       outcome as a stated vapor fraction would), so a unit is always scored
       on the requirements its family and class need, and deleting the
-      waiving evidence can only lower its score. A unit that may host
-      chemistry under a claim that does not fix it (reactive by
-      CMP-RXN-01: a tank, column, extractor, crystallizer, evaporator,
-      cooker, conveyor or dryer claim without an exact core class's code
-      whose streams do not show that nothing converts, or that declares
-      reactions) scores the lower of its own rules' mean and the reactor
-      rules' mean: it must be specified as the reactor it may be too, so
-      relabelling a fermenter as a conveyor or a dryer whose requirements
-      its streams happen to satisfy cannot pay off. Units of unknown
+      waiving evidence can only lower its score. A family claim that names
+      no class (a unit_type label, an abstract class, a key-set inference)
+      is scored by the best of its legitimate rule-set variants: a column
+      by the binary-distillation or the MESH-column rules, a reactor or
+      bioreactor by the stirred-tank, batch-bioreactor or aerated-
+      bioreactor rules -- the maximum of scores that deletion can only
+      lower, so a 'Beer column' stating a MESH column's stages, feed
+      stages, reflux, boilup and pressure scores like a 'MESH column', and
+      a 'Fermenter' stating an NREL batch bioreactor's T, tau and reactor
+      count is not asked for a working-volume fraction or batch flag. A
+      named class, exact or not, keeps its own rules. A tank claim without
+      an exact class's code that may host hidden chemistry (not ruled out:
+      its own species balances do not close or are not computable, and
+      the flowsheet-level evidence of CMP-RXN-01 is absent) scores the
+      lower of that and the best reactor variant: it must be specified as
+      the reactor it may be too, so relabelling a fermenter as a holding
+      tank cannot pay off. Columns and extractors are never held to
+      reactor rules (a reactive column is still specified as a column),
+      and every other label cannot host chemistry at all (see CMP-UOP-01).
+      Units of unknown
       family, and unit ids that stream endpoints reference but no unit
       declares, score zero because nothing tells the importer what to
       specify. Each unit counts once.
@@ -792,7 +810,10 @@ criteria:
       exactly known class, else 0 (so a key stated without a unit scores
       what its absence does, and deleting one never raises the score). A
       waived requirement counts as met, as in CMP-UOP-02, so a unit none of
-      whose requirements applies needs no unit. Applies to
+      whose requirements applies needs no unit. As in CMP-UOP-02, a family
+      claim naming no class is measured against its best legitimate
+      rule-set variant, and a tank that may host hidden chemistry against
+      the lower of that and the best reactor variant. Applies to
       every unit that needs operating specifications or facility settings
       (the CMP-UOP-02 and CMP-UOP-06 populations).
 
@@ -851,17 +872,27 @@ criteria:
       or stream physics contradict -- see CMP-UOP-01: a 'mixer', 'heater',
       'Junction' or exact StorageTank across which species convert is one:
       it could be a reactor, and only affirmative evidence waives a need);
-      and every claim that can host chemistry without an exact core
-      class's code -- a tank, distillation or MESH column, extractor,
-      crystallizer, evaporator, steam-injection heater, conveyor or mill,
-      or dryer named by unit_type, an abstract class, a key-set inference
-      or an unpinned custom class the scorer's curated table does not know,
-      and the core classes taking an optional reaction set
-      (MESHDistillation, MultiStageEquilibrium, StageEquilibrium,
-      PhasePartition) -- unless its streams show affirmatively that
-      nothing converts (its total mass closes and every species' flow is
-      computable and balances within 1 %), so deleting that evidence only
-      adds the need back; one declaring a well-formed reaction stays in.
+      and ONE flowsheet-level pseudo-member standing for the claims that
+      can host chemistry without an exact class's code -- a tank,
+      distillation or MESH-type column, or extractor named by unit_type,
+      an abstract class, a key-set inference or an unpinned custom class
+      the scorer's curated table does not know, and the core classes
+      taking an optional reaction set (MESHDistillation,
+      MultiStageEquilibrium, StageEquilibrium, PhasePartition). Such a
+      unit never enters on its own, whether conversion across it is
+      evident or merely unverifiable (so moving between the two changes
+      nothing); the pseudo-member ('unexplained conversion possible among
+      <units>', scoring 0) is present when some of them declare no
+      well-formed reaction and are not ruled out one by one (total mass
+      closing and every species' flow computable and balancing within 1
+      %), and the flowsheet-level evidence is absent: every feed's and
+      product's species flows computable, the overall mass balance closing
+      within 1 %, no stream without a stated endpoint, and every species
+      produced or consumed across the flowsheet taking part in a declared
+      well-formed reaction somewhere. Deleting data only removes evidence,
+      so the pseudo-member can only appear. Other claims cannot host
+      chemistry: conversion across them makes the family unknown instead
+      (see CMP-UOP-01).
       Each must declare at least one well-formed reaction: an equation or
       stoichiometry naming at least one consumed and one produced species
       ([{}] or an equation "x" counts as none) that, when every participant
@@ -876,10 +907,9 @@ criteria:
       appearing across a physical-only unit (or one of unknown family) is
       a consistency guard on CMP-UOP-04 and on derivations. Families whose
       chemistry the class itself fixes (combustors, boilers,
-      boiler-turbogenerators, facilities, Gibbs reactors) are not in the
-      population, nor are exact core or curated classes whose code hosts no
-      chemistry (a dryer only through the claims above). Each unit counts
-      once.
+      boiler-turbogenerators, facilities, Gibbs reactors, dryers burning
+      their fuel) are not in the population, nor are exact core or curated
+      classes whose code hosts no chemistry. Each unit counts once.
 
   - id: CMP-RXN-02
     category: reactions
@@ -904,8 +934,10 @@ criteria:
       the mean of {well-formed, the reactant is one of its consumed species,
       a numeric conversion in [0, 1]}. Scored per
       unit (each counting once) over its reactions, for the reactive units of
-      CMP-RXN-01 -- one without reactions scores 0 -- plus every other unit
-      that declares reactions (a boiler's combustion set, ...). Deleting a
+      CMP-RXN-01 -- one without reactions scores 0, as does its
+      flowsheet-level pseudo-member for hidden chemistry -- plus every
+      other unit that declares reactions (a boiler's combustion set, a
+      tank's neutralization, ...). Deleting a
       field of a reaction never raises the score; deleting whole reactions
       (list elements) is outside the monotonicity guarantee.
 
@@ -924,8 +956,9 @@ criteria:
       over the CMP-RXN-02 population: with two
       or more reactions, an index on every reaction is the minimal signal of
       their order (1, else 0); a single reaction has no order to state (1);
-      a reactive unit without a well-formed reaction scores 0, since its
-      reaction set and so their order are unknown.
+      a reactive unit without a well-formed reaction, and the CMP-RXN-01
+      pseudo-member for hidden chemistry, score 0, since the reaction set
+      and so its order are unknown.
 
   - id: CMP-RXN-04
     category: reactions
@@ -943,8 +976,9 @@ criteria:
       Reactions may be defined on a molar or mass basis (mass basis is common
       for biomass pseudo-components) and restricted to a phase; both change
       the computed outlet. No SFF field states either, so each reaction of
-      the CMP-RXN-02 population (a reactive unit without reactions scores 0,
-      a reaction that is not well-formed -- including one conserving mass
+      the CMP-RXN-02 population (a reactive unit without reactions and the
+      CMP-RXN-01 pseudo-member for hidden chemistry score 0, a reaction
+      that is not well-formed -- including one conserving mass
       on neither basis within 1 %, see CMP-RXN-01 -- scores 0) earns only
       derived credit, half for each part: the basis when sum(nu*MW) = 0 (a
       molar reaction conserves mass) or sum(nu) = 0 (a mass-basis reaction)
