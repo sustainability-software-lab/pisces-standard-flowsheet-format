@@ -4393,7 +4393,9 @@ def _thm_02_credit(chem, cid):
 
 def _referenced_mean(scored):
     """R4.7 aggregate of CMP-THM-02/03 over [(score, referenced)]: with no
-    chemical referenced, the plain mean; otherwise the mean over the
+    chemical referenced, the lowest single score (the same nested-set rule
+    with the referenced set empty -- the plain mean would let deleting the
+    last reference raise the score); otherwise the mean over the
     referenced chemicals plus every unreferenced chemical that lowers it --
     the minimum over all sets S (referenced <= S <= all) of mean(S), reached
     by adding unreferenced scores in ascending order while each lies below
@@ -4406,7 +4408,7 @@ def _referenced_mean(scored):
     over, whereas min(referenced mean, overall mean) would rise when a
     low-scoring chemical left the referenced mean."""
     if not any(ref for _s, ref in scored):
-        return _mean([s for s, _ref in scored])
+        return min(s for s, _ref in scored)
     chosen = [s for s, ref in scored if ref]
     total, n = sum(chosen), len(chosen)
     for s in sorted(s for s, ref in scored if not ref):
@@ -6599,8 +6601,8 @@ def _agent_mean(scored):
     references can lower the score, never raise it (ten fully specified
     standard agents padded beside a half-specified referenced one change
     nothing). With nothing referenced, the same rule gives the lowest single
-    score (not R4.7's plain mean): deleting a unit's last utility result
-    then only widens the family minimised over, never raises the score."""
+    score (as for chemicals): deleting a unit's last utility result then
+    only widens the family minimised over, never raises the score."""
     if not scored:
         return None
     if not any(ref for _s, ref in scored):

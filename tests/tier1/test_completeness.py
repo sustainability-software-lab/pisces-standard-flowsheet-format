@@ -6303,7 +6303,10 @@ class TestRevision4PartA(unittest.TestCase):
 
     def test_referenced_mean(self):
         """_referenced_mean (R4.7) over [(score, referenced)]: nothing
-        referenced -> plain mean; unreferenced scores at or above the
+        referenced -> lowest single score ([1, 0] -> 0), so deleting the
+        last reference never raises it ([0.2 ref, 1, 1] -> 0.2 before and
+        0.2 after the reference goes; the plain mean would give 0.733);
+        unreferenced scores at or above the
         referenced mean are left out ([1 ref, 1 unref] -> 1; [0.25 ref,
         1 x 12 unref] -> 0.25); lower ones join in ascending order while
         they lower it ([1 ref, 0 unref, 1 unref] -> 0.5); never above
@@ -6312,7 +6315,11 @@ class TestRevision4PartA(unittest.TestCase):
         before, 0.5 after 0 becomes unreferenced (the literal min(ref, all)
         would rise from 0.5 to 0.75)."""
         mean = C._referenced_mean
-        self.assertAlmostEqual(mean([(1.0, False), (0.0, False)]), 0.5)
+        self.assertEqual(mean([(1.0, False), (0.0, False)]), 0.0)
+        self.assertAlmostEqual(
+            mean([(0.2, True), (1.0, False), (1.0, False)]), 0.2)
+        self.assertAlmostEqual(
+            mean([(0.2, False), (1.0, False), (1.0, False)]), 0.2)
         self.assertEqual(mean([(1.0, True), (1.0, False)]), 1.0)
         self.assertEqual(mean([(0.25, True)] + [(1.0, False)] * 12), 0.25)
         self.assertAlmostEqual(mean([(1.0, True), (0.0, False), (1.0, False)]),

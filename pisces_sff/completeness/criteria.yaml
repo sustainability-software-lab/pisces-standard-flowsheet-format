@@ -182,7 +182,8 @@ criteria:
       means -- so unreferenced chemicals can lower the score but never raise
       it: padding a sparse file with well-identified chemicals it never uses
       earns nothing, and a chemical losing its last reference never lifts
-      the score. With nothing referenced it is the plain mean.
+      the score. With nothing referenced it is the lowest single chemical's
+      score (a plain mean would let deleting the last reference raise it).
 
   - id: CMP-THM-03
     category: thermo
