@@ -21,11 +21,13 @@
 # alone and a run collecting the other Tier-1 modules (which install the
 # stub).
 
+import ast
 import contextlib
 import copy
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import types
@@ -369,8 +371,12 @@ class TestCriteriaRegistry(unittest.TestCase):
         SYS-01 3, SYS-02 5; new COST-07 and UTIL-05 weigh 1 (costing);
         CMP-INT-03 is gone, INT-01/02/04 keep 2/2/3. Revision 2 part B: new
         CMP-UOP-06 weighs 2 (costing, unit_ops, since 0.0.0); the header
-        says the monotonicity guarantee does not cover deleting whole list
-        elements."""
+        says the monotonicity guarantee covers field deletions from an
+        internally consistent document, and not deleting whole list
+        elements (a unit's whole reactions list counting as its elements),
+        an entry of a reaction's stoichiometry object, a whole phase that
+        is not stated empty, or anything on an internally inconsistent
+        document (a referenced but undeclared id among them)."""
         crit = self.registry["criteria"]
         got = {cid: crit[cid]["weight"] for cid in (
             "CMP-THM-05", "CMP-UTIL-03", "CMP-SYS-01", "CMP-SYS-02",
@@ -393,7 +399,20 @@ class TestCriteriaRegistry(unittest.TestCase):
                          (2, "costing", "0.0.0", "unit_ops"))
         # The monotonicity guarantee is stated for field deletions only.
         header = C.CRITERIA_PATH.read_text(encoding="utf-8")
-        self.assertIn("does not cover deleting whole list", header)
+        for phrase in ("from an internally consistent document",
+                       "It does not cover five things",
+                       "Deleting whole list elements",
+                       "whole `reactions` list counts as",
+                       "Deleting an entry of a reaction's `stoichiometry` "
+                       "object",
+                       "Deleting a whole phase of a stream that is not "
+                       "stated empty",
+                       "Deletions on an internally inconsistent document",
+                       "id referenced but not declared",
+                       "a document the validator's schema gate rejects"):
+            self.assertIn(phrase, " ".join(
+                line.lstrip("# ").strip() for line in header.splitlines()),
+                phrase)
 
     def test_exclusions_listed(self):
         """exclusions -> EXC-01..03 (not_capturable), EXC-04 AgileSystem and
@@ -3072,8 +3091,13 @@ class TestReactionCriteria(unittest.TestCase):
         """_reaction_completeness (R2.0): complete -> (1.0, []); conversion
         1.5 -> 2/3 with a conversion locator under the given prefix; a
         reactant that is not among the consumed species -> 2/3; a reaction
-        that is not well-formed (equation 'x', or none at all) -> 0 whatever
-        its reactant and conversion, with a 'not well-formed' locator."""
+        naming an undeclared species ('A -> Ethanol') cannot be tested for
+        mass conservation -- an untestable closure earns
+        NONCONSERVING_CREDIT with the _UNTESTED_REACTION note (R2.13:
+        credit only on affirmative evidence) -- and, its reactant Ethanol not
+        consumed, scores (0.5 + 0 + 1) / 3; a reaction that is not
+        well-formed (equation 'x', or none at all) -> 0 whatever its
+        reactant and conversion, with a 'not well-formed' locator."""
         sc = ctx(valid_doc())
         self.assertEqual(C._reaction_completeness(sc, reaction(), "r"), (1.0, []))
         score, missing = C._reaction_completeness(sc, reaction(conversion=1.5),
@@ -3081,9 +3105,14 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertAlmostEqual(score, 2 / 3)
         self.assertEqual(missing, ["r.conversion (0..1)"])
         score, missing = C._reaction_completeness(
-            sc, reaction(equation="A -> Ethanol"), "r")
+            sc, reaction(reactant="A"), "r")
         self.assertAlmostEqual(score, 2 / 3)
         self.assertEqual(missing, ["r.reactant (a consumed species)"])
+        score, missing = C._reaction_completeness(
+            sc, reaction(equation="A -> Ethanol"), "r")
+        self.assertAlmostEqual(score, (C.NONCONSERVING_CREDIT + 1) / 3)
+        self.assertEqual(missing, ["r" + C._UNTESTED_REACTION,
+                                   "r.reactant (a consumed species)"])
         for bad in (reaction(equation="x"), {"reactant": "Ethanol",
                                              "conversion": 0.5}):
             score, missing = C._reaction_completeness(sc, bad, "r")
@@ -3198,8 +3227,9 @@ class TestReactionCriteria(unittest.TestCase):
         derivable (mass closes within RXN_CLOSURE_RTOL, R6.2, but not
         within BASIS_RTOL: 'Glucose -> 2 Ethanol + 2.02 CO2', 0.5 % off),
         phase derivable -> DERIVED_CREDIT / 2; a reaction conserving mass on
-        neither basis ('Glucose -> 3 Ethanol', 23 % off) is not well-formed
-        -> 0 with the R6.2 locator."""
+        neither basis ('Glucose -> 3 Ethanol', 23 % off) is no longer
+        discarded (R7.4, was 0 under R6.2): its basis is never derivable,
+        its phase is -> DERIVED_CREDIT / 2; one naming no species -> 0."""
         sc = ctx(rxn_doc(None))
         score, missing = C._reaction_basis_phase(sc, 0, 0, {"equation": GLUCOSE_EQ})
         self.assertEqual(score, C.DERIVED_CREDIT)
@@ -3210,9 +3240,11 @@ class TestReactionCriteria(unittest.TestCase):
         self.assertEqual(score, C.DERIVED_CREDIT / 2)
         score, missing = C._reaction_basis_phase(
             sc, 0, 0, {"equation": "Glucose -> 3 Ethanol"})
+        self.assertEqual(score, C.DERIVED_CREDIT / 2)
+        self.assertNotIn("(derivable", missing[0])
+        score, missing = C._reaction_basis_phase(sc, 0, 0, {"equation": "x"})
         self.assertEqual(score, 0.0)
-        self.assertIn("conserve mass on neither a mol nor a wt basis",
-                      missing[0])
+        self.assertIn(C._MALFORMED_REACTION, missing[0])
 
     def test_rxn_04_basis(self):
         """_score_rxn_04 (CMP-RXN-04): a reactor whose Glucose reaction has a
@@ -4906,18 +4938,59 @@ def splitter_doc(class_name="Splitter"):
                           "other_utilities": []}}
 
 
-def deletion_violations(doc, skip=_STRUCTURAL_KEYS):
+def whole_phase(doc, path):
+    """True when `path` names one whole phase of a stream
+    (stream_properties.phases.<symbol>) that is not stated empty
+    (C._empty_phase). The schema describes stream_properties.phases as the
+    phases present in the stream, so deleting one asserts a different set
+    of phases -- a change of claim, outside the deletion guarantee as
+    deleting a list element is; deleting a stated-empty phase stays
+    inside it."""
+    if len(path) < 2 or path[-2] != "phases":
+        return False
+    node = doc
+    for key in path:
+        node = node[key]
+    return not C._empty_phase(node)
+
+
+def stoichiometry_entry(doc, path):
+    """True when `path` names one entry of a reaction's stoichiometry
+    object (units[i].reactions[j].stoichiometry.<participant>). Deleting
+    it drops a participant and its coefficient, which states a different
+    reaction -- outside the deletion guarantee, as deleting a list element
+    is (the array form of stoichiometry holds its coefficients as list
+    elements, which deletable_paths never yields). No rule rewarding a
+    mass closure is monotone under it: dropping a term that held the
+    balance off, or one whose molar mass is unknown, can make the reaction
+    close (CMP-RXN-02, CMP-RXN-04). Deleting the whole stoichiometry
+    object stays inside the guarantee."""
+    if (len(path) != 6 or path[0] != "units" or path[2] != "reactions"
+            or path[4] != "stoichiometry"):
+        return False
+    node = doc
+    for key in path[:-1]:
+        node = node[key]
+    return isinstance(node, dict)
+
+
+def deletion_violations(doc, skip=_STRUCTURAL_KEYS, exclude=None):
     """(raised, lowered, n): every deletable path of `doc` (deletable_paths,
-    skipping the keys in `skip`) below the top level whose deletion raises
-    the overall score or turns a scored criterion not-applicable or higher,
-    the number of deletions that lower the overall score, and the path
-    count. Whole top-level sections (all units, all streams) are left to
-    rich_doc's overall-only check: removing them removes the structure the
-    populations are defined on."""
+    skipping the keys in `skip`, the entries of reactions' stoichiometry
+    objects (stoichiometry_entry: never deleted, like list elements) and
+    the paths for which `exclude(doc, path)` holds -- e.g. whole_phase)
+    below the top level whose deletion raises the overall score or turns
+    a scored criterion not-applicable or higher, the number of deletions
+    that lower the overall score, and the path count. Whole top-level
+    sections (all units, all streams) are left to rich_doc's overall-only
+    check: removing them removes the structure the populations are
+    defined on."""
     base = criterion_results(doc)
     base_score = C._weighted_mean(list(base.values()))
     raised, lowered = [], 0
-    paths = [p for p, _kind in deletable_paths(doc, skip=skip) if len(p) > 1]
+    paths = [p for p, _kind in deletable_paths(doc, skip=skip) if len(p) > 1
+             and not stoichiometry_entry(doc, p)
+             and not (exclude and exclude(doc, p))]
     for path in paths:
         after = criterion_results(deleted(doc, path))
         score = C._weighted_mean(list(after.values()))
@@ -7189,9 +7262,12 @@ class TestRevision5(unittest.TestCase):
         """_phase_flow: a phase's own valid flow of the key, else -- for the
         only phase of a stream -- the stream-level total, else None.
         _phases_ok (R5.3): a phase stating only total_mass_flow with mass
-        fractions is stated; a single phase with no flow of its own is
-        stated from the stream totals `sp`, but not without them, nor when
-        the stream has two phases."""
+        fractions is stated; a phase with no flow of its own is stated from
+        the stream totals `sp`, but not without them, and not beside a
+        second phase that may carry material (R5.3: "for a single-phase
+        stream" -- the phase split is not stated, so the stream totals fix
+        no phase's amount), though beside a stated-empty one
+        (_sole_phase)."""
         sp = {"total_mass_flow": 5.0}
         self.assertEqual(C._phase_flow({"total_mass_flow": 2.0}, sp, True,
                                        "total_mass_flow"), 2.0)
@@ -7205,6 +7281,11 @@ class TestRevision5(unittest.TestCase):
         self.assertTrue(C._phases_ok({"l": bare}, sp))
         self.assertFalse(C._phases_ok({"l": bare}))
         self.assertFalse(C._phases_ok({"l": bare, "g": mass_phase}, sp))
+        self.assertFalse(C._phases_ok({"l": bare, "g": mass_phase}))
+        self.assertFalse(C._phases_ok({"l": {}, "g": mass_phase}, sp))
+        empty = {"total_mass_flow": 0.0, "composition": []}
+        self.assertTrue(C._phases_ok({"l": bare, "g": empty}, sp))
+        self.assertFalse(C._phases_ok({"l": bare, "g": empty}))
 
     def test_species_flows_on_both_bases(self):
         """_species_flows(stream, 'mass') -> {component: kg/h} from phase
@@ -8686,7 +8767,11 @@ class TestRevision6(unittest.TestCase):
         (error < 1e-4, the molar masses rounded); the reviewer's 'Glucose -> 5 Ethanol' is off by
         28 % on a mol basis and 400 % on a wt basis -> not conserving;
         'Glucose -> Ethanol' closes on a wt basis (sum nu = 0); a species
-        without a molar mass leaves the reaction untested (None, conserving);
+        without a molar mass leaves the reaction untested (None, which
+        never counts as conserving -- R2.13: credit only on affirmative
+        evidence); an identity equation ('Glucose -> Glucose',
+        coefficients cancelling) creates no mass: error 0, conserving --
+        a stoichiometry of zeros is no identity;
         a reaction with a closing stoichiometry beside a non-closing
         equation has two sources and conserves (the smaller error);
         with the closing source alone broken it does not."""
@@ -8698,7 +8783,21 @@ class TestRevision6(unittest.TestCase):
         self.assertTrue(C._conserves_mass(sc, {"equation": "Glucose -> "
                                                            "Ethanol"}))
         self.assertIsNone(C._closure_error(sc, {"equation": "Glucose -> Q"}))
-        self.assertTrue(C._conserves_mass(sc, {"equation": "Glucose -> Q"}))
+        self.assertIsNone(C._conserves_mass(sc, {"equation": "Glucose -> Q"}))
+        identity = {"equation": "Glucose -> Glucose"}
+        self.assertEqual(C._coefficient_sources(sc, identity), [])
+        self.assertEqual(C._coefficient_sources(sc, identity,
+                                                identities=True), [{}])
+        self.assertEqual(C._closure_error(sc, identity), 0.0)
+        self.assertIs(C._conserves_mass(sc, identity), True)
+        self.assertIs(C._conserves_mass(sc, {"equation": GLUCOSE_EQ}), True)
+        self.assertIs(C._conserves_mass(sc, bad), False)
+        # A stoichiometry of zeros names no reaction (INVALID == MISSING):
+        # it is no identity beside the non-closing equation.
+        zeros = dict(bad, stoichiometry={"Glucose": 0, "Ethanol": 0})
+        self.assertEqual(len(C._coefficient_sources(sc, zeros,
+                                                    identities=True)), 1)
+        self.assertIs(C._conserves_mass(sc, zeros), False)
         both = {"equation": "Glucose -> 5 Ethanol",
                 "stoichiometry": {"Glucose": -1, "Ethanol": 2, "CO2": 2}}
         self.assertEqual(len(C._coefficient_sources(sc, both)), 2)
@@ -8708,24 +8807,32 @@ class TestRevision6(unittest.TestCase):
         self.assertEqual(C._coefficient_sources(sc, {}), [])
 
     def test_non_conserving_reaction_is_not_well_formed(self):
-        """R6.2 through the criteria: sc.well_formed rejects 'Glucose -> 5
-        Ethanol' (cached per reaction object), so a reactor carrying only
-        it does not carry reactions (unit_reacts False, CMP-RXN-01 0) and
-        CMP-RXN-02 scores it 0 with the _NONCONSERVING_REACTION locator;
-        _malformed_note -> '' for a well-formed reaction, the
-        no-species note for 'x'."""
+        """R6.2 through the criteria, as revised by R7.4 (this test pinned
+        the R6.2 discard before): sc.well_formed ACCEPTS 'Glucose -> 5
+        Ethanol' (cached per reaction object) -- it names consumed and
+        produced species -- while sc.conserves rejects it (cached too), so
+        a reactor carrying only it carries reactions (unit_reacts True,
+        CMP-RXN-01 1) and CMP-RXN-02 discounts only its equation part
+        (NONCONSERVING_CREDIT, with the _NONCONSERVING_REACTION note):
+        (0.5 + 1 + 1) / 3; _malformed_note -> '' for it and for a
+        conserving reaction, the no-species note for 'x'."""
         doc = rxn_doc([reaction(equation="Glucose -> 5 Ethanol",
                                 reactant="Glucose")])
         sc = ctx(doc)
         r = sc.units[0]["reactions"][0]
-        self.assertFalse(sc.well_formed(r))
+        self.assertTrue(sc.well_formed(r))
         self.assertIs(sc._well_formed[id(r)][0], r)
-        self.assertEqual(sc.unit_reacts, [False])
-        self.assertEqual(run(C._score_rxn_01, doc)[0], 0.0)
-        score, _m, missing = run(C._score_rxn_02, doc)
-        self.assertEqual(score, 0.0)
-        self.assertIn(C._NONCONSERVING_REACTION, missing[0])
-        self.assertEqual(C._malformed_note(sc, r), C._NONCONSERVING_REACTION)
+        self.assertFalse(sc.conserves(r))
+        self.assertIs(sc._conserving[id(r)][0], r)
+        self.assertEqual(sc.unit_reacts, [True])
+        self.assertEqual(run(C._score_rxn_01, doc)[0], 1.0)
+        score, message, missing = run(C._score_rxn_02, doc)
+        self.assertAlmostEqual(score, (C.NONCONSERVING_CREDIT + 2) / 3)
+        self.assertEqual(missing, ["units[U1].reactions[0]"
+                                   + C._NONCONSERVING_REACTION])
+        self.assertIn("1 reaction(s) do not conserve mass as written (0 "
+                      "confirmed", message)
+        self.assertEqual(C._malformed_note(sc, r), "")
         self.assertEqual(C._malformed_note(sc, {"equation": GLUCOSE_EQ}), "")
         self.assertEqual(C._malformed_note(sc, {"equation": "x"}),
                          C._MALFORMED_REACTION)
@@ -8733,9 +8840,15 @@ class TestRevision6(unittest.TestCase):
     def test_broken_closure_sweep(self):
         """The fermenter R1 of sweep_doc('unit_type') stating its reaction by
         stoichiometry only ({Glucose: -1, Ethanol: 2, CO2: 2}): deleting the
-        CO2 coefficient breaks the closure (R6.2: not well-formed, the
-        overall score falls), deleting Glucose leaves nothing consumed; the
-        strict deletion sweep over the document raises nothing."""
+        CO2 coefficient breaks the closure -- R7.4: the reaction stays
+        declared (unit_reacts True; under R6.2 it was discarded), but its
+        streams show CO2 produced, so it is unconfirmed and CMP-RXN-02 and
+        the overall score fall -- deleting Glucose leaves nothing consumed
+        (the reaction is no longer well-formed), and the overall score falls
+        too; the strict deletion sweep over the document raises nothing.
+        (Stoichiometry entries state a different reaction when deleted, so
+        the sweep skips them -- stoichiometry_entry; these two are checked
+        by hand here.)"""
         doc = sweep_doc("unit_type")
         reaction_ = doc["units"][3]["reactions"][0]
         del reaction_["equation"]
@@ -8744,8 +8857,20 @@ class TestRevision6(unittest.TestCase):
         self.assertEqual(sc.unit_reacts[3], True)
         path = ("units", 3, "reactions", 0, "stoichiometry", "CO2")
         cut = deleted(doc, path)
-        self.assertFalse(ctx(cut).unit_reacts[3])
+        cut_sc = ctx(cut)
+        self.assertTrue(cut_sc.unit_reacts[3])
+        self.assertFalse(cut_sc.conserves(cut_sc.units[3]["reactions"][0]))
+        self.assertFalse(C._reaction_confirmed(
+            cut_sc, 3, cut_sc.units[3]["reactions"][0]))
+        self.assertLess(run(C._score_rxn_02, cut)[0],
+                        run(C._score_rxn_02, doc)[0])
         self.assertLess(overall(cut), overall(doc))
+        glucose = deleted(doc, path[:-1] + ("Glucose",))
+        self.assertFalse(ctx(glucose).well_formed(
+            glucose["units"][3]["reactions"][0]))
+        self.assertLess(run(C._score_rxn_02, glucose)[0],
+                        run(C._score_rxn_02, doc)[0])
+        self.assertLess(overall(glucose), overall(doc))
         with name_lookup(set()):
             raised, lowered, n = deletion_violations(doc, skip=frozenset())
         self.assertGreater(n, 240)
@@ -9600,6 +9725,1308 @@ class TestRevision7(unittest.TestCase):
             self.assertGreater(n, 200)
             self.assertEqual(raised, [])
             self.assertGreater(lowered, n // 2)
+
+
+# ------------------------------------------ Revision 7, part B (R7.3-R7.5)
+
+def _volumetric_only(stream_, density, keep_mass=False):
+    """`stream_` stating a total_volumetric_flow of its mass flow /
+    `density` (m3/h) -- in place of its mass totals (stream and phases)
+    unless `keep_mass` (R7.3)."""
+    sp = stream_["stream_properties"]
+    mass = sp["total_mass_flow"]
+    if not keep_mass:
+        del sp["total_mass_flow"]
+        for phase in sp["phases"].values():
+            phase.pop("total_mass_flow", None)
+    sp["total_volumetric_flow"] = mass / density
+    return stream_
+
+
+def r7b_volumetric_doc(keep_mass=False, empty_phase=False):
+    """The R7 reviewer's B3 case (probe vol.py): r7_sparse_doc with
+    the feed (density 1050 kg/m3) and the fermenter R1's vent (1.8 kg/m3)
+    stating a volume flow in m3/h (quantity_units_global
+    'volumetric_flow') instead of their mass totals -- each keeps its
+    temperature, pressure and single-phase composition. `keep_mass`: both
+    keep their mass totals beside the volume flow. `empty_phase`: both
+    also carry an empty gas phase stating a zero molar flow only (the
+    exporter's shape, STR-13), so they stay single-phase (_sole_phase)."""
+    doc = r7_sparse_doc()
+    for position, density in ((0, 1050.0), (4, 1.8)):
+        _volumetric_only(doc["streams"][position], density, keep_mass)
+        if empty_phase:
+            doc["streams"][position]["stream_properties"]["phases"]["g"] = {
+                "total_molar_flow": 0.0, "composition": []}
+    doc["quantity_units_global"]["volumetric_flow"] = {
+        "aliases": ["total_volumetric_flow"], "quantity_units": "m3/hr"}
+    return doc
+
+
+def r7b_two_phase_doc(basis="volume"):
+    """r7b_volumetric_doc whose feed and vent also carry a second,
+    non-empty phase 'g' (Water / CO2) stating a composition but no flow of
+    its own, so neither stream is single-phase and neither phase split is
+    stated. `basis` 'volume': each stream states only its volume flow;
+    'mass': only its stream-level total_mass_flow (R5.3), its volume flow
+    and phase totals removed."""
+    doc = r7b_volumetric_doc(keep_mass=basis == "mass")
+    for position, species in ((0, "Water"), (4, "CO2")):
+        sp = doc["streams"][position]["stream_properties"]
+        if basis == "mass":
+            del sp["total_volumetric_flow"]
+            for phase in sp["phases"].values():
+                del phase["total_mass_flow"]
+        sp["phases"]["g"] = {"composition": [
+            {"component_name": species, "mass_fraction": 1.0}]}
+    return doc
+
+
+def _r7b_molar(sid, source, sink, flows):
+    """A liquid stream of {component: kmol/h} `flows` at 305.15 K and 1
+    atm stating the molar basis only (total_molar_flow, mol_fraction): no
+    total mass balance is evaluable (R4.10)."""
+    n = sum(flows.values())
+    return {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+            "stream_properties": {
+                "temperature": 305.15, "pressure": 101325.0,
+                "total_molar_flow": n,
+                "phases": {"l": {"total_molar_flow": n, "composition": [
+                    {"component_name": c, "mol_fraction": f / n}
+                    for c, f in flows.items()]}}}}
+
+
+def r7b_rxn_doc(equation="Glucose -> 5 Ethanol", ethanol=45.0):
+    """feed (100 Water, 10 Glucose kmol/h) -> 'Fermenter' R1 (T, tau,
+    V_wf, batch) carrying ONE reaction `equation` (reactant Glucose,
+    conversion 0.9) -> product (100 Water, 1 Glucose, `ethanol` kmol/h
+    Ethanol), molar basis only (_r7b_molar). By default the unit's species
+    changes (Glucose -9, Ethanol +45) are proportional to 'Glucose -> 5
+    Ethanol' as written: the faithful export of a model whose reaction
+    does not conserve mass (R7.4)."""
+    units = [{"id": "R1", "unit_type": "Fermenter",
+              "design_input_specs": {"T": 305.15, "tau": 36.0, "V_wf": 0.9,
+                                     "batch": False},
+              "reactions": [{"index": 0, "equation": equation,
+                             "reactant": "Glucose", "conversion": 0.9}]}]
+    streams = [
+        _r7b_molar("feed", "None", "R1", {"Water": 100.0, "Glucose": 10.0}),
+        _r7b_molar("product", "R1", "None",
+                   {"Water": 100.0, "Glucose": 1.0, "Ethanol": ethanol})]
+    streams[0]["price"], streams[1]["price"] = 0.02, 0.7
+    qug = {"temperature": {"aliases": ["temperature", "T"],
+                           "quantity_units": "K"},
+           "pressure": {"aliases": ["pressure", "P"], "quantity_units": "Pa"},
+           "molar_flow": {"aliases": ["total_molar_flow"],
+                          "quantity_units": "kmol/hr"},
+           "time": {"aliases": ["tau"], "quantity_units": "hr"}}
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD",
+                         "TEA_year": 2018,
+                         "products": [{"stream_id": "product"}]},
+            "quantity_units_global": qug, "units": units, "streams": streams,
+            "chemicals": [{"id": c, "molar_mass": mw}
+                          for c, mw in R5_MW.items()],
+            "utilities": {}}
+
+
+def r7b_sparse_rxn_doc():
+    """r7b_rxn_doc whose product states only its temperature and pressure:
+    no stream datum confirms or contradicts the non-conserving reaction
+    'Glucose -> 5 Ethanol', so the reaction earns NONCONSERVING_CREDIT
+    (R7.4). (The reaction contradicts the document's own molar masses, so
+    the deletion guarantee does not bind here; the sweeps pin that no
+    deletion raises anything all the same.)"""
+    doc = r7b_rxn_doc()
+    doc["streams"][1]["stream_properties"] = {"temperature": 305.15,
+                                              "pressure": 101325.0}
+    return doc
+
+
+def r7b_mass_rxn_doc():
+    """r7b_rxn_doc on the mass basis only (_r7_full: kg/h, mass
+    fractions): feed 1000 Water + 100 Glucose -> R1 -> product 1000 Water
+    + 10 Glucose + 450 Ethanol, the mass changes (Glucose -90, Ethanol
+    +450) proportional to 'Glucose -> 5 Ethanol' read on a wt basis."""
+    doc = r7b_rxn_doc()
+    doc["streams"] = [
+        _r7_full("feed", "None", "R1", 305.15,
+                 {"Water": 1000.0, "Glucose": 100.0}),
+        _r7_full("product", "R1", "None", 305.15,
+                 {"Water": 1000.0, "Glucose": 10.0, "Ethanol": 450.0})]
+    doc["quantity_units_global"]["mass_flow"] = {
+        "aliases": ["total_mass_flow"], "quantity_units": "kg/hr"}
+    return doc
+
+
+def r7b_split_product_doc(kind="identical"):
+    """A reactor product of two non-empty phases stating compositions
+    but no flows of their own beside a stream-level mass total, so its
+    phase split -- and so its species flows -- are unknown. 'identical'
+    (probe p_resid2): r7b_mass_rxn_doc with the
+    product's liquid copied into a gas phase of the same composition.
+    'co2' (p_resid3): feed 1000 kg/h Water + 10 kmol/h Glucose -> R1
+    carrying the conserving GLUCOSE_EQ -> product 1000 kg/h Water + 20
+    kmol/h Ethanol as the liquid l beside 20 kmol/h CO2 as the gas g, the
+    product's total mass flow counting both (its balance closes)."""
+    doc = r7b_mass_rxn_doc()
+    if kind == "co2":
+        doc["units"][0]["reactions"][0]["equation"] = GLUCOSE_EQ
+        doc["streams"] = [
+            _r7_full("feed", "None", "R1", 305.15,
+                     {"Water": 1000.0, "Glucose": 10 * R5_MW["Glucose"]}),
+            _r7_full("product", "R1", "None", 305.15,
+                     {"Water": 1000.0, "Ethanol": 20 * R5_MW["Ethanol"]})]
+    sp = doc["streams"][1]["stream_properties"]
+    del sp["phases"]["l"]["total_mass_flow"]
+    if kind == "co2":
+        sp["total_mass_flow"] += 20 * R5_MW["CO2"]
+        sp["phases"]["g"] = {"composition": [
+            {"component_name": "CO2", "mass_fraction": 1.0}]}
+    else:
+        sp["phases"]["g"] = copy.deepcopy(sp["phases"]["l"])
+    doc["streams"][0]["price"], doc["streams"][1]["price"] = 0.02, 0.7
+    return doc
+
+
+def r7b_conserving_off_doc(k=1.019):
+    """Probe p_exempt: feed 10 kmol/h Glucose -> R1
+    carrying the conserving GLUCOSE_EQ -> product 20 k kmol/h each of
+    Ethanol and CO2, both bases stated (R5_MW). With k = 1.019 the species
+    changes still confirm the reaction (within RXN_CONFIRM_RTOL = 2 %)
+    while the mass balance misses by 1.9 % (1801.56 in, 1835.79 out) --
+    not internally consistent, since the reaction creates no mass; with
+    k = 1 it closes."""
+    doc = r7b_rxn_doc(GLUCOSE_EQ)
+    doc["streams"] = [
+        _r7b_molar("feed", "None", "R1", {"Glucose": 10.0}),
+        _r7b_molar("product", "R1", "None",
+                   {"Ethanol": 20.0 * k, "CO2": 20.0 * k})]
+    for stream_ in doc["streams"]:
+        sp = stream_["stream_properties"]
+        phase = sp["phases"]["l"]
+        mass = {e["component_name"]: e["mol_fraction"]
+                * phase["total_molar_flow"] * R5_MW[e["component_name"]]
+                for e in phase["composition"]}
+        sp["total_mass_flow"] = phase["total_mass_flow"] = sum(mass.values())
+        for e in phase["composition"]:
+            e["mass_fraction"] = mass[e["component_name"]] / sum(mass.values())
+    doc["streams"][0]["price"], doc["streams"][1]["price"] = 0.02, 0.7
+    doc["quantity_units_global"]["mass_flow"] = {
+        "aliases": ["total_mass_flow"], "quantity_units": "kg/hr"}
+    return doc
+
+
+def r7b_lowconv_doc():
+    """Probe p_mm2: r7_sparse_doc with the fermenter
+    R1's reaction 'Glucose -> 2 Ethanol + 3 CO2' (24 % off) at conversion
+    0.2 and every stream consistent with it: 8 kmol/h of glucose
+    converted, 1056 kg/h CO2 vented, R1 36000 kg/h in and 36352 out (0.98
+    %: its total balance closes), the overall balance closing and the
+    flowsheet-level evidence present (_flowsheet_explained). Deleting a
+    participant's molar mass used to raise CMP-RXN-02 (0.8333 -> 1) and
+    the overall score with it."""
+    doc = r7_sparse_doc()
+    reaction_ = doc["units"][2]["reactions"][0]
+    reaction_["equation"] = "Glucose -> 2 Ethanol + 3 CO2"
+    reaction_["conversion"] = 0.2
+    doc["streams"] = [
+        _r7_full("feed", "None", "T1", 298.15,
+                 {"Water": 28800.0, "Glucose": 7200.0}),
+        _r7_bare("s1", "T1", "H1", 36000.0, 298.15),
+        _r7_bare("s2", "H1", "R1", 36000.0, 305.15),
+        _r7_bare("s3", "R1", "T2", 35296.0, 305.15),
+        _r7_full("vent", "R1", "None", 305.15, {"CO2": 1056.0}),
+        _r7_bare("s4", "T2", "D1", 35296.0, 305.15),
+        _r7_bare("s5", "D1", "D2", 1237.0, 365.0),
+        _r7_full("stillage", "D1", "None", 373.0,
+                 {"Water": 28300.0, "Glucose": 5759.0}),
+        _r7_bare("s6", "D2", "S1", 837.0, 351.5),
+        _r7_full("phlegm", "D2", "None", 373.0, {"Water": 400.0}),
+        _r7_full("ethanol", "S1", "None", 351.5,
+                 {"Ethanol": 697.0, "Water": 10.0}),
+        _r7_full("recyc", "S1", "None", 351.5,
+                 {"Ethanol": 40.0, "Water": 90.0})]
+    for stream_ in doc["streams"]:
+        stream_["price"] = {"feed": 0.02, "ethanol": 0.7}.get(stream_["id"],
+                                                               0.0)
+    return doc
+
+
+def r7b_dangling_doc(equation=GLUCOSE_EQ, co2=18.0, vent_source=False):
+    """Probe p_dangle2, on the mass basis (_r7_full, kg/h,
+    R5_MW): feed 1000 Water + 10 kmol/h Glucose -> 'Fermenter' R1 carrying
+    ONE reaction `equation` (conversion 0.9) -> product 1000 Water + 1
+    kmol/h Glucose + 18 kmol/h Ethanol, and a gas vent of `co2` kmol/h
+    CO2. By default the vent's source_unit_id is not stated (R5.8: a
+    dangling stream, which may be R1's missing outlet), so R1's stated
+    balance fails (2801.56 in, 2009.39 out) although the document is
+    consistent: with the conserving GLUCOSE_EQ and 18 kmol/h CO2 its
+    complete form (`vent_source`) closes. 'Glucose -> 2 Ethanol + 3 CO2'
+    with 27 kmol/h CO2 is the faithful export of a non-conserving
+    reaction (R7.4)."""
+    doc = r7b_mass_rxn_doc()
+    doc["units"][0]["reactions"][0]["equation"] = equation
+    vent = _r7_full("vent", "R1", "None", 305.15, {"CO2": co2 * R5_MW["CO2"]})
+    sp = vent["stream_properties"]
+    sp["phases"] = {"g": sp["phases"]["l"]}
+    if not vent_source:
+        del vent["source_unit_id"]
+    doc["streams"] = [
+        _r7_full("feed", "None", "R1", 305.15,
+                 {"Water": 1000.0, "Glucose": 10 * R5_MW["Glucose"]}),
+        _r7_full("product", "R1", "None", 305.15,
+                 {"Water": 1000.0, "Glucose": R5_MW["Glucose"],
+                  "Ethanol": 18 * R5_MW["Ethanol"]}),
+        vent]
+    for stream_ in doc["streams"]:
+        stream_["price"] = {"feed": 0.02, "product": 0.7}.get(stream_["id"],
+                                                               0.0)
+    return doc
+
+
+def r7b_untestable_doc(kind="sparse", participant="Yeast", declared=True):
+    """R1's reaction written as stoichiometry only, {Glucose: -1, Ethanol:
+    2, CO2: 2, `participant`: 0.001}: conserving but for the participant,
+    which is declared without a molar mass or formula (`declared`; else
+    not declared at all), so the closure cannot be tested (conserves None)
+    and nothing contradicts anything -- no reaction testably fails to
+    conserve mass. `kind` 'sparse': r7b_sparse_rxn_doc (the product
+    states T and P only); 'molar': r7b_rxn_doc with 18 kmol/h ethanol and
+    a molar CO2 vent of 18 kmol/h; 'mass': the complete
+    r7b_dangling_doc(vent_source=True), whose mass balance closes. The
+    streams never confirm the reaction (the participant is in no
+    stream)."""
+    if kind == "sparse":
+        doc = r7b_sparse_rxn_doc()
+    elif kind == "molar":
+        doc = r7b_rxn_doc(ethanol=18.0)
+        doc["streams"].append(_r7b_molar("vent", "R1", "None", {"CO2": 18.0}))
+    else:
+        doc = r7b_dangling_doc(vent_source=True)
+    reaction_ = doc["units"][0]["reactions"][0]
+    del reaction_["equation"]
+    reaction_["stoichiometry"] = {"Glucose": -1.0, "Ethanol": 2.0,
+                                  "CO2": 2.0, participant: 0.001}
+    if declared:
+        doc["chemicals"].append({"id": participant})
+    return doc
+
+
+# R7.5 keyword families, head-noun conflicts included.
+R7B_KEYWORDS = {
+    "Ultrafiltration": "splitter", "Nanofiltration unit": "splitter",
+    "Microfiltration": "splitter", "Micro filtration": "splitter",
+    "Pervaporation": "splitter", "Pervaporation membrane": "splitter",
+    "Membrane": "splitter", "Membrane separation": "splitter",
+    "Membrane bioreactor": "reactor", "Membrane reactor": "reactor",
+    "PSA": "splitter", "PSA unit": "splitter", "H2 PSA": "splitter",
+    "Pressure swing adsorption": "splitter", "Capsaicin tank": "tank",
+    "Pressure swing adsorption column": "splitter",
+    "Pressure swing adsorption bed": "splitter", "PSA column": "splitter",
+    "PSA bed": "splitter", "Adsorption column": "splitter",
+    "Reformer": "reactor", "Steam methane reformer": "reactor",
+    "SteamReformer": "reactor", "Reformer feed heater": "hx_utility",
+    "Autoclave": "reactor", "Autoclave tank": "reactor",
+    "Heat recovery steam generator": "boiler", "HRSG": "boiler",
+    "HeatRecoverySteamGenerator": "boiler", "HRSG unit": "boiler",
+    "HRSG feed pump": "pump", "Pelletizer": "solids_handling",
+    "Pelletiser": "solids_handling", "Pelletizer feed hopper": "tank",
+    "Ultrafiltration permeate tank": "tank"}
+# R7.5 labels whose family hosts no chemistry: conversion across them makes
+# the claim implausible (the family unknown).
+R7B_NON_HOSTING = ("Ultrafiltration", "Nanofiltration", "Pervaporation",
+                   "Membrane", "PSA", "Pressure swing adsorption",
+                   "Pelletizer", "HRSG", "Heat recovery steam generator")
+
+
+class TestRevision7b(unittest.TestCase):
+    """Revision 7, part B: a single-phase stream's volume flow is its phase
+    amount in CMP-FEED-01 / CMP-UOP-04 (R7.3); a reaction that does not
+    conserve mass as written is declared, its definition discounted
+    unless its unit's streams confirm it (R7.4); new equipment keywords
+    (R7.5)."""
+
+    # ---- R7.3 volumetric-only phase amount -------------------------------
+
+    def test_volumetric_amount(self):
+        """_volumetric_amount: the valid volume flow at a valid T and P;
+        None when either is missing or invalid (INVALID == MISSING), or
+        the volume flow is missing or negative; a zero volume flow is 0."""
+        sp = {"temperature": 300.0, "pressure": 101325.0,
+              "total_volumetric_flow": 2.0}
+        self.assertEqual(C._volumetric_amount(sp), 2.0)
+        self.assertEqual(C._volumetric_amount(
+            dict(sp, total_volumetric_flow=0.0)), 0.0)
+        for bad in ({"temperature": -5.0}, {"pressure": 0.0},
+                    {"total_volumetric_flow": -1.0},
+                    {"total_volumetric_flow": "2"}):
+            self.assertIsNone(C._volumetric_amount(dict(sp, **bad)), bad)
+        for key in sp:
+            cut = {k: v for k, v in sp.items() if k != key}
+            self.assertIsNone(C._volumetric_amount(cut), key)
+        self.assertIsNone(C._volumetric_amount(None))
+
+    def test_phases_ok_volumetric(self):
+        """_phases_ok(volumetric=True): the only phase of a single-phase
+        stream, stating no mass or molar flow, rests on the stream's volume
+        flow as its amount -- only with the flag, and beside a stated-empty
+        phase too (_sole_phase), but not beside a second phase that may
+        carry material (R7.3: "for a single-phase stream"; the phase split
+        is not stated, so the stream's amount fixes no phase's amount); a
+        zero volume flow populates nothing; a stated
+        zero total wins over a volume flow; an invalid temperature voids
+        the volume."""
+        phases = {"l": {"composition": [{"component_name": "Water",
+                                         "mass_fraction": 1.0}]}}
+        sp = {"temperature": 300.0, "pressure": 101325.0,
+              "total_volumetric_flow": 2.0, "phases": phases}
+        self.assertFalse(C._phases_ok(phases, sp))
+        self.assertTrue(C._phases_ok(phases, sp, volumetric=True))
+        two = dict(phases, g=copy.deepcopy(phases["l"]))
+        self.assertFalse(C._phases_ok(two, dict(sp, phases=two),
+                                      volumetric=True))
+        self.assertFalse(C._phases_ok(two, dict(sp, phases=two)))
+        padded = dict(phases, g={"total_molar_flow": 0.0, "composition": []})
+        self.assertTrue(C._phases_ok(padded, dict(sp, phases=padded),
+                                     volumetric=True))
+        bare = dict(phases, g={})
+        self.assertFalse(C._phases_ok(bare, dict(sp, phases=bare),
+                                      volumetric=True))
+        self.assertFalse(C._phases_ok(
+            phases, dict(sp, total_volumetric_flow=0.0), volumetric=True))
+        self.assertFalse(C._phases_ok(
+            phases, dict(sp, total_mass_flow=0.0), volumetric=True))
+        self.assertFalse(C._phases_ok(phases, dict(sp, temperature=-1.0),
+                                      volumetric=True))
+        state = C._stream_state({"stream_properties": sp})
+        self.assertFalse(state["composition"])
+        state = C._stream_state({"stream_properties": sp}, volumetric=True)
+        self.assertEqual(state, {"T": True, "P": True, "flow": False,
+                                 "composition": True})
+
+    def test_volumetric_feed(self):
+        """The reviewer's B3 case: the volume-flow-only feed scores
+        (T 1 + P 1 + flow 0.75 + composition 1) / 4 = 0.9375 in
+        CMP-FEED-01 (0.6875 before R7.3: its stated composition was
+        discarded), its phases count as stated (_feed_phases_stated), and
+        only its flow is listed (as derivable). The volume flow is read
+        in its declared unit (L/min scores the same); a negative one
+        (INVALID == MISSING) earns neither the flow tier nor the
+        composition: 0.5."""
+        doc = r7b_volumetric_doc()
+        sc = ctx(doc)
+        self.assertTrue(C._feed_phases_stated(sc.streams[0]))
+        score, complete, missing = C._feed_01_entry(sc, 0)
+        self.assertEqual(score, (3 + C.DERIVED_CREDIT) / 4)
+        self.assertFalse(complete)
+        self.assertEqual(missing, [
+            "streams[feed].stream_properties.total_mass_flow|"
+            "total_molar_flow" + C._VOLUMETRIC_NOTE])
+        litres = copy.deepcopy(doc)
+        litres["quantity_units_global"]["volumetric_flow"][
+            "quantity_units"] = "L/min"
+        litres["streams"][0]["stream_properties"][
+            "total_volumetric_flow"] *= 1000.0 / 60.0
+        self.assertEqual(C._feed_01_entry(ctx(litres), 0)[0], score)
+        bad = copy.deepcopy(doc)
+        bad["streams"][0]["stream_properties"]["total_volumetric_flow"] = -1.0
+        self.assertEqual(C._feed_01_entry(ctx(bad), 0)[0], 0.5)
+
+    def test_volumetric_outlet(self):
+        """R7.3 in CMP-UOP-04: the fermenter R1's vent (a reactor outlet,
+        so no consistency guard) states only a volume flow -- its
+        composition counts, its flow part is derived; without the vent's
+        temperature the composition is listed missing again and the
+        criterion falls."""
+        doc = r7b_volumetric_doc()
+        score, _message, missing = run(C._score_uop_04, doc)
+        vent = [m for m in missing if m.startswith("streams[vent]")]
+        self.assertEqual(vent, [
+            "streams[vent].stream_properties.total_mass_flow|"
+            "total_molar_flow" + C._VOLUMETRIC_NOTE])
+        cut = deleted(doc, ("streams", 4, "stream_properties",
+                            "temperature"))
+        cut_score, _message, cut_missing = run(C._score_uop_04, cut)
+        self.assertIn("streams[vent].stream_properties.phases[*]."
+                      "composition", cut_missing)
+        self.assertLess(cut_score, score)
+
+    def test_sole_phase(self):
+        """_empty_phase / _sole_phase: a phase stating a valid zero flow of
+        its own (molar or mass) is empty, so the phase beside it is the
+        only one that may carry material and takes the stream-level R5.3
+        total as its own amount in _species_flows (this stream was not
+        single-phase before R7.3's review); a non-empty, unknown or invalid
+        other phase keeps it from doing so -- in _phases_ok too, for the
+        R5.3 total and the R7.3 volume flow alike. An empty
+        phase stating only a molar zero is empty on the mass basis too
+        (_species_flows)."""
+        liquid = {"composition": [{"component_name": "Water",
+                                   "mol_fraction": 1.0,
+                                   "mass_fraction": 1.0}]}
+        empty = {"total_molar_flow": 0.0, "composition": []}
+        phases = {"l": liquid, "g": empty}
+        self.assertTrue(C._empty_phase(empty))
+        self.assertTrue(C._empty_phase({"total_mass_flow": 0.0}))
+        self.assertFalse(C._empty_phase(liquid))
+        self.assertFalse(C._empty_phase({"total_molar_flow": -1.0}))
+        self.assertTrue(C._sole_phase(phases, "l"))
+        self.assertFalse(C._sole_phase(phases, "g"))
+        self.assertTrue(C._sole_phase({"l": liquid}, "l"))
+        for other in ({"total_molar_flow": 5.0}, {}, {"total_molar_flow": -1.0}):
+            self.assertFalse(C._sole_phase({"l": liquid, "g": other}, "l"))
+        sp = {"temperature": 300.0, "pressure": 101325.0,
+              "total_mass_flow": 18.0, "phases": phases}
+        self.assertTrue(C._phases_ok(phases, sp))
+        self.assertEqual(C._species_flows({"stream_properties": sp}, "mass"),
+                         {"Water": 18.0})
+        vol = {"temperature": 300.0, "pressure": 101325.0,
+               "total_volumetric_flow": 0.018, "phases": phases}
+        self.assertTrue(C._phases_ok(phases, vol, volumetric=True))
+        self.assertEqual(C._volumetric_flow_credit({"stream_properties": vol}),
+                         C.DERIVED_CREDIT)
+        doc, padded = r7b_volumetric_doc(), r7b_volumetric_doc(empty_phase=True)
+        self.assertEqual(C._feed_01_entry(ctx(padded), 0),
+                         C._feed_01_entry(ctx(doc), 0))
+
+    def test_two_phase_amount(self):
+        """Of a stream of two non-empty
+        phases stating compositions but no flows of their own
+        (r7b_two_phase_doc), neither phase rests on the stream's amount --
+        its volume flow (R7.3) or its stream-level mass total (R5.3) is
+        the phase amount of a single-phase stream only, the phase split
+        being unknown -- so the feed's composition is not stated:
+        CMP-FEED-01 entry 0.6875 on the volume flow (flow part 0.75), 0.75
+        on the mass total (resting every phase on the stream's amount
+        would credit 0.9375 / 1). Deleting either whole phase
+        makes the other the only one and raises the entry to 0.9375 / 1:
+        deleting a whole phase that is not stated empty (whole_phase)
+        asserts a different set of phases and is outside the deletion
+        guarantee, like deleting a list element. A stated-empty third
+        phase changes nothing, beside two phases or one, and deleting it
+        neither (a stated-empty phase needs no composition for the R6.7
+        flow tier either); a bare one (no flow, no composition) beside a
+        single phase voids its composition -- and, volume-only, the
+        density the flow tier needs: 0.5."""
+        for basis, before, after in (
+                ("volume", (2 + C.DERIVED_CREDIT) / 4,
+                 (3 + C.DERIVED_CREDIT) / 4),
+                ("mass", 0.75, 1.0)):
+            doc = r7b_two_phase_doc(basis)
+            self.assertEqual(C._feed_01_entry(ctx(doc), 0)[0], before, basis)
+            phases = ("streams", 0, "stream_properties", "phases")
+            for symbol in ("l", "g"):
+                path = phases + (symbol,)
+                self.assertTrue(whole_phase(doc, path))
+                self.assertEqual(C._feed_01_entry(ctx(deleted(doc, path)),
+                                                  0)[0], after,
+                                 (basis, symbol))
+            padded = copy.deepcopy(doc)
+            padded["streams"][0]["stream_properties"]["phases"]["s"] = {
+                "total_mass_flow": 0.0, "composition": []}
+            empty = phases + ("s",)
+            self.assertFalse(whole_phase(padded, empty))
+            one = deleted(padded, phases + ("g",))
+            for case, expected in ((padded, before),
+                                   (deleted(padded, empty), before),
+                                   (one, after), (deleted(one, empty), after)):
+                self.assertEqual(C._feed_01_entry(ctx(case), 0)[0], expected,
+                                 basis)
+            bare = deleted(doc, phases + ("g",))
+            bare["streams"][0]["stream_properties"]["phases"]["s"] = {}
+            self.assertEqual(C._feed_01_entry(ctx(bare), 0)[0],
+                             {"volume": 0.5, "mass": before}[basis], basis)
+
+    def test_volumetric_sweeps(self):
+        """Strict deletion sweeps over r7b_volumetric_doc with and without
+        the mass totals beside the volume flows, and with an empty gas
+        phase beside the liquid, and over both r7b_two_phase_doc (two
+        non-empty phases, no phase split): no deletion raises the overall
+        score or any criterion (deleting a mass total leaves the volume
+        flow as the phase amount -- composition kept, flow part 1 ->
+        0.75; deleting the empty phase changes nothing), nor turns a
+        scored one not-applicable -- deleting a whole phase that is not
+        stated empty excepted (whole_phase: test_two_phase_amount)."""
+        docs = [((keep_mass, empty_phase),
+                 r7b_volumetric_doc(keep_mass, empty_phase))
+                for keep_mass in (False, True)
+                for empty_phase in (False, True)]
+        docs += [(basis, r7b_two_phase_doc(basis))
+                 for basis in ("volume", "mass")]
+        for label, doc in docs:
+            with name_lookup(set()):
+                raised, lowered, n = deletion_violations(
+                    doc, skip=frozenset(), exclude=whole_phase)
+            self.assertGreater(n, 200)
+            self.assertEqual(raised, [], label)
+            self.assertGreater(lowered, n // 2)
+
+    def test_phase_set_unknown_phase(self):
+        """_phase_set: a phase stating neither a valid flow of
+        its own nor a composition, or a legacy flat entry without a valid
+        fraction, makes the set unknown (None) rather than dropping the
+        phase from it -- every caller reads the set as affirmative
+        evidence (R2.13). On r7b_split_product_doc('co2') deleting the gas
+        phase's composition used to leave the product single-phase and
+        raise CMP-RXN-04's phase part (0.375 -> 0.75); now it voids the
+        product's phase set and changes nothing. A stated-empty phase
+        still drops out; one stating a composition but no flow counts."""
+        liquid = {"total_molar_flow": 5.0, "composition": [
+            {"component_name": "Water", "mol_fraction": 1.0}]}
+        sp = {"temperature": 300.0, "pressure": 101325.0,
+              "total_molar_flow": 5.0}
+
+        def phase_set(phases):
+            return C._phase_set({"stream_properties": dict(sp, phases=phases)})
+
+        self.assertEqual(phase_set({"l": liquid}), frozenset({"l"}))
+        self.assertEqual(phase_set({"l": liquid, "g": {
+            "total_molar_flow": 0.0, "composition": []}}), frozenset({"l"}))
+        self.assertEqual(phase_set({"l": liquid, "g": {"composition": [
+            {"component_name": "CO2", "mol_fraction": 1.0}]}}),
+            frozenset({"l", "g"}))
+        for unknown in ({}, {"composition": []}, {"total_molar_flow": -1.0},
+                        None):
+            self.assertIsNone(phase_set({"l": liquid, "g": unknown}),
+                              unknown)
+        legacy = legacy_doc()["streams"][0]
+        entry = legacy["stream_properties"]["composition"][0]
+        entry.pop("mol_fraction", None)
+        entry.pop("mass_fraction", None)
+        self.assertIsNone(C._phase_set(legacy))
+        doc = r7b_split_product_doc("co2")
+        cut = deleted(doc, ("streams", 1, "stream_properties", "phases", "g",
+                            "composition"))
+        self.assertIsNone(C._phase_set(ctx(cut).streams[1]))
+        self.assertEqual(run(C._score_rxn_04, doc)[0], C.DERIVED_CREDIT / 2)
+        self.assertEqual(run(C._score_rxn_04, cut)[0], C.DERIVED_CREDIT / 2)
+
+    def test_split_product_phases(self):
+        """r7b_split_product_doc's product
+        states two non-empty phases without a phase split, so its species
+        flows are not computable -- nothing confirms R1's reaction,
+        CMP-RXN-04 derives no reacting phase (a port of two phases), and
+        its composition is not stated. Deleting the gas phase makes the
+        liquid the only phase: its species flows follow from the stream
+        total (R5.3), the phase becomes derivable and the composition
+        stated (CMP-UOP-04 0.75 -> 1), and in 'identical' the
+        non-conserving reaction becomes confirmed (CMP-RXN-02 0.8333 -> 1,
+        CMP-RXN-04 0 -> 0.375; 'co2': CMP-RXN-04 0.375 -> 0.75), so the
+        overall score rises (0.5068 -> 0.5160; 'co2' 0.5385 -> 0.5516,
+        with no chemical name resolvable). Deleting a whole phase that is
+        not stated empty (whole_phase) is outside the deletion guarantee:
+        the phases listed are the phases present, so it asserts a
+        different set of phases. The strict sweep over every other deletion
+        raises nothing."""
+        cases = {"identical": ((0.506840, 0.515977), {
+                     "CMP-UOP-04": (0.75, 1.0),
+                     "CMP-RXN-02": ((C.NONCONSERVING_CREDIT + 2) / 3, 1.0),
+                     "CMP-RXN-04": (0.0, C.DERIVED_CREDIT / 2)}),
+                 "co2": ((0.538456, 0.551613), {
+                     "CMP-UOP-04": (0.75, 1.0),
+                     "CMP-RXN-04": (C.DERIVED_CREDIT / 2, C.DERIVED_CREDIT)})}
+        path = ("streams", 1, "stream_properties", "phases", "g")
+        for kind, (scores, raised_criteria) in cases.items():
+            doc = r7b_split_product_doc(kind)
+            self.assertTrue(whole_phase(doc, path))
+            cut = deleted(doc, path)
+            with name_lookup(set()):
+                self.assertAlmostEqual(overall(doc), scores[0], places=6)
+                self.assertAlmostEqual(overall(cut), scores[1], places=6)
+                before = criterion_results(doc)
+                after = criterion_results(cut)
+            raised = {cid: (before[cid].score, after[cid].score)
+                      for cid in before if before[cid].score is not None
+                      and after[cid].score > before[cid].score + 1e-12}
+            self.assertEqual(set(raised), set(raised_criteria), kind)
+            for cid, (was, now) in raised_criteria.items():
+                self.assertAlmostEqual(raised[cid][0], was, msg=cid)
+                self.assertAlmostEqual(raised[cid][1], now, msg=cid)
+            with name_lookup(set()):
+                violations, _lowered, n = deletion_violations(
+                    doc, skip=frozenset(), exclude=whole_phase)
+            self.assertGreater(n, 60)
+            self.assertEqual(violations, [], kind)
+
+    # ---- R7.4 non-conserving reactions -----------------------------------
+
+    def test_proportional_change(self):
+        """_proportional_change: species changes equal to one positive
+        extent times the coefficients (within RXN_CONFIRM_RTOL = 2 %) ->
+        True; 1.5 % off -> True, 3 % off -> False; a reverse (negative)
+        extent, a non-participant changing beyond 2 %, or no coefficient
+        -> False."""
+        coeffs = {"Glucose": -1.0, "Ethanol": 5.0}
+        self.assertEqual(C.RXN_CONFIRM_RTOL, 0.02)
+        self.assertTrue(C._proportional_change(
+            {"Glucose": -9.0, "Ethanol": 45.0, "Water": 0.0}, coeffs))
+        self.assertTrue(C._proportional_change(
+            {"Glucose": -9.0, "Ethanol": 45.0 * 1.015}, coeffs))
+        self.assertFalse(C._proportional_change(
+            {"Glucose": -9.0, "Ethanol": 45.0 * 1.03}, coeffs))
+        self.assertFalse(C._proportional_change(
+            {"Glucose": 9.0, "Ethanol": -45.0}, coeffs))
+        self.assertFalse(C._proportional_change(
+            {"Glucose": -9.0, "Ethanol": 45.0, "CO2": 2.0}, coeffs))
+        self.assertTrue(C._proportional_change(
+            {"Glucose": -9.0, "Ethanol": 45.0, "CO2": 0.5}, coeffs))
+        self.assertFalse(C._proportional_change({"Glucose": -9.0}, {}))
+
+    def test_reaction_confirmed(self):
+        """_reaction_confirmed: r7b_rxn_doc's streams confirm 'Glucose ->
+        5 Ethanol' on the molar basis, r7b_mass_rxn_doc's on the mass
+        basis (a wt-basis reaction); not with 18 kmol/h ethanol (changes
+        proportional to 'Glucose -> 2 Ethanol'), without the product's
+        phases (species flows not computable), with the product's sink
+        not stated (a dangling stream may be a missing port), with a
+        second reaction on the unit, or for a unit without an id."""
+        for doc in (r7b_rxn_doc(), r7b_mass_rxn_doc()):
+            sc = ctx(doc)
+            self.assertTrue(C._reaction_confirmed(
+                sc, 0, sc.units[0]["reactions"][0]))
+        cases = {"ethanol 18": r7b_rxn_doc(ethanol=18.0),
+                 "no phases": deleted(r7b_rxn_doc(), (
+                     "streams", 1, "stream_properties", "phases")),
+                 "dangling": deleted(r7b_rxn_doc(),
+                                     ("streams", 1, "sink_unit_id")),
+                 "unit id": deleted(r7b_rxn_doc(), ("units", 0, "id"))}
+        two = r7b_rxn_doc()
+        two["units"][0]["reactions"].append(
+            {"index": 1, "equation": "Ethanol -> Ethanol",
+             "reactant": "Ethanol", "conversion": 0.0})
+        cases["two reactions"] = two
+        for name, doc in cases.items():
+            sc = ctx(doc)
+            self.assertFalse(C._reaction_confirmed(
+                sc, 0, sc.units[0]["reactions"][0]), name)
+
+    def test_formed_credit_and_rxn_02(self):
+        """R7.4 in CMP-RXN-02: the confirmed non-conserving reaction
+        scores 1 (message: 1 does not conserve mass, 1 confirmed); the
+        unconfirmed one (0.5 + 1 + 1) / 3 with the _NONCONSERVING_REACTION
+        note -- as is 'Glucose -> 5 Ethanol' with no confirming stream data
+        (no product phases): 0.5, not 1, for its equation part; a
+        conserving reaction earns 1 unconfirmed; _formed_credit without a
+        unit position never confirms; reactant and conversion parts are
+        unaffected (a missing conversion costs its third either way). A
+        reaction whose closure cannot be tested ('Glucose -> Q', Q
+        undeclared) earns NONCONSERVING_CREDIT too unless confirmed (R2.13:
+        credit is waived only on affirmative evidence, and an unverifiable
+        closure counts as a missing one), an identity ('Ethanol ->
+        Ethanol') 1."""
+        score, message, missing = run(C._score_rxn_02, r7b_rxn_doc())
+        self.assertEqual((score, missing), (1.0, []))
+        self.assertIn("1 reaction(s) do not conserve mass as written "
+                      "(1 confirmed", message)
+        half = (C.NONCONSERVING_CREDIT + 2) / 3
+        for doc in (r7b_rxn_doc(ethanol=18.0),
+                    deleted(r7b_rxn_doc(), ("streams", 1,
+                                            "stream_properties", "phases"))):
+            score, message, missing = run(C._score_rxn_02, doc)
+            self.assertAlmostEqual(score, half)
+            self.assertEqual(missing, ["units[R1].reactions[0]"
+                                       + C._NONCONSERVING_REACTION])
+            self.assertIn("(0 confirmed", message)
+        self.assertIn("does not conserve mass as written",
+                      C._NONCONSERVING_REACTION)
+        sc = ctx(r7b_rxn_doc())
+        reaction_ = sc.units[0]["reactions"][0]
+        self.assertEqual(C._formed_credit(sc, 0, reaction_), 1.0)
+        self.assertEqual(C._formed_credit(sc, None, reaction_),
+                         C.NONCONSERVING_CREDIT)
+        self.assertEqual(C._formed_credit(sc, None, {"equation": GLUCOSE_EQ}),
+                         1.0)
+        untested = {"equation": "Glucose -> Q"}
+        self.assertIsNone(sc.conserves(untested))
+        self.assertEqual(C._formed_credit(sc, None, untested),
+                         C.NONCONSERVING_CREDIT)
+        self.assertEqual(C._formed_credit(
+            sc, None, {"equation": "Ethanol -> Ethanol"}), 1.0)
+        score, missing = C._reaction_completeness(
+            sc, dict(untested, reactant="Glucose", conversion=0.5), "u")
+        self.assertAlmostEqual(score, (C.NONCONSERVING_CREDIT + 2) / 3)
+        self.assertEqual(missing, ["u" + C._UNTESTED_REACTION])
+        self.assertIn("not testable", C._UNTESTED_REACTION)
+        score, _message, missing = run(C._score_rxn_02, deleted(
+            r7b_rxn_doc(), ("units", 0, "reactions", 0, "conversion")))
+        self.assertAlmostEqual(score, 2 / 3)
+        self.assertEqual(missing, ["units[R1].reactions[0].conversion (0..1)"])
+        sc = ctx(r7b_rxn_doc(ethanol=18.0))
+        score, missing = C._reaction_completeness(
+            sc, sc.units[0]["reactions"][0], "r", 0)
+        self.assertAlmostEqual(score, half)
+        self.assertEqual(missing, ["r" + C._NONCONSERVING_REACTION])
+
+    def test_nonconserving_reaction_is_declared(self):
+        """R7.4 beyond CMP-RXN-02: a reaction that does not conserve mass
+        is a declared one wherever it was discarded as malformed under
+        R6.2 -- the unit carries reactions (CMP-RXN-01 1, CMP-RXN-03 1),
+        CMP-RXN-04 scores its derivable phase but never its basis
+        (DERIVED_CREDIT / 2), a physical-only unit declaring one leaves
+        the species guard, and its species count as explained at the
+        flowsheet level (r7_sweep_doc with R1's reaction 'Glucose -> 2
+        Ethanol + 3 CO2', 24 % off: no pseudo-member, as with the
+        conserving reaction; the flowsheet-level evidence would be absent
+        had it been discarded)."""
+        doc = r7b_rxn_doc(ethanol=18.0)
+        self.assertEqual(ctx(doc).unit_reacts, [True])
+        for scorer, expected in ((C._score_rxn_01, 1.0),
+                                 (C._score_rxn_03, 1.0),
+                                 (C._score_rxn_04, C.DERIVED_CREDIT / 2)):
+            self.assertAlmostEqual(run(scorer, doc)[0], expected)
+        splitter = copy.deepcopy(doc)
+        splitter["units"][0]["unit_type"] = "Splitter"
+        sc = ctx(splitter)
+        self.assertEqual(sc.unit_classes[0][1], "splitter")
+        self.assertFalse(C._species_guarded(sc, 0))
+        sweep = r7_sweep_doc()
+        sweep["units"][3]["reactions"][0]["equation"] = (
+            "Glucose -> 2 Ethanol + 3 CO2")
+        sc = ctx(sweep)
+        self.assertFalse(sc.conserves(sc.units[3]["reactions"][0]))
+        self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+        self.assertEqual(C._unexplained_hosts(sc), [])
+        self.assertEqual(C._unexplained_hosts(ctx(r7_sweep_doc())), [])
+
+    def test_mass_guard_spares_mass_changing_chemistry(self):
+        """R4.10 guard and R7.4: a unit declaring a
+        well-formed reaction that is not testably mass-conserving
+        (_may_change_mass: R6.2 fails, or cannot be tested) is exempt --
+        such a reaction may create or destroy mass, so its failing balance
+        may be faithful. r7b_mass_rxn_doc's unit (1100 in, 1460 out,
+        'Glucose -> 5 Ethanol') keeps its product's flow (CMP-UOP-04 1),
+        and so does it with the product's ethanol at 300 kg/h, which its
+        streams no longer confirm: the exemption reads the declared
+        chemistry, never the stream data the balance is checked on (an
+        exemption resting on a confirmation left a consistent unit whose
+        reaction its streams could not confirm guarded, and deleting a
+        feed's mass flow or endpoint lifted the guard:
+        test_nonconserving_sweeps). A unit whose reactions all conserve
+        mass stays guarded: r7b_conserving_off_doc(1.019) confirms the
+        conserving GLUCOSE_EQ within 2 % while its balance misses by 1.9 %
+        (an exemption for any confirmed reaction would spare it) -- 0.75 --
+        and with k = 1 the
+        balance closes: 1. Deleting a participant's molar mass leaves the
+        reaction untestable, so it may change mass: exempt (the document,
+        whose balance fails with a conserving reaction and no port
+        missing, is inconsistent, so this is outside the guarantee; on a
+        consistent document the guard never fires:
+        test_mass_guard_missing_port); a reaction that is not well-formed
+        exempts nothing."""
+        doc = r7b_mass_rxn_doc()
+        sc = ctx(doc)
+        self.assertEqual(C._mass_balance(sc, 0)[:2], (True, False))
+        self.assertTrue(C._may_change_mass(sc, 0))
+        self.assertEqual(run(C._score_uop_04, doc)[0], 1.0)
+        off = copy.deepcopy(doc)
+        off["streams"][1] = _r7_full(
+            "product", "R1", "None", 305.15,
+            {"Water": 1000.0, "Glucose": 10.0, "Ethanol": 300.0})
+        sc = ctx(off)
+        self.assertEqual(C._mass_balance(sc, 0)[:2], (True, False))
+        self.assertFalse(C._reaction_confirmed(sc, 0,
+                                               sc.units[0]["reactions"][0]))
+        self.assertEqual(run(C._score_uop_04, off)[0], 1.0)
+        for k, closes, expected in ((1.019, False, 0.75), (1.0, True, 1.0)):
+            doc = r7b_conserving_off_doc(k)
+            sc = ctx(doc)
+            reaction_ = sc.units[0]["reactions"][0]
+            self.assertIs(sc.conserves(reaction_), True)
+            self.assertTrue(C._reaction_confirmed(sc, 0, reaction_))
+            self.assertFalse(C._may_change_mass(sc, 0))
+            self.assertEqual(C._mass_balance(sc, 0)[:2], (True, closes))
+            score, _message, missing = run(C._score_uop_04, doc)
+            self.assertEqual(score, expected, k)
+            self.assertEqual(len(missing), int(not closes))
+            if missing:
+                self.assertIn("unbalanced at units[R1]", missing[0])
+        cut = deleted(r7b_conserving_off_doc(), ("chemicals", 1,
+                                                 "molar_mass"))
+        self.assertTrue(C._may_change_mass(ctx(cut), 0))
+        malformed = r7b_mass_rxn_doc()
+        malformed["units"][0]["reactions"][0]["equation"] = "x"
+        self.assertFalse(C._may_change_mass(ctx(malformed), 0))
+
+    def test_rxn_02_deletions(self):
+        """CMP-RXN-02's well-formed part is 1 only on affirmative evidence
+        (R2.13): the reaction conserves mass as tested, or its unit's
+        streams confirm it. On r7b_sparse_rxn_doc (0.8333: 'Glucose -> 5
+        Ethanol' earns
+        NONCONSERVING_CREDIT) deleting a participant's molar mass or
+        chemical id leaves the closure untestable -- NONCONSERVING_CREDIT
+        still, noted _UNTESTED_REACTION (it used to count as conserving
+        and rose to 1, raising the overall score too); with the conserving
+        GLUCOSE_EQ (1) the same deletions lower the part to 0.5. Deleting
+        an entry of a reaction's stoichiometry object states a different
+        reaction, outside the guarantee (stoichiometry_entry;
+        test_stoichiometry_entry_deletion covers an untestable one): with
+        the reaction written as stoichiometry {Glucose: -1, Water: -1,
+        Ethanol: MW_glucose / MW_ethanol} (9 % off), deleting the Water
+        entry restores the closure -- the part 0.5 -> 1, CMP-RXN-04's basis
+        becomes derivable (0 -> 0.375) and the overall score rises (0.4904
+        -> 0.5028, with no chemical name resolvable), as any rule rewarding
+        the closure allows. That reaction also contradicts the document's
+        own molar masses (internally inconsistent), yet is still credited
+        0.5 before the deletion, as the possibly faithful export of a model
+        that writes it so (R7.4)."""
+        doc = r7b_sparse_rxn_doc()
+        base = (2 + C.NONCONSERVING_CREDIT) / 3
+        self.assertAlmostEqual(run(C._score_rxn_02, doc)[0], base)
+        conserving = copy.deepcopy(doc)
+        conserving["units"][0]["reactions"][0]["equation"] = GLUCOSE_EQ
+        self.assertEqual(run(C._score_rxn_02, conserving)[0], 1.0)
+        for k in (1, 2):
+            for key in ("id", "molar_mass"):
+                path = ("chemicals", k, key)
+                score, message, missing = run(C._score_rxn_02,
+                                              deleted(doc, path))
+                self.assertAlmostEqual(score, base, msg=path)
+                self.assertEqual(missing, ["units[R1].reactions[0]"
+                                           + C._UNTESTED_REACTION])
+                self.assertIn("1 reaction(s) cannot be tested for mass "
+                              "conservation (0 confirmed", message)
+                self.assertLessEqual(overall(deleted(doc, path)),
+                                     overall(doc))
+                self.assertAlmostEqual(
+                    run(C._score_rxn_02, deleted(conserving, path))[0],
+                    base, msg=path)
+        reaction_ = doc["units"][0]["reactions"][0]
+        del reaction_["equation"]
+        reaction_["stoichiometry"] = {
+            "Glucose": -1.0, "Water": -1.0,
+            "Ethanol": R5_MW["Glucose"] / R5_MW["Ethanol"]}
+        sc = ctx(doc)
+        self.assertIs(sc.conserves(sc.units[0]["reactions"][0]), False)
+        self.assertAlmostEqual(run(C._score_rxn_02, doc)[0], base)
+        cut = deleted(doc, ("units", 0, "reactions", 0, "stoichiometry",
+                            "Water"))
+        self.assertEqual(run(C._score_rxn_02, cut)[0], 1.0)
+        self.assertEqual(run(C._score_rxn_04, doc)[0], 0.0)
+        self.assertEqual(run(C._score_rxn_04, cut)[0], C.DERIVED_CREDIT / 2)
+        with name_lookup(set()):
+            self.assertAlmostEqual(overall(doc), 0.490393, places=6)
+            self.assertAlmostEqual(overall(cut), 0.502820, places=6)
+
+    def test_nonconserving_sweeps(self):
+        """Strict deletion sweeps: over r7b_rxn_doc (the confirmed
+        non-conserving reaction, molar data only, so no total mass balance
+        is evaluable) nothing raises the overall score or any criterion --
+        deleting stream data or an endpoint only removes the confirmation
+        (1 -> 0.5), deleting the equation makes the reaction malformed
+        (0). Nor over r7b_mass_rxn_doc, whose mass totals do not close
+        (1100 in, 1460 out) because its non-conserving reaction makes them
+        so: the R4.10 guard spares its unit (_may_change_mass), whatever
+        the streams confirm. Nor over r7b_rxn_doc(ethanol=18), whose
+        streams contradict its reaction, r7b_sparse_rxn_doc, or
+        r7b_lowconv_doc (probe p_mm2: a non-conserving reaction at
+        conversion 0.2 that every stream agrees with) -- deleting a
+        participant's molar mass or chemical id never lifts the reaction to
+        1, so nothing raises anything; nor over
+        r7b_split_product_doc('identical'), whose
+        failing balance its streams cannot confirm (no phase split) --
+        deleting the feed's mass flow or sink used to lift the guard
+        from its product (CMP-UOP-04 0.5 -> 0.75) -- apart from deleting
+        a whole phase that is not stated empty (whole_phase)."""
+        docs = [("confirmed", r7b_rxn_doc()), ("mass", r7b_mass_rxn_doc()),
+                ("contradicted", r7b_rxn_doc(ethanol=18.0)),
+                ("sparse", r7b_sparse_rxn_doc()),
+                ("low conversion", r7b_lowconv_doc()),
+                ("split", r7b_split_product_doc())]
+        for label, doc in docs:
+            with name_lookup(set()):
+                raised, lowered, n = deletion_violations(
+                    doc, skip=frozenset(), exclude=whole_phase)
+            self.assertGreater(n, 50, label)
+            self.assertEqual(raised, [], label)
+            self.assertGreater(lowered, n // 3, label)
+        sc = ctx(r7b_lowconv_doc())
+        self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+        self.assertIs(sc.conserves(sc.units[2]["reactions"][0]), False)
+
+    def test_mass_guard_missing_port(self):
+        """R4.10 guard and R5.8: the guard never
+        fires on a unit while a stream whose endpoint is not stated may be
+        a missing port accounting for the gap (_gap_port: on the side the
+        balance lacks -- a sink not stated for missing inlet mass, a
+        source not stated for missing outlet mass -- and not stated to
+        carry no mass; one of unknown mass may). On r7b_dangling_doc, R1's
+        stated balance fails only because the vent's source is not
+        stated: the product keeps its flow credit (CMP-UOP-04 0.5, the
+        unsourced vent scoring 0; it was 0.375). Before, deleting a
+        participant's molar mass or chemical id there -- leaving the
+        conserving reaction untestable, so _may_change_mass exempts the
+        unit -- lifted the guard and raised CMP-UOP-04 (0.375 -> 0.5), and
+        so did deleting the feed's mass flow (not evaluable). Now the guard
+        never fires on a consistent document: its complete form closes the
+        balance, the balance can fail only once ports are lost, a port is
+        lost only by deleting the endpoint that attached it (which leaves
+        it dangling on exactly that side), and a balance that closed cannot
+        fail on the side that lost nothing. Strict sweeps over the
+        dangling document with the conserving and with a non-conserving
+        reaction ('Glucose -> 2 Ethanol + 3 CO2', 27 kmol/h CO2 vented),
+        its complete form, and a mixer whose second feed's sink is not
+        stated raise nothing (whole phases that are not stated empty
+        excluded, as everywhere).
+
+        A unit whose stated balance fails while every reaction it declares
+        conserves mass and no stream lacks an endpoint IS inconsistent,
+        and there the guard may still be lifted by deleting an endpoint:
+        r7b_conserving_off_doc(1.019) with a second, water feed and a water
+        outlet (2801.56 in, 2835.79 out: 1.2 % off, GLUCOSE_EQ conserving)
+        guards both outlets (CMP-UOP-04 0.75); deleting the water feed's
+        sink makes it a possible missing inlet, lifting the guard
+        (CMP-UOP-04 1) while the overall score falls (0.518719 ->
+        0.466087, with no chemical name resolvable). Outside the
+        guarantee, which covers internally consistent documents only."""
+        doc = r7b_dangling_doc()
+        sc = ctx(doc)
+        self.assertEqual(C._mass_balance(sc, 0)[:2], (True, False))
+        self.assertIs(sc.conserves(sc.units[0]["reactions"][0]), True)
+        self.assertFalse(C._may_change_mass(sc, 0))
+        self.assertEqual(C._gap_port(sc, 2801.56, 2009.39),
+                         "streams[vent] (source_unit_id not stated) may be "
+                         "a missing outlet")
+        self.assertEqual(C._gap_port(sc, 1.0, 2.0), "")
+        unknown = deleted(doc, ("streams", 2, "stream_properties",
+                                "total_mass_flow"))
+        self.assertIn("streams[vent]", C._gap_port(ctx(unknown), 2.0, 1.0))
+        empty = copy.deepcopy(doc)
+        vent = empty["streams"][2]["stream_properties"]
+        vent["total_mass_flow"] = vent["phases"]["g"]["total_mass_flow"] = 0.0
+        self.assertEqual(C._gap_port(ctx(empty), 2.0, 1.0), "")
+        self.assertEqual(run(C._score_uop_04, doc)[0], 0.5)
+        for path in (("chemicals", 3, "molar_mass"), ("chemicals", 1, "id"),
+                     ("streams", 0, "stream_properties", "total_mass_flow")):
+            self.assertEqual(run(C._score_uop_04, deleted(doc, path))[0], 0.5,
+                             path)
+        self.assertTrue(C._may_change_mass(
+            ctx(deleted(doc, ("chemicals", 3, "molar_mass"))), 0))
+        mixer = r7b_dangling_doc(vent_source=True)
+        mixer["units"] = [{"id": "M1", "unit_type": "Mixer",
+                           "design_input_specs": {}}]
+        mixer["streams"] = [
+            _r7_full("feed", "None", "M1", 298.15, {"Water": 1000.0}),
+            _r7_full("feed2", "None", "M1", 298.15, {"Ethanol": 100.0}),
+            _r7_full("product", "M1", "None", 298.15,
+                     {"Water": 1000.0, "Ethanol": 100.0})]
+        for stream_ in mixer["streams"]:
+            stream_["price"] = {"feed": 0.02, "product": 0.7}.get(
+                stream_["id"], 0.0)
+        del mixer["streams"][1]["sink_unit_id"]
+        docs = [("dangling", doc),
+                ("non-conserving", r7b_dangling_doc(
+                    "Glucose -> 2 Ethanol + 3 CO2", 27.0)),
+                ("complete", r7b_dangling_doc(vent_source=True)),
+                ("mixer", mixer)]
+        for label, doc_ in docs:
+            with name_lookup(set()):
+                raised, lowered, n = deletion_violations(
+                    doc_, skip=frozenset(), exclude=whole_phase)
+            self.assertGreater(n, 50, label)
+            self.assertEqual(raised, [], label)
+            self.assertGreater(lowered, n // 3, label)
+        off = r7b_conserving_off_doc(1.019)
+        off["streams"] += [
+            dict(_r7_full("water", "None", "R1", 305.15, {"Water": 1000.0}),
+                 price=0.0),
+            dict(_r7_full("wout", "R1", "None", 305.15, {"Water": 1000.0}),
+                 price=0.0)]
+        sc = ctx(off)
+        self.assertEqual(sc.dangling, [])
+        self.assertFalse(C._may_change_mass(sc, 0))
+        self.assertEqual(C._mass_balance(sc, 0)[:2], (True, False))
+        cut = deleted(off, ("streams", 2, "sink_unit_id"))
+        self.assertEqual(ctx(cut).dangling, [2])
+        self.assertEqual(run(C._score_uop_04, off)[0], 0.75)
+        self.assertEqual(run(C._score_uop_04, cut)[0], 1.0)
+        with name_lookup(set()):
+            self.assertAlmostEqual(overall(off), 0.518719, places=6)
+            self.assertAlmostEqual(overall(cut), 0.466087, places=6)
+
+    def test_stoichiometry_entry_deletion(self):
+        """Deleting an entry of a reaction's stoichiometry object (a
+        participant and its coefficient) states a different reaction, so
+        it is outside the deletion guarantee whatever the reaction
+        (stoichiometry_entry), as deleting a list element is. No rule
+        rewarding a closure is monotone under it: on each
+        r7b_untestable_doc -- consistent, since no reaction testably fails
+        to conserve mass and 'Yeast' merely has no molar mass -- the
+        closure cannot be tested (conserves None), so CMP-RXN-02's
+        well-formed part earns NONCONSERVING_CREDIT (R2.13) and CMP-RXN-04
+        derives no basis; deleting the Yeast entry leaves the conserving
+        'Glucose -> 2 Ethanol + 2 CO2' (None -> True): CMP-RXN-02 0.8333 ->
+        1 and CMP-RXN-04 up by DERIVED_CREDIT / 2 (the only criteria
+        raised), so the overall and representable scores rise ('sparse':
+        0.468024 -> 0.476613 and 0.580926 -> 0.583472, no chemical name
+        resolvable). The criteria.yaml header lists the exclusion. An entry
+        naming an undeclared chemical ('Q') raises the same way; that
+        document is also internally inconsistent -- a dangling reference
+        the validator rejects (CMP-INT-02 0 -> 1), which scores 0 where it
+        is counted, so deleting the whole stoichiometry object (or R1's
+        whole reactions list, which counts as deleting its elements)
+        raises CMP-THM-01 / CMP-THM-03 as well. The
+        strict sweeps, skipping stoichiometry entries, raise nothing over
+        the three consistent documents."""
+        units = ("K", "Pa", "kg/hr", "hr", "kmol/hr")
+        stoich = ("units", 0, "reactions", 0, "stoichiometry")
+        header = " ".join(line.lstrip("# ").strip() for line in
+                          C.CRITERIA_PATH.read_text(
+                              encoding="utf-8").splitlines())
+        self.assertIn("Deleting an entry of a reaction's `stoichiometry` "
+                      "object", header)
+        pinned = {"sparse": ((0.468024, 0.476613), (0.580926, 0.583472))}
+        for kind in ("sparse", "molar", "mass"):
+            doc = r7b_untestable_doc(kind)
+            sc = ctx(doc)
+            reaction_ = sc.units[0]["reactions"][0]
+            path = stoich + ("Yeast",)
+            with self.subTest(kind=kind):
+                self.assertIsNone(sc.conserves(reaction_))
+                self.assertFalse(C._reaction_confirmed(sc, 0, reaction_))
+                self.assertFalse(any(
+                    sc.conserves(r) is False for u in sc.units
+                    for r in C._dicts(u.get("reactions"))))
+                self.assertTrue(stoichiometry_entry(doc, path))
+                cut = deleted(doc, path)
+                cut_sc = ctx(cut)
+                self.assertIs(cut_sc.conserves(
+                    cut_sc.units[0]["reactions"][0]), True)
+                with name_lookup(set()), unit_registry(units):
+                    before = criterion_results(doc)
+                    after = criterion_results(cut)
+                    report = C.score_flowsheet_completeness(doc)
+                    report_cut = C.score_flowsheet_completeness(cut)
+                    violations, lowered, n = deletion_violations(
+                        doc, skip=frozenset(), exclude=whole_phase)
+                raised = {cid for cid in before
+                          if before[cid].score is not None
+                          and after[cid].score > before[cid].score + 1e-12}
+                self.assertEqual(raised, {"CMP-RXN-02", "CMP-RXN-04"})
+                self.assertAlmostEqual(before["CMP-RXN-02"].score,
+                                       (C.NONCONSERVING_CREDIT + 2) / 3)
+                self.assertEqual(before["CMP-RXN-02"].missing,
+                                 ["units[R1].reactions[0]"
+                                  + C._UNTESTED_REACTION])
+                self.assertEqual(after["CMP-RXN-02"].score, 1.0)
+                self.assertAlmostEqual(after["CMP-RXN-04"].score
+                                       - before["CMP-RXN-04"].score,
+                                       C.DERIVED_CREDIT / 2)
+                self.assertGreater(report_cut.score, report.score)
+                self.assertGreater(report_cut.representable_score,
+                                   report.representable_score)
+                integrity = {c.criterion_id: c.score for c in report.criteria}
+                self.assertEqual(integrity["CMP-INT-02"], 1.0)
+                if kind in pinned:
+                    (s0, s1), (r0, r1) = pinned[kind]
+                    self.assertAlmostEqual(report.score, s0, places=6)
+                    self.assertAlmostEqual(report_cut.score, s1, places=6)
+                    self.assertAlmostEqual(report.representable_score, r0,
+                                           places=6)
+                    self.assertAlmostEqual(report_cut.representable_score,
+                                           r1, places=6)
+                self.assertGreater(n, 50)
+                self.assertEqual(violations, [])
+                self.assertGreater(lowered, n // 2)
+        # Not entries: the whole object, another reaction field, an
+        # element of the array form, a path outside units.
+        doc = r7b_untestable_doc()
+        self.assertFalse(stoichiometry_entry(doc, stoich))
+        self.assertFalse(stoichiometry_entry(
+            doc, ("units", 0, "reactions", 0, "reactant")))
+        self.assertFalse(stoichiometry_entry(
+            doc, ("streams", 1, "stream_properties", "temperature")))
+        array = copy.deepcopy(doc)
+        array["units"][0]["reactions"][0]["stoichiometry"] = [-1.0, 2.0]
+        self.assertFalse(stoichiometry_entry(array, stoich + (0,)))
+        self.assertNotIn(stoich + (0,), dict(deletable_paths(array)))
+        # An undeclared participant: the same raise, on a document the
+        # validator rejects (a dangling reference).
+        doc = r7b_untestable_doc("sparse", "Q", declared=False)
+        sc = ctx(doc)
+        self.assertIsNone(sc.conserves(sc.units[0]["reactions"][0]))
+        cut = deleted(doc, stoich + ("Q",))
+        with name_lookup(set()), unit_registry(units):
+            report = C.score_flowsheet_completeness(doc)
+            report_cut = C.score_flowsheet_completeness(cut)
+            violations, _lowered, _n = deletion_violations(
+                doc, skip=frozenset(), exclude=whole_phase)
+        scores = [{c.criterion_id: c.score for c in r.criteria}
+                  for r in (report, report_cut)]
+        self.assertEqual((scores[0]["CMP-INT-02"], scores[1]["CMP-INT-02"]),
+                         (0.0, 1.0))
+        self.assertEqual(scores[1]["CMP-RXN-02"], 1.0)
+        self.assertGreater(report_cut.score, report.score)
+        self.assertEqual({(v[0], v[1]) for v in violations},
+                         {(p, cid) for p in (("units", 0, "reactions"), stoich)
+                          for cid in ("CMP-THM-01", "CMP-THM-03")})
+
+    # ---- R7.5 keywords -----------------------------------------------------
+
+    def test_r7b_keywords(self):
+        """R7.5: ultra-, nano- and microfiltration, pervaporation, membrane
+        and PSA / pressure swing adsorption name a splitter; a reformer and
+        an autoclave a reactor; a heat recovery steam generator / HRSG a
+        boiler (a service word, like 'boiler': 'HRSG feed pump' is a pump);
+        a pelletizer / pelletiser solids handling. The head noun still
+        decides: 'Membrane bioreactor' is a reactor, 'Ultrafiltration
+        permeate tank' a tank, 'Reformer feed heater' a utility exchanger,
+        'Autoclave tank' a reactor (the vessel exception); PSA matches as
+        a whole token only ('Capsaicin tank' is a tank) and, like an
+        adsorber, absorbs a trailing column or bed ('Pressure swing
+        adsorption column' and 'PSA column' are splitters, not
+        distillation)."""
+        for text, family in R7B_KEYWORDS.items():
+            self.assertEqual(C._keyword_family(text), family, text)
+
+    def test_r7b_keyword_claims_stay_checked(self):
+        """The new keyword claims meet the same plausibility checks: on
+        r6_doc (glucose converted to ethanol and CO2 across the fermenter
+        R1), a label-only filtration, pervaporation, membrane, PSA,
+        pelletizer or HRSG claim is implausible -- the family is unknown and
+        R1 enters the reactive population -- while 'Reformer' and
+        'Autoclave' keep the reactor family; relabelling R1 with any of
+        them never scores above the reactor-labelled R6_REACTOR (overall
+        or representable)."""
+        for label in R7B_NON_HOSTING:
+            sc = ctx(r6_doc(label))
+            with self.subTest(label=label):
+                self.assertEqual(sc.unit_classes[2], (None, None, 0.0))
+                self.assertEqual(dict(C._reactive_units(sc))[2],
+                                 "family unknown")
+        for label in ("Reformer", "Autoclave"):
+            sc = ctx(r6_doc(label))
+            self.assertEqual(sc.unit_classes[2][1], "reactor", label)
+            self.assertEqual(dict(C._reactive_units(sc))[2], "reactor family")
+        with name_lookup(set()):
+            reference = C.score_flowsheet_completeness(r6_doc(*R6_REACTOR))
+            for label in R7B_NON_HOSTING + ("Reformer", "Autoclave"):
+                report = C.score_flowsheet_completeness(r6_doc(label))
+                with self.subTest(label=label):
+                    self.assertLessEqual(report.score,
+                                         reference.score + 1e-12)
+                    self.assertLessEqual(report.representable_score,
+                                         reference.representable_score
+                                         + 1e-12)
+
+    def test_contradicted_keyword_claims_are_inconsistent(self):
+        """A label-only claim that hosts no chemistry, on a unit across
+        which species convert, is contradicted by the unit's own streams:
+        the document is internally inconsistent (CMP-UOP-01), so deletions
+        on it are outside the monotonicity guarantee, and the
+        criteria.yaml header lists that case among the inconsistent
+        documents. On r6_doc(label) for each R7B_NON_HOSTING label,
+        deleting the fermenter product's liquid composition removes the
+        evidence against the claim: the claimed family is restored, R1
+        leaves the reactive population (CMP-RXN-01..04 shed the need the
+        unknown family carried) and the overall and representable scores
+        rise -- the same holds for 'Membrane' and 'Filter' before R7.5."""
+        path = ("streams", 2, "stream_properties", "phases", "l",
+                "composition")
+        header = " ".join(line.lstrip("# ").strip() for line in
+                          C.CRITERIA_PATH.read_text(
+                              encoding="utf-8").splitlines())
+        self.assertIn("a unit claim that the unit's own ports, streams or "
+                      "duties contradict", header)
+        for label in R7B_NON_HOSTING + ("Filter",):
+            doc = r6_doc(label)
+            self.assertFalse(whole_phase(doc, path))
+            cut = deleted(doc, path)
+            with self.subTest(label=label):
+                self.assertEqual(ctx(doc).unit_classes[2], (None, None, 0.0))
+                self.assertEqual(ctx(cut).unit_classes[2][1],
+                                 C._keyword_family(label))
+                self.assertNotIn(2, dict(C._reactive_units(ctx(cut))))
+                with name_lookup(set()), unit_registry():
+                    before = C.score_flowsheet_completeness(doc)
+                    after = C.score_flowsheet_completeness(cut)
+                self.assertGreater(after.score, before.score)
+                self.assertGreater(after.representable_score,
+                                   before.representable_score)
+                statuses = {c.criterion_id: c.status for c in after.criteria}
+                self.assertEqual(statuses["CMP-RXN-01"], "not_applicable")
+
+
+class TestPinnedScores(unittest.TestCase):
+    """Pinned end-to-end scores hold in every supported environment."""
+
+    def test_pinned_overall_scores_fix_the_name_lookup(self):
+        """An assertion pinning overall(...) against a value no overall(...)
+        call computed -- a literal, or an entry of a table of pinned scores
+        -- runs inside `with name_lookup(...)`. The CMP-THM-02 name tier
+        otherwise resolves names through the real `chemicals` package when
+        it is importable and resolves none when it is not (both are valid
+        environments, see test_chemicals_search_is_lazy_and_cached), so the
+        pinned value would hold in one of them only. Comparisons between
+        overall(...) results (or names bound to one) are relative and
+        exempt. Scans this file's own source; the R7 part B tests that pin
+        overall scores are found, so the scan is not vacuous."""
+        tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+
+        def calls(node, name):
+            return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                       and n.func.id == name for n in ast.walk(node))
+
+        def looks_up(node):
+            return isinstance(node, ast.With) and any(
+                calls(item.context_expr, "name_lookup")
+                for item in node.items)
+
+        pins, unguarded = [], []
+
+        def visit(node, test, relative, guarded):
+            if isinstance(node, ast.FunctionDef):
+                test, guarded = node.name, False
+                relative = {target.id for n in ast.walk(node)
+                            if isinstance(n, ast.Assign)
+                            and calls(n.value, "overall")
+                            for target in n.targets
+                            if isinstance(target, ast.Name)}
+            guarded = guarded or looks_up(node)
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr.startswith("assert")
+                    and any(calls(arg, "overall") for arg in node.args)
+                    and any(not calls(arg, "overall")
+                            and not (isinstance(arg, ast.Name)
+                                     and arg.id in relative)
+                            for arg in node.args)):
+                pins.append(test)
+                if not guarded:
+                    unguarded.append(f"{test} (line {node.lineno})")
+            for child in ast.iter_child_nodes(node):
+                visit(child, test, relative, guarded)
+
+        visit(tree, None, set(), False)
+        self.assertEqual(unguarded, [])
+        self.assertLessEqual({"test_split_product_phases",
+                              "test_rxn_02_deletions",
+                              "test_mass_guard_missing_port"}, set(pins))
+
+
+class TestTrackedText(unittest.TestCase):
+    """The scorer's tracked text states rules, not its review history."""
+
+    def test_no_review_round_history(self):
+        """The scorer module, its catalogue, its docs page and its Tier 1 /
+        Tier 5 tests state each rule with its rationale (citing the
+        revision item, e.g. R2.13), never the implementation round that
+        introduced or reverted it: no numbered review round and no mention
+        of the review agent (the pattern below cannot match its own
+        source)."""
+        pattern = re.compile(r"fix\s+round|round-\d|\bverifier\b",
+                             re.IGNORECASE)
+        here = Path(__file__).resolve()
+        paths = (here, here.parents[1] / "tier5" /
+                 "test_completeness_corpus.py", C.CRITERIA_PATH, DOCS_PAGE,
+                 here.parents[2] / "pisces_sff" / "completeness" /
+                 "_completeness.py")
+        found = []
+        for path in paths:
+            for number, line in enumerate(
+                    path.read_text(encoding="utf-8").splitlines(), 1):
+                if pattern.search(line):
+                    found.append(f"{path.name}:{number}: {line.strip()}")
+        self.assertEqual(found, [])
 
 
 if __name__ == "__main__":

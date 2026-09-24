@@ -39,10 +39,59 @@
 # and scores 1; an empty feed stays in CMP-FEED-01 and scores 1). Pinned by
 # deletion-monotonicity tests on a synthetic document (Tier 1) and on the
 # corpus (Tier 5). The guarantee covers deleting FIELDS (a value, or a whole
-# object or list held under a key); it does not cover deleting whole list
-# elements -- a unit, a stream, a reaction -- which removes structure the
-# populations are defined on (removing an incomplete reaction declared on a
-# non-reactor unit, for instance, can raise CMP-RXN-02).
+# object or list held under a key) from an internally consistent document.
+# It does not cover five things:
+#   - Deleting whole list elements -- a unit, a stream, a reaction -- which
+#     removes structure the populations are defined on (removing an
+#     incomplete reaction declared on a non-reactor unit, for instance, can
+#     raise CMP-RXN-02). Deleting a unit's whole `reactions` list counts as
+#     deleting its reactions, each of which is a list element; every other
+#     list held under a key is a field.
+#   - Deleting an entry of a reaction's `stoichiometry` object (one
+#     participant and its coefficient). It states a different reaction, as
+#     removing a list element does; the array form of `stoichiometry`
+#     already holds its coefficients as list elements. No rule rewarding a
+#     mass closure can stay monotone under it: dropping a participant whose
+#     term held the balance off, or whose term left the closure untestable
+#     (no molar mass or formula, or an undeclared chemical), can make the
+#     reaction close (CMP-RXN-02 0.5 -> 1) and its basis derivable
+#     (CMP-RXN-04), raising the overall and representable scores. Deleting
+#     the whole `stoichiometry` object, or the equation, stays covered.
+#   - Deleting a whole phase of a stream that is not stated empty. The
+#     schema describes stream_properties.phases as the phases present in
+#     the stream, so a phase key's absence asserts that the phase is
+#     absent: removing one changes what the document claims (a different
+#     set of phases), as removing a list element does. The remaining phase
+#     can become the stream's only one, whose amount is then the stream's
+#     (CMP-FEED-01), whose species flows become computable (confirming a
+#     reaction, CMP-RXN-02, CMP-UOP-04) and whose unit may become
+#     single-phase (CMP-RXN-04). Deleting a stated-empty phase, or any
+#     field inside a phase, stays covered.
+#   - Deletions on an internally inconsistent document, one whose parts
+#     contradict each other: included_in_thermo flags the stream data
+#     contradict (CMP-THM-04); a unit claim that the unit's own ports,
+#     streams or duties contradict -- a 'Mixer' heating its feed, species
+#     converting across a 'Membrane' or 'Pelletizer' label -- where
+#     deleting the data that shows the contradiction restores the claim
+#     and sheds the needs its unknown family carried (CMP-UOP-01); a
+#     reaction that does not conserve mass with the document's own molar
+#     masses, which contradicts its chemicals (CMP-RXN-02); a chemical or
+#     unit id referenced but not declared, which fails the validator's
+#     referential integrity (CMP-INT-02) and scores 0 where it is counted,
+#     so deleting the reference can raise CMP-THM-01..03 or CMP-UOP-01/02;
+#     a unit whose stated mass balance fails although every reaction it
+#     declares conserves mass, its class accounts for no mass implicitly
+#     and no stream lacking an endpoint can be its missing port
+#     (CMP-UOP-04). Scoring
+#     still credits a reaction that does not conserve mass 0.5 in
+#     CMP-RXN-02, since it may be the model's own reaction exported
+#     faithfully: the credit judges what a re-import would reproduce, the
+#     guarantee needs a document whose parts agree.
+#   - Deletions on a document the validator's schema gate rejects
+#     (CMP-INT-01 0): deleting the field the schema rejects, or the
+#     optional object holding it, makes the document conform and raises
+#     CMP-INT-01 and the overall and representable scores. The guarantee
+#     is stated for conforming documents.
 #
 # INVALID == MISSING (Revision 2): a value earns credit only if it is
 # plausible for its role, judged by one shared set of predicates --
@@ -411,8 +460,9 @@ criteria:
       component and whose mol (or mass) fractions lie in [0, 1] and sum to 1
       within 1e-3 per phase. A composition earns full credit only when its
       phases are stated -- given per phase (stream_properties.phases, each
-      phase with a molar or a mass flow -- or, for a single-phase stream,
-      the stream total -- and mol or mass fractions), or a legacy flat list
+      phase with a molar or a mass flow of its own -- or, for a
+      single-phase stream (every other phase stated empty), the stream
+      total -- and mol or mass fractions), or a legacy flat list
       tagging every entry with a phase -- and 0.75 when a
       legacy flat list leaves an entry untagged, since BioSTEAM would then
       assume the feed liquid. A flowsheet with no feed defines no problem
@@ -445,7 +495,15 @@ criteria:
       that fixes its density, earns 0.75 (derived) for the flow part, since
       BioSTEAM derives the totals from them -- the best of the tiers counts
       (a stated zero total never earns it, so zero-flow padding stays
-      worthless). (Leaving
+      worthless); for a single-phase stream that volume flow is then also
+      the amount of its phase when that states no flow of its own, so its
+      stated composition earns its full part. Of a stream of several
+      phases that may carry material, each needs a flow of its own: the
+      stream's amount without the phase split fixes no phase's amount (a
+      stated-empty phase needs neither a flow nor a composition, so
+      deleting one never raises the part; deleting a whole phase that is
+      not stated empty asserts a different set of phases, so it is outside
+      the deletion guarantee, as deleting a list element is). (Leaving
       empty feeds out, or weighting by mass-flow share, let deleting a flow
       raise the score.)
 
@@ -753,7 +811,9 @@ criteria:
       stating no mass or molar total earns 0.75 for its flow part from a
       non-zero volumetric flow with a valid temperature, pressure and
       composition, unless the consistency guard leaves that composition
-      unverified). Consistency
+      unverified; for a single-phase stream that volume flow is then also
+      the amount of its phase when that states no flow of its own, so its
+      composition counts as stated). Consistency
       guard: a physical-only unit (mixer, exchanger, pump, valve, compressor,
       turbine, flash, column, evaporator, steam mixer, tank, or a splitter
       -- or a unit of unknown family -- not identified as a custom class)
@@ -776,7 +836,23 @@ criteria:
       whose chemistry the class fixes (combustors, dryers, boilers,
       facilities, equilibrium reactors), whose classes may account mass
       implicitly (BioSTEAM's DrumDryer emits the combustion products of its
-      natural gas without drawing the oxygen from any inlet). A stream
+      natural gas without drawing the oxygen from any inlet) -- and for a
+      unit declaring a well-formed reaction that does not conserve mass as
+      written, or whose closure cannot be tested (see CMP-RXN-02): such a
+      reaction may create or destroy mass, so the imbalance may be the
+      faithful export of the model. The exemption reads the declared
+      chemistry, never the stream data the balance is checked on. Nor does
+      the guard fire while a stream whose endpoint is not stated may be a
+      missing port that accounts for the gap: one whose sink is not stated
+      may be a missing inlet, one whose source is not stated a missing
+      outlet, on the side the balance lacks, unless it is stated to carry
+      no mass -- an incomplete document's balance fails as soon as a port
+      loses the endpoint attaching it. So the guard fires only where the
+      stated balance fails, every reaction the unit declares conserves
+      mass and no port can be missing -- an inconsistency -- and deleting
+      stream data, an endpoint, a molar mass or a chemical id never lifts
+      it from a consistent document; a conserving reaction whose streams
+      are merely off stays guarded. A stream
       whose source_unit_id is not stated (only the "None" sentinel affirms
       the boundary) may be internal, so it stays in the population and
       scores 0: its state is no unit's outlet state; a unit's outlet whose
@@ -865,9 +941,10 @@ criteria:
       without its reaction set. The population is defined by need alone: the
       units of a reactor family (continuous reactors, batch, aerated and
       gas-fed bioreactors, and units whose type names a neutralizer,
-      hydrotreater, gasifier, pyrolysis, hydrolysis, ammonia-addition,
-      (over)liming, conditioning, acidification, (trans)esterification or
-      mashing step -- 'Overliming tank', 'Mash tank'); every unit whose
+      hydrotreater, gasifier, reformer, autoclave, pyrolysis, hydrolysis,
+      ammonia-addition, (over)liming, conditioning, acidification,
+      (trans)esterification or mashing step -- 'Overliming tank', 'Mash
+      tank'); every unit whose
       family is unknown (no class, no keyword family, or a claim its ports
       or stream physics contradict -- see CMP-UOP-01: a 'mixer', 'heater',
       'Junction' or exact StorageTank across which species convert is one:
@@ -895,13 +972,11 @@ criteria:
       (see CMP-UOP-01).
       Each must declare at least one well-formed reaction: an equation or
       stoichiometry naming at least one consumed and one produced species
-      ([{}] or an equation "x" counts as none) that, when every participant
-      has a molar mass, conserves mass on a mol basis (|sum(nu*MW)|) or a
-      wt basis (|sum(nu)|) within 1 % of its reactant side ('Glucose -> 5
-      Ethanol' does not). The 1 % sits in an empty band of the corpus:
-      its 6587 testable reactions close within 0.025 % or miss by more
-      than 1.5 % (364, atom-imbalanced as written -- an omitted O2, H2O, H2
-      or nitrogen source). Declared reactions and species appearing in a
+      ([{}] or an equation "x" counts as none). A reaction that does not
+      conserve mass as written ('Glucose -> 5 Ethanol') still counts as
+      declared -- its definition is discounted in CMP-RXN-02 -- so what a
+      unit declares depends only on the species its reactions name, which
+      deleting a field can only shrink. Declared reactions and species appearing in a
       unit's outlets do not by themselves make a unit reactive (a
       population read from data let deleting that data shrink it); species
       appearing across a physical-only unit (or one of unknown family) is
@@ -926,20 +1001,56 @@ criteria:
       A thermosteam Reaction is defined by its stoichiometry, the reactant on
       which conversion is based, and the fractional conversion X (0 to 1).
       Missing any one of the three leaves the extent of reaction undefined.
-      Per reaction: 0 unless it is well-formed (see CMP-RXN-01: parseable,
-      and conserving mass within 1 % where every molar mass is known) -- a
-      conversion attached to no parseable or no mass-conserving
-      stoichiometry earns nothing; deleting a coefficient can only break
-      the closure -- else
-      the mean of {well-formed, the reactant is one of its consumed species,
-      a numeric conversion in [0, 1]}. Scored per
+      Per reaction: 0 unless it is well-formed (see CMP-RXN-01: it names a
+      consumed and a produced species) -- a conversion attached to no
+      parseable stoichiometry earns nothing -- else the mean of
+      {well-formed, the reactant is one of its consumed species, a numeric
+      conversion in [0, 1]}. The well-formed part is 1 on affirmative
+      evidence only: the reaction, with every participant's molar mass
+      known, conserves mass on a mol basis (|sum(nu*MW)|) or a wt basis
+      (|sum(nu)|) within 1 % of its reactant side (an identity, whose
+      coefficients cancel, creates no mass), or its unit carries exactly
+      that one reaction and the unit's own species-flow changes (outlets
+      minus inlets, molar or mass basis, every port computable, no stream
+      without a stated endpoint) are proportional to its coefficients
+      within 2 %. A reaction that does not conserve mass as written
+      ('Glucose -> 5 Ethanol') is not discarded: a faithful re-import would
+      reproduce it, but it cannot be told apart from a transcription
+      error, so the part earns 0.5 with the note "reaction does not
+      conserve mass as written"; so does one whose closure cannot be
+      tested (a participant without a molar mass or formula, or naming an
+      undeclared chemical), noted as such -- credit is waived only on
+      affirmative evidence, and a closure that cannot be verified counts
+      as one that is missing. Deleting stream data, a molar mass or a
+      chemical id can only remove that evidence.
+      The 1 % sits in an empty band of the corpus: its 6587 testable
+      reactions close within 0.025 % or miss by more than 1.5 % (364,
+      atom-imbalanced as written -- an omitted O2, H2O, H2 or nitrogen
+      source). Scored per
       unit (each counting once) over its reactions, for the reactive units of
       CMP-RXN-01 -- one without reactions scores 0, as does its
       flowsheet-level pseudo-member for hidden chemistry -- plus every
       other unit that declares reactions (a boiler's combustion set, a
-      tank's neutralization, ...). Deleting a
-      field of a reaction never raises the score; deleting whole reactions
-      (list elements) is outside the monotonicity guarantee.
+      tank's neutralization, ...). Deleting an entry of a reaction's
+      stoichiometry object (a participant and its coefficient) states a
+      different reaction, as deleting a list element does (the array form
+      holds its coefficients as list elements), and is outside the
+      monotonicity guarantee: dropping a participant whose term held the
+      balance off, or whose term left the closure untestable (no molar
+      mass or formula, or an undeclared chemical), can make the reaction
+      close (0.5 -> 1; its basis then becomes derivable in CMP-RXN-04 too,
+      so the overall and representable scores can rise), as any rule
+      rewarding the closure allows. A reaction that does not conserve mass
+      with the document's own molar masses contradicts its chemicals, so a
+      document carrying one is internally inconsistent and deletions on it
+      are outside the guarantee as well; it still earns 0.5 here, since it
+      may be the model's own reaction exported faithfully. Deleting whole
+      reactions (list
+      elements; deleting a unit's whole reactions list deletes its
+      elements), or a whole phase of a stream that is not stated empty
+      (which asserts a different set of phases, and can make a product's
+      species flows computable and so confirm its unit's reaction), is
+      outside the monotonicity guarantee too.
 
   - id: CMP-RXN-03
     category: reactions
@@ -978,15 +1089,22 @@ criteria:
       the computed outlet. No SFF field states either, so each reaction of
       the CMP-RXN-02 population (a reactive unit without reactions and the
       CMP-RXN-01 pseudo-member for hidden chemistry score 0, a reaction
-      that is not well-formed -- including one conserving mass
-      on neither basis within 1 %, see CMP-RXN-01 -- scores 0) earns only
+      that is not well-formed scores 0, and one conserving mass on neither
+      basis, see CMP-RXN-02, never has a derivable basis) earns only
       derived credit, half for each part: the basis when sum(nu*MW) = 0 (a
       molar reaction conserves mass) or sum(nu) = 0 (a mass-basis reaction)
       holds to 1e-3 relative, with every molar mass resolvable -- when both
       hold, as for an isomerisation, the basis is immaterial; the phase
       when the equation tags every species with a phase or every stream of
-      the unit is single-phase, and no stream without a stated endpoint
-      may be a missing port of it. Each unit counts once.
+      the unit is single-phase -- a phase stating neither a flow nor a
+      composition leaves its stream's phases unknown -- and no stream
+      without a stated endpoint may be a missing port of it. Each unit
+      counts once. Deleting an entry of a reaction's stoichiometry object,
+      which states a different reaction (see CMP-RXN-02), can make the
+      basis derivable -- dropping a participant whose term held the
+      balance off or whose molar mass is unknown; deleting a whole phase
+      that is not stated empty can make a stream single-phase. Both are
+      outside the monotonicity guarantee.
 
   # ----------------------------------------------------------------- costing
   - id: CMP-COST-01

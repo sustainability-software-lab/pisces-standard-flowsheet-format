@@ -182,6 +182,19 @@ BASIS_RTOL = 1e-3
 # none but the non-conserving.
 RXN_CLOSURE_RTOL = 0.01
 
+# R7.4: a well-formed reaction failing the R6.2 closure test is not
+# discarded. Its CMP-RXN-02 equation|stoichiometry component earns
+# NONCONSERVING_CREDIT -- a faithful re-import would reproduce it, but it
+# cannot be told apart from a transcription error -- or full credit when
+# its unit carries it alone and the unit's species-flow changes are
+# proportional to its coefficients within RXN_CONFIRM_RTOL. Full credit
+# needs affirmative evidence (R2.13), so a reaction whose closure cannot
+# be tested (a participant's molar mass unknown) earns NONCONSERVING_CREDIT
+# too unless its unit's streams confirm it: deleting a molar mass must not
+# lift a non-conserving reaction to 1.
+NONCONSERVING_CREDIT = 0.5
+RXN_CONFIRM_RTOL = 0.02
+
 # Same absolute zero-flow threshold as the validator's ZERO_FLOW (STR-13);
 # duplicated to stay import-light, equality pinned by a Tier 1 test.
 ZERO_FLOW = 1e-12
@@ -789,31 +802,91 @@ _BASIS_KEYS = {'molar': ('total_molar_flow', 'mol_fraction'),
 def _phase_flow(phase, sp, single, key):
     """Valid (>= 0) flow `key` (total_molar_flow / total_mass_flow) of one
     phase of a stream, or None; the only phase of a single-phase stream
-    falls back to the stream-level total of the same key (R5.3)."""
+    (`single`: _sole_phase) falls back to the stream-level total of the
+    same key (R5.3)."""
     flow = _valid_flow(_as_dict(phase).get(key))
     if flow is None and single:
         flow = _valid_flow(_as_dict(sp).get(key))
     return flow
 
 
-def _phases_ok(phases, sp=None):
-    """Every phase states a valid (>= 0) flow -- total_molar_flow OR
-    total_mass_flow, or, for the only phase of a single-phase stream, the
-    stream-level total of stream_properties `sp` (R5.3) -- and at least one
-    carries flow; each phase with flow has a plausible composition
-    (_composition_ok: mol OR mass fractions), while a zero-flow phase is
-    exempt and may be empty (the exporter serializes a phase with F_mol <=
-    ZERO_FLOW as empty -- see STR-13)."""
+def _empty_phase(phase):
+    """True when a phase states a valid zero flow of its own
+    (total_molar_flow or total_mass_flow <= ZERO_FLOW): the exporter's
+    empty phase (STR-13), empty on either basis."""
+    return any(flow is not None and flow <= ZERO_FLOW
+               for flow in (_valid_flow(_as_dict(phase).get(key))
+                            for key in ('total_molar_flow', 'total_mass_flow')))
+
+
+def _sole_phase(phases, symbol):
+    """True when phase `symbol` is the only phase of a stream's `phases`
+    (a non-empty dict) that may carry material: every other phase is
+    stated empty (_empty_phase). Such a stream is single-phase (R5.3 /
+    R7.3): the phase takes the stream's amount as its own -- the
+    stream-level total in _phases_ok and _species_flows, the volume flow in
+    _phases_ok for CMP-FEED-01 / CMP-UOP-04 -- so a stated-empty phase
+    beside the material one changes nothing, and deleting it never raises
+    what the other phase yields. (Deleting a phase that is not stated
+    empty is outside the deletion guarantee: see _phases_ok.)"""
+    return all(key == symbol or _empty_phase(phase)
+               for key, phase in phases.items())
+
+
+def _volumetric_amount(sp):
+    """R7.3: the valid (>= 0) total_volumetric_flow (internal m3/hr) of
+    stream_properties `sp` when its temperature and pressure are valid too
+    (_valid_T / _valid_P: INVALID == MISSING), else None -- the stream
+    amount a phase stating no mass or molar flow may rest on when the
+    stream states no mass or molar total either (_phases_ok with
+    `volumetric`), since BioSTEAM derives the totals from the volume flow,
+    T, P and composition (R6.7)."""
+    sp = _as_dict(sp)
+    if (_valid_T(sp.get('temperature')) is None
+            or _valid_P(sp.get('pressure')) is None):
+        return None
+    return _valid_flow(sp.get('total_volumetric_flow'))
+
+
+def _phases_ok(phases, sp=None, volumetric=False):
+    """Every phase has a known amount -- a valid (>= 0) total_molar_flow OR
+    total_mass_flow of its own, or, for the only phase that may carry
+    material (_sole_phase: every other phase stated empty), the stream's:
+    the stream-level total of stream_properties `sp` (R5.3), else, with
+    `volumetric` (R7.3, CMP-FEED-01 and CMP-UOP-04 only), the stream's
+    volumetric amount (_volumetric_amount: a valid volume flow at a valid
+    T and P) -- and at least one carries flow; each phase with flow has a
+    plausible composition (_composition_ok: mol OR mass fractions), while
+    a zero-flow phase is exempt and may be empty (the exporter serializes
+    a phase with F_mol <= ZERO_FLOW as empty -- see STR-13). Of several
+    phases that may carry material, each needs its own amount: the phase
+    split fixes the stream's species flows, so a stream amount without it
+    states no phase's amount (R5.3 / R7.3: "for a single-phase stream").
+    A stated-empty phase beside the material one changes nothing, so
+    deleting it never raises the credit; deleting a whole phase that is
+    not stated empty asserts a different set of phases (the schema lists
+    the phases present) and is outside the deletion guarantee, like
+    deleting a list element. A
+    stated zero total still wins over a volume flow, and a zero stream
+    amount populates nothing."""
     if not isinstance(phases, dict) or not phases:
         return False
-    populated, single = False, len(phases) == 1
-    for phase in phases.values():
+    populated = False
+    for symbol, phase in phases.items():
         flow = None
         if isinstance(phase, dict):
-            for key in ('total_molar_flow', 'total_mass_flow'):
-                flow = _phase_flow(phase, sp, single, key)
+            single = _sole_phase(phases, symbol)
+            for source, key in ((phase, 'total_molar_flow'),
+                                (phase, 'total_mass_flow'),
+                                (sp, 'total_molar_flow'),
+                                (sp, 'total_mass_flow')):
+                if source is sp and not single:
+                    break
+                flow = _valid_flow(_as_dict(source).get(key))
                 if flow is not None:
                     break
+            if flow is None and volumetric and single:
+                flow = _volumetric_amount(sp)
         if flow is None:
             return False
         if flow > ZERO_FLOW:
@@ -833,18 +906,20 @@ def _total_flow(sp):
     return None
 
 
-def _stream_state(stream, empty_exempt=True):
+def _stream_state(stream, empty_exempt=True, volumetric=False):
     """Booleans {T, P, flow, composition}: which parts of a stream's state are
     stated with a plausible value (R2.0: temperature in (0, T_MAX) K,
     pressure > 0, total flow >= 0, composition per _phases_ok -- per-phase
     shape, 0.0.9+, molar or mass basis -- or _composition_ok on the legacy
     flat ``stream_properties.composition``). With `empty_exempt`, a stream
-    stating a zero total flow satisfies composition. Missing
-    stream_properties -> all False."""
+    stating a zero total flow satisfies composition. `volumetric` (R7.3,
+    CMP-FEED-01 / CMP-UOP-04): the stream's volume flow is the amount the
+    only phase of a single-phase stream may rest on when it states none
+    (_phases_ok). Missing stream_properties -> all False."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
     composition = ((empty_exempt and total is not None and total <= ZERO_FLOW)
-                   or _phases_ok(sp.get('phases'), sp)
+                   or _phases_ok(sp.get('phases'), sp, volumetric)
                    or _composition_ok(sp.get('composition')))
     return {'T': _valid_T(sp.get('temperature')) is not None,
             'P': _valid_P(sp.get('pressure')) is not None,
@@ -858,8 +933,9 @@ def _volumetric_flow_credit(stream):
     INVALID == MISSING) but a valid, non-zero total_volumetric_flow
     (internal m3/hr) with a valid temperature and pressure and a
     composition that fixes its density -- per phase (_phases_ok, or every
-    stated phase with a plausible composition, _composition_ok) or the
-    legacy flat list -- since BioSTEAM derives the totals from them; else
+    phase not stated empty, at least one, with a plausible composition,
+    _composition_ok) or the legacy flat list -- since BioSTEAM derives the
+    totals from them; else
     0. It is the tier below a stated total (MAX over tiers). A stream
     stating a zero total (an empty stream, credited or not as a
     placeholder, R6.3) or a zero volume flow earns nothing from it, so
@@ -872,10 +948,15 @@ def _volumetric_flow_credit(stream):
             or _valid_P(sp.get('pressure')) is None):
         return 0.0
     phases = sp.get('phases')
-    fixed = (_phases_ok(phases, sp) or _composition_ok(sp.get('composition'))
-             or (isinstance(phases, dict) and bool(phases) and all(
+    # A stated-empty phase (_empty_phase) needs no composition, as in
+    # _phases_ok, so deleting one never lifts the tier.
+    fixed = (_phases_ok(phases, sp, volumetric=True)
+             or _composition_ok(sp.get('composition'))
+             or (isinstance(phases, dict) and all(
                  _composition_ok(_as_dict(phase).get('composition'))
-                 for phase in phases.values())))
+                 or _empty_phase(phase) for phase in phases.values())
+                 and not all(_empty_phase(phase)
+                             for phase in phases.values())))
     return DERIVED_CREDIT if fixed else 0.0
 
 
@@ -908,11 +989,13 @@ def _species_flows(stream, basis='molar'):
     total_molar_flow x mol_fraction) or 'mass' (phase total_mass_flow x
     mass_fraction; R5.3) -- or None when not computable from valid data on
     that basis (no valid flow of the basis for some phase -- the only phase
-    of a single-phase stream may use the stream-level total -- an
+    of a single-phase stream, any other phase stated empty (_sole_phase),
+    may use the stream-level total -- an
     implausible composition, an entry without a valid fraction of the
     basis, or a legacy flat composition over several phases, whose phase
     split is unknown). A zero-flow stream -> {}; so is a per-phase stream
-    whose every phase states a zero flow."""
+    whose every phase states a zero flow. A phase stated empty on one
+    basis (_empty_phase) is empty on the other too."""
     flow_key, fraction_key = _BASIS_KEYS[basis]
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
@@ -921,9 +1004,12 @@ def _species_flows(stream, basis='molar'):
     phases = sp.get('phases')
     if isinstance(phases, dict) and phases:
         blocks = []
-        for phase in phases.values():
+        for symbol, phase in phases.items():
             phase = _as_dict(phase)
-            flow = _phase_flow(phase, sp, len(phases) == 1, flow_key)
+            flow = _phase_flow(phase, sp, _sole_phase(phases, symbol),
+                               flow_key)
+            if flow is None and _empty_phase(phase):
+                flow = 0.0  # stated empty on the other basis
             if flow is None:
                 return None
             if flow > ZERO_FLOW:
@@ -2545,21 +2631,35 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
     # R6.1(d): the reaction steps ammonia addition, (over)liming,
     # conditioning, acidification, (trans)esterification and mashing name a
     # reactor too ('Ammonia addition tank', 'Overliming tank', 'Mash tank'
-    # through the vessel exception).
+    # through the vessel exception). R7.5: so do a reformer and an
+    # autoclave.
     ('reactor', r'reactor|ferment\w*|saccharif\w*|digest\w*|hydroly\w*|'
                 r'liquefaction|\brx\b|\bmbr\b|seed train|neutrali[sz]\w*|'
                 r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation|\bkilns?\b|'
                 r'ammonia ?addition|(?:over)?liming|condition\w*|'
-                r'acidif\w*|esterif\w*|\bmash(?:ing)?\b'),
+                r'acidif\w*|esterif\w*|\bmash(?:ing)?\b|reformer|'
+                r'autoclave'),
+    # R7.5: ultra-, nano- and microfiltration, pervaporation and pressure
+    # swing adsorption (PSA, a whole token only) separate too; a membrane
+    # is a splitter unless a later head names more ('Membrane bioreactor'
+    # stays a reactor). Like the adsorber and ion-exchange alternatives,
+    # both PSA forms absorb a trailing column/bed head, so 'Pressure swing
+    # adsorption column' and 'PSA column' stay splitters rather than
+    # yielding the head to distillation.
     ('splitter', r'splitter|\bsplit\w*|centrifuge|filter|\bpress\b|screen|'
                  r'separator|decanter|settler|sieve|scrubber|clarifier|'
                  r'adsor[bp]\w*(?: (?:column|bed))?|absorp\w*|membrane|'
                  r'cyclone|osmosis|thickener|crushing mill|'
-                 r'ion ?exchang\w*(?: (?:column|bed|resin))?'),
+                 r'ion ?exchang\w*(?: (?:column|bed|resin))?|'
+                 r'(?:ultra|nano|micro) ?filtration|pervaporat\w*|'
+                 r'\bpsa\b(?: (?:column|bed))?|'
+                 r'pressure swing adsorption(?: (?:column|bed))?'),
     ('distillation', r'distillation|column|rectifier'),
     ('tank', r'tank|storage|vessel|hopper|\bsilo|\bbin\b|\bdrum\b'),
+    # R7.5: a pelletizer (pelletiser) handles solids.
     ('solids_handling', r'convey\w*|\bmill|crusher|grinder|screw|'
-                        r'grain handling|hammer|handling|shredder|feeder'),
+                        r'grain handling|hammer|handling|shredder|feeder|'
+                        r'pelleti[sz]er'),
     ('mixer', r'mixer|\bmix\b|blend\w*'),
 ))
 _JUNCTION_RE = re.compile(r'\bjunction|\bscaler\b|duplicator|mass balance|'
@@ -2581,13 +2681,15 @@ _GENERIC_HEAD_RE = re.compile(r'\b(?:system|treatment|package|unit|plant|'
 # absent -- named plant facilities first (the wastewater cost lump, plant
 # air / CIP, fire water, water services), then wastewater treatment (scored
 # as the reactor family of biosteam.wastewater's digesters, R2.10), then a
-# boiler; a bare 'facility' last.
+# boiler (R7.5: a heat recovery steam generator, HRSG, is one, and names
+# the service of an 'HRSG feed pump' as a boiler does); a bare 'facility'
+# last.
 _SERVICE_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
     ('facility', r'waste ?water system cost|plant air|air distribution|'
                  r'\bcip\b|cip ?package|fire ?water|chilled water|'
                  r'process water|cooling water|refrigeration'),
     ('reactor', r'waste ?water'),
-    ('boiler', r'\bboiler\b'),
+    ('boiler', r'\bboiler\b|heat recovery steam generator|\bhrsg\b'),
     ('facility', r'facilit'),
 ))
 
@@ -3553,7 +3655,14 @@ def _stream_value(stream, part):
 def _phase_set(stream):
     """Phases carrying flow in a stream (per-phase shape, or legacy flat
     composition entries tagged with a phase); a zero-flow stream -> empty
-    set; None when the stream has no phase data."""
+    set; None when the stream has no phase data, or when some phase's
+    presence is unknown (R2.13: every caller reads the set as
+    affirmative evidence -- a single-phase port, an unchanged phase set --
+    so an unknown phase must not count as absent): a phase stating neither
+    a valid flow of its own nor a composition, or a flat entry without a
+    valid fraction. Deleting such a phase's composition or zero flow, or
+    an entry's fraction, then voids the set instead of dropping the phase
+    from it (which raised CMP-RXN-04's phase part)."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
     if total is not None and abs(total) <= ZERO_FLOW:
@@ -3564,14 +3673,18 @@ def _phase_set(stream):
         for symbol, phase in phases.items():
             phase = _as_dict(phase)
             flow = _total_flow(phase)
-            if (flow is None and _as_list(phase.get('composition'))) \
-                    or (flow is not None and abs(flow) > ZERO_FLOW):
+            if flow is None and not _as_list(phase.get('composition')):
+                return None
+            if flow is None or abs(flow) > ZERO_FLOW:
                 found.add(symbol)
         return frozenset(found)
     entries = _dicts(sp.get('composition'))
     if entries and all(_nonempty_str(e.get('phase')) for e in entries):
-        return frozenset(e['phase'] for e in entries
-                         if (_entry_fraction(e) or 0.0) > 0.0)
+        fractions = [_entry_fraction(e) for e in entries]
+        if any(x is None for x in fractions):
+            return None
+        return frozenset(e['phase'] for e, x in zip(entries, fractions)
+                         if x > 0.0)
     return None
 
 
@@ -3672,6 +3785,34 @@ def _dangling_port(sc, position):
                     continue
             return (f'{sc.stream_labels[i]} ({key} not stated) may be a '
                     f'missing {side}: the balance cannot rule it out')
+    return ''
+
+
+def _gap_port(sc, m_in, m_out):
+    """R5.8 for a failing total mass balance (m_in in, m_out out; the
+    R4.10 guard): why a dangling stream (_is_dangling endpoint) may be a
+    missing port that accounts for the gap, or '' when none can be. A
+    stream whose sink is not stated may be a missing inlet of any unit,
+    one whose source is not stated a missing outlet; it can account for
+    the gap only on the side the balance lacks (less in than out: an
+    inlet; less out than in: an outlet), and only when it may carry mass
+    (one stated to carry none, _stream_mass 0, explains nothing; one of
+    unknown mass may). On a document whose complete form closes the
+    balance, the balance can only fail once ports are lost, and a port is
+    lost only by deleting the endpoint that attached it, which leaves it
+    dangling on exactly that side; the side that fails is one that lost a
+    mass-carrying port (if only outlets were lost, less out than in: the
+    balance cannot fail the other way). So on a consistent document every
+    failing balance has such an excuse -- the guard never fires on one,
+    and deleting data can never lift it from one."""
+    key, side = (('sink_unit_id', 'inlet') if m_in < m_out
+                 else ('source_unit_id', 'outlet'))
+    for i in sc.dangling:
+        stream = sc.streams[i]
+        if (_is_dangling(stream.get(key))
+                and _stream_mass(stream) != 0.0):
+            return (f'{sc.stream_labels[i]} ({key} not stated) may be a '
+                    f'missing {side}')
     return ''
 
 
@@ -4189,11 +4330,14 @@ class _ScoringContext:
              if _nonempty_str(e) and not _is_boundary(e)
              and e not in self.unit_ids})
 
-        # Per unit: declares >= 1 well-formed reaction (R2.0), mass-
-        # conserving where testable (R6.2: needs the validator context).
+        # Per unit: declares >= 1 well-formed reaction (R2.0). R7.4: a
+        # reaction failing the R6.2 closure test (which needs the validator
+        # context) is not discarded -- only its CMP-RXN-02 definition is
+        # discounted (sc.conserves).
         self._vctx = None
         self._molar_masses = None
         self._well_formed = {}
+        self._conserving = {}
         self.closures = {}  # _closure cache: position -> (closes, reason)
         self.mass_closures = {}  # _mass_closure cache (R5.3 / R5.8)
         self.consistency = {}  # _species_consistency cache (R2.4)
@@ -4280,16 +4424,28 @@ class _ScoringContext:
                      for side in (self.unit_inlets, self.unit_outlets))
 
     def well_formed(self, reaction):
-        """_well_formed against this document's chemical ids and indices,
-        and (R6.2) conserving mass (_conserves_mass) when its participants
-        all have molar masses; cached per reaction object."""
+        """_well_formed against this document's chemical ids and indices;
+        cached per reaction object. R7.4: mass conservation (R6.2) no
+        longer decides it -- a non-conserving reaction is still a declared
+        one (sc.conserves), so a unit's reaction evidence depends only on
+        the species its reactions name, which deleting a field can only
+        shrink."""
         cached = self._well_formed.get(id(reaction))
         if cached is None or cached[0] is not reaction:
             # The reaction object is kept with its verdict, so its id is
             # never reused by another object while cached.
             cached = self._well_formed[id(reaction)] = (reaction, (
-                _well_formed(reaction, self.chem_ids, self.chem_by_index)
-                and _conserves_mass(self, reaction)))
+                _well_formed(reaction, self.chem_ids, self.chem_by_index)))
+        return cached[1]
+
+    def conserves(self, reaction):
+        """_conserves_mass (R6.2: True when closing on a mol or a wt basis
+        within RXN_CLOSURE_RTOL, False when testably not, None when
+        untestable), cached per reaction object."""
+        cached = self._conserving.get(id(reaction))
+        if cached is None or cached[0] is not reaction:
+            cached = self._conserving[id(reaction)] = (
+                reaction, _conserves_mass(self, reaction))
         return cached[1]
 
     def reaction_sides(self, reaction):
@@ -4964,10 +5120,12 @@ _PHASE_SYMBOLS = frozenset({'s', 'l', 'g', 'S', 'L'})
 def _feed_phases_stated(stream):
     """True when a feed's phases are stated (R4.6): its composition is given
     per phase (``stream_properties.phases``, _phases_ok: molar or mass
-    basis, R5.3), or its legacy flat composition tags every entry with a
-    thermosteam phase symbol."""
+    basis, R5.3; R7.3: a single-phase stream's phase amount may be its
+    volume flow),
+    or its legacy flat composition tags every entry with a thermosteam
+    phase symbol."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
-    if _phases_ok(sp.get('phases'), sp):
+    if _phases_ok(sp.get('phases'), sp, volumetric=True):
         return True
     entries = _as_list(sp.get('composition'))
     return bool(entries) and all(
@@ -4981,11 +5139,12 @@ def _feed_01_entry(sc, position, zero_note=None):
     feed's stated zero flow earns no placeholder credit (_score_feed_01), so
     its flow counts as missing (no composition exemption either) and
     `zero_note` explains why on the flow locator. R6.7: a missing flow part
-    earns _volumetric_flow_credit (MAX over tiers). R4.6: a plausible
-    composition without its phases stated earns
-    UNTAGGED_COMPOSITION_CREDIT."""
+    earns _volumetric_flow_credit (MAX over tiers); R7.3: the volume flow
+    is then also the amount of a single-phase stream's phase stating none
+    (_phases_ok), so the stated composition earns its part. R4.6: a plausible composition without its phases
+    stated earns UNTAGGED_COMPOSITION_CREDIT."""
     stream = sc.streams[position]
-    state = _stream_state(stream, empty_exempt=False)
+    state = _stream_state(stream, empty_exempt=False, volumetric=True)
     if zero_note is not None:
         state['flow'] = False
     parts = {key: float(ok) for key, ok in state.items()}
@@ -5537,6 +5696,22 @@ def _score_uop_04(sc):  # CMP-UOP-04
     # (CLASS_IMPLIED_CHEMISTRY_FAMILIES) are exempt: their classes may
     # account mass implicitly -- BioSTEAM's DrumDryer emits the CO2 and H2O
     # of the natural gas it burns without drawing the O2 from any inlet.
+    # R7.4: so is a unit declaring a well-formed reaction that is not
+    # testably mass-conserving (_may_change_mass: R6.2 fails or cannot be
+    # tested) -- such a reaction may create or destroy mass, so the
+    # imbalance may be the faithful export R7.4 credits. R5.8: nor does it
+    # fire while a stream whose endpoint is not stated may be a missing
+    # port that accounts for the gap (_gap_port) -- the balance of an
+    # incomplete but consistent document fails whenever one of its ports
+    # lost the endpoint attaching it, and deleting that stream's mass flow
+    # (or a participant's molar mass, making a conserving reaction
+    # untestable) must not then lift the guard. So the guard fires only
+    # on a unit whose stated balance fails with every declared reaction
+    # conserving mass (or none declared) and no missing port to explain
+    # it: an inconsistent document. It never fires on a consistent one,
+    # so deleting the data it rests on never lifts it from one; a
+    # confirmed conserving reaction whose streams are merely off stays
+    # guarded.
     suspect, unbalanced = {}, {}
     for position, unit in enumerate(sc.units):
         consistent, why = _species_consistency(sc, position)
@@ -5550,13 +5725,20 @@ def _score_uop_04(sc):  # CMP-UOP-04
         if sc.unit_classes[position][1] in CLASS_IMPLIED_CHEMISTRY_FAMILIES:
             continue
         evaluable, closes, why = _mass_balance(sc, position)
-        if evaluable and not closes and sc.unit_inlets.get(uid) and outs:
+        ins = sc.unit_inlets.get(uid, [])
+        if (not evaluable or closes or not ins or not outs
+                or _may_change_mass(sc, position)):
+            continue
+        m_in, m_out = (sum(_stream_mass(sc.streams[i]) for i in side)
+                       for side in (ins, outs))
+        if not _gap_port(sc, m_in, m_out):
             for i in outs:
                 unbalanced.setdefault(i, (sc.unit_labels[position], why))
     # R3.8: a unit that streams reference but no unit declares is of
     # unknown family, declares no reactions and states no balance: its
     # outlets' composition stays unverified and, when its mass balance is
-    # evaluable and fails, their flow too -- deleting a unit's id must not
+    # evaluable and fails with no missing port to explain it (_gap_port,
+    # R5.8, as above), their flow too -- deleting a unit's id must not
     # lift either guard from its outlets.
     for pid in sc.phantom_units:
         label = f'units[{pid}]'
@@ -5567,7 +5749,8 @@ def _score_uop_04(sc):  # CMP-UOP-04
         masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
         if ins and outs and all(m is not None for m in masses):
             m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
-            if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
+            if (abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out)
+                    and not _gap_port(sc, m_in, m_out)):
                 for i in outs:
                     unbalanced.setdefault(i, (label, (
                         f'mass balance does not close (in {m_in:.6g}, out '
@@ -5580,10 +5763,13 @@ def _score_uop_04(sc):  # CMP-UOP-04
             missing.append(f'{sc.stream_labels[i]}.source_unit_id (not '
                            f'stated, so its state is no unit outlet state)')
             continue
-        state = dict(sc.stream_states[i])
+        # R7.3: the volume flow is the amount of a single-phase stream's
+        # phase stating none.
+        stated = _stream_state(sc.streams[i], volumetric=True)
+        state = dict(stated)
         if i in unbalanced:
-            state = dict(_stream_state(sc.streams[i], empty_exempt=False),
-                         flow=False)
+            state = dict(_stream_state(sc.streams[i], empty_exempt=False,
+                                       volumetric=True), flow=False)
         if i in suspect:
             state['composition'] = False
         # R6.7: a stream stating no mass or molar total earns the
@@ -5603,8 +5789,7 @@ def _score_uop_04(sc):  # CMP-UOP-04
             if key == 'flow' and i in unbalanced:
                 label, why = unbalanced[i]
                 note += f' (stated, but unbalanced at {label}: {why})'
-            elif (key == 'composition' and i in suspect
-                  and sc.stream_states[i][key]):
+            elif key == 'composition' and i in suspect and stated[key]:
                 label, why = suspect[i]
                 note = (f' (stated, but unverified at {label}: {why})'
                         if why.startswith(_NOT_COMPUTABLE) else
@@ -6198,42 +6383,158 @@ _HIDDEN_NOTE = ('; one of them is the flowsheet-level pseudo-member for '
 
 _MALFORMED_REACTION = (': not well-formed (its equation|stoichiometry names '
                        'no consumed and produced species)')
-_NONCONSERVING_REACTION = (': not well-formed (its coefficients conserve mass '
-                           'on neither a mol nor a wt basis within '
-                           f'{RXN_CLOSURE_RTOL:.0%}: R6.2)')
+# R7.4: the model-quality note of a well-formed reaction failing the R6.2
+# closure test that its unit's stream data do not confirm.
+_NONCONSERVING_REACTION = (': reaction does not conserve mass as written (its '
+                           'coefficients close on neither a mol nor a wt '
+                           f'basis within {RXN_CLOSURE_RTOL:.0%}: R6.2) and '
+                           "its unit's stream data do not confirm it, so its "
+                           'equation|stoichiometry earns '
+                           f'{NONCONSERVING_CREDIT:g} (R7.4)')
+# R7.4 / R2.13: the note of a well-formed reaction whose closure cannot be
+# tested and that its unit's stream data do not confirm.
+_UNTESTED_REACTION = (': mass conservation not testable (a participant has '
+                      'no molar mass or formula, or its chemical no id) and '
+                      "its unit's stream data do not confirm the reaction, "
+                      'so its equation|stoichiometry earns '
+                      f'{NONCONSERVING_CREDIT:g} (R7.4)')
 
 
 def _malformed_note(sc, reaction):
     """'' when the reaction is well-formed (sc.well_formed), else the
     locator suffix saying why: it names no consumed and produced species
-    (_MALFORMED_REACTION), or it does not conserve mass
-    (_NONCONSERVING_REACTION, R6.2)."""
-    if sc.well_formed(reaction):
-        return ''
-    if not sc.reaction_sides(reaction)[0]:
-        return _MALFORMED_REACTION
-    return _NONCONSERVING_REACTION
+    (_MALFORMED_REACTION). R7.4: a reaction that does not conserve mass
+    is no longer malformed (see _formed_credit)."""
+    return '' if sc.well_formed(reaction) else _MALFORMED_REACTION
 
 
-def _reaction_completeness(sc, reaction, where):
+def _proportional_change(change, coeffs):
+    """R7.4: True when the species-flow changes `change` ({species: out -
+    in}) equal extent x `coeffs` ({chemical id: signed coefficient}) for
+    one positive extent within RXN_CONFIRM_RTOL: every participant's ratio
+    change / coefficient is positive and within RXN_CONFIRM_RTOL of the
+    largest, and every other species' change within RXN_CONFIRM_RTOL of
+    the largest participant change."""
+    ratios = [change.get(name, 0.0) / nu for name, nu in coeffs.items()
+              if nu]
+    if not ratios or min(ratios) <= 0.0:
+        return False
+    if max(ratios) - min(ratios) > RXN_CONFIRM_RTOL * max(ratios):
+        return False
+    scale = max(abs(change.get(name, 0.0)) for name, nu in coeffs.items()
+                if nu)
+    return all(abs(value) <= RXN_CONFIRM_RTOL * scale
+               for name, value in change.items() if not coeffs.get(name))
+
+
+def _reaction_confirmed(sc, position, reaction):
+    """R7.4: True when unit `position` carries exactly this one reaction
+    object and its own streams' species-flow changes (outlets minus
+    inlets) are proportional to the reaction's coefficients as written
+    (_proportional_change, over its _coefficient_sources) on a basis on
+    which every port's species flows are computable (_species_flows:
+    molar for a mol-basis reaction, mass for a wt-basis one) -- a faithful
+    export of a model whose reaction does not conserve mass. No stream may
+    lack a stated endpoint (R5.8: it may be a missing port, and such a
+    unit's mass closure, which the reaction breaks, cannot rule that out).
+    Deleting stream data or an endpoint only removes the confirmation."""
+    unit = sc.units[position]
+    uid = unit.get('id')
+    reactions = _dicts(unit.get('reactions'))
+    if (not _nonempty_str(uid) or sc.dangling or len(reactions) != 1
+            or reactions[0] is not reaction):
+        return False
+    ins, outs = sc.unit_inlets.get(uid, []), sc.unit_outlets.get(uid, [])
+    if not ins or not outs:
+        return False
+    sources = _coefficient_sources(sc, reaction)
+    for basis in _BASIS_KEYS:
+        flows = [_species_flows(sc.streams[i], basis) for i in ins + outs]
+        if any(f is None for f in flows):
+            continue
+        change = {}
+        for k, species in enumerate(flows):
+            sign = -1.0 if k < len(ins) else 1.0
+            for name, value in species.items():
+                change[name] = change.get(name, 0.0) + sign * value
+        if any(_proportional_change(change, coeffs) for coeffs in sources):
+            return True
+    return False
+
+
+def _may_change_mass(sc, position):
+    """R4.10 / R7.4: True when unit `position` declares a well-formed
+    reaction (sc.well_formed) that is not testably mass-conserving
+    (sc.conserves not True: R6.2 fails, or cannot be tested) -- declared
+    chemistry that may create or destroy mass, so a failing total mass
+    balance of the unit may be the faithful export R7.4 credits rather
+    than an inconsistency. Read from the declared chemistry alone, never
+    from the stream data the balance is checked on: a unit whose balance
+    fails while every reaction it declares conserves mass, and no stream
+    lacking an endpoint can be its missing port (_gap_port, R5.8), is
+    inconsistent (a confirmed conserving reaction whose streams are
+    merely off stays guarded), and an exemption resting on stream
+    evidence would let deleting that evidence's other half (an endpoint,
+    a feed's mass flow) lift the guard from a consistent unit whose
+    reaction the streams could not confirm. Deleting a participant's
+    molar mass or chemical id can turn the exemption on (conserves ->
+    None), but only where the guard does not fire on a consistent
+    document anyway; deleting a stoichiometry entry can turn it off
+    (conserves -> True), which can only let the guard fire."""
+    return any(sc.well_formed(r) and sc.conserves(r) is not True
+               for r in _dicts(sc.units[position].get('reactions')))
+
+
+def _formed_credit(sc, position, reaction):
+    """R7.4: credit of a well-formed reaction's equation|stoichiometry
+    component in CMP-RXN-02 -- 1 on affirmative evidence (R2.13) only:
+    it conserves mass (sc.conserves True: R6.2, tested) or, on unit
+    `position` (None: not tested), its stream data confirm it
+    (_reaction_confirmed: a faithful re-import reproduces it); else
+    NONCONSERVING_CREDIT -- for a reaction that does not conserve mass as
+    written, which cannot be told apart from a transcription error, and
+    for one whose closure cannot be tested (a participant without a molar
+    mass), so deleting a molar mass or a chemical id never lifts it.
+    Deleting a stoichiometry entry can lift it -- one whose term held the
+    balance off, or left the closure untestable -- but that states a
+    different reaction, outside the deletion guarantee as deleting a list
+    element is (_conserves_mass). A reaction that does not conserve mass
+    with the document's own molar masses contradicts its chemicals, so
+    that document is internally inconsistent and outside the guarantee,
+    while the reaction itself is still credited NONCONSERVING_CREDIT as
+    the possibly faithful export of a model that writes it so."""
+    if sc.conserves(reaction) or (position is not None and
+                                  _reaction_confirmed(sc, position, reaction)):
+        return 1.0
+    return NONCONSERVING_CREDIT
+
+
+def _reaction_completeness(sc, reaction, where, position=None):
     """(score, missing) of one reaction's definition (R2.0): 0 unless it is
-    well-formed (sc.well_formed: _well_formed, and mass-conserving where
-    testable, R6.2); else the mean of {well-formed, reactant among the
-    consumed species, conversion numeric in [0, 1]}."""
+    well-formed (sc.well_formed: names consumed and produced species);
+    else the mean of {well-formed -- _formed_credit on unit `position`,
+    NONCONSERVING_CREDIT for a reaction that does not conserve mass as
+    written, or whose closure cannot be tested, unless its unit's streams
+    confirm it (R7.4) -- reactant among the consumed species, conversion
+    numeric in [0, 1]}."""
     note = _malformed_note(sc, reaction)
     if note:
         return 0.0, [where + note]
     consumed, _produced = sc.reaction_sides(reaction)
     reactant = reaction.get('reactant')
     parts = {
-        'equation|stoichiometry': True,
-        'reactant (a consumed species)': (isinstance(reactant, str)
-                                          and reactant.strip() in consumed),
-        'conversion (0..1)': _valid_fraction(reaction.get('conversion'))
-        is not None,
+        'equation|stoichiometry': _formed_credit(sc, position, reaction),
+        'reactant (a consumed species)': float(
+            isinstance(reactant, str) and reactant.strip() in consumed),
+        'conversion (0..1)': float(
+            _valid_fraction(reaction.get('conversion')) is not None),
     }
+    missing = [where + (_UNTESTED_REACTION if sc.conserves(reaction) is None
+                        else _NONCONSERVING_REACTION)] * (
+        parts['equation|stoichiometry'] < 1.0)
     return (sum(parts.values()) / len(parts),
-            [f'{where}.{k}' for k, ok in parts.items() if not ok])
+            missing + [f'{where}.{k}' for k, ok in parts.items()
+                       if not ok])
 
 
 def _per_reactive_unit(sc, reaction_score):
@@ -6271,12 +6572,26 @@ def _per_reactive_unit(sc, reaction_score):
 def _score_rxn_02(sc):  # CMP-RXN-02
     score, missing, full, n = _per_reactive_unit(
         sc, lambda sc, p, ri, r: _reaction_completeness(
-            sc, r, f'{sc.unit_labels[p]}.reactions[{ri}]'))
+            sc, r, f'{sc.unit_labels[p]}.reactions[{ri}]', p))
     if not n:
         return None, 'no reactive units and no declared reactions', []
+    # R7.4: the model-quality note -- reactions that do not conserve mass
+    # as written, and how many of them their unit's streams confirm; R2.13:
+    # likewise those whose closure cannot be tested.
+    declared = [(p, r) for p, _reason in _reaction_units(sc)
+                for r in _dicts(sc.units[p].get('reactions'))
+                if sc.well_formed(r)]
+    note = ''
+    for verdict, what in ((False, 'do not conserve mass as written'),
+                          (None, 'cannot be tested for mass conservation')):
+        group = [(p, r) for p, r in declared if sc.conserves(r) is verdict]
+        if group:
+            confirmed = sum(_reaction_confirmed(sc, p, r) for p, r in group)
+            note += (f'; {len(group)} reaction(s) {what} ({confirmed} '
+                     f'confirmed by their unit\'s stream data)')
     return (score, f'{full} of {n} reactive / reaction-declaring unit(s) '
             f'define every reaction completely'
-            + _HIDDEN_NOTE * bool(_unexplained_hosts(sc)), missing)
+            + _HIDDEN_NOTE * bool(_unexplained_hosts(sc)) + note, missing)
 
 
 def _score_rxn_03(sc):  # CMP-RXN-03
@@ -6318,11 +6633,15 @@ def _score_rxn_03(sc):  # CMP-RXN-03
             + _HIDDEN_NOTE * bool(hidden), missing)
 
 
-def _coefficient_sources(sc, reaction):
+def _coefficient_sources(sc, reaction, identities=False):
     """[{chemical id: signed coefficient}, ...] of a reaction, one per
     source that resolves through the validator's helpers: its stoichiometry
     first, then its equation (phase tags stripped); [] when neither
-    does."""
+    does. An equation whose every species resolves but whose coefficients
+    cancel (an identity, 'Ethanol -> Ethanol') resolves to {} and is kept
+    only with `identities` (_closure_error: it creates no mass); a
+    stoichiometry resolving to {} never is -- its coefficients are all zero
+    or not numeric (INVALID == MISSING), so it names no reaction."""
     validator = _validator()
     sources = []
     reaction = _as_dict(reaction)
@@ -6349,7 +6668,7 @@ def _coefficient_sources(sc, reaction):
                                 for t in side.split('+'))
                      for side in equation.split('->', 1)]
             coeffs = validator._parse_equation(' -> '.join(sides), sc.vctx)
-            if coeffs:
+            if coeffs or (identities and coeffs is not None):
                 sources.append(coeffs)
     except Exception:  # malformed document values: no coefficients
         pass
@@ -6370,11 +6689,16 @@ def _closure_error(sc, reaction):
     molar masses (declared, else from the formula, as the validator
     resolves them): per source the smaller of the mol-basis imbalance
     |sum(nu * MW)| / sum over consumed species of |nu| * MW and the
-    wt-basis imbalance |sum(nu)| / sum over consumed species of |nu|.
-    None when no source is testable (a molar mass missing, or nothing
+    wt-basis imbalance |sum(nu)| / sum over consumed species of |nu|;
+    0 for a source whose resolved coefficients all cancel (an identity:
+    no mass is created, whatever the molar masses). None when no source is
+    testable (a species unresolved, a molar mass missing, or nothing
     consumed)."""
     errors = []
-    for coeffs in _coefficient_sources(sc, reaction):
+    for coeffs in _coefficient_sources(sc, reaction, identities=True):
+        if not coeffs:
+            errors.append(0.0)
+            continue
         masses = [sc.vctx.molar_mass(cid) for cid in coeffs]
         if any(m is None for m in masses):
             continue
@@ -6389,13 +6713,24 @@ def _closure_error(sc, reaction):
 
 
 def _conserves_mass(sc, reaction):
-    """R6.2: True unless the reaction is testable (_closure_error not None)
-    and conserves mass on neither a mol nor a wt basis within
-    RXN_CLOSURE_RTOL of its reactant side. Deleting a coefficient can only
-    break the closure; a reaction whose participants lack molar masses is
-    not tested."""
+    """R6.2: True when the reaction is testable (_closure_error not None)
+    and conserves mass on a mol or a wt basis within RXN_CLOSURE_RTOL of
+    its reactant side, False when testable and it does not, None when it
+    is untestable (a participant's molar mass unknown, or nothing
+    consumed). Only True is affirmative evidence of the closure (R2.13):
+    deleting a participant's molar mass or its chemical's id turns True or
+    False into None, never None into True. Deleting an entry of the
+    stoichiometry object (a participant and its coefficient) can break the
+    closure (True -> False) and can as well restore it: False -> True when
+    the dropped term held the balance off, None -> True when it left the
+    closure untestable (no molar mass, or an undeclared chemical). Such a
+    deletion states a different reaction, as deleting a list element does,
+    so it is outside the deletion guarantee whatever the reaction
+    (CMP-RXN-02). False means the reaction contradicts the document's own
+    molar masses, so the document is internally inconsistent and deletions
+    on it are outside the guarantee too (_formed_credit)."""
     error = _closure_error(sc, reaction)
-    return error is None or error <= RXN_CLOSURE_RTOL
+    return None if error is None else error <= RXN_CLOSURE_RTOL
 
 
 def _has_phase_tags(equation):
@@ -6447,7 +6782,9 @@ def _single_phase_ports(sc, position):
 def _reaction_basis_phase(sc, position, ri, reaction):
     """(score, missing) of one reaction for CMP-RXN-04: mean of {basis,
     phase}, each DERIVED_CREDIT when derivable (neither is representable); 0
-    for a reaction that is not well-formed (R2.0)."""
+    for a reaction that is not well-formed (R2.0). R7.4: one that does not
+    conserve mass as written is scored too -- its basis is never derivable
+    (_basis_derivable's BASIS_RTOL is tighter than RXN_CLOSURE_RTOL)."""
     where = f'{sc.unit_labels[position]}.reactions[{ri}]'
     note = _malformed_note(sc, reaction)
     if note:
