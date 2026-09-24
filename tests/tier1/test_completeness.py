@@ -2548,7 +2548,8 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         score, message, missing = run(C._score_feed_01, empty)
         self.assertEqual(score, 0.5)
         self.assertIn("no feed states a non-zero flow", message)
-        self.assertIn("(a zero flow, while no feed states a non-zero one)",
+        self.assertIn("(zero flow stated, but no placeholder credit: no "
+                      "feed states a non-zero flow)",
                       " ".join(missing))
         for key in ("total_mass_flow", "total_molar_flow"):
             del empty["streams"][0]["stream_properties"][key]
@@ -2639,8 +2640,9 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         self.assertTrue(C._is_empty_stream(empty["streams"][0]))
         score, message, missing = run(C._score_feed_02, empty)
         self.assertEqual(score, 0.0)
-        self.assertIn("streams[feed].price (a zero flow at units[U1], whose "
-                      "class is not known exactly", missing[0])
+        self.assertIn("streams[feed].price (zero flow stated, but no "
+                      "placeholder credit: units[U1], whose class is not "
+                      "known exactly", missing[0])
         empty = one_unit_doc(spec_unit("HXprocess"),
                              ins=({}, {"mass": 0.0}), outs=({"mass": 46.07},))
         empty["streams"][1]["stream_properties"]["total_molar_flow"] = 0.0
@@ -9627,8 +9629,8 @@ class TestRevision7(unittest.TestCase):
             del chem["molar_mass"], chem["formula"]
         explained, reason = C._flowsheet_explained(ctx(cut))
         self.assertFalse(explained)
-        self.assertIn("a feed or product states no valid total_mass_flow",
-                      reason)
+        self.assertIn("feed or product streams[", reason)
+        self.assertIn("states no valid total_mass_flow", reason)
         for path, why in cases:
             explained, reason = C._flowsheet_explained(
                 ctx(deleted(doc, path)))
@@ -12755,6 +12757,252 @@ class TestRevision8C(unittest.TestCase):
             raised, _lowered, n = deletion_violations(r8c_brine_doc())
         self.assertGreater(n, 20)
         self.assertEqual(raised, [])
+
+
+def r8d_units_doc(temperature="K", flow="kg/hr"):
+    """r3_rich_doc in K / Pa / kg/hr with its temperature entry (aliases
+    temperature, temperature_limit) stated in `temperature` and its mass
+    flow entry in `flow`; 'kg/hr' for a temperature or 'K' for a flow is a
+    unit the scorer knows only for another dimension (R8.16)."""
+    doc = r3_rich_doc(convert=False)
+    qug = doc["quantity_units_global"]
+    qug["temperature"]["quantity_units"] = temperature
+    qug["mass_flow"]["quantity_units"] = flow
+    return doc
+
+
+def r8d_without(doc, fields):
+    """Copy of `doc` with every stream (and phase) and utility-agent
+    quantity named in `fields` deleted."""
+    doc = copy.deepcopy(doc)
+    holders = []
+    for s in doc["streams"]:
+        sp = s["stream_properties"]
+        holders += [sp] + list(sp.get("phases", {}).values())
+    for group in doc.get("utilities", {}).values():
+        holders += group
+    for holder in holders:
+        for field in fields:
+            holder.pop(field, None)
+    return doc
+
+
+class TestRevision8D(unittest.TestCase):
+    """Revision 8, group D: a quantity in a unit the scorer knows only for
+    another dimension is invalid and CMP-INT-04 names it (R8.16); the
+    zero-flow placeholder locator says the flow is stated; a balance that
+    cannot be evaluated names the stream lacking a mass; the unknown
+    family's needs omit the facility need (documented)."""
+
+    # ---- R8.16 wrong-dimension units ---------------------------------
+
+    def test_other_dimensions(self):
+        """_other_dimensions: the dimensions whose table knows a unit that
+        `dimension`'s own table does not ('_difference' tables folded in);
+        () for a unit of the dimension, no unit, or one no table knows; a
+        dimension without a table (the wastewater loading rates) has every
+        known unit as another dimension's."""
+        self.assertEqual(C._other_dimensions("kg/hr", "temperature"),
+                         ("mass_flow",))
+        self.assertEqual(C._other_dimensions("K", "pressure_difference"),
+                         ("temperature",))
+        self.assertEqual(C._other_dimensions("bar", "temperature"),
+                         ("pressure",))
+        self.assertEqual(C._other_dimensions("kg/hr", "loading_rate"),
+                         ("mass_flow",))
+        for unit, dimension in (("K", "temperature"), ("degC", "temperature"),
+                                ("psig", "pressure_difference"),
+                                ("furlong", "temperature"), (None, "pressure"),
+                                ("", "pressure"),
+                                ("kg/m3/d", "loading_rate")):
+            self.assertEqual(C._other_dimensions(unit, dimension), (),
+                             (unit, dimension))
+
+    def test_to_internal_wrong_dimension(self):
+        """_to_internal (R8.16): a unit of another dimension -> None
+        (invalid, as a JSON null), inline or through quantity_units_global,
+        for stream quantities and dimensional spec keys alike, per element
+        of a list; an unknown unit stays _Unconverted (bounds suspended);
+        a unit of the dimension converts."""
+        index = {"temperature": "kg/hr", "pressure": "K", "tau": "kPa",
+                 "total_mass_flow": "furlong", "P": "K"}
+        self.assertIsNone(C._to_internal(300.0, "temperature", index))
+        self.assertIsNone(C._to_internal(1e5, "pressure", index))
+        self.assertIsNone(C._to_internal(
+            {"value": 300.0, "units": "kg/h"}, "temperature", {}))
+        self.assertIsNone(C._to_internal(2.0, "tau", index, "time"))
+        unknown = C._to_internal(5.0, "total_mass_flow", index)
+        self.assertIsInstance(unknown, C._Unconverted)
+        self.assertEqual(C._to_internal(
+            {"value": 25.0, "units": "degC"}, "temperature", {}), 298.15)
+        unit, _units = C._internal_unit(
+            {"id": "E1", "design_input_specs": {"P": [1e5, 2e5], "T": 350.0}},
+            index, None, frozenset())
+        self.assertEqual(unit["design_input_specs"]["P"], [None, None])
+        self.assertEqual(unit["design_input_specs"]["T"], 350.0)
+        self.assertFalse(C._valid_T(None))
+
+    def test_wrong_dimension_scores_as_missing(self):
+        """INVALID == MISSING (R8.16): every criterion of the rich document
+        with its temperatures declared in kg/hr scores exactly as with
+        every temperature and temperature limit deleted (below the document
+        in K), and with its mass flows declared in K as with every total
+        mass flow deleted (the molar totals still carry the flows). An
+        unknown unit ('furlong') still suspends the bounds instead, keeping
+        the credit."""
+        def scores(doc):
+            return {cid: r.score for cid, r in criterion_results(doc).items()}
+
+        base = scores(r8d_units_doc())
+        for kwargs, fields in (({"temperature": "kg/hr"},
+                                ("temperature", "temperature_limit")),
+                               ({"flow": "K"}, ("total_mass_flow",))):
+            wrong = r8d_units_doc(**kwargs)
+            self.assertEqual(scores(wrong),
+                             scores(r8d_without(r8d_units_doc(), fields)),
+                             kwargs)
+            self.assertLessEqual(overall(wrong), overall(r8d_units_doc()))
+        # The molar totals still carry the flows; the temperatures are lost.
+        self.assertLess(overall(r8d_units_doc(temperature="kg/hr")),
+                        overall(r8d_units_doc()))
+        self.assertEqual(scores(r8d_units_doc(temperature="furlong")), base)
+
+    def test_family_dimensioned_key(self):
+        """_explicit_keys (R8.16): a batch bioreactor's V (a volume there)
+        stated in a unit of another dimension (spec_units) is not explicit;
+        in m3 or with no unit it is; in a flash (V a vapor fraction,
+        dimensionless) the unit is not read."""
+        batch = {"design_input_specs": {"V": 100.0, "tau": 30.0}}
+        self.assertEqual(C._explicit_keys(batch, "batch_bioreactor",
+                                          {"V": "kg/hr"}), {"tau"})
+        for units in ({"V": "m3"}, {}, None):
+            self.assertEqual(C._explicit_keys(batch, "batch_bioreactor",
+                                              units), {"V", "tau"}, units)
+        flash = {"design_input_specs": {"V": 0.5}}
+        self.assertEqual(C._explicit_keys(flash, "flash", {"V": "kg/hr"}),
+                         {"V"})
+
+    def test_int_04_names_wrong_dimension(self):
+        """CMP-INT-04 (R8.16): the validator's verdict still drives the
+        score (1 with QU-01 / QU-02 passing), and the message names each
+        field stated in a unit of another dimension (_dimension_mismatches:
+        stream, phase and agent quantities, dimensional spec keys); a
+        legacy inline unit of another dimension is named too, its score
+        unchanged."""
+        doc = r8d_units_doc(temperature="kg/hr")
+        doc["quantity_units_global"]["time"] = {"aliases": ["tau"],
+                                                "quantity_units": "bar"}
+        found = C._dimension_mismatches(ctx(doc))
+        self.assertIn("temperature in 'kg/hr' (a mass_flow unit)", found)
+        self.assertIn("temperature_limit in 'kg/hr' (a mass_flow unit)",
+                      found)
+        self.assertIn("tau in 'bar' (a pressure unit)", found)
+        score, message, missing = run(C._score_int_04, doc, PASSING)
+        self.assertEqual((score, missing), (1.0, []))
+        self.assertIn("(R8.16): ", message)
+        self.assertIn("state quantities in a unit of another dimension",
+                      message)
+        score, message, _missing = run(C._score_int_04, r8d_units_doc(),
+                                       PASSING)
+        self.assertEqual(score, 1.0)
+        self.assertNotIn("R8.16", message)
+        self.assertEqual(C._dimension_mismatches(ctx(r8d_units_doc())), [])
+        legacy = legacy_doc()
+        before = run(C._score_int_04, legacy)[0]
+        sp = legacy["streams"][0]["stream_properties"]
+        sp["temperature"]["units"] = "kmol/h"
+        score, message, _missing = run(C._score_int_04, legacy)
+        self.assertEqual(score, before)
+        self.assertIn("temperature in 'kmol/h' (a molar_flow unit)", message)
+
+    def test_wrong_dimension_is_an_inconsistent_document(self):
+        """R8.16's deletion exclusion, stated in the criteria header: on
+        the document declaring its temperatures in kg/hr, deleting that
+        unit lets them be read in K and raises the overall score; on the
+        consistent document in K the same deletion raises nothing (strict
+        sweep over every quantity_units_global field)."""
+        wrong = r8d_units_doc(temperature="kg/hr")
+        path = ("quantity_units_global", "temperature", "quantity_units")
+        self.assertGreater(overall(deleted(wrong, path)), overall(wrong))
+        header = " ".join(line.lstrip("# ").strip() for line in
+                          C.CRITERIA_PATH.read_text(
+                              encoding="utf-8").splitlines())
+        self.assertIn("a quantity stated in a unit the scorer knows only "
+                      "for another dimension", header)
+        consistent = r8d_units_doc()
+        raised, _lowered, n = deletion_violations(
+            consistent, exclude=lambda doc, p: p[0] != "quantity_units_global")
+        self.assertGreater(n, 8)
+        self.assertEqual(raised, [])
+
+    # ---- zero-flow placeholder locator --------------------------------
+
+    def test_zero_flow_locator_says_flow_is_stated(self):
+        """A stated zero-flow feed that earns no placeholder credit is
+        named 'zero flow stated, but no placeholder credit' with the reason
+        (_no_placeholder) -- a unit whose class is not known exactly, a
+        variable inlet count, no feed with a non-zero flow -- never as a
+        plain missing flow; CMP-FEED-02 prices it the same way."""
+        self.assertEqual(C._no_placeholder("x"),
+                         " (zero flow stated, but no placeholder credit: x)")
+        widget = padded_doc({"unit_type": "Widget"})
+        missing = " ".join(run(C._score_feed_01, widget)[2])
+        self.assertIn("streams[pad0].stream_properties.total_mass_flow|"
+                      "total_molar_flow (zero flow stated, but no placeholder "
+                      "credit: units[U1], whose class is not known exactly, "
+                      "fixes no port)", missing)
+        mixer = padded_doc(spec_unit("Mixer"))
+        self.assertIn("no placeholder credit: units[U1], whose Mixer inlet "
+                      "count is not fixed)",
+                      " ".join(run(C._score_feed_01, mixer)[2]))
+        prices = " ".join(run(C._score_feed_02, widget)[2])
+        self.assertIn("streams[pad0].price (zero flow stated, but no "
+                      "placeholder credit: units[U1]", prices)
+
+    # ---- balance locators name the stream lacking a mass ---------------
+
+    def test_massless_stream_named(self):
+        """_massless: a balance that cannot be evaluated names the first
+        stream whose mass is unknown (and counts the others), noting when
+        it states only a volumetric flow; the fermenter's balance and the
+        flowsheet-level evidence of r7b_volumetric_doc (feed and vent in
+        m3/h only) both name the volumetric stream."""
+        doc = r7b_volumetric_doc()
+        sc = ctx(doc)
+        feed, vent = doc["streams"][0]["id"], doc["streams"][4]["id"]
+        reason = C._massless(sc, [0, 4], "feed or product")
+        self.assertTrue(reason.startswith(
+            f"feed or product streams[{feed}] (and 1 other stream(s)) states "
+            f"no valid total_mass_flow"), reason)
+        self.assertTrue(reason.endswith(
+            "(only a volumetric flow, which carries no mass)"), reason)
+        position = sc.unit_positions[doc["streams"][4]["source_unit_id"]]
+        _evaluable, closes, why = C._mass_balance(sc, position)
+        self.assertFalse(closes)
+        self.assertIn("connected stream streams[", why)
+        self.assertIn("only a volumetric flow", why)
+        explained, why = C._flowsheet_explained(sc)
+        self.assertFalse(explained)
+        self.assertIn(f"feed or product streams[{feed}] (and 1 other "
+                      f"stream(s))", why)
+        self.assertNotIn(f"streams[{vent}]", why)
+
+    # ---- the unknown family omits the facility need --------------------
+
+    def test_unknown_family_omits_facility_need(self):
+        """Documented (CMP-UOP-01, docs): deleting the class of a facility
+        whose unit_type names no facility ('CT-801') leaves its family
+        unknown, which carries every family-dependent need but CMP-UOP-06's
+        -- the unit leaves that population -- while the overall score
+        falls."""
+        doc = facility_doc()
+        doc["units"][3]["unit_type"] = "CT-801"
+        self.assertEqual(ctx(doc).unit_classes[3][1], "facility")
+        self.assertIn("of 4 facility unit(s)", run(C._score_uop_06, doc)[1])
+        cut = deleted(doc, ("units", 3, "design_simulation_method"))
+        self.assertEqual(ctx(cut).unit_classes[3], (None, None, 0.0))
+        self.assertIn("of 3 facility unit(s)", run(C._score_uop_06, cut)[1])
+        self.assertLess(overall(cut), overall(doc))
 
 
 class TestPinnedScores(unittest.TestCase):

@@ -1553,6 +1553,19 @@ def _stated_unit(value, field, index):
     return inline if inline is not None else index.get(field)
 
 
+def _other_dimensions(unit, dimension):
+    """R8.16: the dimensions (_UNIT_FACTORS tables, a '_difference' table
+    folded into its base) whose units include the unit key `unit` when
+    `dimension`'s own table does not -- a temperature stated in 'kg/hr'
+    -> ('mass_flow',) -- else () (a unit of `dimension`, no unit, or one no
+    table knows)."""
+    if not unit or unit in _UNIT_FACTORS.get(dimension, {}):
+        return ()
+    return tuple(sorted({name.replace('_difference', '')
+                         for name, table in _UNIT_FACTORS.items()
+                         if unit in table}))
+
+
 def _to_internal(value, field, index, dimension=None):
     """`value` of quantity `field` in BioSTEAM's internal unit (R3.4): a
     legacy inline {value, units} pair converts by its own units, anything
@@ -1560,18 +1573,21 @@ def _to_internal(value, field, index, dimension=None):
     _quantity_unit_index). `dimension` names the _UNIT_FACTORS table (default
     _QUANTITY_DIMENSIONS[field]; a design-spec key passes its own, R5.2). No
     unit stated -> the number as is; a recognised unit -> the converted
-    float; an unrecognised (or ambiguous) one -> _Unconverted. A value that
-    is not a finite number is returned unchanged, so the predicates still
-    reject it."""
+    float; a unit the table knows only for another dimension -> None (R8.16:
+    the quantity is invalid, INVALID == MISSING); an unrecognised (or
+    ambiguous) one -> _Unconverted. A value that is not a finite number is
+    returned unchanged, so the predicates still reject it."""
     number = _num(value)
     if number is None:
         return value
     unit = _stated_unit(value, field, index)
     if unit is None:
         return number if isinstance(value, dict) else value
-    table = _UNIT_FACTORS.get(dimension or _QUANTITY_DIMENSIONS[field], {})
-    factor = table.get(unit)
+    dimension = dimension or _QUANTITY_DIMENSIONS[field]
+    factor = _UNIT_FACTORS.get(dimension, {}).get(unit)
     if factor is None:
+        if _other_dimensions(unit, dimension):
+            return None
         return _Unconverted(number)
     return number * factor[0] + factor[1]
 
@@ -3963,12 +3979,25 @@ def _spec_population(sc):
             if _unit_rules(sc, p) != () or _chemistry_rules(sc, p)]
 
 
-def _explicit_keys(unit, family=None):
+def _explicit_keys(unit, family=None, spec_units=None):
     """design_input_specs keys stated with a value plausible for their role
     in a unit of `family` (_valid_spec; R2.0: an implausible value counts as
-    unstated)."""
+    unstated). R8.16: a key whose dimension only `family` fixes
+    (_FAMILY_SPEC_DIMENSIONS: a batch bioreactor's V is a volume), stated
+    in a unit the table knows only for another dimension (`spec_units`,
+    the unit each key is stated in: _ScoringContext.spec_units), is
+    invalid too; the always-dimensional keys were invalidated when the unit
+    was read (_to_internal)."""
     specs = _as_dict(_as_dict(unit).get('design_input_specs'))
-    return {k for k, v in specs.items() if _valid_spec(k, v, family)}
+    spec_units = spec_units or {}
+
+    def mismatched(key):
+        dimension = _FAMILY_SPEC_DIMENSIONS.get((family, key))
+        return (dimension is not None
+                and bool(_other_dimensions(spec_units.get(key), dimension)))
+
+    return {k for k, v in specs.items()
+            if _valid_spec(k, v, family) and not mismatched(k)}
 
 
 def _stream_value(stream, part):
@@ -4148,6 +4177,23 @@ def _stream_mass(stream, molar_masses=None):
     return mass
 
 
+def _massless(sc, positions, role):
+    """Reason a balance is not evaluable: the first of the streams at
+    `positions` (those whose mass _stream_mass cannot tell) named, with a
+    count of the others -- N5: one stream stating only a volumetric flow
+    suspends the balance, so the locator names it (a recorded residual:
+    its mass is not solved from the balance)."""
+    label = sc.stream_labels[positions[0]]
+    sp = _as_dict(sc.streams[positions[0]].get('stream_properties'))
+    volume = (' (only a volumetric flow, which carries no mass)'
+              if _valid_flow(sp.get('total_volumetric_flow')) is not None
+              else '')
+    others = (f' (and {len(positions) - 1} other stream(s))'
+              if len(positions) > 1 else '')
+    return (f'{role} {label}{others} states no valid total_mass_flow (nor a '
+            f'phase amount with resolved molar masses: R8.5){volume}')
+
+
 def _mass_balance(sc, position):
     """(evaluable, closes, reason) of unit `position`'s total mass balance:
     evaluable when it has connected streams and each states a valid
@@ -4162,9 +4208,9 @@ def _mass_balance(sc, position):
     masses = [_stream_mass(sc.streams[i], sc.molar_masses)
               for i in ins + outs]
     if any(m is None for m in masses):
-        return (False, False, 'a connected stream states no valid '
-                'total_mass_flow (nor a phase amount with resolved molar '
-                'masses: R8.5)')
+        return False, False, _massless(
+            sc, [i for i, m in zip(ins + outs, masses) if m is None],
+            'connected stream')
     m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
     if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
         return True, False, (f'mass balance does not close (in {m_in:.6g}, '
@@ -4718,7 +4764,8 @@ def _rules_score(sc, position, rules, family=None):
     the unit's) is the family whose predicates judge its keys -- a rule-set
     variant's own (R7.2)."""
     unit, label = sc.units[position], sc.unit_labels[position]
-    explicit = _explicit_keys(unit, family or sc.unit_classes[position][1])
+    explicit = _explicit_keys(unit, family or sc.unit_classes[position][1],
+                              sc.spec_units[position])
     scores, missing = [], []
     for req in rules:
         if not _requirement_applies(req, sc, position):
@@ -5563,7 +5610,8 @@ def _port_order_derivable(sc, position, side, family=None):
     if not _closure(sc, position)[0]:
         return False
     family = sc.unit_classes[position][1] if family is None else family
-    explicit = _explicit_keys(sc.units[position], family)
+    explicit = _explicit_keys(sc.units[position], family,
+                              sc.spec_units[position])
     streams = _side_streams(sc, position, side)
     if family == 'flash' and side == 'outs':
         sets = [_phase_set(sc.streams[i]) for i in streams]
@@ -5798,8 +5846,8 @@ def _score_feed_01(sc):  # CMP-FEED-01
             sc, empties, 0, lambda i: _feed_01_entry(sc, i, '')[0])
     else:
         credited = set()
-        why = dict.fromkeys(empties, ' (a zero flow, while no feed states a '
-                                     'non-zero one)')
+        why = dict.fromkeys(empties, _no_placeholder(
+            'no feed states a non-zero flow'))
     scores, missing, full = [], [], 0
     for i in sc.dangling:
         scores.append(0.0)
@@ -5842,6 +5890,14 @@ def _fixed_port_counts(sc, position):
 _PORT_SIDES = ('inlet', 'outlet')
 
 
+def _no_placeholder(reason):
+    """Locator note of an empty boundary stream that earns no placeholder
+    credit (N17: its zero flow IS stated; what is missing is a port to hold
+    it, so CMP-FEED-01 scores its flow, and CMP-FEED-02 its price, as
+    missing): ' (zero flow stated, but no placeholder credit: <reason>)'."""
+    return f' (zero flow stated, but no placeholder credit: {reason})'
+
+
 def _placeholder_ports(sc, positions, side, fallback):
     """R6.3: (credited, why) -- which EMPTY streams (_is_empty_stream) among
     boundary streams `positions` earn placeholder-port credit, and, for
@@ -5867,8 +5923,7 @@ def _placeholder_ports(sc, positions, side, fallback):
         unit = (sc.unit_positions.get(uid) if isinstance(uid, str)
                 and not _is_boundary(uid) else None)
         if unit is None:
-            why[i] = (' (a zero flow with no declared unit to hold it as a '
-                      'placeholder port)')
+            why[i] = _no_placeholder('no declared unit holds it as a port')
         else:
             by_unit.setdefault(unit, []).append(i)
     credited = set()
@@ -5878,23 +5933,23 @@ def _placeholder_ports(sc, positions, side, fallback):
         fixed = _fixed_port_counts(sc, unit)[side]
         closes, reason = _mass_closure(sc, unit)
         if confidence < 1.0:
-            note = (f' (a zero flow at {label}, whose class is not known '
-                    f'exactly: no fixed placeholder port)')
+            note = _no_placeholder(f'{label}, whose class is not known '
+                                   f'exactly, fixes no port')
         elif fixed is None:
-            note = (f' (a zero flow at {label}, whose {name} {noun} count is '
-                    f'not fixed: no placeholder port)')
+            note = _no_placeholder(f'{label}, whose {name} {noun} count is '
+                                   f'not fixed')
         elif not closes:
-            note = (f' (a zero flow at {label}, whose total mass closure is '
-                    f'not shown ({reason}): its ports may be incomplete)')
+            note = _no_placeholder(f'{label}, whose total mass closure is '
+                                   f'not shown ({reason}), may lack ports')
         else:
             taken = sc.unit_ports[unit][side]
             free = max(0, fixed - taken)
             ranked = sorted(empties, key=lambda i: (fallback(i), i))
             credited.update(ranked[:free])
             empties = ranked[free:]
-            note = (f' (a zero flow beyond the free fixed {noun} ports of '
-                    f'{label}: {name} has {fixed}, {taken} taken by streams '
-                    f'not stated empty)')
+            note = _no_placeholder(f'beyond the free fixed {noun} ports of '
+                                   f'{label}: {name} has {fixed}, {taken} '
+                                   f'taken by streams not stated empty')
         for i in empties:
             why[i] = note
     return credited, why
@@ -6525,7 +6580,8 @@ def _uop_05_unit(sc, position, facility):
         if rule_sets:
             results.append(max(
                 (_uop_05_credit(sc, position, rules, f, base, False,
-                                _explicit_keys(sc.units[position], f))
+                                _explicit_keys(sc.units[position], f,
+                                               sc.spec_units[position]))
                  for f, rules in rule_sets),
                 key=lambda result: result[0]))
     return min(results, key=lambda result: result[0])
@@ -6736,7 +6792,8 @@ def _facility_explicit(sc, position):
     agents = _heat_agent_ids(sc)
     explicit = {key for key, value in specs.items()
                 if _empty_binding(kind, key, value)}
-    for key in _explicit_keys(unit, sc.unit_classes[position][1]):
+    for key in _explicit_keys(unit, sc.unit_classes[position][1],
+                              sc.spec_units[position]):
         value = specs[key]
         if key in _STREAM_LIST_KEYS:
             ok = _valid_id_list(value, stream_ids)
@@ -6762,7 +6819,8 @@ def _stated_keys(sc, position):
     else _explicit_keys."""
     if sc.unit_classes[position][1] in FACILITY_FAMILIES:
         return _facility_explicit(sc, position)
-    return _explicit_keys(sc.units[position], sc.unit_classes[position][1])
+    return _explicit_keys(sc.units[position], sc.unit_classes[position][1],
+                          sc.spec_units[position])
 
 
 def _serves_agent(sc, position):
@@ -7014,9 +7072,9 @@ def _flowsheet_evidence(sc):
     masses = [_stream_mass(sc.streams[i], sc.molar_masses)
               for i in ins + outs]
     if any(m is None for m in masses):
-        return False, ('a feed or product states no valid total_mass_flow '
-                       '(nor a phase amount with resolved molar masses: '
-                       'R8.5)')
+        return False, _massless(
+            sc, [i for i, m in zip(ins + outs, masses) if m is None],
+            'feed or product')
     m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
     if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
         return False, (f'the overall mass balance does not close (in '
@@ -7549,7 +7607,7 @@ def _basis_derivable(sc, reaction):
     resolves it). R8.8: its R6.2 closure (_basis_errors: the mol-basis
     |sum(nu*MW)| and the wt-basis |sum(nu)|, relative to the reactant
     side) holds within RXN_CLOSURE_RTOL on exactly one basis -- that one
-    (a 3-significant-figure equation, ~0.3 % off, has its basis); when it
+    (a 3-significant-figure equation, ~0.2 % off, has its basis); when it
     holds on both (an isomerisation, or nearly one), a closure within
     BASIS_RTOL on either decides it -- on both, the basis is immaterial
     (R2.10); on one, that one -- else it is ambiguous; a reaction
@@ -8489,9 +8547,63 @@ def _bare_design_results(sc):
             if not isinstance(value, dict) and _num(value) is not None]
 
 
+def _dimension_mismatches(sc):
+    """R8.16: sorted "<field> in '<unit>' (a <dimension> unit)" notes, one
+    per field and unit, for every quantity the scorer reads with a known
+    dimension -- a stream's or phase's or utility agent's temperature,
+    pressure or flow, a dimensional design_input_specs key (per element of
+    a list) -- whose stated unit (inline, else its quantity_units_global
+    alias) the built-in table knows only for another dimension. Each such
+    quantity scores as invalid wherever it is read (_to_internal,
+    _explicit_keys); CMP-INT-04 names them without changing its score."""
+    notes = set()
+
+    def note(value, field, dimension):
+        if _num(value) is None:
+            return
+        unit = _stated_unit(value, field, sc.quantity_units)
+        others = _other_dimensions(unit, dimension)
+        if others:
+            notes.add(f"{field} in '{unit}' (a {' or '.join(others)} unit)")
+
+    def quantities(obj):
+        for field, dimension in _QUANTITY_DIMENSIONS.items():
+            if field in obj:
+                note(obj[field], field, dimension)
+
+    for stream in _dicts(sc.doc.get('streams')):
+        sp = _as_dict(stream.get('stream_properties'))
+        quantities(sp)
+        for phase in _as_dict(sp.get('phases')).values():
+            quantities(_as_dict(phase))
+    utilities = _as_dict(sc.doc.get('utilities'))
+    for group in ('heat_utilities', 'power_utilities', 'other_utilities'):
+        for agent in _dicts(utilities.get(group)):
+            quantities(agent)
+    # The units as stated (sc.units holds converted copies, same positions).
+    raw_units = _first_by_id(_dicts(sc.doc.get('units')))
+    for position, unit in enumerate(raw_units):
+        family = sc.unit_classes[position][1]
+        specs = _as_dict(unit.get('design_input_specs'))
+        for key, value in specs.items():
+            dimension = _spec_dimension(key, family)
+            if dimension is None:
+                continue
+            for element in (value if isinstance(value, list) else [value]):
+                note(element, key, dimension)
+    return sorted(notes)
+
+
 def _score_int_04(sc):  # CMP-INT-04
     if not sc.units and not sc.streams:  # R3.11
         return None, _NO_FLOWSHEET, []
+    mismatched = _dimension_mismatches(sc)
+    flagged = ('' if not mismatched else
+               f'; but {len({m.split(" in ", 1)[0] for m in mismatched})} '
+               f'field(s) state quantities in a unit '
+               f'of another dimension, invalid wherever they are read '
+               f'(R8.16): {", ".join(mismatched[:3])}'
+               + (', ...' if len(mismatched) > 3 else ''))
     inline = list(_inline_quantities(sc.doc))
     if inline:
         # Legacy branch: every inline {value, units} quantity, plus every
@@ -8502,7 +8614,7 @@ def _score_int_04(sc):  # CMP-INT-04
         total = len(inline) + len(_bare_design_results(sc))
         ok = total - len(missing)
         return (ok / total, f'legacy inline shape: {ok} of {total} '
-                f'quantities carry units', missing)
+                f'quantities carry units' + flagged, missing)
     # R4.11: current shape -- QU-01 (every quantity field has a
     # quantity_units_global alias) and QU-02 (every unit string parses), half
     # each; a QU-02 result that is missing or skipped earns nothing.
@@ -8526,7 +8638,9 @@ def _score_int_04(sc):  # CMP-INT-04
                'every unit string parses' if passes == 2 else
                f'{passes} of QU-01 (aliases) and QU-02 (parseable unit '
                f'strings) pass')
-    return passes / 2, message, missing
+    # R8.16: the validator's verdict drives the score; a unit of another
+    # dimension parses, so it is only flagged here.
+    return passes / 2, message + flagged, missing
 
 #%% Criterion registry (id -> scorer; order and ids must match criteria.yaml)
 

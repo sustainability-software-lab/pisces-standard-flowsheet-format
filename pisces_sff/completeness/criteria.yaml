@@ -84,7 +84,17 @@
 #     a unit whose stated mass balance fails although every reaction it
 #     declares conserves mass, its class accounts for no mass implicitly
 #     and no stream lacking an endpoint can be its missing port
-#     (CMP-UOP-04). Scoring
+#     (CMP-UOP-04); a unit_type whose family disagrees with the family the
+#     unit's specification keys unambiguously imply, which CMP-UOP-01
+#     scores at half credit under the label's family, where deleting the
+#     label lets the key-set family stand at 0.75 with its own needs; a
+#     chemical whose declared molar mass or formula contradicts the record
+#     its name or registry id resolves to, where deleting both restores
+#     that tier (CMP-THM-02) and can exempt the chemical from
+#     CMP-THM-05; a quantity stated in a unit the scorer knows only for
+#     another dimension (a temperature in kg/hr, R8.16), which scores as
+#     invalid, where deleting that unit or its alias lets the number be
+#     read in BioSTEAM's internal unit. Scoring
 #     still credits a reaction that does not conserve mass 0.5 in
 #     CMP-RXN-02, since it may be the model's own reaction exported
 #     faithfully: the credit judges what a re-import would reproduce, the
@@ -131,7 +141,9 @@
 # quantity units (quantity_units_global, or a legacy inline pair) by a small
 # built-in table, so a file in degC or bar scores like one in K and Pa; a
 # unit string the table does not know suspends the plausibility bounds (a
-# flow must still be >= 0) and the consistency guards for that quantity.
+# flow must still be >= 0) and the consistency guards for that quantity,
+# while one the table knows only for another dimension (a temperature in
+# kg/hr) makes the quantity invalid (R8.16), which CMP-INT-04 names.
 # A design_input_specs key with a physical dimension that a
 # quantity_units_global entry lists among its aliases (T, P, tau, ...) is
 # converted the same way; any other specification is read in
@@ -682,7 +694,9 @@ criteria:
       unit's inlet total (below that, a rounded table's noise); a Junction
       or Scaler also
       when it records a duty or changes T or P, a Junction when its mass
-      balance does not close. Classes whose own code converts species
+      balance does not close (over the streams whose endpoints name it: a
+      stream whose endpoint is not stated is not counted as its missing
+      port there, a known limitation). Classes whose own code converts species
       (verified in the biosteam and Bioindustrial-Park sources: DrumDryer
       burning natural gas, ThermalOxidizer, Boiler, BoilerTurbogenerator and
       CHP burning their feeds, AmineAbsorption consuming its MEA and make-up
@@ -698,7 +712,13 @@ criteria:
       family, and CMP-RXN-01 covers the conversion it may hide. A unit
       whose family stays unknown carries
       every family-dependent need (reactions, heat and power agents,
-      utility results, costing). A unit id that stream endpoints reference
+      utility results, costing) except facility bindings and settings
+      (CMP-UOP-06), which only a known facility kind names: deleting the
+      class of a facility whose unit_type names no facility moves
+      CMP-UOP-06 to not applicable, while this criterion and the unknown
+      family's other needs lower the overall and representable scores
+      (unit_type itself is schema-required, so deleting it drops
+      CMP-INT-01). A unit id that stream endpoints reference
       but no unit declares scores 0. Every per-unit average in this
       scorer is unweighted -- each unit counts once: a weight read from
       unit_type or design_simulation_method would move when either is
@@ -912,7 +932,10 @@ criteria:
       data, else on the mass basis), its outlets' compositions do not count
       as stated ('inconsistent'), nor do they when its species flows cannot
       be computed on either basis for every connected stream ('unverified';
-      the message tells the two apart), nor when a stream whose endpoint is
+      the message tells the two apart; a known limitation: one connected
+      stream stating only a volumetric flow leaves the unit unverified,
+      since that stream's missing mass or molar amounts are not solved
+      from the unit's balance), nor when a stream whose endpoint is
       not stated may be a missing port the unit's mass closure cannot rule
       out ('unverified'). The outlets of a unit id that streams reference
       but no unit declares are 'unverified' too, and their flows follow the
@@ -1083,7 +1106,11 @@ criteria:
       every species produced or consumed across the flowsheet (beyond 1 %
       of itself and 0.1 % of the boundary inlet total) taking part in a
       declared well-formed reaction somewhere. Deleting data only removes evidence,
-      so the pseudo-member can only appear. Other claims cannot host
+      so the pseudo-member can only appear. A known limitation: one feed
+      or product stating only a volumetric flow (which carries no mass)
+      withholds that evidence although the rest of the flowsheet shows it
+      -- its mass is not solved from the overall balance -- and the
+      pseudo-member's locator names that stream. Other claims cannot host
       chemistry: conversion across them makes the family unknown instead
       (see CMP-UOP-01).
       Each must declare at least one well-formed reaction: an equation or
@@ -1634,11 +1661,15 @@ criteria:
       validator's QU-01 (every quantity field has a quantity_units_global
       alias) and QU-02 (every quantity-unit string is parseable) both pass,
       0.5 when exactly one does (a QU-02 result that is missing earns
-      nothing), and 0 otherwise. The criterion follows the validator even
-      where the scorer's own unit reader is more lenient: the scorer reads
-      unit strings QU-02 rejects (psia, psig or barg, for example) to
-      convert the values it scores, but a file that states them is not
-      conformant, so this criterion does not credit them. QU-02 parses
+      nothing), and 0 otherwise. The criterion follows the validator's
+      verdict both ways. Where QU-02 is stricter than the scorer's own unit
+      reader it is a validator gap: QU-02 rejects the gauge and explicitly
+      absolute pressure spellings (psig, psia, barg, ...) that the scorer
+      converts to score the values, and this criterion still withholds the
+      QU-02 half. Where QU-02 is more lenient, a unit that parses but that
+      the scorer knows only for another dimension (a temperature in kg/hr)
+      keeps the QU-02 half here; the message names each such field, and
+      its quantities score as invalid wherever they are read. QU-02 parses
       with thermosteam's unit registry (the SFF unit system); where
       thermosteam cannot be imported every non-empty unit string fails
       QU-02, so a
