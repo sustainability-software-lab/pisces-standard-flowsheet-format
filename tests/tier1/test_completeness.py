@@ -1842,13 +1842,19 @@ class TestFamilyRules(unittest.TestCase):
     def test_wastewater_classes(self):
         """biosteam.wastewater class rules; every default is a constructor
         argument (R2.8), so it must be stated: AnMBR T without reactor_type
-        -> 0.5, with it 1; PolishingFilter T without OLR|HLR -> 0.5;
-        InternalCirculationRx T only -> 1/3; Anaerobic/AerobicDigestion
-        without sludge_split / evaporation -> 0; MembraneBioreactor is a
-        splitter (split explicit -> 1)."""
-        self.check(0.5, "AnMBR", {"T": 308.15})
-        self.check(1.0, "AnMBR", {"T": 308.15, "reactor_type": "CSTR"})
-        self.check(0.5, "PolishingFilter", {"T": 303.15})
+        or its yields -> 1/4, with reactor_type 1/2, with Y_biogas and
+        Y_biomass too 1 (R8.10); PolishingFilter T without OLR|HLR or its
+        conversions -> 1/4, all four -> 1; InternalCirculationRx T only ->
+        1/3; Anaerobic/AerobicDigestion without sludge_split / evaporation
+        -> 0; MembraneBioreactor is a splitter (split explicit -> 1)."""
+        self.check(0.25, "AnMBR", {"T": 308.15})
+        self.check(0.5, "AnMBR", {"T": 308.15, "reactor_type": "CSTR"})
+        self.check(1.0, "AnMBR", {"T": 308.15, "reactor_type": "CSTR",
+                                  "Y_biogas": 0.86, "Y_biomass": 0.05})
+        self.check(0.25, "PolishingFilter", {"T": 303.15})
+        self.check(1.0, "PolishingFilter", {"T": 303.15, "OLR": 0.1,
+                                            "X_decomp": 0.74,
+                                            "X_growth": 0.22})
         self.check(1 / 3, "InternalCirculationRx", {"T": 308.15})
         self.check(0.0, "AnaerobicDigestion")
         self.check(1.0, "AerobicDigestion", {"evaporation": 0.0113})
@@ -3445,13 +3451,20 @@ class TestCostingCriteria(unittest.TestCase):
     def test_cost_06_parallel_count(self):
         """_count_result_key / _cost_06_unit / _score_cost_06 (CMP-COST-06):
         a 'Number of tanks' design result -> DERIVED_CREDIT (locator names
-        it); no count result -> 0; no costed units -> None."""
+        it); no count result -> 0 for a class not known exactly as core
+        (an unpinned custom class), DERIVED_CREDIT for the core StorageTank
+        (R8.13: its @cost bounds re-derive CostItem.N); no costed units ->
+        None."""
         doc = costed(results={"Number of tanks": 2, "Volume": 5.0})
         self.assertEqual(C._count_result_key(doc["units"][0]), "Number of tanks")
         score, _m, missing = run(C._score_cost_06, doc)
         self.assertEqual(score, C.DERIVED_CREDIT)
         self.assertIn("design_results['Number of tanks']", missing[0])
-        self.assertEqual(C._cost_06_unit(ctx(costed()), 0)[0], 0.0)
+        custom = costed(name="GrainHandling", url=BIP_URL)
+        self.assertEqual(C._cost_06_unit(ctx(custom), 0)[0], 0.0)
+        score, gaps = C._cost_06_unit(ctx(costed()), 0)
+        self.assertEqual(score, C.DERIVED_CREDIT)
+        self.assertIn("its class's @cost bounds", gaps[0])
         self.assertIsNone(C._count_result_key({}))
         self.assertIsNone(run(C._score_cost_06, exact_mixer_doc())[0])
 
@@ -3603,16 +3616,35 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertEqual(C._agent_roles(ctx(doc)),
                          {"steam": {"heating"}, "cw": {"cooling"}})
 
-    def test_water_dominated(self):
-        """_water_dominated: water at >= 0.5 fraction -> True (either name,
-        any case); a propane refrigerant -> False; empty -> False."""
-        self.assertTrue(C._water_dominated([{"component_name": "Water",
-                                             "mol_fraction": 0.8}]))
-        self.assertTrue(C._water_dominated([{"component_name": "h2o",
-                                             "mass_fraction": 0.5}]))
-        self.assertFalse(C._water_dominated([{"component_name": "Propane",
-                                              "mol_fraction": 1.0}]))
-        self.assertFalse(C._water_dominated([]))
+    def test_water_minor(self):
+        """_water_minor (R8.14: affirmative evidence only) / _is_water: a
+        propane refrigerant -> True; water at >= 0.5 fraction (either
+        name, any case) -> False; empty -> False; propane beside an entry
+        without a valid fraction or without a name -> False (water merely
+        unobserved is no evidence); propane 0.5 + water 0.5 -> True."""
+        self.assertTrue(C._water_minor([{"component_name": "Propane",
+                                         "mol_fraction": 1.0}]))
+        self.assertFalse(C._water_minor([{"component_name": "Water",
+                                          "mol_fraction": 0.8},
+                                         {"component_name": "Glycol",
+                                          "mol_fraction": 0.2}]))
+        self.assertFalse(C._water_minor([{"component_name": "h2o",
+                                          "mass_fraction": 0.6},
+                                         {"component_name": "NaCl",
+                                          "mass_fraction": 0.4}]))
+        self.assertFalse(C._water_minor([]))
+        self.assertFalse(C._water_minor([{"component_name": "Propane",
+                                          "mol_fraction": 0.6},
+                                         {"component_name": "Water"}]))
+        self.assertFalse(C._water_minor([{"component_name": "Propane",
+                                          "mol_fraction": 0.6},
+                                         {"mol_fraction": 0.4}]))
+        self.assertTrue(C._water_minor([{"component_name": "Propane",
+                                         "mol_fraction": 0.5},
+                                        {"component_name": "Water",
+                                         "mol_fraction": 0.5}]))
+        self.assertTrue(C._is_water({"component_name": " H2O "}))
+        self.assertFalse(C._is_water({"component_name": "Glycol"}))
 
     def test_phase_change_agent(self):
         """_phase_change_agent (R2.13: exempt only on affirmative evidence):
@@ -4889,7 +4921,8 @@ def facility_doc():
         unit("BT1", "BoilerTurbogenerator",
              {"boiler_efficiency": 0.8, "turbogenerator_efficiency": 0.85,
               "satisfy_system_electricity_demand": True, "fuel_source": "CH4",
-              "agent": "steam"},
+              "agent": "steam", "boiler_efficiency_basis": "LHV",
+              "side_steam": None},
              cons={"grid": 5.0}, prod={"steam": -1000.0}),
         unit("PWC1", "ProcessWaterCenter",
              {"process_water_streams": ["pw"], "makeup_water_streams": ["mw"]},
@@ -5049,7 +5082,8 @@ class TestRevision2PartB(unittest.TestCase):
         """_valid_id_list: a non-empty list of declared ids -> True; empty,
         an undeclared id, a non-list or a non-string id -> False.
         _facility_explicit (R2.5): PWC stream lists count only when every id
-        is a declared stream ('in0'/'out0' yes, 'nope' no, [] no); HXN
+        is a declared stream ('in0'/'out0' yes, 'nope' no; [] yes since
+        R8.11: an explicit empty list means none); HXN
         'units' only declared unit ids; 'agent' only a declared heat agent;
         _heat_agent_ids lists the declared heat agents; plausible scalar
         settings count as for UOP-02 (a boiler efficiency of 1.5 does
@@ -5068,7 +5102,7 @@ class TestRevision2PartB(unittest.TestCase):
             {"process_water_streams", "makeup_water_streams"})
         self.assertEqual(explicit("ProcessWaterCenter", {
             "process_water_streams": ["nope"], "makeup_water_streams": []})[0],
-            set())
+            {"makeup_water_streams"})
         self.assertEqual(explicit("HeatExchangerNetwork",
                                   {"T_min_app": 5.0, "units": ["U1"]})[0],
                          {"T_min_app", "units"})
@@ -5087,11 +5121,12 @@ class TestRevision2PartB(unittest.TestCase):
         """_facility_unit_score / _score_uop_06 (CMP-UOP-06): every facility
         of facility_doc fully stated -> 1 (CIP1 excluded); BT1 without its
         agent key but raising steam -> the served agent is derivable
-        (_serves_agent) -> (4 + 0.75) / 5, and without the steam result as
-        well -> 4/5; BT1 without fuel_source -> 4/5; CT1 with no specs ->
+        (_serves_agent) -> (6 + 0.75) / 7, and without the steam result as
+        well -> 6/7; BT1 without fuel_source -> 6/7; CT1 with no specs ->
         its cooling-water agent derived (0.75); PWC1 bound to undeclared stream
         ids -> 0 with 'one of process_water_streams' locators; a plain
-        Boiler needs boiler_efficiency only; a RefrigerationPackage its
+        Boiler needs its efficiency, fuel source, agent, efficiency basis
+        and side steam (R8.9: efficiency alone -> 1/5); a RefrigerationPackage its
         agent and a plausible efficiency (1.5 counts as unstated -> 0; 0.35
         -> 1/2 without the agent); an unknown facility -> 0
         ('facility kind unknown'); unweighted over the population; no
@@ -5113,7 +5148,7 @@ class TestRevision2PartB(unittest.TestCase):
         self.assertAlmostEqual(run(C._score_uop_06, bad)[0], 6 / 8)
         self.assertEqual(C._facility_unit_score(ctx(doc), 0), (1.0, []))
         boiler = one_unit_doc(spec_unit("Boiler", {"boiler_efficiency": 0.8}))
-        self.assertEqual(run(C._score_uop_06, boiler)[0], 1.0)
+        self.assertAlmostEqual(run(C._score_uop_06, boiler)[0], 1 / 5)
         fridge = one_unit_doc(spec_unit("RefrigerationPackage",
                                         {"efficiency": 1.5}))
         self.assertEqual(run(C._score_uop_06, fridge)[0], 0.0)
@@ -5129,12 +5164,14 @@ class TestRevision2PartB(unittest.TestCase):
         derived = copy.deepcopy(doc)
         del derived["units"][0]["design_input_specs"]["agent"]
         self.assertAlmostEqual(C._facility_unit_score(ctx(derived), 0)[0],
-                               (4 + C.DERIVED_CREDIT) / 5)
+                               (6 + C.DERIVED_CREDIT) / 7)
         del derived["units"][0]["utility_production_results"]["steam"]
-        self.assertAlmostEqual(C._facility_unit_score(ctx(derived), 0)[0], 0.8)
+        self.assertAlmostEqual(C._facility_unit_score(ctx(derived), 0)[0],
+                               6 / 7)
         derived = copy.deepcopy(doc)
         del derived["units"][0]["design_input_specs"]["fuel_source"]
-        self.assertAlmostEqual(C._facility_unit_score(ctx(derived), 0)[0], 0.8)
+        self.assertAlmostEqual(C._facility_unit_score(ctx(derived), 0)[0],
+                               6 / 7)
         derived["units"][3]["design_input_specs"] = {}
         self.assertEqual(C._facility_unit_score(ctx(derived), 3)[0],
                          C.DERIVED_CREDIT)
@@ -5562,9 +5599,10 @@ class TestRevision3PartA(unittest.TestCase):
         entry (or curated ancestor) lists none of the keys -> True
         (Splitter, MolecularSieve: no moisture_content; CleaningSystem via
         Splitter, located in the pinned repository); one that takes a key
-        -> False (SolidsCentrifuge, ThermalOxidizer's duty_per_kg); an
-        unlisted core class recorded in _UNLISTED_CLASS_LACKS
-        (ReverseOsmosis) -> True; an unlisted class without a record
+        -> False (SolidsCentrifuge, ThermalOxidizer's duty_per_kg); a core
+        class the registry does not list whose constructor parameters
+        (R8.10 _UNLISTED_CORE_PARAMS) take none of them (ReverseOsmosis,
+        BiogasUpgrading) -> True; one taking sludge_moisture
         (BeltThickener), the same CleaningSystem unpinned (0.75), or a
         family-only unit -> False (the requirement applies)."""
         moisture = ("moisture_content", "sludge_moisture")
@@ -5579,7 +5617,8 @@ class TestRevision3PartA(unittest.TestCase):
         self.assertFalse(lacks(spec_unit("SolidsCentrifuge")))
         self.assertFalse(lacks(spec_unit("ThermalOxidizer"), ("duty_per_kg",)))
         self.assertTrue(lacks(spec_unit("ReverseOsmosis")))
-        self.assertIn("ReverseOsmosis", C._UNLISTED_CLASS_LACKS)
+        self.assertTrue(lacks(spec_unit("BiogasUpgrading")))
+        self.assertIn("ReverseOsmosis", C._UNLISTED_CORE_PARAMS)
         self.assertFalse(lacks(spec_unit("BeltThickener")))
         self.assertFalse(lacks({"unit_type": "Filter press"}))
         self.assertEqual(C._class_family("FakeSplitter"), "junction")
@@ -5587,7 +5626,8 @@ class TestRevision3PartA(unittest.TestCase):
     def test_solids_dryer_combustor_rules(self):
         """R3.5 rules (one-unit docs, full balanced ports): SolidsCentrifuge
         split only -> moisture derived (1 + 0.75) / 2, both stated -> 1;
-        BeltThickener's sludge_moisture counts; Splitter / MolecularSieve
+        BeltThickener's sludge_moisture counts, its solubles derivable
+        (R8.10: (1 + 0.75) / 2, both -> 1); Splitter / MolecularSieve
         split -> 1 (moisture waived); CleaningSystem pinned -> 1, unpinned
         -> 0.875; a family-only 'Filter press' split -> 0.875; DrumDryer
         split + moisture_content + T -> 1, without T (outlet T derivable)
@@ -5603,8 +5643,11 @@ class TestRevision3PartA(unittest.TestCase):
         self.assertAlmostEqual(score(spec_unit("SolidsCentrifuge", split)), 0.875)
         self.assertEqual(score(spec_unit("SolidsCentrifuge",
                                          dict(split, moisture_content=0.4))), 1.0)
-        self.assertEqual(score(spec_unit("BeltThickener",
-                                         dict(split, sludge_moisture=0.96))), 1.0)
+        self.assertAlmostEqual(score(spec_unit(
+            "BeltThickener", dict(split, sludge_moisture=0.96))), 0.875)
+        self.assertEqual(score(spec_unit(
+            "BeltThickener", {"sludge_moisture": 0.96,
+                              "solubles": ["Water"]})), 1.0)
         self.assertEqual(score(spec_unit("Splitter", split)), 1.0)
         self.assertEqual(score(spec_unit("MolecularSieve", split)), 1.0)
         cleaning = spec_unit("CleaningSystem", split, url=BIP_URL)
@@ -6065,8 +6108,9 @@ class TestRevision3PartB(unittest.TestCase):
         score, gaps = C._cost_06_unit(ctx(doc), 0)
         self.assertEqual(score, C.DERIVED_CREDIT)
         self.assertIn("size_upper_bound", gaps[0])
-        self.assertEqual(C._cost_06_unit(ctx(costed(POWER_LAW, {"Volume": 25.0})),
-                                         0)[0], 0.0)
+        self.assertEqual(C._cost_06_unit(ctx(costed(
+            POWER_LAW, {"Volume": 25.0}, name="GrainHandling", url=BIP_URL)),
+            0)[0], 0.0)
 
     def test_cost_07_message_explains_derived_credit(self):
         """R3.11: the CMP-COST-07 message counts the units earning derived
@@ -12086,6 +12130,631 @@ class TestRevision8B(unittest.TestCase):
         doc["chemicals"].append({"id": "Xylose", "formula": "C5H10O5",
                                  "molar_mass": 150.13})
         self.assertEqual(run(C._score_rxn_04, doc)[0], C.DERIVED_CREDIT)
+
+
+_WW_URL = ("https://github.com/BioSTEAMDevelopmentGroup/biosteam/blob/master/"
+           "biosteam/wastewater/")
+CONVENTIONAL_URL = _WW_URL + "conventional.py"
+HIGH_RATE_URL = _WW_URL + "high_rate/system.py"
+SLUDGE_URL = _WW_URL + "high_rate/sludge_handling.py"
+# The meta classes R8.10 leaves out of _UNLISTED_CORE_PARAMS.
+R8_META = frozenset({"Module", "FacilityModule", "GroupedUnit", "Skipped",
+                     "FakeSplitter"})
+
+
+def r8c_facility_doc():
+    """facility_doc with R8.9-R8.11 facilities stated faithfully: PWC1's
+    makeup_water_streams = [] (none, as the corn model's
+    makeup_water_streams=()), HXN1's units = null (every unit), a plain
+    Boiler B1 (every setting, side_steam null) and a port-less CHP1 (eff
+    stated, unit_CAPEX not)."""
+    doc = facility_doc()
+    units = {u["id"]: u for u in doc["units"]}
+    units["PWC1"]["design_input_specs"]["makeup_water_streams"] = []
+    units["HXN1"]["design_input_specs"]["units"] = None
+    doc["units"] += [
+        {"id": "B1", "unit_type": "Boiler",
+         "design_simulation_method": f"Boiler on {BST_URL}",
+         "design_input_specs": {"boiler_efficiency": 0.8, "fuel_source": "CH4",
+                                "agent": "steam",
+                                "boiler_efficiency_basis": "HHV",
+                                "side_steam": None},
+         "utility_consumption_results": {},
+         "utility_production_results": {"steam": -10.0}},
+        {"id": "CHP1", "unit_type": "Combined heat and power",
+         "design_simulation_method": f"CHP on {HIGH_RATE_URL}",
+         "design_input_specs": {"eff": 0.3375},
+         "utility_consumption_results": {},
+         "utility_production_results": {"grid": -2.0}}]
+    return doc
+
+
+def r8c_brine_doc(water_fraction=True):
+    """A consistent one-unit document: a core HXutility cooling its feed
+    from 300 K to 280 K (T stated) with the only heat agent 'brine' -- an
+    all-liquid agent it records as cooling only (production -2.0): 60 mol%
+    water and 40 mol% NaCl, water-based, so it needs its
+    temperature_limit (R8.14); water_fraction False drops the water
+    entry's fraction."""
+    brine = dict(STEAM, id="brine", composition=[
+        {"phase": "l", "component_name": "Water", "mol_fraction": 0.6},
+        {"phase": "l", "component_name": "NaCl", "mol_fraction": 0.4}])
+    if not water_fraction:
+        del brine["composition"][0]["mol_fraction"]
+    unit = spec_unit("HXutility", {"T": 280.0})
+    unit["utility_production_results"] = {"brine": -2.0}
+    doc = one_unit_doc(unit, outs=({"T": 280.0},))
+    doc["utilities"]["heat_utilities"] = [brine]
+    doc["chemicals"] += [
+        {"id": "Water", "index": 1, "formula": "H2O", "molar_mass": 18.015,
+         "included_in_thermo": False},
+        {"id": "NaCl", "index": 2, "formula": "NaCl", "molar_mass": 58.44,
+         "included_in_thermo": False}]
+    return doc
+
+
+class TestRevision8C(unittest.TestCase):
+    """Revision 8, group C: boiler rules (R8.9), core classes without a
+    design-spec registry entry and their class rules (R8.10), explicit
+    empty or null bindings (R8.11), the IdealMixture excess-energies flag
+    (R8.12), COST-06 class-default counts (R8.13) and the UTIL-03 waiver
+    on affirmative evidence only (R8.14)."""
+
+    # ---- R8.9 boiler rules -------------------------------------------
+
+    def test_spec_efficiency_basis(self):
+        """_spec_efficiency_basis: 'LHV' / 'HHV' only (BioSTEAM raises on
+        anything else) -- 'XYZ', lower case, None, a number or a list are
+        invalid, as _valid_spec reads boiler_efficiency_basis."""
+        for value in ("LHV", "HHV"):
+            self.assertTrue(C._spec_efficiency_basis(value))
+            self.assertTrue(C._valid_spec("boiler_efficiency_basis", value))
+        for value in ("XYZ", "lhv", "", None, 1.0, ["LHV"]):
+            self.assertFalse(C._spec_efficiency_basis(value), value)
+            self.assertFalse(C._valid_spec("boiler_efficiency_basis", value))
+
+    def test_boiler_turbogenerator_basis_and_side_steam(self):
+        """CMP-UOP-06 (R8.9): facility_doc's BT1 states every setting ->
+        1; without its efficiency basis -> 6/7 with a locator naming it
+        (no longer 'every binding and setting'), an invalid 'XYZ' basis
+        scores like none, 'HHV' like 'LHV'; side_steam null (none) or a
+        declared stream id counts, an undeclared id, [] or deleting it
+        does not (6/7)."""
+        doc = facility_doc()
+        self.assertEqual(C._facility_unit_score(ctx(doc), 0), (1.0, []))
+        for basis in (None, "XYZ"):
+            bad = copy.deepcopy(doc)
+            specs = bad["units"][0]["design_input_specs"]
+            if basis is None:
+                del specs["boiler_efficiency_basis"]
+            else:
+                specs["boiler_efficiency_basis"] = basis
+            score, missing = C._facility_unit_score(ctx(bad), 0)
+            self.assertAlmostEqual(score, 6 / 7, msg=basis)
+            self.assertEqual(missing, ["units[BT1].design_input_specs: one of "
+                                       "boiler_efficiency_basis"])
+            message = run(C._score_uop_06, bad)[1]
+            self.assertIn("3 of 4 facility unit(s)", message)
+        hhv = copy.deepcopy(doc)
+        hhv["units"][0]["design_input_specs"]["boiler_efficiency_basis"] = "HHV"
+        self.assertEqual(C._facility_unit_score(ctx(hhv), 0)[0], 1.0)
+        for value, full in (("pw", True), ("nope", False), ([], False)):
+            side = copy.deepcopy(doc)
+            side["units"][0]["design_input_specs"]["side_steam"] = value
+            self.assertEqual(C._facility_unit_score(ctx(side), 0)[0] == 1.0,
+                             full, value)
+        del side["units"][0]["design_input_specs"]["side_steam"]
+        score, missing = C._facility_unit_score(ctx(side), 0)
+        self.assertAlmostEqual(score, 6 / 7)
+        self.assertIn("one of side_steam", missing[0])
+
+    def test_plain_boiler_rules(self):
+        """R8.9: a plain Boiler needs its efficiency, fuel source, served
+        agent, efficiency basis and side steam like a BoilerTurbogenerator
+        (not its turbogenerator settings): r8c_facility_doc's B1 states
+        them all -> 1; its efficiency alone -> 1/5 (the agent is not
+        derivable without a steam result), with a steam result the agent
+        is derivable -> (1 + 0.75) / 5."""
+        doc = r8c_facility_doc()
+        sc = ctx(doc)
+        position = [u["id"] for u in doc["units"]].index("B1")
+        self.assertEqual(C._facility_kind(sc, position), "Boiler")
+        self.assertEqual(C._facility_unit_score(sc, position), (1.0, []))
+        doc["units"][position]["design_input_specs"] = {"boiler_efficiency": 0.8}
+        self.assertAlmostEqual(
+            C._facility_unit_score(ctx(doc), position)[0],
+            (1 + C.DERIVED_CREDIT) / 5)
+        doc["units"][position]["utility_production_results"] = {}
+        score, missing = C._facility_unit_score(ctx(doc), position)
+        self.assertAlmostEqual(score, 1 / 5)
+        self.assertEqual(len(missing), 4)
+
+    # ---- R8.11 explicit empty or null bindings ----------------------------
+
+    def test_empty_binding(self):
+        """_empty_binding (R8.11): a process-water center's stream lists
+        accept [] (none) and null (discovered); a boiler's side_steam null
+        only; a heat-exchanger network's units null or []; any other key
+        or kind (an HXN's `ignored`, a BT's other_agents, a PWC stream
+        list under another kind), and a non-empty value, is no explicit
+        empty binding."""
+        for kind, key, value in (
+                ("ProcessWaterCenter", "makeup_water_streams", []),
+                ("ProcessWaterCenter", "makeup_water_streams", None),
+                ("ProcessWaterCenter", "process_water_streams", []),
+                ("BoilerTurbogenerator", "side_steam", None),
+                ("Boiler", "side_steam", None),
+                ("HeatExchangerNetwork", "units", None),
+                ("HeatExchangerNetwork", "units", [])):
+            self.assertTrue(C._empty_binding(kind, key, value),
+                            (kind, key, value))
+        for kind, key, value in (
+                ("BoilerTurbogenerator", "side_steam", []),
+                ("HeatExchangerNetwork", "ignored", None),
+                ("BoilerTurbogenerator", "other_agents", []),
+                ("CoolingTower", "makeup_water_streams", []),
+                (None, "units", None),
+                ("ProcessWaterCenter", "makeup_water_streams", ["mw"]),
+                ("ProcessWaterCenter", "makeup_water_streams", "")):
+            self.assertFalse(C._empty_binding(kind, key, value),
+                             (kind, key, value))
+
+    def test_explicit_empty_bindings_are_stated(self):
+        """R8.11 (the corn model's makeup_water_streams=()): PWC1 stating
+        makeup_water_streams = [] or null scores CMP-UOP-06 exactly like a
+        non-empty declared list -- 1, no locator -- and so does HXN1's
+        units = null; a false non-empty list no longer outscores the
+        faithful empty one. CMP-UOP-05 (facility path) agrees, and
+        CMP-UOP-03 counts the same keys (_stated_keys)."""
+        base = facility_doc()
+        full = run(C._score_uop_06, base)[0]
+        self.assertEqual(full, 1.0)
+        for value in ([], None):
+            doc = copy.deepcopy(base)
+            doc["units"][1]["design_input_specs"]["makeup_water_streams"] = value
+            doc["units"][2]["design_input_specs"]["units"] = value
+            sc = ctx(doc)
+            self.assertEqual(C._facility_unit_score(sc, 1), (1.0, []))
+            self.assertEqual(C._facility_unit_score(sc, 2), (1.0, []))
+            self.assertEqual(run(C._score_uop_06, doc)[0], full)
+            self.assertEqual(run(C._score_uop_05, doc)[0],
+                             run(C._score_uop_05, base)[0])
+            self.assertIn("makeup_water_streams", C._stated_keys(sc, 1))
+            self.assertIn("units", C._stated_keys(sc, 2))
+            self.assertEqual(run(C._score_uop_03, doc)[0],
+                             run(C._score_uop_03, base)[0])
+        doc = copy.deepcopy(base)
+        doc["units"][1]["design_input_specs"]["process_water_streams"] = []
+        del doc["units"][1]["design_input_specs"]["makeup_water_streams"]
+        score, missing = C._facility_unit_score(ctx(doc), 1)
+        self.assertEqual(score, 0.5)
+        self.assertIn("one of makeup_water_streams", missing[0])
+
+    def test_stated_keys(self):
+        """_stated_keys: a facility-family unit's keys as CMP-UOP-06 counts
+        them (an undeclared stream id binds nothing, [] under a PWC is
+        stated); any other unit's _explicit_keys (a mixer's [] is not)."""
+        doc = one_unit_doc(spec_unit("ProcessWaterCenter", {
+            "process_water_streams": ["nope"], "makeup_water_streams": [],
+            "process_water_price": 0.0003}))
+        self.assertEqual(C._stated_keys(ctx(doc), 0),
+                         {"makeup_water_streams", "process_water_price"})
+        doc = one_unit_doc(spec_unit("Mixer", {"rigorous": [], "x": 1.0}),
+                           ins=({}, {}))
+        self.assertEqual(C._stated_keys(ctx(doc), 0), {"x"})
+
+    # ---- R8.10 core classes the registry does not list --------------------
+
+    def test_unlisted_core_table_in_sync(self):
+        """_UNLISTED_CORE_PARAMS covers exactly the core classes the
+        committed design-spec registry does not list (nor a curated
+        ancestor), except the meta classes; each same-named variant table
+        (_UNLISTED_CORE_SOURCES) unions into its class entry; a boiler's
+        T_emissions (setting it raises) is left out; the exporter registry
+        itself is untouched (still no entry for these classes)."""
+        registry, error = C._design_spec_registry()
+        self.assertIsNone(error)
+        unlisted = {name for name in C._CORE_CLASSES - R8_META
+                    if C._declared_registry_class(name, registry) is None}
+        self.assertEqual(set(C._UNLISTED_CORE_PARAMS), unlisted)
+        self.assertFalse(R8_META & set(C._UNLISTED_CORE_PARAMS))
+        for name in C._UNLISTED_CORE_PARAMS:
+            self.assertNotIn(name, registry)
+        for name, variants in C._UNLISTED_CORE_SOURCES.items():
+            union = {p for params in variants.values() for p in params}
+            self.assertEqual(set(C._UNLISTED_CORE_PARAMS[name]), union, name)
+        for name in ("Boiler", "BoilerTurbogenerator"):
+            self.assertNotIn("T_emissions", C._UNLISTED_CORE_PARAMS[name])
+            self.assertIn("boiler_efficiency_basis",
+                          C._UNLISTED_CORE_PARAMS[name])
+
+    def test_rules_name_constructor_parameters(self):
+        """N3: every essential requirement an unlisted core class is held
+        to (its class or family rules, its facility rules), unless waived
+        by class knowledge, names at least one of its constructor
+        parameters (_UNLISTED_CORE_PARAMS): ReverseOsmosis is asked for
+        water_recovery (not split), BeltThickener for sludge_moisture and
+        solubles, BiogasUpgrading for ratio and loss, WWTpump for
+        pump_type (not P / dP_design), RefluxDrum for holdup_time (not
+        tau), CHP for eff, a Boiler for its basis and side steam."""
+        for name, params in C._UNLISTED_CORE_PARAMS.items():
+            sc = ctx(one_unit_doc(spec_unit(name), ins=(), outs=()))
+            self.assertEqual(sc.unit_classes[0][2], 1.0, name)
+            rules = tuple(C._unit_rules(sc, 0) or ())
+            if sc.unit_classes[0][1] in C.FACILITY_FAMILIES:
+                rules += C._FACILITY_RULES.get(C._facility_kind(sc, 0), ())
+            for req in rules:
+                if req.when == "class_param" and C._class_lacks_param(
+                        sc, 0, req.keys):
+                    continue
+                self.assertTrue(set(req.keys) & set(params), (name, req.keys))
+        expected = {"ReverseOsmosis": {"water_recovery"},
+                    "BeltThickener": {"sludge_moisture", "solubles"},
+                    "BiogasUpgrading": {"ratio", "loss"},
+                    "WWTpump": {"pump_type"}, "RefluxDrum": {"holdup_time"}}
+        for name, keys in expected.items():
+            sc = ctx(one_unit_doc(spec_unit(name), ins=(), outs=()))
+            self.assertEqual({k for req in C._unit_rules(sc, 0)
+                              for k in req.keys}, keys, name)
+
+    def test_source_variant(self):
+        """_source_path_named / _source_variant / _unlisted_core_params
+        (R8.10): design_simulation_method's URL tells same-named core
+        classes apart -- the high-rate ReverseOsmosis (no parameter: its
+        water recovery is fixed) from the conventional one
+        (water_recovery), the high-rate SludgeCentrifuge (a
+        SludgeHandling) from the conventional one (a SolidsSeparator); a
+        query or fragment is ignored; a URL naming neither, or none, gives
+        the union; a class without variants has none; an inexact claim
+        (the same class on a custom URL) has no parameters."""
+        self.assertTrue(C._source_path_named(
+            HIGH_RATE_URL + "#L44", "wastewater/high_rate/system.py"))
+        self.assertFalse(C._source_path_named(
+            CONVENTIONAL_URL, "wastewater/high_rate/system.py"))
+        self.assertFalse(C._source_path_named(None, "x.py"))
+        def params(name, url):
+            unit = ({"design_simulation_method": f"{name} on"} if url is None
+                    else spec_unit(name, url=url))
+            sc = ctx(one_unit_doc(unit, ins=(), outs=()))
+            return C._source_variant(sc, 0), C._unlisted_core_params(sc, 0)
+        self.assertEqual(params("ReverseOsmosis", HIGH_RATE_URL),
+                         (("ReverseOsmosis", "wastewater/high_rate/system.py"),
+                          ()))
+        self.assertEqual(params("ReverseOsmosis", CONVENTIONAL_URL)[1],
+                         ("water_recovery",))
+        self.assertEqual(params("ReverseOsmosis", BST_URL),
+                         (None, ("water_recovery",)))
+        self.assertEqual(params("SludgeCentrifuge", SLUDGE_URL)[1],
+                         ("sludge_moisture", "solubles", "centrifuge_type"))
+        self.assertEqual(set(params("SludgeCentrifuge", None)[1]),
+                         {"split", "order", "moisture_content",
+                          "strict_moisture_content", "sludge_moisture",
+                          "solubles", "centrifuge_type"})
+        self.assertEqual(params("CHP", HIGH_RATE_URL),
+                         (None, ("eff", "unit_CAPEX")))
+        self.assertEqual(params("Mixer", BST_URL), (None, None))
+        self.assertEqual(params("AnMBR", BIP_URL), (None, None))
+
+    def test_variant_rules(self):
+        """_unit_rules by source variant (_SOURCE_CLASS_RULES): the
+        high-rate ReverseOsmosis needs nothing (out of CMP-UOP-02), the
+        conventional one its water recovery -- derivable from full port
+        states (0.75), 1 stated; the high-rate SludgeCentrifuge its
+        sludge moisture and solubles, the conventional one its splitter
+        family's split and moisture."""
+        two = ({}, {})
+        doc = one_unit_doc(spec_unit("ReverseOsmosis", url=HIGH_RATE_URL),
+                           outs=two)
+        self.assertEqual(C._unit_rules(ctx(doc), 0), ())
+        self.assertIsNone(run(C._score_uop_02, doc)[0])
+        doc = one_unit_doc(spec_unit("ReverseOsmosis", url=CONVENTIONAL_URL),
+                           outs=two)
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], C.DERIVED_CREDIT)
+        doc["units"][0]["design_input_specs"] = {"water_recovery": 0.98}
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], 1.0)
+        doc["units"][0]["design_input_specs"] = {"water_recovery": 1.5}
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], C.DERIVED_CREDIT)
+        sc = ctx(one_unit_doc(spec_unit("SludgeCentrifuge", url=SLUDGE_URL),
+                              outs=two))
+        self.assertIs(C._unit_rules(sc, 0), C._SLUDGE_HANDLING)
+        sc = ctx(one_unit_doc(spec_unit("SludgeCentrifuge",
+                                        url=CONVENTIONAL_URL), outs=two))
+        self.assertIs(C._unit_rules(sc, 0), C._FAMILY_RULES["splitter"])
+
+    def test_reflux_drum_holdup_time(self):
+        """R8.10: a RefluxDrum is held to its holdup time (CMP-UOP-02: 0
+        unstated, 1 stated; a non-positive value counts as unstated), a
+        time whose unit CMP-UOP-05 scores (_spec_dimension 'time'):
+        stated without a unit -> DERIVED_CREDIT (an exact core class's
+        conventions imply it)."""
+        self.assertEqual(C._spec_dimension("holdup_time"), "time")
+        doc = one_unit_doc(spec_unit("RefluxDrum"), outs=({}, {}))
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], 0.0)
+        doc["units"][0]["design_input_specs"] = {"holdup_time": -3.0}
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], 0.0)
+        doc["units"][0]["design_input_specs"] = {"holdup_time": 3.0}
+        self.assertEqual(C._unit_spec_score(ctx(doc), 0)[0], 1.0)
+        self.assertEqual(C._uop_05_unit(ctx(doc), 0, False)[0],
+                         C.DERIVED_CREDIT)
+
+    def test_uop_03_unlisted_core_class(self):
+        """CMP-UOP-03 (R8.10): a core class the registry does not list is
+        measured against its constructor parameters instead of being left
+        out -- a bare AnMBR scores 0 with one locator per parameter (16),
+        stating them all scores 1; the high-rate ReverseOsmosis (no
+        parameter) stays out (None when it is the only unit); a
+        BoilerTurbogenerator stating its agent has other_agents excused
+        (_excused_params with its facility rules)."""
+        params = C._UNLISTED_CORE_PARAMS["AnMBR"]
+        doc = one_unit_doc(spec_unit("AnMBR"), ins=(), outs=())
+        score, message, missing = run(C._score_uop_03, doc)
+        self.assertEqual(score, 0.0)
+        self.assertEqual(len(missing), len(params))
+        self.assertIn("units[U1].design_input_specs.Y_biogas", missing)
+        self.assertIn("constructor parameters", message)
+        values = {"T": 308.15, "Y_biogas": 0.86, "Y_biomass": 0.05,
+                  "split": {"Ethanol": 0.9}, "biodegradability": 1.0}
+        doc["units"][0]["design_input_specs"] = {
+            p: values.get(p, "stated") for p in params}
+        self.assertEqual(run(C._score_uop_03, doc)[0], 1.0)
+        doc = one_unit_doc(spec_unit("ReverseOsmosis", url=HIGH_RATE_URL),
+                           outs=({}, {}))
+        self.assertIsNone(run(C._score_uop_03, doc)[0])
+        doc = one_unit_doc(spec_unit("BoilerTurbogenerator", {
+            "agent": "steam"}), ins=(), outs=())
+        doc["utilities"]["heat_utilities"] = [STEAM]
+        sc = ctx(doc)
+        self.assertIn("other_agents",
+                      C._excused_params(sc, 0, C._stated_keys(sc, 0)))
+        missing = run(C._score_uop_03, doc)[2]
+        self.assertNotIn("units[U1].design_input_specs.other_agents", missing)
+        self.assertIn("units[U1].design_input_specs.side_steam", missing)
+
+    def test_registry_params_of_unlisted_classes(self):
+        """_registry_params falls back to _UNLISTED_CORE_PARAMS for an
+        exactly known core class the registry does not list, so class
+        knowledge reaches it: _class_lacks_param (BiogasUpgrading takes no
+        moisture setting) and _class_attribute_default (a RefluxDrum's
+        tau is no constructor argument; its holdup_time is)."""
+        sc = ctx(one_unit_doc(spec_unit("RefluxDrum"), ins=(), outs=()))
+        self.assertEqual(C._registry_params(sc, 0),
+                         set(C._UNLISTED_CORE_PARAMS["RefluxDrum"]))
+        self.assertTrue(C._class_attribute_default(sc, 0, "tau"))
+        self.assertFalse(C._class_attribute_default(sc, 0, "holdup_time"))
+        sc = ctx(one_unit_doc(spec_unit("BiogasUpgrading"), ins=(), outs=()))
+        self.assertTrue(C._class_lacks_param(sc, 0, ("moisture_content",)))
+
+    def test_chp_class(self):
+        """R8.10: the core CHP is a boiler-turbogenerator-family facility
+        of its own kind (the family its label keywords give), held to its
+        combined efficiency eff in CMP-UOP-06 (not the BT's settings), not
+        in CMP-UOP-02; it buys no fuel (_port_materials ()), while a
+        label-only 'CHP' claim is a BoilerTurbogenerator kind with its
+        utility ports."""
+        doc = r8c_facility_doc()
+        sc = ctx(doc)
+        position = [u["id"] for u in doc["units"]].index("CHP1")
+        self.assertEqual(sc.unit_classes[position],
+                         ("CHP", "boiler_turbogenerator", 1.0))
+        self.assertEqual(C._facility_kind(sc, position), "CHP")
+        self.assertEqual(C._facility_unit_score(sc, position), (1.0, []))
+        self.assertNotIn(position, C._spec_population(sc))
+        self.assertEqual(C._port_materials(sc, position), ())
+        doc["units"][position]["design_input_specs"] = {}
+        score, missing = C._facility_unit_score(ctx(doc), position)
+        self.assertEqual(score, 0.0)
+        self.assertEqual(missing, ["units[CHP1].design_input_specs: one of eff"])
+        label = one_unit_doc({"unit_type": "CHP"}, ins=(), outs=())
+        sc = ctx(label)
+        self.assertEqual(C._facility_kind(sc, 0), "BoilerTurbogenerator")
+        self.assertEqual(C._port_materials(sc, 0),
+                         ("natural gas", "lime", "boiler chemicals"))
+
+    def test_chp_relabel_no_gain(self):
+        """No-gain relabel (R8.10 touches CHP's family): the exact CHP1 of
+        r8c_facility_doc keeps its class's family and kind whatever its
+        unit_type says ('CHP', 'Mixer', 'Storage tank', 'Boiler', 'Unit'),
+        so no label scores above its honest 'Combined heat and power'; the
+        same unit without its class, labelled 'CHP' (a
+        BoilerTurbogenerator kind by keyword), scores lower."""
+        def weighted(doc):  # relative comparisons only
+            with unit_registry(), name_lookup(set()):
+                return C._weighted_mean(list(criterion_results(doc).values()))
+        doc = r8c_facility_doc()
+        position = [u["id"] for u in doc["units"]].index("CHP1")
+        honest = weighted(doc)
+        for label in ("CHP", "Mixer", "Storage tank", "Boiler", "Unit"):
+            relabelled = copy.deepcopy(doc)
+            relabelled["units"][position]["unit_type"] = label
+            self.assertLessEqual(weighted(relabelled), honest + 1e-12, label)
+        classless = copy.deepcopy(doc)
+        classless["units"][position]["unit_type"] = "CHP"
+        del classless["units"][position]["design_simulation_method"]
+        self.assertLess(weighted(classless), honest)
+
+    def test_r8c_facility_doc_deletions_never_raise(self):
+        """Deletion monotonicity over r8c_facility_doc (strict): deleting
+        any value -- a boiler's basis or side_steam null, PWC1's explicit
+        [] or HXN1's null, CHP1's eff or its class, a unit's utility
+        results -- never raises the overall score nor any scored
+        criterion."""
+        with name_lookup(set()):
+            raised, lowered, n = deletion_violations(r8c_facility_doc())
+        self.assertGreater(n, 100)
+        self.assertEqual(raised, [])
+        self.assertGreater(lowered, n // 3)
+
+    def test_wastewater_deletions_never_raise(self):
+        """Deletion monotonicity (strict) over one-unit documents of the
+        R8.10 classes (balanced ports, their class rules and constructor
+        parameters in play): the conventional and high-rate
+        ReverseOsmosis, BeltThickener, the high-rate SludgeCentrifuge,
+        BiogasUpgrading, WWTpump, RefluxDrum and AnMBR."""
+        cases = (("ReverseOsmosis", CONVENTIONAL_URL, {"water_recovery": 0.98}, 2),
+                 ("ReverseOsmosis", HIGH_RATE_URL, {}, 2),
+                 ("BeltThickener", SLUDGE_URL, {"sludge_moisture": 0.96,
+                                                "max_capacity": 100.0}, 2),
+                 ("SludgeCentrifuge", SLUDGE_URL, {"sludge_moisture": 0.8}, 2),
+                 ("BiogasUpgrading", HIGH_RATE_URL, {"ratio": 0.5}, 2),
+                 ("WWTpump", _WW_URL + "high_rate/wwt_pump.py",
+                  {"pump_type": "lift"}, 1),
+                 ("RefluxDrum", BST_URL, {"holdup_time": 3.0}, 2),
+                 ("AnMBR", _WW_URL + "high_rate/membrane_bioreactor.py",
+                  {"T": 300.0, "Y_biogas": 0.86}, 2))
+        for name, url, specs, n_out in cases:
+            doc = one_unit_doc(spec_unit(name, specs, url=url),
+                               outs=({},) * n_out)
+            with self.subTest(name=name, url=url), name_lookup(set()):
+                raised, _lowered, n = deletion_violations(doc)
+                self.assertGreater(n, 10)
+                self.assertEqual(raised, [])
+
+    # ---- R8.15 outlet utility ports (ash disposal) --------------------------
+
+    def test_port_products(self):
+        """_port_products (R8.15): a boiler-turbogenerator's (or boiler's)
+        ash disposal -- not a CHP's; a unit of unknown family, or a
+        facility of unknown kind, may be one; a process-water center or a
+        mixer has none."""
+        sc = ctx(r8c_facility_doc())
+        ids = [u["id"] for u in sc.units]
+        self.assertEqual(C._port_products(sc, ids.index("BT1")),
+                         ("ash disposal",))
+        self.assertEqual(C._port_products(sc, ids.index("B1")),
+                         ("ash disposal",))
+        self.assertEqual(C._port_products(sc, ids.index("CHP1")), ())
+        self.assertEqual(C._port_products(sc, ids.index("PWC1")), ())
+        for unit_type, materials in (("Gizmo", ("ash disposal",)),
+                                     ("Utility facility", ("ash disposal",)),
+                                     ("Mixer", ())):
+            sc = ctx(one_unit_doc({"unit_type": unit_type}, ins=({}, {})))
+            self.assertEqual(C._port_products(sc, 0), materials, unit_type)
+
+    def test_ash_disposal_outlet_price(self):
+        """CMP-FEED-02 (R8.15): a 0-priced outlet of BT1 whose known
+        composition is not ash (facility_doc's 'emis': CO2 and CaO) keeps
+        full credit (_utility_port_product None); the same outlet made
+        ash, or with its composition unknown (phases deleted), is the ash
+        disposal BioSTEAM prices itself -> 0.5 with a locator
+        (_port_material 'ash disposal' / 'ash disposal?'); a product of a
+        unit id no unit declares may be one too; a priced outlet -> 1."""
+        doc = facility_doc()
+        doc["chemicals"].append({"id": "Ash", "molar_mass": 1.0,
+                                 "included_in_thermo": False})
+        emis = [s["id"] for s in doc["streams"]].index("emis")
+        sc = ctx(doc)
+        self.assertIsNone(C._utility_port_product(sc, emis))
+        self.assertEqual(C._feed_02_entry(sc, emis, False), (1.0, None))
+        ash = copy.deepcopy(doc)
+        ash["streams"][emis]["stream_properties"]["phases"] = _phase(
+            "s", {"Ash": 1.0})
+        sc = ctx(ash)
+        self.assertEqual(C._port_material(sc, emis, ("ash disposal",)),
+                         "ash disposal")
+        score, note = C._feed_02_entry(sc, emis, False)
+        self.assertEqual(score, 0.5)
+        self.assertEqual(note, "streams[emis].price: 0 on the ash disposal "
+                               "outlet of units[BT1] (priced by BioSTEAM, not "
+                               "representable)")
+        ash["streams"][emis]["price"] = -0.0318
+        self.assertEqual(C._feed_02_entry(ctx(ash), emis, False), (1.0, None))
+        unknown = copy.deepcopy(doc)
+        del unknown["streams"][emis]["stream_properties"]["phases"]
+        sc = ctx(unknown)
+        self.assertEqual(C._utility_port_product(sc, emis),
+                         ("units[BT1]", "ash disposal?"))
+        unknown["streams"][emis]["source_unit_id"] = "X9"
+        self.assertEqual(C._utility_port_product(ctx(unknown), emis),
+                         ("units[X9] (referenced, not declared)",
+                          "ash disposal?"))
+
+    # ---- R8.12 IdealMixture include_excess_energies ------------------------
+
+    def test_mixture_credit(self):
+        """_mixture_credit (R8.12): the exporter's
+        'IdealMixture(include_excess_energies=False)' (or True, or the
+        biosteam repr 'IdealMixture(..., include_excess_energies=True)')
+        -> 1; a bare 'IdealMixture' -> MIXTURE_FLAG_UNSTATED_CREDIT; an
+        EOS mixture (no such flag) -> 1; junk -> 0."""
+        for value in ("IdealMixture(include_excess_energies=False)",
+                      "IdealMixture(..., include_excess_energies=True)",
+                      "PRMixture(...)", "EOSMixture"):
+            self.assertEqual(C._mixture_credit(value), 1.0, value)
+        for value in ("IdealMixture", "IdealMixture(...)",
+                      "IdealMixture(include_excess_energies)"):
+            self.assertEqual(C._mixture_credit(value),
+                             C.MIXTURE_FLAG_UNSTATED_CREDIT, value)
+        for value in ("x", None, "NRTL", 3):
+            self.assertEqual(C._mixture_credit(value), 0.0, value)
+
+    def test_thm_06_excess_energies(self):
+        """CMP-THM-06 (R8.12): a full package with the flag -> 1; the same
+        with a bare 'IdealMixture' -> (3 + 0.5) / 4, with a locator naming
+        the missing flag; the mixture deleted -> 3/4."""
+        package = {"mixture": "IdealMixture(include_excess_energies=False)",
+                   "gamma": "DortmundActivityCoefficients",
+                   "phi": "IdealFugacityCoefficients",
+                   "PCF": "MockPoyntingCorrectionFactors"}
+        doc = unit_doc({"thermo_property_package": dict(package)})
+        self.assertEqual(run(C._score_thm_06, doc)[0], 1.0)
+        doc["units"][0]["thermo_property_package"]["mixture"] = "IdealMixture"
+        score, _m, missing = run(C._score_thm_06, doc)
+        self.assertAlmostEqual(score, (3 + C.MIXTURE_FLAG_UNSTATED_CREDIT) / 4)
+        self.assertEqual(missing, [
+            "units[U1].thermo_property_package.mixture: IdealMixture without "
+            "include_excess_energies (partial credit)"])
+        del doc["units"][0]["thermo_property_package"]["mixture"]
+        self.assertAlmostEqual(run(C._score_thm_06, doc)[0], 3 / 4)
+
+    # ---- R8.13 COST-06 class-default counts --------------------------------
+
+    def test_cost_06_source(self):
+        """_cost_06_source (R8.13): the unit's own count data first
+        ('Number of ...' result), else a core class known exactly ('its
+        class's @cost bounds', as CMP-COST-07 credits a class-default
+        lifetime), else None (a custom class, unpinned); CMP-COST-06
+        credits DERIVED_CREDIT for both and says so in its message."""
+        doc = costed(results={"Number of tanks": 2})
+        self.assertEqual(C._cost_06_source(ctx(doc), 0),
+                         "design_results['Number of tanks']")
+        doc = costed()
+        self.assertEqual(C._cost_06_source(ctx(doc), 0),
+                         "its class's @cost bounds")
+        score, message, _missing = run(C._score_cost_06, doc)
+        self.assertEqual(score, C.DERIVED_CREDIT)
+        self.assertIn("core class's @cost bounds for 1 of 1", message)
+        custom = costed(name="GrainHandling", url=BIP_URL)
+        self.assertIsNone(C._cost_06_source(ctx(custom), 0))
+        self.assertEqual(run(C._score_cost_06, custom)[0], 0.0)
+
+    # ---- R8.14 UTIL-03 waiver on affirmative evidence ----------------------
+
+    def test_util_03_water_based_agent(self):
+        """CMP-UTIL-03 (R8.14): a 60 % water brine recorded as cooling
+        needs its temperature_limit (0.5 without); deleting the water
+        entry's fraction no longer exempts it (water merely unobserved is
+        no evidence: still 0.5); a 60 % propane refrigerant is exempt
+        (1)."""
+        self.assertEqual(run(C._score_util_03, r8c_brine_doc())[0], 0.5)
+        self.assertEqual(run(C._score_util_03, r8c_brine_doc(False))[0], 0.5)
+        doc = r8c_brine_doc()
+        doc["utilities"]["heat_utilities"][0]["composition"][1][
+            "component_name"] = "Propane"
+        doc["utilities"]["heat_utilities"][0]["composition"][0][
+            "mol_fraction"] = 0.4
+        doc["utilities"]["heat_utilities"][0]["composition"][1][
+            "mol_fraction"] = 0.6
+        self.assertEqual(run(C._score_util_03, doc)[0], 1.0)
+
+    def test_brine_deletions_never_raise(self):
+        """Deletion monotonicity (strict) over r8c_brine_doc: no deletion --
+        the water entry's fraction or phase, the NaCl entry's fraction,
+        the agent's efficiency -- raises CMP-UTIL-03 or the overall
+        score."""
+        with name_lookup(set()):
+            raised, _lowered, n = deletion_violations(r8c_brine_doc())
+        self.assertGreater(n, 20)
+        self.assertEqual(raised, [])
 
 
 class TestPinnedScores(unittest.TestCase):

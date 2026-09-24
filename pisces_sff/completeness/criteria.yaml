@@ -369,7 +369,14 @@ criteria:
       an activity-coefficient class such as DortmundActivityCoefficients; a
       fugacity-coefficient class; a Poynting-correction class, either
       spelling), since only those rebuild the package; "x" or a bare "NRTL"
-      count as absent. Each unit counts once.
+      count as absent. An IdealMixture takes one setting of its own,
+      include_excess_energies (whether excess enthalpy and entropy are
+      added: about 8 % of a gas mixture's enthalpy at 30 bar), so a mixture
+      descriptor naming IdealMixture counts fully only when it also states
+      that flag, as the exporter writes it
+      ('IdealMixture(include_excess_energies=False)'); without it the class
+      is known but the model is not, for half the descriptor's credit. No
+      other mixture class takes the flag. Each unit counts once.
 
   - id: CMP-THM-07
     category: thermo
@@ -560,8 +567,15 @@ criteria:
       unit of unknown family, also earns half credit: that unit may have a
       utility port BioSTEAM prices itself, so the zero does not
       affirmatively state a free feed (and deleting a unit's id or its
-      class never raises the score). Air and every other zero-priced feed
-      are scored like any stated price.
+      class never raises the score). The same holds for an outlet utility
+      port: a boiler's or boiler-turbogenerator's ash disposal, which
+      BioSTEAM prices from bst.stream_utility_prices['Ash disposal'] when
+      the product's price is 0, earns half credit at a zero price when its
+      composition is at least 50 mol% ash or unknown; a product of a
+      facility of unknown kind, of a unit of unknown family, or of a unit
+      no unit entry declares may be one and is treated alike (a CHP prices
+      neither its inlets nor its outlets). Air, flue gas and every other
+      zero-priced feed or product are scored like any stated price.
 
   # ---------------------------------------------------------------- unit ops
   - id: CMP-UOP-01
@@ -719,7 +733,17 @@ criteria:
       SolidsSeparator's moisture_content; biosteam.wastewater's
       sludge_moisture); a drum dryer its split fractions, dried-solids
       moisture content and drying temperature; a thermal oxidizer its fuel
-      duty per kg of feed (duty_per_kg). Such a class-knowledge requirement
+      duty per kg of feed (duty_per_kg). A core class whose constructor takes
+      other degrees of freedom than its family's is held to those instead,
+      checked against its constructor: biosteam.wastewater's ReverseOsmosis
+      its water recovery (derivable from full port states; the high-rate
+      variant fixes it, so it needs nothing), BiogasUpgrading its upgraded
+      ratio and CH4 loss, the sludge-handling classes (BeltThickener, the
+      high-rate SludgeCentrifuge) their sludge moisture and soluble
+      chemicals (both derivable from full port states), a WWTpump its pump
+      type, AnMBR and PolishingFilter their yields and conversions besides
+      their temperature and reactor type or loading rate, and a RefluxDrum
+      its holdup time. Such a class-knowledge requirement
       is waived only for a class known exactly (confidence 1) that
       affirmatively takes none of its parameters (a plain Splitter,
       MolecularSieve or liquids centrifuge has no moisture_content), and a
@@ -831,12 +855,29 @@ criteria:
       registry entry of its class, else
       of its nearest registry ancestor (a corn storage tank against
       StorageTank); unstated alternatives of an essential requirement already
-      met (V and H for an HXutility given T) are excused. A parameter counts
-      as stated only with a plausible value (as for CMP-UOP-02). A core
-      BioSTEAM class known exactly that no registry entry covers is left out
-      (a gap in the scorer's vocabulary, not in the file); an exact custom
-      class that no registry entry covers scores 0 (the file states none of
-      its parameters -- the exporter writes an empty object for it). Every
+      met (V and H for an HXutility given T, or a facility's other_agents
+      given its agent) are excused. A parameter counts as stated only with a
+      plausible value (as for CMP-UOP-02); a facility's bindings count as in
+      CMP-UOP-06 (declared ids; the explicit empty values BioSTEAM gives a
+      meaning). A core BioSTEAM class known exactly that no registry entry
+      covers -- the facilities, the biosteam.wastewater units, CHP, the
+      Evaporator, the RefluxDrum, ... -- is measured against its
+      constructor parameters, a static table the scorer carries (generated
+      from the biosteam source the way the registry is): the exporter
+      writes an empty object for such a class, so its parameters are a gap
+      in the file, not in the scorer's vocabulary. Algorithm knobs (a
+      heat-exchanger network's Qmin, force_ideal_thermo, avoid_recycle) are
+      constructor arguments with defaults like any other and count. A class
+      whose constructor takes no parameter (a CIP package, an air
+      distribution package, the high-rate ReverseOsmosis, which fixes its
+      water recovery) and the meta classes (Module, FacilityModule,
+      GroupedUnit, Skipped, FakeSplitter) are left out: they have nothing to
+      state. Same-named classes in different biosteam modules
+      (ReverseOsmosis, SludgeCentrifuge) are told apart by the source path
+      design_simulation_method's URL names; a URL naming neither carries
+      every variant's parameters. An exact custom class that no registry
+      entry covers scores 0 (the file states none of its parameters -- the
+      exporter writes an empty object for it). Every
       other unit -- class inferred from its specification keys, family only,
       or unknown -- scores 0 because its parameter universe is unknown.
       Each unit counts once.
@@ -922,7 +963,8 @@ criteria:
       quantity_units_global entry (0.0.7 and later) whose unit the scorer's
       built-in table recognises for the key's dimension -- temperature (T),
       temperature difference (dT, T_min_app), pressure (P, dP_design), heat
-      duty (Q, H, Duty), time (tau, tau_0), volume (V_max, and V in batch
+      duty (Q, H, Duty), time (tau, tau_0, a reflux drum's holdup_time),
+      volume (V_max, and V in batch
       bioreactors and crystallizers) or energy per mass (duty_per_kg);
       otherwise it can only be read in the units the class's own conventions
       imply (hours, Pa and kJ/hr for the corresponding BioSTEAM class), and
@@ -930,7 +972,9 @@ criteria:
       confidence 1. Dimensionless keys (split and other fractions,
       efficiencies, flags, LHK, N_stages, ratios) need no unit. A unit
       scores 1 when every essential requirement that applies to it
-      (CMP-UOP-02, or CMP-UOP-06 for a facility) is met by explicit keys
+      (CMP-UOP-02, or CMP-UOP-06 for a facility, whose bindings count as
+      CMP-UOP-06 counts them: declared ids, or the explicit empty list or
+      null BioSTEAM gives a meaning) is met by explicit keys
       that are dimensionless or unit-stated; else derived credit for an
       exactly known class, else 0 (so a key stated without a unit scores
       what its absence does, and deleting one never raises the score). A
@@ -959,16 +1003,30 @@ criteria:
       settings their constructors take with defaults, which a rebuild must
       restate: a BoilerTurbogenerator its boiler and turbogenerator
       efficiencies, whether it satisfies the system's electricity demand,
-      its fuel source, and the steam agent(s) it raises; a plain Boiler its
-      boiler efficiency; a ProcessWaterCenter the process-water and makeup-
-      water streams it balances; a HeatExchangerNetwork its minimum
-      approach temperature T_min_app and the units it integrates; a
-      CoolingTower, ChilledWaterPackage or RefrigerationPackage the agent it
-      regenerates (and a RefrigerationPackage its efficiency). The free-form design_input_specs object can state them in
-      every SFF version. A value counts only when plausible (efficiencies in
-      (0, 1], a boolean flag, a positive T_min_app); stream- and unit-id
-      lists only when non-empty and every id is a declared stream or unit;
-      an agent only when it names a declared heat agent. The served agent is
+      its fuel source, the steam agent(s) it raises, its boiler efficiency
+      basis and its side steam; a plain Boiler its boiler efficiency, fuel
+      source, agent, efficiency basis and side steam; a ProcessWaterCenter
+      the process-water and makeup-water streams it balances; a
+      HeatExchangerNetwork its minimum approach temperature T_min_app and
+      the units it integrates; a CoolingTower, ChilledWaterPackage or
+      RefrigerationPackage the agent it regenerates (and a
+      RefrigerationPackage its efficiency); biosteam.wastewater's combined
+      heat and power unit (CHP) its combined efficiency eff. The efficiency
+      basis ('LHV' or 'HHV', anything else is invalid) picks the fuel
+      heating value the boiler efficiency applies to: the HHV basis gives
+      1.28 times the electricity and 1.145 times the installed cost of the
+      LHV basis on wet bagasse. The free-form design_input_specs object can
+      state them in every SFF version. A value counts only when plausible
+      (efficiencies in (0, 1], a boolean flag, a positive T_min_app);
+      stream- and unit-id lists only when every id is a declared stream or
+      unit, and only when non-empty unless BioSTEAM gives the explicit
+      empty value a meaning: a ProcessWaterCenter's stream lists as [] (no
+      such streams, as the corn model's makeup_water_streams=() states) or
+      null (discovered at simulation), a boiler's side_steam as null (none;
+      otherwise a declared stream id), a HeatExchangerNetwork's units as
+      null or [] (every unit of the system); every other binding counts
+      only when non-empty, so an empty placeholder binds nothing. An agent
+      counts only when it names a declared heat agent. The served agent is
       derivable (derived credit) when the facility's utility results name a
       declared heat agent. Population: every unit of a facility family
       (boilers, boiler-turbogenerators, heat-exchanger networks, other
@@ -1287,7 +1345,13 @@ criteria:
       states a count ('Number of reactors', ...) with a numeric value, or
       when a power-law correlation states a positive size_upper_bound and
       its basis has a numeric design result S (BioSTEAM then buys N =
-      ceil(S / size_upper_bound) pieces), else 0. Each unit counts once.
+      ceil(S / size_upper_bound) pieces), or when the unit is a core
+      BioSTEAM class known exactly: rebuilt from its class, every CostItem.N
+      is recomputed from the class's own @cost size bounds and
+      Unit.parallel keeps its class default, the same class-default credit
+      CMP-COST-07 gives a lifetime (a parallel count the original model set
+      by hand is not recovered in either case). Else 0. Each unit counts
+      once.
 
   - id: CMP-COST-07
     category: costing
@@ -1404,7 +1468,10 @@ criteria:
       water, brine) and liquid heating agents require one. A phase-change
       agent delivers latent heat and needs none: a condensing heating agent
       (all vapor, such as steam) or an evaporating refrigerant (all liquid,
-      not water-dominated, used for cooling). Heating or cooling is read off
+      used for cooling, and affirmatively not water-based: every
+      composition entry names its species with a valid fraction, and the
+      species other than water make up at least half; water merely left
+      out of the composition is no evidence). Heating or cooling is read off
       the sign of the duties units record for the agent (positive heating,
       negative cooling; agent-regenerating facilities ignored), and the
       exemption needs that affirmative evidence: a vapor agent no unit

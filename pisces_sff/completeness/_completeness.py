@@ -150,6 +150,11 @@ NAME_RESOLVED_CREDIT = 0.75
 NAME_UNVERIFIED_CREDIT = 0.5
 FORMULA_ONLY_CREDIT = 0.25
 
+# R8.12 (CMP-THM-06): an IdealMixture descriptor that does not state its
+# include_excess_energies flag names the mixture class but not the model:
+# half the descriptor's credit.
+MIXTURE_FLAG_UNSTATED_CREDIT = 0.5
+
 # R2.3: a name-resolved record verifies the chemical when their molar masses
 # agree to NAME_MW_RTOL; R2.0/R3.2: a registry id whose database record (or
 # InChI formula layer) differs from the chemical's molar mass by more than
@@ -1298,6 +1303,13 @@ def _spec_flag(x):
     return isinstance(x, bool)
 
 
+def _spec_efficiency_basis(x):
+    """R8.9: a boiler's efficiency basis -- 'LHV' or 'HHV', the only values
+    BioSTEAM's Boiler / BoilerTurbogenerator accept (anything else raises
+    at simulation)."""
+    return isinstance(x, str) and x in ('LHV', 'HHV')
+
+
 # Plausibility of each design_input_specs parameter with a known role; any
 # other parameter only needs a non-empty value (_nonempty_value). V is >= 0:
 # it is a vapor fraction (flash, HXutility, evaporator; 0 = bubble point or
@@ -1315,6 +1327,14 @@ _SPEC_PREDICATES = {
                     _spec_efficiency),
     **dict.fromkeys(('Lr', 'Hr', 'y_top', 'x_bot'), _spec_open_fraction),
     **dict.fromkeys(('moisture_content', 'sludge_moisture'), _spec_fraction),
+    # R8.10: biosteam.wastewater yields and conversions (AnMBR Y_biogas /
+    # Y_biomass, PolishingFilter X_decomp / X_growth) and ReverseOsmosis's
+    # water recovery are fractions; a RefluxDrum's holdup and surge times
+    # (minutes, BioSTEAM-native) are positive.
+    **dict.fromkeys(('water_recovery', 'Y_biogas', 'Y_biomass', 'X_decomp',
+                     'X_growth'), _spec_fraction),
+    **dict.fromkeys(('holdup_time', 'surge_time'), _spec_positive),
+    'boiler_efficiency_basis': _spec_efficiency_basis,
     'duty_per_kg': _spec_positive,
     **dict.fromkeys(('split', 'solids_split', 'aqueous_split'), _spec_split),
     'LHK': _spec_lhk,
@@ -1331,7 +1351,12 @@ _SPEC_PREDICATES = {
 # Family-specific predicates overriding _SPEC_PREDICATES (R3.11): a
 # distillation column's k is the reflux ratio over its minimum, so <= 1
 # cannot converge (an adsorption column's k is a rate constant: > 0 only).
-_FAMILY_SPEC_PREDICATES = {('distillation', 'k'): _spec_above_one}
+_FAMILY_SPEC_PREDICATES = {
+    ('distillation', 'k'): _spec_above_one,
+    # R8.10: BiogasUpgrading's upgraded fraction and CH4 loss; a CHP's
+    # combined efficiency.
+    ('splitter', 'ratio'): _spec_fraction, ('splitter', 'loss'): _spec_fraction,
+    ('boiler_turbogenerator', 'eff'): _spec_efficiency}
 
 
 def _valid_spec(key, value, family=None):
@@ -1476,7 +1501,10 @@ _SPEC_DIMENSIONS = {
     **dict.fromkeys(('dT', 'T_min_app'), 'temperature_difference'),
     'P': 'pressure', 'dP_design': 'pressure_difference',
     **dict.fromkeys(('Q', 'H', 'H_lim0', 'H_lim1', 'Duty'), 'heat_flow'),
-    **dict.fromkeys(('tau', 'tau_0', 'cycle_time'), 'time'),
+    # R8.10: a RefluxDrum's holdup and surge times are times too (minutes
+    # natively; only their unit and sign are ever read).
+    **dict.fromkeys(('tau', 'tau_0', 'cycle_time', 'holdup_time',
+                     'surge_time'), 'time'),
     'V_max': 'volume',
     'duty_per_kg': 'specific_energy',
     **dict.fromkeys(('OLR', 'OLRall', 'HLR'), 'loading_rate'),
@@ -2328,6 +2356,10 @@ _CLASS_TABLE = {
     'BlowdownMixer': ('mixer', 'Mixer'),
     'Boiler': ('boiler', None),
     'BoilerTurbogenerator': ('boiler_turbogenerator', None),
+    # R8.10: biosteam.wastewater's combined heat and power unit -- the
+    # family its label keywords give (R8.2), scored in CMP-UOP-06 by its
+    # own class rules (_FACILITY_RULES['CHP']).
+    'CHP': ('boiler_turbogenerator', None),
     'CIPpackage': ('facility', None),
     'ChemicalCapitalInvestment': ('facility', None),
     'ChilledWaterPackage': ('facility', None),
@@ -3570,6 +3602,14 @@ _DRYER_T = _Req(1, ('T',), {'T': ('outlet_T',)}, when='class_param')
 # ThermalOxidizer: natural gas burned per kg of feed (duty_per_kg, default
 # 61 in the constructor), not derivable without the fuel's heating value.
 _DUTY_PER_KG = _Req(1, ('duty_per_kg',), {}, when='class_param')
+# R8.10 (N3): biosteam.wastewater's SludgeHandling classes (BeltThickener,
+# the high-rate SludgeCentrifuge) split by the sludge's moisture content and
+# the soluble chemicals that follow the water (constructor defaults 0.96 /
+# 0.8 and ()), not by a split vector; both are derivable from full port
+# states (closure-gated, R2.2), as a split is.
+_SLUDGE_HANDLING = (
+    _Req(1, ('sludge_moisture',), {'sludge_moisture': ('all_ports_state',)}),
+    _Req(1, ('solubles',), {'solubles': ('all_ports_state',)}))
 
 # Family rules (Revision 1, R1.4; R3.5), checked against the biosteam source.
 _FAMILY_RULES = {
@@ -3713,24 +3753,64 @@ _CLASS_RULES = {
     # reactor type, loading rates, working volume, sludge split and
     # evaporation all default in the constructor (_init), so they must be
     # stated (R2.8).
+    # R8.10: AnMBR's biogas and biomass yields and PolishingFilter's
+    # decomposition and growth conversions set their reactions (and so
+    # their mass balances) in the constructor (_init defaults 0.86 / 0.05,
+    # 0.74 / 0.22).
     'AnMBR': (_Req(1, ('T',), {'T': ('outlet_T',)}),
-              _Req(1, ('reactor_type',), {})),
+              _Req(1, ('reactor_type',), {}),
+              _Req(1, ('Y_biogas',), {}), _Req(1, ('Y_biomass',), {})),
     'PolishingFilter': (_Req(1, ('T',), {'T': ('outlet_T',)}),
-                        _Req(1, ('OLR', 'HLR'), {})),
+                        _Req(1, ('OLR', 'HLR'), {}),
+                        _Req(1, ('X_decomp',), {}), _Req(1, ('X_growth',), {})),
     'InternalCirculationRx': (
         _Req(1, ('T',), {'T': ('outlet_T',)}),
         _Req(1, ('OLRall',), {}),
         _Req(1, ('V_wf',), {})),
     'AnaerobicDigestion': (_Req(1, ('sludge_split',), {}),),
     'AerobicDigestion': (_Req(1, ('evaporation',), {}),),
+    # R8.10 (N3): the degrees of freedom these biosteam.wastewater classes
+    # take instead of a split (checked against their _init signatures).
+    # ReverseOsmosis (wastewater/conventional.py): the water recovery,
+    # derivable from full port states (the permeate's share of the water);
+    # the high-rate variant fixes it in _run (_SOURCE_CLASS_RULES).
+    'ReverseOsmosis': (_Req(1, ('water_recovery',),
+                            {'water_recovery': ('all_ports_state',)}),),
+    # BiogasUpgrading: the upgraded fraction of the biogas and the CH4 lost
+    # in upgrading (lost CH4 leaves no stream, so the ports do not close
+    # and neither derives).
+    'BiogasUpgrading': (_Req(1, ('ratio',), {}), _Req(1, ('loss',), {})),
+    'BeltThickener': _SLUDGE_HANDLING,
+    'SludgeHandling': _SLUDGE_HANDLING,
+    # WWTpump: the pump type picks its design algorithm (a required
+    # constructor argument); it takes no P or dP_design.
+    'WWTpump': (_Req(1, ('pump_type',), {}),),
+    # RefluxDrum: sized by its holdup time (constructor default 3 min) --
+    # the tank's residence time; it takes no tau.
+    'RefluxDrum': (_Req(1, ('holdup_time',), {}),),
+}
+
+# R8.10: class-level rules of a same-named core class variant, keyed by
+# (class name, the biosteam source path its design_simulation_method URL
+# names; see _UNLISTED_CORE_SOURCES). The high-rate ReverseOsmosis fixes
+# its water recovery in _run (no parameter); the high-rate SludgeCentrifuge
+# is a SludgeHandling. A URL naming neither keeps the class-name rules.
+_SOURCE_CLASS_RULES = {
+    ('ReverseOsmosis', 'wastewater/high_rate/system.py'): (),
+    ('SludgeCentrifuge', 'wastewater/high_rate/sludge_handling.py'):
+        _SLUDGE_HANDLING,
 }
 
 
 def _unit_rules(sc, position):
-    """Essential requirements of unit `position`: class-level rules (by class,
-    then registry class), else its family's; None when the family is
-    unknown."""
+    """Essential requirements of unit `position`: class-level rules (by the
+    source variant of a same-named core class, R8.10 _SOURCE_CLASS_RULES;
+    by class; then by registry class), else its family's; None when the
+    family is unknown."""
     name, family, _conf = sc.unit_classes[position]
+    variant = _source_variant(sc, position)
+    if variant in _SOURCE_CLASS_RULES:
+        return _SOURCE_CLASS_RULES[variant]
     for key in (name, sc.unit_registry_classes[position]):
         if key in _CLASS_RULES:
             return _CLASS_RULES[key]
@@ -4240,43 +4320,159 @@ _STREAM_CONDITIONS = frozenset({'outlet_T', 'outlet_P', 'all_ports_state',
                                 'enthalpy', 'outlet_phases'})
 
 
+# R8.10: constructor parameters of the core classes (_CORE_CLASSES) that the
+# design-spec registry does not list, nor a curated registry ancestor.
+# STATIC, generated once from the biosteam 2.54 source (and hensmith's
+# HeatExchangerNetwork) the way the registry generator sweeps a class --
+# `_init` when defined, else `__init__`, without self / ID / ins / outs /
+# thermo and *args / **kwargs -- so the scorer needs no biosteam import and
+# the exporter registry, and so the exporter's output, stays unchanged. The
+# exporter writes {} for these classes (its registry has no entry): a gap in
+# the file, which CMP-UOP-03 now measures instead of leaving the unit out.
+# Left out: the meta classes Module, FacilityModule, GroupedUnit and Skipped
+# (containers of other units) and FakeSplitter (the exported alias of
+# MockSplitter, a junction); a boiler's T_emissions (setting it raises 'not
+# yet implemented': no degree of freedom). A class listed with no parameter
+# (AirDistributionPackage, CIPpackage, WastewaterSystemCost; the high-rate
+# ReverseOsmosis) stays out of CMP-UOP-03: it has nothing to state.
+# Algorithm knobs (a heat-exchanger network's Qmin, force_ideal_thermo,
+# avoid_recycle, ...) are constructor arguments with defaults like any
+# other (R2.8), so they are needs. Same-named classes in different modules
+# are listed by source path in _UNLISTED_CORE_SOURCES; their entry here is
+# the union of the variants (a unit whose URL names neither carries every
+# variant's needs).
+_BOILER_PARAMS = ('boiler_efficiency', 'side_steam', 'agent', 'other_agents',
+                  'fuel_price', 'natural_gas_price', 'ash_disposal_price',
+                  'CO2_emissions_concentration', 'boiler_efficiency_basis',
+                  'fuel_source', 'oxygen_rich_gas_composition')
+_UNLISTED_CORE_SOURCES = {
+    'ReverseOsmosis': {
+        'wastewater/conventional.py': ('water_recovery',),
+        'wastewater/high_rate/system.py': ()},
+    'SludgeCentrifuge': {
+        'wastewater/conventional.py': ('split', 'order', 'moisture_content',
+                                       'strict_moisture_content'),
+        'wastewater/high_rate/sludge_handling.py': ('sludge_moisture',
+                                                    'solubles',
+                                                    'centrifuge_type')},
+}
+_UNLISTED_CORE_PARAMS = {
+    'AerobicDigestion': ('reactions', 'evaporation'),
+    'AirDistributionPackage': (),
+    'AnMBR': ('reactor_type', 'membrane_configuration', 'membrane_type',
+              'membrane_material', 'membrane_unit_cost',
+              'include_aerobic_filter', 'add_GAC',
+              'include_degassing_membrane', 'Y_biogas', 'Y_biomass',
+              'biodegradability', 'split', 'sludge_conc', 'T',
+              'include_pump_building_cost', 'include_excavation_cost'),
+    'AnaerobicDigestion': ('reactions', 'sludge_split'),
+    'BeltThickener': ('sludge_moisture', 'solubles', 'max_capacity',
+                      'power_demand'),
+    'BiogasUpgrading': ('ratio', 'loss', 'unit_upgrading_cost',
+                        'unit_upgrading_GWP'),
+    'Boiler': _BOILER_PARAMS + ('satisfy_system_steam_demand',),
+    'BoilerTurbogenerator': _BOILER_PARAMS + (
+        'turbogenerator_efficiency', 'satisfy_system_electricity_demand'),
+    'CHP': ('eff', 'unit_CAPEX'),
+    'CIPpackage': (),
+    'ChemicalCapitalInvestment': ('chemical', 'price'),
+    'ChilledWaterPackage': ('agent',),
+    'CoolingTower': ('agent',),
+    'Evaporator': ('Q', 'V', 'P', 'chemical'),
+    'FireWaterTank': ('fire_water_flow_rate',),
+    'HeatExchangerNetwork': ('T_min_app', 'units', 'ignored', 'Qmin',
+                             'force_ideal_thermo', 'cache_network',
+                             'avoid_recycle', 'acceptable_energy_balance_error',
+                             'replace_unit_heat_utilities', 'sort_hus_by_T'),
+    'PolishingFilter': ('filter_type', 'OLR', 'HLR', 'X_decomp', 'X_growth',
+                        'split', 'T', 'include_degassing_membrane',
+                        'include_pump_building_cost', 'include_excavation_cost',
+                        'hxn_ok'),
+    'ProcessWaterCenter': ('makeup_water_streams', 'process_water_streams',
+                           'reverse_osmosis_water_price', 'process_water_price'),
+    'RefluxDrum': ('vessel_material', 'has_glycol_groups', 'has_amine_groups',
+                   'vessel_type', 'holdup_time', 'surge_time',
+                   'has_mist_eliminator'),
+    'RefrigerationPackage': ('agent', 'efficiency'),
+    'SludgeHandling': ('sludge_moisture', 'solubles'),
+    'WWTpump': ('pump_type', 'add_inputs', 'Q_mgd'),
+    'WastewaterSystemCost': (),
+    **{name: tuple(dict.fromkeys(p for params in variants.values()
+                                 for p in params))
+       for name, variants in _UNLISTED_CORE_SOURCES.items()},
+}
+
+
+def _source_path_named(source, path):
+    """True when a design_simulation_method URL `source` (query and fragment
+    ignored) ends in the biosteam source path `path`
+    ('wastewater/high_rate/system.py')."""
+    if not _nonempty_str(source):
+        return False
+    source = re.split(r'[?#]', source.strip())[0]
+    return source.endswith('/' + path)
+
+
+def _source_variant(sc, position):
+    """R8.10: (class name, source path) of unit `position` when its class is
+    a core class known exactly (named, confidence 1) with same-named
+    variants in different biosteam modules (_UNLISTED_CORE_SOURCES) and
+    its design_simulation_method URL names one of their paths; else
+    None."""
+    name, _family, confidence = sc.unit_classes[position]
+    variants = _UNLISTED_CORE_SOURCES.get(name)
+    if not variants or confidence != 1.0 or not sc.unit_core[position]:
+        return None
+    source = _dsm_class(sc.units[position])[1]
+    return next(((name, path) for path in variants
+                 if _source_path_named(source, path)), None)
+
+
+def _unlisted_core_params(sc, position):
+    """R8.10: the constructor parameters (a tuple) of unit `position`'s
+    class when it is a core class known exactly (named, confidence 1) that
+    the design-spec registry does not list (nor a curated ancestor) and
+    _UNLISTED_CORE_PARAMS records -- the variant its URL names
+    (_source_variant), else every variant's -- or None."""
+    name, _family, confidence = sc.unit_classes[position]
+    if (not name or confidence != 1.0 or not sc.unit_core[position]
+            or name not in _UNLISTED_CORE_PARAMS
+            or _declared_registry_class(name, sc.registry)):
+        return None
+    variant = _source_variant(sc, position)
+    if variant:
+        return _UNLISTED_CORE_SOURCES[name][variant[1]]
+    return _UNLISTED_CORE_PARAMS[name]
+
+
 def _registry_params(sc, position):
     """Constructor parameters of unit `position`'s named class: the keys of
     its declared design-spec registry entry (_declared_registry_class: the
-    class itself, else its curated registry ancestor), or None when the
-    class is unknown or the registry lists neither."""
+    class itself, else its curated registry ancestor), else -- R8.10 -- an
+    exactly known core class's _UNLISTED_CORE_PARAMS
+    (_unlisted_core_params); None when the class is unknown or neither
+    lists it."""
     name = sc.unit_classes[position][0]
     declared = _declared_registry_class(name, sc.registry)
     if not declared:
-        return None
+        params = _unlisted_core_params(sc, position)
+        return None if params is None else set(params)
     return set(_as_dict(_as_dict(sc.registry.get(declared))
                         .get('design_input_spec_params')))
-
-
-# Exactly known classes the design-spec registry does not list (nor a
-# curated registry ancestor) that affirmatively lack parameters (R3.5),
-# checked against the biosteam source: biosteam.wastewater's ReverseOsmosis
-# (water_recovery / eff) and BiogasUpgrading (ratio, loss, ...) take no
-# moisture setting. (FakeSplitter, biosteam's alias of the do-nothing
-# MockSplitter, is a junction: no splitter requirement reaches it.)
-_UNLISTED_CLASS_LACKS = {
-    'ReverseOsmosis': frozenset({'moisture_content', 'sludge_moisture'}),
-    'BiogasUpgrading': frozenset({'moisture_content', 'sludge_moisture'}),
-}
 
 
 def _class_lacks_param(sc, position, keys):
     """R3.5 class-knowledge waiver (R2.13 principle): True when unit
     `position`'s class is known exactly (named, confidence 1) and
     affirmatively takes none of `keys` -- its design-spec registry entry (or
-    curated registry ancestor) lists none of them, or _UNLISTED_CLASS_LACKS
-    records the class as lacking them all. An inexact or unknown class, or a
-    class without such evidence, lacks nothing (the requirement applies)."""
+    curated registry ancestor), or for a core class the registry does not
+    list its _UNLISTED_CORE_PARAMS entry (R8.10; biosteam.wastewater's
+    ReverseOsmosis and BiogasUpgrading take no moisture setting), lists
+    none of them. An inexact or unknown class, or a class without such
+    evidence, lacks nothing (the requirement applies)."""
     name, _family, confidence = sc.unit_classes[position]
     if not name or confidence != 1.0:
         return False
-    if set(keys) <= _UNLISTED_CLASS_LACKS.get(name, frozenset()):
-        return True
     params = _registry_params(sc, position)
     return params is not None and not set(keys) & params
 
@@ -4284,9 +4480,9 @@ def _class_lacks_param(sc, position, keys):
 def _class_attribute_default(sc, position, key):
     """True when `key` of unit `position` is a class-level attribute default
     (R2.8): the class is concrete and identified at confidence 1, and `key`
-    is NOT one of its constructor parameters (_registry_params; an
-    unlisted class gives no such evidence). A constructor argument with a
-    default must be stated."""
+    is NOT one of its constructor parameters (_registry_params; a class
+    that neither the registry nor _UNLISTED_CORE_PARAMS lists gives no such
+    evidence). A constructor argument with a default must be stated."""
     name, _family, confidence = sc.unit_classes[position]
     params = _registry_params(sc, position)
     return (bool(name) and confidence == 1.0 and params is not None
@@ -4547,9 +4743,13 @@ def _excused_params(sc, position, explicit):
     """Registry params excused for CMP-UOP-03: the unstated alternatives of
     every essential requirement of unit `position` already satisfied by
     explicit keys that count (an HXutility with T set excuses V and H; a
-    non-rigorous V alone excuses nothing)."""
+    non-rigorous V alone excuses nothing) -- a facility's own requirements
+    too (R8.10: a boiler stating its agent excuses other_agents)."""
     excused = set()
-    for req in _unit_rules(sc, position) or ():
+    rules = tuple(_unit_rules(sc, position) or ())
+    if sc.unit_classes[position][1] in FACILITY_FAMILIES:
+        rules += _FACILITY_RULES.get(_facility_kind(sc, position), ())
+    for req in rules:
         if len(_counted_keys(req, sc, position, explicit)) >= req.n:
             excused.update(k for k in req.keys if k not in explicit)
     return excused
@@ -5216,20 +5416,50 @@ def _score_thm_05(sc):  # CMP-THM-05
 
 
 _TPP_KEYS = ('mixture', 'gamma', 'phi', 'PCF')
+# R8.12: IdealMixture(chemicals, include_excess_energies=False) -- the flag
+# adds excess enthalpy and entropy (about 8 % of a gas mixture's enthalpy at
+# 30 bar), so a descriptor naming the class without it states half the
+# mixture model (MIXTURE_FLAG_UNSTATED_CREDIT). No other mixture class takes
+# it.
+_EXCESS_ENERGIES_RE = re.compile(
+    r'\binclude_excess_energies\s*=\s*(?:True|False)\b')
+
+
+def _mixture_credit(value):
+    """R8.12: credit of a thermo_property_package 'mixture' descriptor --
+    0 unless it names a thermosteam mixture class
+    (_valid_package_descriptor); an IdealMixture must also state
+    include_excess_energies (True or False, as the exporter writes
+    'IdealMixture(include_excess_energies=False)'), else
+    MIXTURE_FLAG_UNSTATED_CREDIT; any other class 1."""
+    if not _valid_package_descriptor('mixture', value):
+        return 0.0
+    if _LEADING_IDENTIFIER_RE.match(value).group(1) != 'IdealMixture':
+        return 1.0
+    return (1.0 if _EXCESS_ENERGIES_RE.search(value)
+            else MIXTURE_FLAG_UNSTATED_CREDIT)
 
 
 def _score_thm_06(sc):  # CMP-THM-06
     if not sc.units:
         return None, 'no units', []
     # A descriptor counts only when it names a thermosteam model class of its
-    # role (R2.0; _valid_package_descriptor).
+    # role (R2.0; _valid_package_descriptor); an IdealMixture only in part
+    # without its include_excess_energies flag (R8.12, _mixture_credit).
     scores, missing = [], []
     for unit, label in zip(sc.units, sc.unit_labels):
         tpp = _as_dict(unit.get('thermo_property_package'))
-        absent = [k for k in _TPP_KEYS
-                  if not _valid_package_descriptor(k, tpp.get(k))]
-        scores.append(1.0 - len(absent) / len(_TPP_KEYS))
-        missing.extend(f'{label}.thermo_property_package.{k}' for k in absent)
+        credits = {k: (_mixture_credit(tpp.get(k)) if k == 'mixture' else
+                       float(_valid_package_descriptor(k, tpp.get(k))))
+                   for k in _TPP_KEYS}
+        scores.append(sum(credits.values()) / len(_TPP_KEYS))
+        for k, credit in credits.items():
+            if credit == 0.0:
+                missing.append(f'{label}.thermo_property_package.{k}')
+            elif credit < 1.0:
+                missing.append(f'{label}.thermo_property_package.{k}: '
+                               f'IdealMixture without include_excess_energies '
+                               f'(partial credit)')
     return (_mean(scores), f'{scores.count(1.0)} of {len(scores)} unit(s) '
             f'state a full property package', missing)
 
@@ -5678,6 +5908,7 @@ _PORT_MATERIAL_IDS = {
     'boiler chemicals': frozenset({'boilerchems', 'boilerchemicals',
                                    'boiler_chemicals'}),
     'makeup water': frozenset({'water', 'h2o'}),
+    'ash disposal': frozenset({'ash'}),  # R8.15: an outlet port
 }
 PORT_MATERIAL_MIN = 0.5  # mol fraction making a feed a port's material
 
@@ -5712,6 +5943,8 @@ def _port_materials(sc, position):
     family = sc.unit_classes[position][1]
     if family in ('combustor', 'dryer'):
         return ('natural gas',)
+    if _facility_kind(sc, position) == 'CHP':
+        return ()  # R8.10: a CHP buys no fuel; its inlets are process feeds
     if family in ('boiler', 'boiler_turbogenerator'):
         return ('natural gas', 'lime', 'boiler chemicals')
     if family == 'facility' and _facility_kind(sc, position) in (
@@ -5720,26 +5953,70 @@ def _port_materials(sc, position):
     return ()
 
 
-def _utility_port_feed(sc, position):
-    """(sink unit label, material) when feed `position` enters a unit with
-    utility-port materials (_port_materials) and its composition does not
-    rule them out: a feed whose composition is known (_mole_fractions) is
-    the port's material only when >= PORT_MATERIAL_MIN of it is that
-    material (natural gas: >= 50 mol% CH4); an unknown composition may be
-    (R2.13). Else None: air and other feeds are scored normally."""
-    sink = sc.streams[position].get('sink_unit_id')
-    unit = sc.unit_positions.get(sink) if isinstance(sink, str) else None
-    materials = _port_materials(sc, unit) if unit is not None else ()
-    if not materials:
-        return None
+def _port_material(sc, position, materials):
+    """The utility-port material of `materials` stream `position` may be:
+    one its known composition (_mole_fractions) holds at >=
+    PORT_MATERIAL_MIN (natural gas: >= 50 mol% CH4), or -- an unknown
+    composition may be any of them (R2.13) -- 'a/b?'; None when its known
+    composition rules every one out."""
     fractions = _mole_fractions(sc.streams[position], sc.molar_masses)
     for material in materials:
         if fractions is None or sum(
                 x for name, x in fractions.items()
                 if name in _PORT_MATERIAL_IDS[material]) >= PORT_MATERIAL_MIN:
-            return sc.unit_labels[unit], (material if fractions is not None
-                                          else '/'.join(materials) + '?')
+            return (material if fractions is not None
+                    else '/'.join(materials) + '?')
     return None
+
+
+def _utility_port_feed(sc, position):
+    """(sink unit label, material) when feed `position` enters a unit with
+    utility-port materials (_port_materials) and its composition does not
+    rule them out (_port_material): a feed whose composition is known is
+    the port's material only when >= PORT_MATERIAL_MIN of it is that
+    material; an unknown composition may be (R2.13). Else None: air and
+    other feeds are scored normally."""
+    sink = sc.streams[position].get('sink_unit_id')
+    unit = sc.unit_positions.get(sink) if isinstance(sink, str) else None
+    materials = _port_materials(sc, unit) if unit is not None else ()
+    material = _port_material(sc, position, materials) if materials else None
+    return (sc.unit_labels[unit], material) if material else None
+
+
+def _port_products(sc, position):
+    """R8.15: outlet utility-port materials of unit `position` that
+    BioSTEAM prices itself when the product's own price is 0: a boiler's
+    or boiler-turbogenerator's ash disposal (bst.stream_utility_prices
+    ['Ash disposal'], defined as a utility of the class) -- not a CHP's,
+    which prices nothing -- and, since either may be one (R6.5), a
+    facility of unknown kind's or a unit of unknown family's; else ()."""
+    family = sc.unit_classes[position][1]
+    if family in ('boiler', 'boiler_turbogenerator'):
+        return (() if _facility_kind(sc, position) == 'CHP'
+                else ('ash disposal',))
+    if family is None or (family == 'facility'
+                          and _facility_kind(sc, position) is None):
+        return ('ash disposal',)
+    return ()
+
+
+def _utility_port_product(sc, position):
+    """R8.15: (source description, material) when product `position`
+    leaves a unit with outlet utility-port materials (_port_products; a
+    unit id no unit declares may be one too) and its composition does not
+    rule them out (_port_material: ash disposal is >= PORT_MATERIAL_MIN
+    ash, or the composition is unknown); else None."""
+    source = sc.streams[position].get('source_unit_id')
+    if not _nonempty_str(source) or _is_boundary(source):
+        return None
+    unit = sc.unit_positions.get(source)
+    if unit is None:
+        where, materials = (f'units[{source}] (referenced, not declared)',
+                            ('ash disposal',))
+    else:
+        where, materials = sc.unit_labels[unit], _port_products(sc, unit)
+    material = _port_material(sc, position, materials) if materials else None
+    return (where, material) if material else None
 
 
 def _score_feed_02(sc):  # CMP-FEED-02
@@ -5798,12 +6075,21 @@ def _feed_02_entry(sc, position, feed):
     """(score, missing locator or None) of boundary stream `position` on
     its price (CMP-FEED-02): unstated -> 0; 0 on a feed (`feed` True) into
     a utility port (_utility_port_feed) or into a unit that is not declared
-    or is of unknown family (_unresolved_sink, R6.5) -> 0.5; else 1."""
+    or is of unknown family (_unresolved_sink, R6.5) -> 0.5; 0 on a
+    product out of an outlet utility port (_utility_port_product, R8.15:
+    ash disposal) -> 0.5; else 1."""
     label = sc.stream_labels[position]
     price = _num(sc.streams[position].get('price'))
     if price is None:
         return 0.0, f'{label}.price'
-    if price != 0 or not feed:
+    if price != 0:
+        return 1.0, None
+    if not feed:
+        # R8.15: a 0-priced ash-disposal outlet is priced by BioSTEAM too.
+        port = _utility_port_product(sc, position)
+        if port:
+            return 0.5, (f'{label}.price: 0 on the {port[1]} outlet of '
+                         f'{port[0]} (priced by BioSTEAM, not representable)')
         return 1.0, None
     port = _utility_port_feed(sc, position)
     if port:
@@ -5982,14 +6268,20 @@ def _score_uop_03(sc):  # CMP-UOP-03
         raise RuntimeError(f'design-spec registry unavailable: '
                            f'{sc.registry_error}')
     # Population by need (R1.0): every unit, except a CORE class known
-    # exactly that the registry does not list (a scorer vocabulary gap, not
-    # a file gap; R3.6). A unit whose class is not known exactly (inferred
-    # from its spec keys, family only, unknown) scores 0: its parameter
-    # universe is unknown -- measuring it against a key-set-inferred entry
-    # let deleting design_simulation_method pick a tighter entry and raise
-    # the coverage. An exact CUSTOM class the registry does not list (nor a
-    # curated ancestor) also scores 0 (R3.6): the file states none of its
-    # parameters (the exporter emits {} for it), a real gap.
+    # exactly with no parameter to state -- its registry entry lists none,
+    # or (R8.10) the registry does not list it and its constructor takes
+    # none (_UNLISTED_CORE_PARAMS), or the static table does not know it.
+    # A core class the registry does not list is measured against its
+    # constructor parameters (_unlisted_core_params): the exporter writes
+    # {} for it, a gap in the file. A unit whose class is not known exactly
+    # (inferred from its spec keys, family only, unknown) scores 0: its
+    # parameter universe is unknown -- measuring it against a
+    # key-set-inferred entry let deleting design_simulation_method pick a
+    # tighter entry and raise the coverage. An exact CUSTOM class the
+    # registry does not list (nor a curated ancestor) also scores 0 (R3.6):
+    # the file states none of its parameters (the exporter emits {} for
+    # it), a real gap. A facility's id-valued bindings count as in
+    # CMP-UOP-06 (_stated_keys: declared ids; R8.11 explicit empties).
     scores, missing, unknown = [], [], 0
     for position, (unit, label) in enumerate(zip(sc.units, sc.unit_labels)):
         name, _family, confidence = sc.unit_classes[position]
@@ -6007,23 +6299,27 @@ def _score_uop_03(sc):  # CMP-UOP-03
                            f"design-spec registry entry, so the file states "
                            f"none of its parameters")
             continue
-        entry = _as_dict(sc.registry.get(registry_class)) if registry_class else {}
-        params = list(_as_dict(entry.get('design_input_spec_params')))
+        if registry_class is None:
+            params = list(_unlisted_core_params(sc, position) or ())
+        else:
+            params = list(_as_dict(_as_dict(sc.registry.get(registry_class))
+                                   .get('design_input_spec_params')))
         if not params:
             continue
-        explicit = _explicit_keys(unit, sc.unit_classes[position][1])
+        explicit = _stated_keys(sc, position)
         excused = _excused_params(sc, position, explicit)
         needed = [p for p in params if p not in excused]
         absent = [p for p in needed if p not in explicit]
         scores.append(1.0 - len(absent) / len(needed) if needed else 1.0)
         missing.extend(f'{label}.design_input_specs.{p}' for p in absent)
     if not scores:
-        return (None, 'no units, or every unit is a known core class the '
-                'design-spec registry does not list', [])
+        return (None, 'no units, or every unit is a known core class with '
+                'no design-spec parameter to state', [])
     return (_mean(scores), f'{len(scores) - unknown} unit(s) measured against '
-            f'their registry class, {unknown} with no class known exactly or '
+            f"their registry class (or a core class's constructor "
+            f'parameters), {unknown} with no class known exactly or '
             f'a custom class the registry does not list (score 0); '
-            f'{len(missing) - unknown} registry param(s) unstated', missing)
+            f'{len(missing) - unknown} design-spec param(s) unstated', missing)
 
 
 def _score_uop_04(sc):  # CMP-UOP-04
@@ -6299,20 +6595,36 @@ _COST_ONLY_FACILITIES = frozenset({
 # regenerates).
 _SERVED_AGENT = _Req(1, ('agent', 'other_agents'), {'agent': ('served_agent',)})
 
+# R8.9: a boiler's efficiency basis ('LHV' or 'HHV': it picks the fuel's
+# heating value the efficiency applies to, so it sets the steam raised, the
+# turbogenerator's electricity and the boiler's cost), its fuel source and
+# its side steam (a declared stream id, or null: none; R8.11).
+_EFFICIENCY_BASIS = _Req(1, ('boiler_efficiency_basis',), {})
+_FUEL_SOURCE = _Req(1, ('fuel_source',), {})
+_SIDE_STEAM = _Req(1, ('side_steam',), {})
+
 # Per-class requirements (R2.5), checked against the biosteam source
 # (facilities/_boiler_turbogenerator.py, _process_water_center.py,
-# _cooling_tower.py, _chilled_water_package.py, _refrigeration_package.py)
-# and hensmith's HeatExchangerNetwork. Every one is a constructor argument
-# with a default, so it must be stated (R2.8). Stream- and unit-id lists
-# count only when non-empty and every id is declared.
+# _cooling_tower.py, _chilled_water_package.py, _refrigeration_package.py,
+# wastewater/high_rate/system.py's CHP) and hensmith's
+# HeatExchangerNetwork. Every one is a constructor argument with a default,
+# so it must be stated (R2.8). Stream- and unit-id lists count only when
+# every id is declared, and non-empty unless an empty list or null has a
+# BioSTEAM meaning for that binding (R8.11, _EMPTY_BINDINGS).
 _FACILITY_RULES = {
     'BoilerTurbogenerator': (
         _Req(1, ('boiler_efficiency',), {}),
         _Req(1, ('turbogenerator_efficiency',), {}),
         _Req(1, ('satisfy_system_electricity_demand',), {}),
-        _Req(1, ('fuel_source',), {}),
-        _SERVED_AGENT),
-    'Boiler': (_Req(1, ('boiler_efficiency',), {}),),
+        _FUEL_SOURCE, _SERVED_AGENT, _EFFICIENCY_BASIS, _SIDE_STEAM),
+    # R8.9: a plain Boiler takes the same agent, fuel source, efficiency
+    # basis and side steam as a BoilerTurbogenerator.
+    'Boiler': (_Req(1, ('boiler_efficiency',), {}), _FUEL_SOURCE,
+               _SERVED_AGENT, _EFFICIENCY_BASIS, _SIDE_STEAM),
+    # R8.10: CHP(ID, ins, outs, eff=0.3375, unit_CAPEX=1225): the combined
+    # combustion-and-power efficiency sets the electricity it generates
+    # (unit_CAPEX, a cost, is CMP-UOP-03's).
+    'CHP': (_Req(1, ('eff',), {}),),
     'ProcessWaterCenter': (_Req(1, ('process_water_streams',), {}),
                            _Req(1, ('makeup_water_streams',), {})),
     'HeatExchangerNetwork': (_Req(1, ('T_min_app',), {}),
@@ -6340,6 +6652,21 @@ _FACILITY_KIND_KEYWORDS = tuple((kind, re.compile(pattern)) for kind, pattern in
 
 # Design-spec keys naming stream / unit / agent ids.
 _STREAM_LIST_KEYS = frozenset({'process_water_streams', 'makeup_water_streams'})
+
+# R8.11: bindings whose BioSTEAM semantics give an explicit empty list or
+# null a meaning, by facility kind -> the empty values that count as
+# stated: a process-water center's stream lists ([] = none; null = the
+# facilities' and system's streams, discovered at simulation), a boiler's
+# side_steam (null = none), a heat-exchanger network's units (null or [] =
+# every unit of the system). Every other binding counts only when
+# non-empty (an empty placeholder binds nothing).
+_EMPTY_BINDINGS = {
+    'ProcessWaterCenter': {'process_water_streams': (None, []),
+                           'makeup_water_streams': (None, [])},
+    'BoilerTurbogenerator': {'side_steam': (None,)},
+    'Boiler': {'side_steam': (None,)},
+    'HeatExchangerNetwork': {'units': (None, [])},
+}
 
 
 def _facility_kind(sc, position):
@@ -6384,21 +6711,37 @@ def _heat_agent_ids(sc):
             if group == 'heat_utilities' and isinstance(agent.get('id'), str)}
 
 
+def _empty_binding(kind, key, value):
+    """R8.11: True when `value` is an explicit empty list or null that
+    _EMPTY_BINDINGS gives a meaning for binding `key` of a facility of
+    `kind`."""
+    allowed = _EMPTY_BINDINGS.get(kind, {}).get(key, ())
+    return ((value is None and None in allowed)
+            or (isinstance(value, list) and not value and [] in allowed))
+
+
 def _facility_explicit(sc, position):
     """design_input_specs keys of unit `position` stated plausibly for
     CMP-UOP-06: _explicit_keys, with id-valued keys checked against the
-    document -- process/makeup water stream lists against the declared
-    streams, `units` against the declared units, `agent` (a heat-agent id)
-    and `other_agents` (a list of them) against the declared heat agents."""
-    specs = _as_dict(sc.units[position].get('design_input_specs'))
+    document -- process/makeup water stream lists and a boiler's side_steam
+    against the declared streams, `units` against the declared units,
+    `agent` (a heat-agent id) and `other_agents` (a list of them) against
+    the declared heat agents -- plus, R8.11, a binding stated as the
+    explicit empty list or null its facility kind gives a meaning
+    (_empty_binding)."""
+    unit = sc.units[position]
+    specs = _as_dict(unit.get('design_input_specs'))
+    kind = _facility_kind(sc, position)
     stream_ids = {s['id'] for s in sc.streams if _nonempty_str(s.get('id'))}
     agents = _heat_agent_ids(sc)
-    explicit = set()
-    for key in _explicit_keys(sc.units[position],
-                              sc.unit_classes[position][1]):
+    explicit = {key for key, value in specs.items()
+                if _empty_binding(kind, key, value)}
+    for key in _explicit_keys(unit, sc.unit_classes[position][1]):
         value = specs[key]
         if key in _STREAM_LIST_KEYS:
             ok = _valid_id_list(value, stream_ids)
+        elif key == 'side_steam':
+            ok = isinstance(value, str) and value in stream_ids
         elif key == 'units':
             ok = _valid_id_list(value, sc.unit_ids)
         elif key == 'agent':
@@ -6410,6 +6753,16 @@ def _facility_explicit(sc, position):
         if ok:
             explicit.add(key)
     return explicit
+
+
+def _stated_keys(sc, position):
+    """design_input_specs keys of unit `position` that count as stated in
+    CMP-UOP-03: a facility-family unit's _facility_explicit (bindings to
+    declared ids, R8.11 explicit empties), as CMP-UOP-05/06 count them;
+    else _explicit_keys."""
+    if sc.unit_classes[position][1] in FACILITY_FAMILIES:
+        return _facility_explicit(sc, position)
+    return _explicit_keys(sc.units[position], sc.unit_classes[position][1])
 
 
 def _serves_agent(sc, position):
@@ -7488,13 +7841,29 @@ def _count_source(unit):
     return None
 
 
+def _cost_06_source(sc, position):
+    """What costed unit `position`'s parallel counts derive from: its own
+    data (_count_source), else -- R8.13, as CMP-COST-07 credits a class
+    default lifetime -- "its class's @cost bounds" for a core BioSTEAM
+    class known exactly (_core_class_known: rebuilt from its class, each
+    CostItem.N is recomputed from the item's size upper bound, and
+    Unit.parallel keeps its class default); else None."""
+    source = _count_source(sc.units[position])
+    if source:
+        return source
+    if _core_class_known(sc, position):
+        return "its class's @cost bounds"
+    return None
+
+
 def _cost_06_unit(sc, position):
     """CMP-COST-06 of one costed unit: DERIVED_CREDIT when its counts are
-    derivable (_count_source: a count design result 'Number of ...', or a
-    power-law item's size_upper_bound over its basis' design result), else
-    0 (never representable)."""
+    derivable (_cost_06_source: a count design result 'Number of ...', a
+    power-law item's size_upper_bound over its basis' design result, or,
+    R8.13, the @cost bounds of a core class known exactly), else 0 (never
+    representable)."""
     label = sc.unit_labels[position]
-    source = _count_source(sc.units[position])
+    source = _cost_06_source(sc, position)
     if source:
         return DERIVED_CREDIT, [f"{label}: parallel counts (Unit.parallel, "
                                 f"CostItem.N) not representable (derivable "
@@ -7507,10 +7876,10 @@ def _score_cost_06(sc):  # CMP-COST-06
     if not sc.costed:
         return None, _NO_COSTED_UNITS, []
     score, missing, _ok = _per_costed_unit(sc, _cost_06_unit)
-    derived = sum(1 for p in sc.costed if _count_source(sc.units[p]))
-    return (score, f'not representable; derivable from a count design result '
-            f'or a size upper bound for {derived} of {len(sc.costed)} costed '
-            f'unit(s)', missing)
+    derived = sum(1 for p in sc.costed if _cost_06_source(sc, p))
+    return (score, f'not representable; derivable from a count design result, '
+            f"a size upper bound or a core class's @cost bounds for "
+            f'{derived} of {len(sc.costed)} costed unit(s)', missing)
 
 
 def _cost_07_unit(sc, position):
@@ -7815,21 +8184,34 @@ def _agent_roles(sc):
     return roles
 
 
-def _water_dominated(composition):
-    """True when water is at least half of an agent composition (by the
-    stated mol, else mass, fraction)."""
-    water = sum(_entry_fraction(e) or 0.0 for e in _dicts(composition)
-                if str(e.get('component_name', '')).strip().lower()
-                in ('water', 'h2o'))
-    return water >= 0.5
+def _is_water(entry):
+    """True when a composition entry names water ('Water' / 'H2O')."""
+    return str(entry.get('component_name', '')).strip().lower() in (
+        'water', 'h2o')
+
+
+def _water_minor(composition):
+    """R8.14: True only on affirmative evidence that water is NOT the bulk
+    of an agent composition: a non-empty composition every entry of which
+    names its species (a non-empty string) with a valid fraction
+    (_entry_fraction), the species other than water summing to >= 0.5.
+    An unnamed or fraction-less entry, or water merely unobserved, is no
+    such evidence."""
+    entries = _as_list(composition)
+    if not entries or not all(
+            isinstance(e, dict) and _nonempty_str(e.get('component_name'))
+            and _entry_fraction(e) is not None for e in entries):
+        return False
+    return sum(_entry_fraction(e) for e in entries if not _is_water(e)) >= 0.5
 
 
 def _phase_change_agent(agent, roles):
     """True when a heat agent affirmatively delivers latent heat, so it
     needs no temperature limit (R2.13): an all-vapor agent recorded as
     heating only, with positive duty (a condensing heating agent such as
-    steam), or an all-liquid agent that is not water-dominated and is
-    recorded as cooling only (an evaporating refrigerant). An agent no unit
+    steam), or an all-liquid agent affirmatively not water-based
+    (_water_minor, R8.14) and recorded as cooling only (an evaporating
+    refrigerant). An agent no unit
     records a duty for is not exempt. Liquid water-based agents (cooling or
     chilled water, brine) and liquid heating agents are sensible-heat
     agents."""
@@ -7840,7 +8222,8 @@ def _phase_change_agent(agent, roles):
     if all(p == 'g' for p in phases):
         return role == 'heating'
     if all(p == 'l' for p in phases):
-        return role == 'cooling' and not _water_dominated(agent.get('composition'))
+        # R8.14: waived only on affirmative evidence of a non-water agent.
+        return role == 'cooling' and _water_minor(agent.get('composition'))
     return False
 
 
