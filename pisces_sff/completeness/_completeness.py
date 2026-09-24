@@ -171,6 +171,17 @@ CLOSURE_RTOL = 0.01
 # and of sum(nu) (mass basis) when deriving a reaction's basis.
 BASIS_RTOL = 1e-3
 
+# R6.2: a reaction whose participants all have molar masses is well-formed
+# only if it conserves mass on a mol basis (|sum(nu*MW)|) or a wt basis
+# (|sum(nu)|) within RXN_CLOSURE_RTOL of its reactant side. Over the 6587
+# testable corpus reactions no imbalance falls between 0.02 % and 1.5 %:
+# 6223 close within 0.02 % (3-significant-figure equations round by at
+# most ~0.3 %), and all 364 others are atom-imbalanced as written (the
+# smallest, 1.5 %, drops H2 in 'HMTHP -> H2O + DHL' with DHL stated as
+# C6H10O2; others omit O2, H2O, H2 or a nitrogen source), so 1 % trips
+# none but the non-conserving.
+RXN_CLOSURE_RTOL = 0.01
+
 # Same absolute zero-flow threshold as the validator's ZERO_FLOW (STR-13);
 # duplicated to stay import-light, equality pinned by a Tier 1 test.
 ZERO_FLOW = 1e-12
@@ -1976,6 +1987,82 @@ COST_FREE_CLASSES = frozenset({'Mixer', 'MockMixer', 'BlowdownMixer',
 _COSTED_CLASSES = frozenset({'AmmoniaMixer', 'EnzymeHydrolysateMixer',
                              'SulfuricAcidMixer'})
 
+# ---- R6.1: which claims can host chemistry ----
+# Families whose claim, unless an exact class's code is known, CANNOT host
+# chemistry (R6.1(a)): no BioSTEAM unit of these families converts species,
+# so species converted across such a claim (flows computable, no
+# well-formed reaction declared) make it implausible.
+NO_CHEMISTRY_FAMILIES = frozenset({
+    'pump', 'valve', 'compressor', 'turbine', 'hx_utility', 'hx_process',
+    'flash', 'mixer', 'splitter', 'junction', 'heat_exchanger_network'})
+# Families whose units CAN host chemistry (R6.1(b)): a vessel, column,
+# extractor, crystallizer, evaporator, cooker, conveyor or dryer may carry
+# a biorefinery's neutralization, liquefaction or combustion. Such a claim
+# without an exact core class keeps its family but stays in the reactive
+# population unless its streams show that nothing converts
+# (_no_conversion).
+CHEMISTRY_CAPABLE_FAMILIES = frozenset({
+    'tank', 'distillation', 'staged_column', 'extraction', 'crystallizer',
+    'evaporator', 'steam_injection_heater', 'solids_handling', 'dryer'})
+# Exact core classes that accept an optional reaction set (biosteam
+# stage.py / distillation.py: MESHDistillation and MultiStageEquilibrium take
+# stage_reactions, StageEquilibrium and PhasePartition a reaction): they can
+# host chemistry, so they are treated like CHEMISTRY_CAPABLE_FAMILIES claims.
+_OPTIONAL_CHEMISTRY_CLASSES = frozenset({
+    'MESHDistillation', 'MultiStageEquilibrium', 'StageEquilibrium',
+    'PhasePartition'})
+# Species a combustion can produce (thermosteam's combustion reactions give
+# CO2, H2O, SO2, N2, HCl, HF, Br2, I2 and P4O10; boilers also bind SO2 with
+# lime and reject ash).
+_COMBUSTION_PRODUCTS = ('CO2', 'H2O', 'Water', 'SO2', 'N2', 'NO', 'NO2',
+                        'N2O', 'HCl', 'HF', 'Br2', 'I2', 'P4O10', 'Ash',
+                        'CaSO4', 'Gypsum')
+# R6.1(c): classes whose own code converts species (verified in the
+# biosteam and Bioindustrial-Park sources), as (species it may produce,
+# species it may consume -- None: any), each named by chemical id or plain
+# formula. Exempt from R6.1(a) for exactly that chemistry: a conversion
+# outside the signature still contradicts the class claim. DrumDryer burns
+# natural gas (CH4 -> CO2 + 2 H2O into its emissions); ThermalOxidizer,
+# Boiler, BoilerTurbogenerator and CHP burn their feeds; AmineAbsorption
+# consumes its MEA and make-up water; ProcessWaterCenter keeps only the
+# water of its recycles; the Bioindustrial-Park AmmoniaAdditionTank (HP,
+# succinic, oxalic, BDO) neutralizes 2 NH4OH + H2SO4 -> (NH4)2SO4 + 2 H2O.
+_BUILTIN_CHEMISTRY = {
+    'DrumDryer': (('CO2', 'H2O', 'Water'), ('CH4', 'Methane', 'NaturalGas')),
+    'ThermalOxidizer': (_COMBUSTION_PRODUCTS, None),
+    'Boiler': (_COMBUSTION_PRODUCTS, None),
+    'BoilerTurbogenerator': (_COMBUSTION_PRODUCTS, None),
+    'CHP': (_COMBUSTION_PRODUCTS, None),
+    'AmineAbsorption': ((), ('MEA', 'Monoethanolamine', 'Ethanolamine',
+                             'C2H7NO', 'H2O', 'Water')),
+    'ProcessWaterCenter': ((), None),
+    'AmmoniaAdditionTank': (('AmmoniumSulfate', 'NH4SO4', 'H8N2O4S', 'H2O',
+                             'Water'),
+                            ('AmmoniumHydroxide', 'NH4OH', 'H5NO', 'NH3',
+                             'Ammonia', 'H2SO4', 'SulfuricAcid')),
+}
+# The same for a claim of a family whose chemistry the class fixes, made
+# without an exact class's code (a label, an unpinned custom class): a
+# combustor or boiler burns its feeds; a facility at most discards species
+# (a process-water center keeps only water) and produces none.
+_FAMILY_CHEMISTRY = {
+    'combustor': (_COMBUSTION_PRODUCTS, None),
+    'boiler': (_COMBUSTION_PRODUCTS, None),
+    'boiler_turbogenerator': (_COMBUSTION_PRODUCTS, None),
+    'facility': ((), None),
+}
+# Junction-family classes that conserve nothing species by species by
+# design (a Scaler multiplies its inlet, a Duplicator copies it to every
+# outlet, a MockSplitter's outlets are set elsewhere, a diagram-only unit is
+# never simulated): only species appearing or vanishing contradicts them,
+# and a label-only junction claim may be any of them.
+_NONCONSERVING_JUNCTIONS = frozenset({
+    'Scaler', 'Duplicator', 'MockSplitter', 'FakeSplitter',
+    'DiagramOnlyUnit', 'DiagramOnlyStreamUnit', 'DiagramOnlySystemUnit'})
+# Junction and Scaler pass their inlet's T and P on (the pure-splitter
+# bounds apply); a Junction also conserves total mass (a Scaler does not).
+_T_P_JUNCTIONS = frozenset({'Junction', 'Scaler'})
+
 # Per-unit averages are UNWEIGHTED (R4.12, superseding R1.6's family
 # weights): each unit counts once. A weight derived from deletable data (the
 # family, read from unit_type / design_simulation_method) broke the deletion
@@ -2393,9 +2480,15 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
     ('evaporator', r'evaporat\w*'),
     ('flash', r'flash|knock ?out(?: (?:drum|pot|vessel))?'),
     ('crystallizer', r'crystalli\w*'),
+    # R6.1(d): the reaction steps ammonia addition, (over)liming,
+    # conditioning, acidification, (trans)esterification and mashing name a
+    # reactor too ('Ammonia addition tank', 'Overliming tank', 'Mash tank'
+    # through the vessel exception).
     ('reactor', r'reactor|ferment\w*|saccharif\w*|digest\w*|hydroly\w*|'
                 r'liquefaction|\brx\b|\bmbr\b|seed train|neutrali[sz]\w*|'
-                r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation|\bkilns?\b'),
+                r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation|\bkilns?\b|'
+                r'ammonia ?addition|(?:over)?liming|condition\w*|'
+                r'acidif\w*|esterif\w*|\bmash(?:ing)?\b'),
     ('splitter', r'splitter|\bsplit\w*|centrifuge|filter|\bpress\b|screen|'
                  r'separator|decanter|settler|sieve|scrubber|clarifier|'
                  r'adsor[bp]\w*(?: (?:column|bed))?|absorp\w*|membrane|'
@@ -2680,6 +2773,15 @@ def _physics_contradictions(sc, position):
     stated empty carry nothing and are ignored; a bound is tested only when
     every non-empty inlet states the quantity, and only outlets stating it
     are compared -- deleting a value never creates a contradiction.
+    R6.1: 'conversion' -- declaring no well-formed reaction, with its total
+    mass closing (_mass_closure: else a missing port explains any species
+    imbalance), some species that neither appears nor vanishes is still
+    produced or consumed beyond CLOSURE_RTOL (_species_conversion);
+    'changed' -- under the same conditions, not a reason but the
+    ({species: identity keys} produced, {...} consumed) pair of every
+    converted species (appearing and vanishing ones included), which a
+    built-in chemistry signature is matched against; 'mass' -- the total
+    mass balance is evaluable and does not close (_mass_balance).
     _physics_contradiction decides which kinds contradict which claim."""
     uid = sc.units[position].get('id')
     if not _nonempty_str(uid):
@@ -2694,6 +2796,27 @@ def _physics_contradictions(sc, position):
         if change:
             found['species'] = (f"{', '.join(change[:3])} without declared "
                                 f"reactions")
+        # A species balance is evidence of conversion only where the total
+        # mass closes: otherwise a missing port (a legacy export's lost
+        # outlet) explains the imbalance as well.
+        converted = (_species_conversion(sc, uid)
+                     if _mass_closure(sc, position)[0] else None)
+        if converted and any(converted):
+            produced, consumed = converted
+            shown = {c.split(' ', 1)[0] for c in change or ()}
+            extra = ([f'{n} produced' for n in produced if n not in shown]
+                     + [f'{n} consumed' for n in consumed if n not in shown])
+            if extra:
+                found['conversion'] = (
+                    f"{', '.join(extra[:3])} beyond {CLOSURE_RTOL:.0%} "
+                    f"without declared reactions")
+            formulas = {c.get('id'): c.get('formula') for c in sc.chemicals}
+            found['changed'] = tuple(
+                {n: _species_keys(n, formulas.get(n)) for n in names}
+                for names in (produced, consumed))
+    evaluable, closes, why = _mass_balance(sc, position)
+    if evaluable and not closes:
+        found['mass'] = why
     mixer, splitter = [], []
     for part, name in (('T', 'temperature'), ('P', 'pressure')):
         inlet = [_stream_value(s, part) for s in ins]
@@ -2719,43 +2842,161 @@ def _physics_contradictions(sc, position):
     return found
 
 
-def _physics_contradiction(class_name, family, physics):
-    """R5.1: why the stream / duty evidence `physics`
+def _species_keys(name, formula=None):
+    """R6.1(c): identity keys of a species, matched against a built-in
+    chemistry signature (_BUILTIN_CHEMISTRY): its name lower-cased without
+    separators ('n:co2', 'n:ammoniumsulfate') and the element counts of its
+    name or declared formula where either is a plain formula ('f:C1O2'), so
+    'CO2', 'CarbonDioxide' stated with formula CO2 and 'co2' all match."""
+    keys = set()
+    if _nonempty_str(name):
+        keys.add('n:' + re.sub(r'[^a-z0-9]', '', name.lower()))
+    for text in (name, formula):
+        counts = _formula_counts(text)
+        if counts:
+            keys.add('f:' + ''.join(f'{el}{n:g}'
+                                    for el, n in sorted(counts.items())))
+    return frozenset(keys)
+
+
+def _chemistry_claim(class_name, family, core, confidence):
+    """R6.1: whether a class / family claim can host chemistry --
+    'reactor' (a reactor family: it declares its chemistry); 'builtin' (a
+    _BUILTIN_CHEMISTRY class, at any confidence: its own code converts the
+    species of its signature); 'class_code' (a custom class located in the
+    pinned model package, confidence 1: its code may convert anything,
+    EXC-02); 'capable' (an exact core class of _OPTIONAL_CHEMISTRY_CLASSES,
+    or a claim without a known class's code -- `class_name` None, or a
+    custom class below confidence 1 that the curated _CLASS_TABLE does not
+    know -- of a CHEMISTRY_CAPABLE_FAMILIES family); 'none' (any other
+    exact core class or unpinned curated biorefinery class, or such a
+    claim of a NO_CHEMISTRY_FAMILIES family: it cannot host chemistry);
+    'builtin'
+    too for such a claim of a _FAMILY_CHEMISTRY family (combustor, boiler,
+    boiler-turbogenerator, facility); else 'free' (an equilibrium reactor
+    claim, or no family)."""
+    if family in REACTOR_FAMILIES:
+        return 'reactor'
+    if class_name is not None:
+        if class_name in _BUILTIN_CHEMISTRY:
+            return 'builtin'
+        if not core and confidence == 1.0:
+            return 'class_code'
+        if core or class_name in _CLASS_TABLE:
+            # A core class, or a corpus-known biorefinery class of the
+            # curated table (its source read: none but AmmoniaAdditionTank
+            # converts species) that is not pinned: its code is known.
+            return ('capable' if class_name in _OPTIONAL_CHEMISTRY_CLASSES
+                    else 'none')
+    if family in NO_CHEMISTRY_FAMILIES:
+        return 'none'
+    if family in CHEMISTRY_CAPABLE_FAMILIES:
+        return 'capable'
+    if family in _FAMILY_CHEMISTRY:
+        return 'builtin'
+    return 'free'
+
+
+def _builtin_contradiction(class_name, family, physics):
+    """R6.1(c): why the species a built-in chemistry claim converts
+    (physics['changed'], _physics_contradictions) exceed its signature --
+    the class's _BUILTIN_CHEMISTRY entry, else its family's
+    _FAMILY_CHEMISTRY entry: a species produced that the chemistry does not
+    produce, or consumed that it does not consume -- or None (nothing
+    converted, or all of it explained)."""
+    signature = (_BUILTIN_CHEMISTRY.get(class_name)
+                 or _FAMILY_CHEMISTRY.get(family))
+    if signature is None:
+        return None
+    produced, consumed = physics.get('changed') or ({}, {})
+    allowed = [None if names is None else
+               frozenset().union(*(_species_keys(n) for n in names))
+               for names in signature]
+    bad = [f'{n} produced' for n, keys in produced.items()
+           if not keys & allowed[0]]
+    if allowed[1] is not None:
+        bad += [f'{n} consumed' for n, keys in consumed.items()
+                if not keys & allowed[1]]
+    if not bad:
+        return None
+    what = (class_name if class_name in _BUILTIN_CHEMISTRY
+            else f'a {family} claim')
+    return (f"implausible for {what}: {', '.join(bad[:3])} beyond its "
+            f"built-in chemistry without declared reactions")
+
+
+def _physics_contradiction(class_name, family, physics, core=None,
+                           confidence=None):
+    """R5.1 / R6.1: why the stream / duty evidence `physics`
     (_physics_contradictions; None or {} when there is none) contradicts a
     need-removing claim, or None. A mixer claim is any claim of the mixer
     family (exact class or label): contradicted by a heat duty, a power
     duty (except for the @cost-decorated Mixer subclasses of
     _COSTED_CLASSES, whose cost item may carry agitator kW), species
-    appearing / vanishing, or its T / P upper bounds ('mixer'). A
-    pure-splitter claim -- a PURE_SPLITTER_CLASSES class, or a splitter
-    family claim without an exact class (`class_name` None: a unit_type
-    keyword, an abstract class, a key-set inference) -- by any duty,
-    species appearing / vanishing, or T / P deviations ('splitter'); a
-    MOCK_SPLITTER_CLASSES claim by a duty or species only (it does nothing
-    when simulated, so its outlets' T and P are set elsewhere). Other
-    claims are not tested; an implausible one counts as absent."""
+    appearing / vanishing or otherwise converted ('species',
+    'conversion'), or its T / P upper bounds ('mixer'). A pure-splitter
+    claim -- a PURE_SPLITTER_CLASSES class, or a splitter family claim
+    without an exact class (`class_name` None: a unit_type keyword, an
+    abstract class, a key-set inference) -- by any duty, converted species,
+    or T / P deviations ('splitter'); a MOCK_SPLITTER_CLASSES claim by a
+    duty or species appearing / vanishing only (it does nothing when
+    simulated, so its outlets' T and P are set elsewhere).
+
+    R6.1(a): every other claim that cannot host chemistry
+    (_chemistry_claim 'none': an exact core class without built-in
+    chemistry, or a pump, valve, compressor, turbine, exchanger, flash or
+    junction claim without an exact class's code) by converted species; a
+    junction claim also by any duty, the exact Junction and Scaler by the
+    pure-splitter T / P bounds, the Junction by a total mass balance that
+    does not close ('mass'), and the junctions that conserve nothing
+    species by species (_NONCONSERVING_JUNCTIONS, and any label-only
+    junction claim) only by species appearing / vanishing. R6.1(c): a
+    _BUILTIN_CHEMISTRY class, or a combustor / boiler / facility claim
+    without an exact class's code (_FAMILY_CHEMISTRY), by a conversion
+    outside its signature (_builtin_contradiction). `core` (default: on the curated core list)
+    and `confidence` (default 1) qualify an exact class claim. Other claims
+    are not tested; an implausible one counts as absent."""
     physics = physics or {}
+    if core is None:
+        core = class_name in _CORE_CLASSES
+    chemistry = _chemistry_claim(class_name, family, core,
+                                 1.0 if confidence is None else confidence)
+    converted = ('species', 'conversion')
     if family == 'mixer':
-        kinds = ('heat', 'species', 'mixer') if class_name in _COSTED_CLASSES \
-            else ('heat', 'power', 'species', 'mixer')
+        kinds = (('heat',) if class_name in _COSTED_CLASSES
+                 else ('heat', 'power')) + converted + ('mixer',)
         what = 'a mixer'
     elif class_name in MOCK_SPLITTER_CLASSES:
         kinds, what = ('heat', 'power', 'species'), 'a mock splitter'
     elif (class_name in PURE_SPLITTER_CLASSES if class_name
           else family == 'splitter'):
-        kinds, what = ('heat', 'power', 'species', 'splitter'), 'a pure splitter'
+        kinds = ('heat', 'power') + converted + ('splitter',)
+        what = 'a pure splitter'
+    elif family == 'junction' and chemistry == 'none':
+        conserving = (class_name is not None
+                      and class_name not in _NONCONSERVING_JUNCTIONS)
+        kinds = (('heat', 'power') + (converted if conserving else ('species',))
+                 + (('splitter',) if class_name in _T_P_JUNCTIONS else ())
+                 + (('mass',) if class_name == 'Junction' else ()))
+        what = 'a junction'
+    elif chemistry == 'none':
+        kinds, what = converted, 'a unit that hosts no chemistry'
+    elif chemistry == 'builtin':
+        return _builtin_contradiction(class_name, family, physics)
     else:
         return None
     reasons = [physics[kind] for kind in kinds if physics.get(kind)]
     return f"implausible for {what}: {'; '.join(reasons)}" if reasons else None
 
 
-def _ports_plausible(class_name, family, core, ports, physics=None):
+def _ports_plausible(class_name, family, core, ports, physics=None,
+                     confidence=None):
     """True unless the claim is contradicted by its ports
     (_port_contradiction, R4.8/R4.14) or by its stream physics
-    (_physics_contradiction, R5.1)."""
+    (_physics_contradiction, R5.1 / R6.1)."""
     return (_port_contradiction(class_name, family, core, ports) is None
-            and _physics_contradiction(class_name, family, physics) is None)
+            and _physics_contradiction(class_name, family, physics, core,
+                                       confidence) is None)
 
 
 def _generic_exchanger(text):
@@ -2810,7 +3051,12 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
     (_physics_contradictions), None when unknown -- likewise invalidates
     every mixer claim and pure-splitter claim it contradicts
     (_physics_contradiction); with no other valid claim the family is
-    unknown, so the unit carries every need (R4.13)."""
+    unknown, so the unit carries every need (R4.13). R6.1: so does every
+    claim that cannot host chemistry across which species convert (an
+    exact core class without built-in chemistry, a pump / valve /
+    compressor / turbine / exchanger / flash / junction claim without an
+    exact class's code), and a built-in chemistry class converting species
+    outside its signature."""
     unit = _as_dict(unit)
     registry = _as_dict(registry)
     name, source = _dsm_class(unit)
@@ -2832,7 +3078,7 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
             if family is None and name not in _CLASS_TABLE:
                 family = keyword or (inferred[1] if inferred else None)
             if _ports_plausible(name, family, _is_core_class(name, source),
-                                ports, physics):
+                                ports, physics, confidence):
                 return name, family, confidence
             name = None  # R4.8 / R5.1: a contradicted class claims nothing
     named = _class_family(name) if name else None
@@ -3118,11 +3364,39 @@ def _unit_rules(sc, position):
     return _FAMILY_RULES.get(family)
 
 
+def _hosts_chemistry(sc, position):
+    """R6.1(b): True when unit `position` makes a claim that can host
+    chemistry without an exact core class's code (_chemistry_claim
+    'capable') and either declares a well-formed reaction or lacks the
+    evidence that nothing converts across it (_no_conversion): it may be a
+    reactor, so it is reactive (_reactive_reason) and carries a reactor's
+    operating-specification needs too (_chemistry_rules)."""
+    name, family, confidence = sc.unit_classes[position]
+    if _chemistry_claim(name, family, sc.unit_core[position],
+                        confidence) != 'capable':
+        return False
+    return sc.unit_reacts[position] or not _no_conversion(sc, position)
+
+
+def _chemistry_rules(sc, position):
+    """R6.1(b): the reactor family's essential requirements when unit
+    `position` hosts chemistry under a family claim that does not fix it
+    (_hosts_chemistry), else None. CMP-UOP-02 then scores the unit by the
+    LOWER of its own rules and these (it must be specified both as what it
+    claims to be and as the reactor it may be), CMP-UOP-05 over both --
+    relabelling a fermenter 'Conveyor' or 'Dryer' cannot trade a reactor's
+    needs for a family whose needs its streams satisfy."""
+    return _FAMILY_RULES['reactor'] if _hosts_chemistry(sc, position) else None
+
+
 def _spec_population(sc):
     """Positions of units that need operating specifications (CMP-UOP-02;
-    CMP-UOP-05 adds the CMP-UOP-06 facilities): unknown family, or a
-    non-empty rule set (facility families have none: R2.5)."""
-    return [p for p in range(len(sc.units)) if _unit_rules(sc, p) != ()]
+    CMP-UOP-05 adds the CMP-UOP-06 facilities): unknown family, a
+    non-empty rule set (facility families have none: R2.5), or a unit
+    hosting chemistry under a claim that does not fix it
+    (_chemistry_rules, R6.1(b))."""
+    return [p for p in range(len(sc.units))
+            if _unit_rules(sc, p) != () or _chemistry_rules(sc, p)]
 
 
 def _explicit_keys(unit, family=None):
@@ -3588,12 +3862,31 @@ def _unit_spec_score(sc, position):
     is thus fixed by family / class need, never shrunk by data: deleting
     the waiving evidence turns that 1 into the requirement's own score and
     can only lower the mean (dropping the requirement instead let a stated
-    key join a mean it then raised)."""
-    unit, label = sc.units[position], sc.unit_labels[position]
+    key join a mean it then raised).
+
+    R6.1(b): a unit hosting chemistry under a claim that does not fix it
+    (_chemistry_rules) scores the LOWER of its own rules' mean and the
+    reactor rules' mean (an empty own rule set leaves the reactor's):
+    deleting the evidence that nothing converts can only add the second
+    set, never raise the score."""
     rules = _unit_rules(sc, position)
     if rules is None:
+        label = sc.unit_labels[position]
         return 0.0, [f'{label}: unit family unknown, so its essential '
                      f'specifications cannot be determined']
+    results = [_rules_score(sc, position, rule_set)
+               for rule_set in (rules, _chemistry_rules(sc, position))
+               if rule_set]
+    if not results:
+        return None, []
+    return min(results, key=lambda result: result[0])
+
+
+def _rules_score(sc, position, rules):
+    """(mean, missing) of unit `position` over the requirements `rules`
+    (_unit_spec_score): a waived requirement scores 1 (R5.9), the others
+    _requirement_score with a locator each when below 1."""
+    unit, label = sc.units[position], sc.unit_labels[position]
     explicit = _explicit_keys(unit, sc.unit_classes[position][1])
     scores, missing = [], []
     for req in rules:
@@ -3738,7 +4031,14 @@ class _ScoringContext:
              if _nonempty_str(e) and not _is_boundary(e)
              and e not in self.unit_ids})
 
-        # Per unit: declares >= 1 well-formed reaction (R2.0).
+        # Per unit: declares >= 1 well-formed reaction (R2.0), mass-
+        # conserving where testable (R6.2: needs the validator context).
+        self._vctx = None
+        self._molar_masses = None
+        self._well_formed = {}
+        self.closures = {}  # _closure cache: position -> (closes, reason)
+        self.mass_closures = {}  # _mass_closure cache (R5.3 / R5.8)
+        self.consistency = {}  # _species_consistency cache (R2.4)
         self.unit_reacts = [any(self.well_formed(r)
                                 for r in _dicts(u.get('reactions')))
                             for u in self.units]
@@ -3769,9 +4069,6 @@ class _ScoringContext:
         self.reactions = [(i, j, r) for i, u in enumerate(self.units)
                           for j, r in enumerate(_as_list(u.get('reactions')))
                           if isinstance(r, dict)]
-        self.closures = {}  # _closure cache: position -> (closes, reason)
-        self.mass_closures = {}  # _mass_closure cache (R5.3 / R5.8)
-        self.consistency = {}  # _species_consistency cache (R2.4)
         self.unit_positions = {}
         for i, u in enumerate(self.units):
             if _nonempty_str(u.get('id')):
@@ -3794,8 +4091,6 @@ class _ScoringContext:
                 agents.append((group, _converted(agent, self.quantity_units),
                                _label(f'utilities.{group}', agent, i)))
         self.agents = agents
-        self._vctx = None
-        self._molar_masses = None
 
     @property
     def molar_masses(self):
@@ -3824,8 +4119,17 @@ class _ScoringContext:
                      for side in (self.unit_inlets, self.unit_outlets))
 
     def well_formed(self, reaction):
-        """_well_formed against this document's chemical ids and indices."""
-        return _well_formed(reaction, self.chem_ids, self.chem_by_index)
+        """_well_formed against this document's chemical ids and indices,
+        and (R6.2) conserving mass (_conserves_mass) when its participants
+        all have molar masses; cached per reaction object."""
+        cached = self._well_formed.get(id(reaction))
+        if cached is None or cached[0] is not reaction:
+            # The reaction object is kept with its verdict, so its id is
+            # never reused by another object while cached.
+            cached = self._well_formed[id(reaction)] = (reaction, (
+                _well_formed(reaction, self.chem_ids, self.chem_by_index)
+                and _conserves_mass(self, reaction)))
+        return cached[1]
 
     def reaction_sides(self, reaction):
         """_reaction_sides against this document's chemical ids and
@@ -4718,7 +5022,7 @@ def _class_note(sc, position):
     implausible = _physics_notes(sc, position)
     suffix = ((f"; ignored as contradicted by its ports (R4.8): "
                f"{'; '.join(contradicted)}" if contradicted else '')
-              + (f"; ignored as physically implausible (R5.1): "
+              + (f"; ignored as physically implausible (R5.1 / R6.1): "
                  f"{'; '.join(implausible)}" if implausible else ''))
     if name is None and named[0]:
         by_ports = any(n.startswith(f"class '{named[0]}' ")
@@ -4774,17 +5078,21 @@ def _port_notes(sc, position):
 
 
 def _physics_notes(sc, position):
-    """R5.1: the mixer / pure-splitter claims of unit `position` its stream
-    physics contradict (sc.unit_physics, _physics_contradiction), each as
-    "<claim> (<why>)" -- a design_simulation_method class (with its
-    family) and the unit_type keyword family."""
+    """R5.1 / R6.1: the claims of unit `position` its stream physics
+    contradict (sc.unit_physics, _physics_contradiction: mixers, pure
+    splitters, junctions, claims that cannot host chemistry, built-in
+    chemistry classes), each as "<claim> (<why>)" -- a
+    design_simulation_method class (with its family) and the unit_type
+    keyword family."""
     unit, physics = sc.units[position], sc.unit_physics[position]
     notes = []
     name, source = _dsm_class(unit)
     keyword = _keyword_family(unit.get('unit_type'))
-    if name and _class_confidence(name, source, sc.pinned_repo) is not None:
+    confidence = _class_confidence(name, source, sc.pinned_repo) if name else None
+    if name and confidence is not None:
         why = _physics_contradiction(name, _class_family(name) or keyword,
-                                     physics)
+                                     physics, _is_core_class(name, source),
+                                     confidence)
         if why:
             notes.append(f"class '{name}' ({why})")
     why = _physics_contradiction(None, keyword, physics)
@@ -4930,6 +5238,25 @@ def _score_uop_04(sc):  # CMP-UOP-04
         if evaluable and not closes and sc.unit_inlets.get(uid) and outs:
             for i in outs:
                 unbalanced.setdefault(i, (sc.unit_labels[position], why))
+    # R3.8: a unit that streams reference but no unit declares is of
+    # unknown family, declares no reactions and states no balance: its
+    # outlets' composition stays unverified and, when its mass balance is
+    # evaluable and fails, their flow too -- deleting a unit's id must not
+    # lift either guard from its outlets.
+    for pid in sc.phantom_units:
+        label = f'units[{pid}]'
+        ins, outs = sc.unit_inlets.get(pid, []), sc.unit_outlets.get(pid, [])
+        for i in outs:
+            suspect.setdefault(i, (label, f'{_NOT_COMPUTABLE}: the unit is '
+                                          f'referenced but not declared'))
+        masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
+        if ins and outs and all(m is not None for m in masses):
+            m_in, m_out = sum(masses[:len(ins)]), sum(masses[len(ins):])
+            if abs(m_in - m_out) > CLOSURE_RTOL * max(m_in, m_out):
+                for i in outs:
+                    unbalanced.setdefault(i, (label, (
+                        f'mass balance does not close (in {m_in:.6g}, out '
+                        f'{m_out:.6g})')))
     scores, missing, full = [], [], 0
     unsourced = set(unsourced)
     for i in positions:
@@ -5006,7 +5333,11 @@ def _uop_05_unit(sc, position, facility):
         rules = _FACILITY_RULES.get(_facility_kind(sc, position))
         explicit = _facility_explicit(sc, position) if rules else set()
     else:
+        # R6.1(b): a unit hosting chemistry under a claim that does not fix
+        # it is measured over the reactor rules too (the minimum over both).
         rules = _unit_rules(sc, position)
+        if rules is not None:
+            rules = tuple(rules) + tuple(_chemistry_rules(sc, position) or ())
         explicit = _explicit_keys(sc.units[position], family)
     if rules is None:
         return base, [f'{label}.design_input_specs: specification units '
@@ -5246,6 +5577,43 @@ def _species_change(sc, unit_id):
             + [f'{n} vanishes' for n in sorted(vanish)])
 
 
+def _species_conversion(sc, unit_id):
+    """R6.1: ([produced], [consumed]) species across unit `unit_id` -- those
+    whose total flow out exceeds / falls short of the flow in by more than
+    CLOSURE_RTOL of the larger of the two and more than SPECIES_RTOL of the
+    throughput, on one basis (_side_species: molar, else mass, R5.3); a
+    superset of _species_change's appearing / vanishing species. ([], [])
+    when the unit lacks inlets or outlets or every species balances; None
+    when the connected streams' species flows are not computable."""
+    if not isinstance(unit_id, str):
+        return [], []
+    if not sc.unit_inlets.get(unit_id) or not sc.unit_outlets.get(unit_id):
+        return [], []
+    found = _side_species(sc, unit_id)
+    if found is None:
+        return None
+    _basis, flows_in, flows_out = found
+    total = max(sum(flows_in.values()), sum(flows_out.values()))
+    floor = max(ZERO_FLOW, SPECIES_RTOL * total)
+    produced, consumed = [], []
+    for name in sorted(set(flows_in) | set(flows_out)):
+        a, b = flows_in.get(name, 0.0), flows_out.get(name, 0.0)
+        if abs(b - a) > max(floor, CLOSURE_RTOL * max(a, b)):
+            (produced if b > a else consumed).append(name)
+    return produced, consumed
+
+
+def _no_conversion(sc, position):
+    """R6.1(b): True when unit `position`'s streams show affirmatively that
+    nothing converts across it: its total mass closes (_mass_closure, no
+    dangling stream possibly a missing port) and every species' flow is
+    computable and balances within CLOSURE_RTOL (_species_conversion finds
+    none). Deleting any of that evidence can only make it False."""
+    if not _mass_closure(sc, position)[0]:
+        return False
+    return _species_conversion(sc, sc.units[position].get('id')) == ([], [])
+
+
 def _species_guarded(sc, position):
     """True when unit `position` falls under the species-appearance
     consistency guard (R2.4): a physical-only family (PHYSICAL_FAMILIES --
@@ -5271,7 +5639,10 @@ def _species_consistency(sc, position):
     else mass: R5.3) and no species appears or vanishes. An uncomputable
     port leaves consistency unverified (False; the reason then starts with
     _NOT_COMPUTABLE, telling it from an inconsistency), so deleting a
-    stream's composition never lifts the guard."""
+    stream's composition never lifts the guard; so does a dangling stream
+    (R5.8) that may be a missing port of the unit (its total mass closure,
+    _mass_closure, does not rule that out), so deleting a port's endpoint
+    never lifts it either."""
     cache = sc.consistency
     if position in cache:
         return cache[position]
@@ -5282,6 +5653,15 @@ def _species_consistency(sc, position):
             result = False, (f'{_NOT_COMPUTABLE} (molar or mass basis) for '
                              f'every connected stream, so no undeclared '
                              f'reaction can be ruled out')
+        elif (not change and sc.dangling
+              and not _mass_closure(sc, position)[0]):
+            # R5.8: a stream whose endpoint is not stated may be a missing
+            # port of this unit (its closure cannot rule that out), so its
+            # species balance cannot be verified.
+            result = False, (f'{_NOT_COMPUTABLE} over every port: a stream '
+                             f'without a stated endpoint may be a missing '
+                             f'port, so no undeclared reaction can be ruled '
+                             f'out')
         elif change:
             result = False, (f"{', '.join(change[:3])} across a "
                              f"physical-only unit without declared reactions")
@@ -5300,12 +5680,26 @@ def _reactive_reason(sc, position):
     reactor's only family evidence must not shed the need); else None.
     Declared reactions and species appearance no longer make a unit
     reactive: a population defined by data let deleting that data shrink
-    it."""
+    it.
+
+    R6.1(b): a claim that can host chemistry without an exact core class's
+    code (_chemistry_claim 'capable': a tank, column, extractor,
+    crystallizer, evaporator, cooker, conveyor or dryer named by a label,
+    an abstract class, a key-set inference or an unpinned custom class;
+    or an exact core class taking an optional reaction set) keeps its
+    family but needs reactions ('<family> claim that can host chemistry')
+    unless its streams show that nothing converts (_hosts_chemistry,
+    _no_conversion) -- deleting that evidence only adds the need back. One
+    declaring a well-formed reaction stays reactive whatever its streams
+    show, so deleting its evidence never adds a unit that carries
+    reactions."""
     family = sc.unit_classes[position][1]
     if family is None:
         return 'family unknown'
     if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
+    if _hosts_chemistry(sc, position):
+        return f'{family} claim that can host chemistry'
     return None
 
 
@@ -5348,15 +5742,32 @@ def _score_rxn_01(sc):  # CMP-RXN-01
 
 _MALFORMED_REACTION = (': not well-formed (its equation|stoichiometry names '
                        'no consumed and produced species)')
+_NONCONSERVING_REACTION = (': not well-formed (its coefficients conserve mass '
+                           'on neither a mol nor a wt basis within '
+                           f'{RXN_CLOSURE_RTOL:.0%}: R6.2)')
+
+
+def _malformed_note(sc, reaction):
+    """'' when the reaction is well-formed (sc.well_formed), else the
+    locator suffix saying why: it names no consumed and produced species
+    (_MALFORMED_REACTION), or it does not conserve mass
+    (_NONCONSERVING_REACTION, R6.2)."""
+    if sc.well_formed(reaction):
+        return ''
+    if not sc.reaction_sides(reaction)[0]:
+        return _MALFORMED_REACTION
+    return _NONCONSERVING_REACTION
 
 
 def _reaction_completeness(sc, reaction, where):
     """(score, missing) of one reaction's definition (R2.0): 0 unless it is
-    well-formed (_well_formed); else the mean of {well-formed, reactant among
-    the consumed species, conversion numeric in [0, 1]}."""
+    well-formed (sc.well_formed: _well_formed, and mass-conserving where
+    testable, R6.2); else the mean of {well-formed, reactant among the
+    consumed species, conversion numeric in [0, 1]}."""
+    note = _malformed_note(sc, reaction)
+    if note:
+        return 0.0, [where + note]
     consumed, _produced = sc.reaction_sides(reaction)
-    if not consumed:
-        return 0.0, [where + _MALFORMED_REACTION]
     reactant = reaction.get('reactant')
     parts = {
         'equation|stoichiometry': True,
@@ -5439,11 +5850,14 @@ def _score_rxn_03(sc):  # CMP-RXN-03
             f'order ({multi} with two or more reactions)', missing)
 
 
-def _reaction_coefficients(sc, reaction):
-    """{chemical id: signed coefficient} of a reaction -- from its
-    stoichiometry, else its equation (phase tags stripped) -- resolved by the
-    validator's helpers; None when neither resolves."""
+def _coefficient_sources(sc, reaction):
+    """[{chemical id: signed coefficient}, ...] of a reaction, one per
+    source that resolves through the validator's helpers: its stoichiometry
+    first, then its equation (phase tags stripped); [] when neither
+    does."""
     validator = _validator()
+    sources = []
+    reaction = _as_dict(reaction)
     try:
         stoichiometry = reaction.get('stoichiometry')
         # A non-numeric coefficient counts as absent (R2.0), exactly as if
@@ -5457,16 +5871,63 @@ def _reaction_coefficients(sc, reaction):
         if _filled(stoichiometry):
             coeffs, _reason = validator._stoich_to_coeffs(stoichiometry, sc.vctx)
             if coeffs:
-                return coeffs
+                sources.append(coeffs)
+    except Exception:  # malformed document values: no coefficients
+        pass
+    try:
         equation = reaction.get('equation')
         if isinstance(equation, str) and '->' in equation:
             sides = [' + '.join(_PHASE_TAG_RE.sub('', t.strip())
                                 for t in side.split('+'))
                      for side in equation.split('->', 1)]
-            return validator._parse_equation(' -> '.join(sides), sc.vctx) or None
+            coeffs = validator._parse_equation(' -> '.join(sides), sc.vctx)
+            if coeffs:
+                sources.append(coeffs)
     except Exception:  # malformed document values: no coefficients
-        return None
-    return None
+        pass
+    return sources
+
+
+def _reaction_coefficients(sc, reaction):
+    """{chemical id: signed coefficient} of a reaction -- from its
+    stoichiometry, else its equation (phase tags stripped) -- resolved by the
+    validator's helpers; None when neither resolves."""
+    sources = _coefficient_sources(sc, reaction)
+    return sources[0] if sources else None
+
+
+def _closure_error(sc, reaction):
+    """R6.2: the smallest relative mass imbalance of a reaction over its
+    coefficient sources (_coefficient_sources) whose participants all have
+    molar masses (declared, else from the formula, as the validator
+    resolves them): per source the smaller of the mol-basis imbalance
+    |sum(nu * MW)| / sum over consumed species of |nu| * MW and the
+    wt-basis imbalance |sum(nu)| / sum over consumed species of |nu|.
+    None when no source is testable (a molar mass missing, or nothing
+    consumed)."""
+    errors = []
+    for coeffs in _coefficient_sources(sc, reaction):
+        masses = [sc.vctx.molar_mass(cid) for cid in coeffs]
+        if any(m is None for m in masses):
+            continue
+        nus = list(coeffs.values())
+        mass_in = sum(-nu * m for nu, m in zip(nus, masses) if nu < 0)
+        coeff_in = sum(-nu for nu in nus if nu < 0)
+        if mass_in <= 0.0 or coeff_in <= 0.0:
+            continue
+        errors.append(min(abs(sum(nu * m for nu, m in zip(nus, masses)))
+                          / mass_in, abs(sum(nus)) / coeff_in))
+    return min(errors) if errors else None
+
+
+def _conserves_mass(sc, reaction):
+    """R6.2: True unless the reaction is testable (_closure_error not None)
+    and conserves mass on neither a mol nor a wt basis within
+    RXN_CLOSURE_RTOL of its reactant side. Deleting a coefficient can only
+    break the closure; a reaction whose participants lack molar masses is
+    not tested."""
+    error = _closure_error(sc, reaction)
+    return error is None or error <= RXN_CLOSURE_RTOL
 
 
 def _has_phase_tags(equation):
@@ -5502,9 +5963,13 @@ def _basis_derivable(sc, reaction):
 
 def _single_phase_ports(sc, position):
     """True when unit `position` has >=1 connected stream and every one
-    carries phase data with at most one phase."""
+    carries phase data with at most one phase, and (R5.8) no stream without
+    a stated endpoint may be a missing port of it (with one present, its
+    total mass closure, _mass_closure, must rule that out)."""
     uid = sc.units[position].get('id')
     if not isinstance(uid, str):
+        return False
+    if sc.dangling and not _mass_closure(sc, position)[0]:
         return False
     ports = sc.unit_inlets.get(uid, []) + sc.unit_outlets.get(uid, [])
     sets = [_phase_set(sc.streams[i]) for i in ports]
@@ -5516,8 +5981,9 @@ def _reaction_basis_phase(sc, position, ri, reaction):
     phase}, each DERIVED_CREDIT when derivable (neither is representable); 0
     for a reaction that is not well-formed (R2.0)."""
     where = f'{sc.unit_labels[position]}.reactions[{ri}]'
-    if not sc.well_formed(reaction):
-        return 0.0, [where + _MALFORMED_REACTION]
+    note = _malformed_note(sc, reaction)
+    if note:
+        return 0.0, [where + note]
     basis = _basis_derivable(sc, reaction)
     phase = (_has_phase_tags(reaction.get('equation'))
              or _single_phase_ports(sc, position))

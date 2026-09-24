@@ -534,7 +534,27 @@ criteria:
       stated empty are ignored and a bound is tested only on stated values,
       so deleting data never creates a contradiction; relabelling a pump,
       heater or fermenter as a mixer thus leaves its family unknown instead
-      of shedding its needs. A unit whose family stays unknown carries
+      of shedding its needs. Every other claim that cannot host chemistry
+      is tested the same way: an exact core class without built-in
+      chemistry, an unpinned biorefinery class of the scorer's curated
+      table (its source read), and a pump, valve, compressor, turbine,
+      exchanger, flash, splitter or junction claim without an exact class's
+      code are implausible when species convert across them without a
+      well-formed reaction -- a species appears or vanishes or, where the
+      unit's total mass closes (else a missing port could explain it), any
+      species' flow changes by more than 1 %; a Junction or Scaler also
+      when it records a duty or changes T or P, a Junction when its mass
+      balance does not close. Classes whose own code converts species
+      (verified in the biosteam and Bioindustrial-Park sources: DrumDryer
+      burning natural gas, ThermalOxidizer, Boiler, BoilerTurbogenerator and
+      CHP burning their feeds, AmineAbsorption consuming its MEA and make-up
+      water, ProcessWaterCenter keeping only water, the biorefineries'
+      AmmoniaAdditionTank neutralizing ammonium hydroxide with sulfuric
+      acid), and combustor, boiler or facility claims without a class's
+      code, are implausible only for a conversion that chemistry cannot
+      make (a drum dryer produces no ethanol); a custom class located in the
+      pinned model package is exempt, since its code may carry any
+      chemistry. A unit whose family stays unknown carries
       every family-dependent need (reactions, heat and power agents,
       utility results, costing). A unit id that stream endpoints reference
       but no unit declares scores 0. Every per-unit average in this
@@ -625,7 +645,15 @@ criteria:
       irrelevant is itself the information (unchanged phases fix the phase
       outcome as a stated vapor fraction would), so a unit is always scored
       on the requirements its family and class need, and deleting the
-      waiving evidence can only lower its score. Units of unknown
+      waiving evidence can only lower its score. A unit that may host
+      chemistry under a claim that does not fix it (reactive by
+      CMP-RXN-01: a tank, column, extractor, crystallizer, evaporator,
+      cooker, conveyor or dryer claim without an exact core class's code
+      whose streams do not show that nothing converts, or that declares
+      reactions) scores the lower of its own rules' mean and the reactor
+      rules' mean: it must be specified as the reactor it may be too, so
+      relabelling a fermenter as a conveyor or a dryer whose requirements
+      its streams happen to satisfy cannot pay off. Units of unknown
       family, and unit ids that stream endpoints reference but no unit
       declares, score zero because nothing tells the importer what to
       specify. Each unit counts once.
@@ -684,7 +712,12 @@ criteria:
       data, else on the mass basis), its outlets' compositions do not count
       as stated ('inconsistent'), nor do they when its species flows cannot
       be computed on either basis for every connected stream ('unverified';
-      the message tells the two apart). Mass-balance guard:
+      the message tells the two apart), nor when a stream whose endpoint is
+      not stated may be a missing port the unit's mass closure cannot rule
+      out ('unverified'). The outlets of a unit id that streams reference
+      but no unit declares are 'unverified' too, and their flows follow the
+      mass-balance guard below, so deleting a unit's id or a port's
+      endpoint never lifts a guard. Mass-balance guard:
       when every inlet and outlet of a unit states its mass flow and the
       totals disagree by more than 1 %, its outlets' flows do not count as
       stated (nothing tells which stated flow is wrong; a stated-zero flow
@@ -778,22 +811,42 @@ criteria:
       without its reaction set. The population is defined by need alone: the
       units of a reactor family (continuous reactors, batch, aerated and
       gas-fed bioreactors, and units whose type names a neutralizer,
-      hydrotreater, gasifier, pyrolysis or hydrolysis step) and every unit
-      whose family is unknown (no class, no keyword family, or a claim its
-      ports or stream physics contradict -- a 'mixer' across which species
-      appear is one: it could be a reactor, and only affirmative evidence
-      waives a need), each of which
-      must declare at least one well-formed reaction: an equation or
+      hydrotreater, gasifier, pyrolysis, hydrolysis, ammonia-addition,
+      (over)liming, conditioning, acidification, (trans)esterification or
+      mashing step -- 'Overliming tank', 'Mash tank'); every unit whose
+      family is unknown (no class, no keyword family, or a claim its ports
+      or stream physics contradict -- see CMP-UOP-01: a 'mixer', 'heater',
+      'Junction' or exact StorageTank across which species convert is one:
+      it could be a reactor, and only affirmative evidence waives a need);
+      and every claim that can host chemistry without an exact core
+      class's code -- a tank, distillation or MESH column, extractor,
+      crystallizer, evaporator, steam-injection heater, conveyor or mill,
+      or dryer named by unit_type, an abstract class, a key-set inference
+      or an unpinned custom class the scorer's curated table does not know,
+      and the core classes taking an optional reaction set
+      (MESHDistillation, MultiStageEquilibrium, StageEquilibrium,
+      PhasePartition) -- unless its streams show affirmatively that
+      nothing converts (its total mass closes and every species' flow is
+      computable and balances within 1 %), so deleting that evidence only
+      adds the need back; one declaring a well-formed reaction stays in.
+      Each must declare at least one well-formed reaction: an equation or
       stoichiometry naming at least one consumed and one produced species
-      ([{}] or an equation "x" counts as none). Declared reactions and
-      species appearing in a unit's outlets no longer make a unit reactive
-      (a population read from data let deleting that data shrink it);
-      species appearing across a physical-only unit (or one of unknown
-      family) is instead a consistency guard on CMP-UOP-04 and on
-      derivations. Families whose
+      ([{}] or an equation "x" counts as none) that, when every participant
+      has a molar mass, conserves mass on a mol basis (|sum(nu*MW)|) or a
+      wt basis (|sum(nu)|) within 1 % of its reactant side ('Glucose -> 5
+      Ethanol' does not). The 1 % sits in an empty band of the corpus:
+      its 6587 testable reactions close within 0.025 % or miss by more
+      than 1.5 % (364, atom-imbalanced as written -- an omitted O2, H2O, H2
+      or nitrogen source). Declared reactions and species appearing in a
+      unit's outlets do not by themselves make a unit reactive (a
+      population read from data let deleting that data shrink it); species
+      appearing across a physical-only unit (or one of unknown family) is
+      a consistency guard on CMP-UOP-04 and on derivations. Families whose
       chemistry the class itself fixes (combustors, boilers,
-      boiler-turbogenerators, facilities, Gibbs reactors, dryers) are not in
-      the population. Each unit counts once.
+      boiler-turbogenerators, facilities, Gibbs reactors) are not in the
+      population, nor are exact core or curated classes whose code hosts no
+      chemistry (a dryer only through the claims above). Each unit counts
+      once.
 
   - id: CMP-RXN-02
     category: reactions
@@ -810,8 +863,11 @@ criteria:
       A thermosteam Reaction is defined by its stoichiometry, the reactant on
       which conversion is based, and the fractional conversion X (0 to 1).
       Missing any one of the three leaves the extent of reaction undefined.
-      Per reaction: 0 unless it is well-formed (see CMP-RXN-01) -- a
-      conversion attached to no parseable stoichiometry earns nothing -- else
+      Per reaction: 0 unless it is well-formed (see CMP-RXN-01: parseable,
+      and conserving mass within 1 % where every molar mass is known) -- a
+      conversion attached to no parseable or no mass-conserving
+      stoichiometry earns nothing; deleting a coefficient can only break
+      the closure -- else
       the mean of {well-formed, the reactant is one of its consumed species,
       a numeric conversion in [0, 1]}. Scored per
       unit (each counting once) over its reactions, for the reactive units of
@@ -855,13 +911,15 @@ criteria:
       for biomass pseudo-components) and restricted to a phase; both change
       the computed outlet. No SFF field states either, so each reaction of
       the CMP-RXN-02 population (a reactive unit without reactions scores 0,
-      a reaction that is not well-formed scores 0) earns only derived
-      credit, half for each part: the basis when sum(nu*MW) = 0 (a molar
-      reaction conserves mass) or sum(nu) = 0 (a mass-basis reaction) holds
-      to 1e-3 relative, with every molar mass resolvable -- when both hold,
-      as for an isomerisation, the basis is immaterial; the phase when the
-      equation tags every species with a phase or every stream of the unit
-      is single-phase. Each unit counts once.
+      a reaction that is not well-formed -- including one conserving mass
+      on neither basis within 1 %, see CMP-RXN-01 -- scores 0) earns only
+      derived credit, half for each part: the basis when sum(nu*MW) = 0 (a
+      molar reaction conserves mass) or sum(nu) = 0 (a mass-basis reaction)
+      holds to 1e-3 relative, with every molar mass resolvable -- when both
+      hold, as for an isomerisation, the basis is immaterial; the phase
+      when the equation tags every species with a phase or every stream of
+      the unit is single-phase, and no stream without a stated endpoint
+      may be a missing port of it. Each unit counts once.
 
   # ----------------------------------------------------------------- costing
   - id: CMP-COST-01

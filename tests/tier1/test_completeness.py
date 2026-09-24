@@ -2500,7 +2500,10 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         material (label, 'natural gas?'); lime into a BoilerTurbogenerator
         or a plain Boiler -> 'lime'; water into a ProcessWaterCenter (or a
         facility of unknown kind) -> 'makeup water', but not into a
-        CoolingTower; a feed into a Pump -> None."""
+        CoolingTower; a feed into a Pump -> None. Each feed passes through
+        to the product unchanged, so no species converts across the unit
+        (R6.1: a conversion its class cannot explain would contradict the
+        class claim)."""
         ch4 = {"g": {"total_molar_flow": 1.0, "composition": [
             {"component_name": "CH4", "mol_fraction": 0.9},
             {"component_name": "CO2", "mol_fraction": 0.1}]}}
@@ -2508,8 +2511,9 @@ class TestTopologyFeedCriteria(unittest.TestCase):
             {"component_name": "O2", "mol_fraction": 0.21},
             {"component_name": "N2", "mol_fraction": 0.79}]}}
         def port(name, phases=None, url=BST_URL, unit=None):
-            doc = one_unit_doc(unit or spec_unit(name, url=url),
-                               ins=({"phases": phases} if phases else {},))
+            side = ({"phases": phases} if phases else {},)
+            doc = one_unit_doc(unit or spec_unit(name, url=url), ins=side,
+                               outs=side)
             return C._utility_port_feed(ctx(doc), 0)
         self.assertEqual(port("DrumDryer", ch4), ("units[U1]", "natural gas"))
         self.assertIsNone(port("DrumDryer"))
@@ -2556,8 +2560,11 @@ class TestTopologyFeedCriteria(unittest.TestCase):
         dryer["units"][0] = dict(spec_unit("DrumDryer"), id="U1")
         mutate(dryer, "streams/0/price", 0)
         self.assertEqual(run(C._score_feed_02, dryer)[0], 1.0)
-        mutate(dryer, "streams/0/stream_properties/phases/l/composition/0/"
-                      "component_name", "Methane")
+        # The methane passes through (R6.1: methane burnt to ethanol would
+        # contradict the DrumDryer's built-in chemistry).
+        for s in (0, 1):
+            mutate(dryer, f"streams/{s}/stream_properties/phases/l/"
+                          f"composition/0/component_name", "Methane")
         score, _m, missing = run(C._score_feed_02, dryer)
         self.assertEqual(score, 0.75)
         self.assertIn("streams[feed].price: 0 on the natural gas port of "
@@ -2842,12 +2849,16 @@ class TestReactionCriteria(unittest.TestCase):
     def test_species_guard(self):
         """_species_guarded / _species_consistency (R2.4): a Mixer (physical
         family) without reactions is guarded; with a well-formed reaction,
-        or as a reactor / facility, it is not; a core Splitter and a
-        splitter of unknown class are guarded, a custom splitter class
-        (CleaningSystem) is not. Consistency: the valid mixer -> (True, '');
-        CO2 appearing -> (False, 'CO2 appears across ...'); an uncomputable
-        port -> (False, 'species flows not computable ...'); unguarded ->
-        (True, ''); results are cached on the context."""
+        or as a reactor, it is not; a core Splitter and a splitter of
+        unknown class are guarded, a custom splitter class (CleaningSystem)
+        located in the pinned model package (confidence 1) is not. R6.1: CO2
+        appearing contradicts the unpinned CleaningSystem (a curated
+        biorefinery class without chemistry) and a ProcessWaterCenter
+        (whose chemistry only discards species), so both units' family is
+        unknown and they are guarded. Consistency: the valid mixer -> (True,
+        ''); CO2 appearing -> (False, 'CO2 appears across ...'); an
+        uncomputable port -> (False, 'species flows not computable ...');
+        unguarded -> (True, ''); results are cached on the context."""
         sc = ctx(self._appearing_doc())
         self.assertTrue(C._species_guarded(sc, 0))
         ok, why = C._species_consistency(sc, 0)
@@ -2859,13 +2870,21 @@ class TestReactionCriteria(unittest.TestCase):
             reaction(equation="Ethanol -> CO2")]}))
         self.assertFalse(C._species_guarded(reacting, 0))
         self.assertEqual(C._species_consistency(reacting, 0), (True, ''))
-        for fields, guarded in ((spec_unit("Splitter"), True),
-                                ({"unit_type": "Splitter unit"}, True),
-                                (spec_unit("CleaningSystem", url=BIP_URL), False),
-                                (spec_unit("SinglePhaseReactor"), False),
-                                (spec_unit("ProcessWaterCenter"), False)):
-            sc = ctx(self._appearing_doc(fields))
-            self.assertEqual(C._species_guarded(sc, 0), guarded, fields)
+        for fields, guarded, pinned in (
+                (spec_unit("Splitter"), True, False),
+                ({"unit_type": "Splitter unit"}, True, False),
+                (spec_unit("CleaningSystem", url=BIP_URL), False, True),
+                (spec_unit("CleaningSystem", url=BIP_URL), True, False),
+                (spec_unit("SinglePhaseReactor"), False, False),
+                (spec_unit("ProcessWaterCenter"), True, False)):
+            doc = self._appearing_doc(fields)
+            if pinned:
+                doc["metadata"]["reproducibility"] = {
+                    "flowsheet_model_package": {"url": BIP_REPO,
+                                                "commit": "abc123"}}
+            sc = ctx(doc)
+            self.assertEqual(C._species_guarded(sc, 0), guarded,
+                             (fields, pinned))
         doc = valid_doc()
         del doc["streams"][1]["stream_properties"]["phases"]
         del doc["streams"][1]["stream_properties"]["composition"]
@@ -2875,45 +2894,51 @@ class TestReactionCriteria(unittest.TestCase):
 
     def test_reactive_reason(self):
         """_reactive_reason (R2.4, need only): a reactor family (incl. the
-        keyword reactors 'Neutralization tank', 'Hydrotreater') -> 'reactor
-        family'; declared reactions on a mixer, species evidence on an
-        HXutility, a facility, a Gibbs reactor -> None. R4.13: a unit of
-        unknown family (valid_doc's one-inlet 'Mixer' label, R4.14; a
-        'Widget'; R5.1: an exact Mixer across which CO2 appears, which
-        contradicts the mixer claim) -> 'family unknown' (it could be a
-        reactor)."""
+        keyword reactors 'Neutralization tank', 'Hydrotreater', and the
+        R6.1(d) steps 'Ammonia addition tank', 'Overliming tank', 'Mash
+        tank') -> 'reactor family'; declared reactions on a mixer, a
+        facility, a Gibbs reactor -> None. R4.13: a unit of unknown family
+        (valid_doc's one-inlet 'Mixer' label, R4.14; a 'Widget'; R5.1 / R6.1:
+        an exact Mixer, HXutility or ProcessWaterCenter across which CO2
+        appears, which contradicts each claim) -> 'family unknown' (it could
+        be a reactor). R6.1(b): a label-only 'Holding tank' across which CO2
+        appears -> 'tank claim that can host chemistry'."""
         for doc in (valid_doc(), unit_doc({"unit_type": "Widget"})):
             self.assertEqual(C._reactive_reason(ctx(doc), 0), "family unknown")
         self.assertEqual(C._reactive_reason(ctx(unit_doc(cls("NRELFermentation"))), 0),
                          "reactor family")
-        for unit_type in ("Neutralization tank", "Hydrotreater"):
+        for unit_type in ("Neutralization tank", "Hydrotreater",
+                          "Ammonia addition tank", "Overliming tank",
+                          "Mash tank"):
             self.assertEqual(C._reactive_reason(
                 ctx(unit_doc({"unit_type": unit_type})), 0), "reactor family")
         self.assertIsNone(C._reactive_reason(
             ctx(unit_doc({**cls("Mixer"), "reactions": [reaction()]})), 0))
-        # R2.4: species appearing across a non-reactor is no need by
-        # itself (an HXutility stays non-reactive); R5.1: across an exact
-        # Mixer it contradicts the mixer claim, leaving the family unknown.
+        # R5.1 / R6.1(a): species appearing across an exact Mixer or
+        # HXutility contradicts the claim, leaving the family unknown; across
+        # a ProcessWaterCenter too (its chemistry only discards species).
+        for fields in (cls("Mixer"), cls("HXutility"),
+                       cls("ProcessWaterCenter")):
+            self.assertEqual(C._reactive_reason(
+                ctx(self._appearing_doc(fields)), 0), "family unknown")
         self.assertIsNone(C._reactive_reason(
-            ctx(self._appearing_doc(cls("HXutility"))), 0))
-        self.assertEqual(C._reactive_reason(ctx(self._appearing_doc()), 0),
-                         "family unknown")
-        self.assertIsNone(C._reactive_reason(
-            ctx(self._appearing_doc(cls("ProcessWaterCenter"))), 0))
+            ctx(unit_doc(cls("ProcessWaterCenter"))), 0))
         self.assertIsNone(C._reactive_reason(
             ctx(unit_doc(cls("GibbsEquilibriumReactor"))), 0))
+        self.assertEqual(C._reactive_reason(ctx(self._appearing_doc(
+            {"unit_type": "Holding tank"})), 0),
+            "tank claim that can host chemistry")
 
     def test_rxn_01_reactive_units(self):
-        """_score_rxn_01 (CMP-RXN-01): no reactive unit -> None, also when
-        species appear across an HXutility (R2.4: evidence is a consistency
-        guard, not need); species appearing across an exact Mixer
-        contradict the mixer claim (R5.1), so the unit of unknown family
-        is reactive -> 0; a reactor without reactions -> 0 ('none
-        well-formed declared (reactor family)'); with a reaction -> 1; with
-        only malformed ones -> 0."""
+        """_score_rxn_01 (CMP-RXN-01): no reactive unit -> None; species
+        appearing across an exact Mixer (R5.1) or HXutility (R6.1(a))
+        contradict the claim, so the unit of unknown family is reactive ->
+        0; a reactor without reactions -> 0 ('none well-formed declared
+        (reactor family)'); with a reaction -> 1; with only malformed ones
+        -> 0."""
         self.assertIsNone(run(C._score_rxn_01, exact_mixer_doc())[0])
-        self.assertIsNone(run(C._score_rxn_01,
-                              self._appearing_doc(cls("HXutility")))[0])
+        self.assertEqual(run(C._score_rxn_01,
+                             self._appearing_doc(cls("HXutility")))[0], 0.0)
         self.assertEqual(run(C._score_rxn_01, self._appearing_doc())[0], 0.0)
         reactor = spec_unit("SinglePhaseReactor")
         score, _m, missing = run(C._score_rxn_01, self._appearing_doc(reactor))
@@ -3116,14 +3141,24 @@ class TestReactionCriteria(unittest.TestCase):
     def test_reaction_basis_phase(self):
         """_reaction_basis_phase: basis and phase both derivable ->
         DERIVED_CREDIT with two '(derivable...)' locators; basis not
-        derivable, phase derivable -> DERIVED_CREDIT / 2."""
+        derivable (mass closes within RXN_CLOSURE_RTOL, R6.2, but not
+        within BASIS_RTOL: 'Glucose -> 2 Ethanol + 2.02 CO2', 0.5 % off),
+        phase derivable -> DERIVED_CREDIT / 2; a reaction conserving mass on
+        neither basis ('Glucose -> 3 Ethanol', 23 % off) is not well-formed
+        -> 0 with the R6.2 locator."""
         sc = ctx(rxn_doc(None))
         score, missing = C._reaction_basis_phase(sc, 0, 0, {"equation": GLUCOSE_EQ})
         self.assertEqual(score, C.DERIVED_CREDIT)
         self.assertEqual(len(missing), 2)
         self.assertIn("(derivable from the mass balance)", missing[0])
-        score, _m = C._reaction_basis_phase(sc, 0, 0, {"equation": "Glucose -> 3 Ethanol"})
+        score, _m = C._reaction_basis_phase(
+            sc, 0, 0, {"equation": "Glucose -> 2 Ethanol + 2.02 CO2"})
         self.assertEqual(score, C.DERIVED_CREDIT / 2)
+        score, missing = C._reaction_basis_phase(
+            sc, 0, 0, {"equation": "Glucose -> 3 Ethanol"})
+        self.assertEqual(score, 0.0)
+        self.assertIn("conserve mass on neither a mol nor a wt basis",
+                      missing[0])
 
     def test_rxn_04_basis(self):
         """_score_rxn_04 (CMP-RXN-04): a reactor whose Glucose reaction has a
@@ -5001,21 +5036,39 @@ class TestRevision2PartB(unittest.TestCase):
     def test_splitter_guard_deletions_never_raise(self):
         """The R2.4 consistency guard is monotone: in
         splitter_doc('MolecularSieve') CO2 appears across the core
-        splitter-family S1 without reactions (not a PURE splitter, so R5.1
-        leaves its claim standing: ('MolecularSieve', 'splitter', 1.0)),
+        splitter-family S1 without reactions (not a PURE splitter, but R6.1(a)
+        now contradicts every exact core class without chemistry across
+        which a species appears: S1's family is unknown, (None, None, 0.0),
+        and an unknown family is guarded too),
         so both outlets' compositions do not count (CMP-UOP-04 = 0.75, the
         missing entries saying 'inconsistent') and the split derivation is
         blocked; deleting outA's phases (the stream carrying the evidence)
         leaves the guard tripped (species flows no longer computable: the
         UOP-04 entry now says 'unverified'), so no score rises -- nor does
-        any other deletion. With the pure Splitter class (the default
-        splitter_doc) the appearance also contradicts the claim itself
-        (R5.1): S1's family is unknown and _class_note names the
-        contradiction. A custom splitter class (CleaningSystem) is not
-        guarded (UOP-04 = 1)."""
-        doc = splitter_doc("MolecularSieve")
+        any other deletion. The claim-standing case is S1 relabelled a
+        label-only 'Holding tank' (R6.1(b): reactive, family kept); the
+        guard trips on it as above, and the deletion sweep runs on it (the
+        contradicted sieve is an inconsistent document, outside the
+        guarantee). With the pure Splitter class (the default
+        splitter_doc) the appearance contradicts the claim too (R5.1).
+        A custom splitter class located in the pinned model package
+        (CleaningSystem, confidence 1) is not guarded (UOP-04 = 1)."""
+        sieve = splitter_doc("MolecularSieve")
+        sc = ctx(sieve)
+        self.assertEqual(sc.unit_classes[0], (None, None, 0.0))
+        self.assertIn("implausible for a unit that hosts no chemistry: CO2 "
+                      "appears", C._class_note(sc, 0))
+        self.assertFalse(C._species_consistency(sc, 0)[0])
+        # A claim that stands while the guard trips: a label-only 'Holding
+        # tank' (R6.1(b): a tank may host chemistry, so the claim keeps its
+        # family -- the unit is reactive instead).
+        doc = copy.deepcopy(sieve)
+        doc["units"][0] = {"id": "S1", "unit_type": "Holding tank",
+                           "design_input_specs": {"tau": 2.0}}
         sc = ctx(doc)
-        self.assertEqual(sc.unit_classes[0], ("MolecularSieve", "splitter", 1.0))
+        self.assertEqual(sc.unit_classes[0], (None, "tank", 0.5))
+        self.assertEqual(C._reactive_reason(sc, 0),
+                         "tank claim that can host chemistry")
         self.assertFalse(C._species_consistency(sc, 0)[0])
         score, _message, missing = run(C._score_uop_04, doc)
         self.assertEqual(score, 0.75)
@@ -5042,9 +5095,11 @@ class TestRevision2PartB(unittest.TestCase):
         self.assertEqual(pure.unit_classes[0], (None, None, 0.0))
         self.assertIn("implausible for a pure splitter: CO2 appears without "
                       "declared reactions", C._class_note(pure, 0))
-        custom = copy.deepcopy(doc)
+        custom = copy.deepcopy(sieve)
         custom["units"][0]["design_simulation_method"] = \
             f"CleaningSystem on {BIP_URL}"
+        custom["metadata"]["reproducibility"] = {
+            "flowsheet_model_package": {"url": BIP_REPO, "commit": "abc123"}}
         self.assertEqual(run(C._score_uop_04, custom)[0], 1.0)
 
 
@@ -7288,7 +7343,8 @@ class TestRevision5(unittest.TestCase):
                     self.assertTrue(C._physics_notes(sc, position))
         note = C._class_note(ctx(r5_doc(cases["R1"])), 2)
         self.assertIn("class 'Mixer' (implausible for a mixer: CO2 appears, "
-                      "Ethanol appears without declared reactions)", note)
+                      "Ethanol appears without declared reactions; Glucose "
+                      "consumed beyond 1% without declared reactions)", note)
         self.assertIn("unit_type family 'mixer'", note)
 
     def test_plausible_claims_stand(self):
@@ -8123,6 +8179,434 @@ class TestRevision5PartC(unittest.TestCase):
         with name_lookup(set()):
             raised, lowered, n = deletion_violations(doc, skip=frozenset())
         self.assertGreater(n, 180)
+        self.assertEqual(raised, [])
+        self.assertGreater(lowered, n // 2)
+
+
+# ----------------------------------------- Revision 6 (R6.1 / R6.2) tests
+
+# The reviewer's reactor-labelled fermenter: 'Fermentation reactor' naming
+# CSTR on a biosteam URL (not a core class, so a label-level reactor claim).
+R6_REACTOR = ("Fermentation reactor", "CSTR")
+# R6.1 reviewer relabels of the fermenter R1: exact core classes (unit_type
+# 'Unit'), label-only claims, and honest labels of chemistry-hosting steps.
+R6_EXACT = ("Junction", "Scaler", "ConveyingBelt", "DrumDryer",
+            "MolecularSieve", "HXutility", "StorageTank", "IsenthalpicValve")
+R6_LABELS = ("Junction", "Conveyor", "Heater")
+R6_HONEST_LABELS = ("Ammonia addition tank", "Conditioning tank",
+                    "Overliming tank", "Liming tank", "Acidification tank",
+                    "Mash tank", "Amine absorber", "Esterification column")
+
+
+def r6_doc(unit_type, class_name=None):
+    """r5_doc with the fermenter R1 relabelled: `unit_type`, and
+    design_simulation_method '<class_name> on <biosteam url>' only when
+    `class_name` is given (else a label-only claim)."""
+    doc = r5_doc(dict(R5_HONEST, R1=(unit_type, class_name or "X")))
+    if class_name is None:
+        del doc["units"][2]["design_simulation_method"]
+    return doc
+
+
+def r6_tank_doc(balanced=True):
+    """sweep_doc('unit_type') with the transfer pump P2 (between the
+    fermenter R1 and the flash F1) relabelled a label-only 'Holding tank'
+    stating tau: a claim that can host chemistry (R6.1(b)). `balanced`:
+    its ports s4 / s5 carry equal one-phase compositions (affirmative
+    evidence that nothing converts); else both lose their phases (species
+    flows not computable, so no evidence)."""
+    doc = sweep_doc("unit_type")
+    doc["units"][4]["unit_type"] = "Holding tank"
+    doc["units"][4]["design_input_specs"] = {"tau": 2.0}
+    if not balanced:
+        for position in (6, 7):
+            del doc["streams"][position]["stream_properties"]["phases"]
+    return doc
+
+
+class TestRevision6(unittest.TestCase):
+    """Revision 6: reaction need from stream evidence (R6.1 -- claims that
+    cannot host chemistry are contradicted by converted species, claims
+    that can keep their family but stay reactive without evidence that
+    nothing converts, built-in chemistry is exempt only for its own
+    signature, reaction-step keywords name a reactor) and reaction mass
+    conservation (R6.2)."""
+
+    # ---- R6.1 helpers ----------------------------------------------------
+
+    def test_species_keys(self):
+        """_species_keys: a name gives 'n:<lowercase, no separators>'; a
+        name or declared formula that parses as a plain formula adds
+        'f:<Hill-sorted counts>' -- 'CO2' -> {'n:co2', 'f:C1O2'};
+        'CarbonDioxide' stated with formula CO2 shares 'f:C1O2'; 'MEA'
+        (no element M) -> {'n:mea'}; nothing -> an empty set."""
+        self.assertEqual(C._species_keys("CO2"), {"n:co2", "f:C1O2"})
+        self.assertIn("f:C1O2", C._species_keys("CarbonDioxide", "CO2"))
+        self.assertEqual(C._species_keys("MEA"), {"n:mea"})
+        self.assertEqual(C._species_keys("Ammonium-Sulfate"),
+                         {"n:ammoniumsulfate"})
+        self.assertEqual(C._species_keys(None), frozenset())
+
+    def test_chemistry_claim(self):
+        """_chemistry_claim over every kind: a reactor family -> 'reactor';
+        a _BUILTIN_CHEMISTRY class at any confidence -> 'builtin'; a custom
+        class located in the pinned package (1.0) -> 'class_code'; an exact
+        core class -> 'none', or 'capable' for one taking optional
+        reactions (MESHDistillation); an unpinned curated biorefinery class
+        (SeedHoldTank) -> 'none'; an unknown unpinned custom class and a
+        label-only claim -> by family ('capable' tank / dryer, 'none' pump /
+        junction, 'builtin' combustor / facility); no family -> 'free'."""
+        cases = (((None, "reactor", False, 0.5), "reactor"),
+                 (("NRELBatchBioreactor", "batch_bioreactor", False, 0.75),
+                  "reactor"),
+                 (("DrumDryer", "dryer", True, 1.0), "builtin"),
+                 (("AmmoniaAdditionTank", "tank", False, 0.75), "builtin"),
+                 (("FooTank", "tank", False, 1.0), "class_code"),
+                 (("StorageTank", "tank", True, 1.0), "none"),
+                 (("MESHDistillation", "staged_column", True, 1.0),
+                  "capable"),
+                 (("SeedHoldTank", "tank", False, 0.75), "none"),
+                 (("FooTank", "tank", False, 0.75), "capable"),
+                 ((None, "tank", False, 0.5), "capable"),
+                 ((None, "dryer", False, 0.5), "capable"),
+                 ((None, "pump", False, 0.5), "none"),
+                 ((None, "junction", False, 0.5), "none"),
+                 ((None, "combustor", False, 0.5), "builtin"),
+                 ((None, "facility", False, 0.5), "builtin"),
+                 ((None, None, False, 0.0), "free"))
+        for args, expected in cases:
+            self.assertEqual(C._chemistry_claim(*args), expected, args)
+
+    def test_builtin_contradiction(self):
+        """_builtin_contradiction against physics['changed']: a DrumDryer
+        consuming CH4 and producing CO2 and Water -> None (its natural-gas
+        firing); producing Ethanol -> 'implausible for DrumDryer: Ethanol
+        produced beyond its built-in chemistry'; an AmineAbsorption
+        consuming MEA and H2O -> None, producing CO2 -> implausible; a
+        ProcessWaterCenter consuming anything -> None; a label-only
+        combustor producing Ethanol -> 'implausible for a combustor claim';
+        nothing changed, or no signature at all -> None."""
+        def changed(produced=(), consumed=()):
+            return {"changed": tuple({n: C._species_keys(n) for n in names}
+                                     for names in (produced, consumed))}
+        self.assertIsNone(C._builtin_contradiction(
+            "DrumDryer", "dryer", changed(("CO2", "Water"), ("CH4",))))
+        why = C._builtin_contradiction("DrumDryer", "dryer",
+                                       changed(("CO2", "Ethanol")))
+        self.assertIn("implausible for DrumDryer: Ethanol produced beyond "
+                      "its built-in chemistry", why)
+        self.assertIsNone(C._builtin_contradiction(
+            "AmineAbsorption", "splitter", changed((), ("MEA", "H2O"))))
+        self.assertIsNotNone(C._builtin_contradiction(
+            "AmineAbsorption", "splitter", changed(("CO2",))))
+        self.assertIsNone(C._builtin_contradiction(
+            "ProcessWaterCenter", "facility",
+            changed((), ("Ethanol", "Glucose", "Ash"))))
+        self.assertIn("implausible for a combustor claim: Ethanol produced",
+                      C._builtin_contradiction(None, "combustor",
+                                               changed(("Ethanol",))))
+        self.assertIsNone(C._builtin_contradiction("DrumDryer", "dryer", {}))
+        self.assertIsNone(C._builtin_contradiction(None, "tank",
+                                                   changed(("X",))))
+
+    def test_species_conversion_and_no_conversion(self):
+        """_species_conversion on r5_doc: the fermenter R1 -> (['CO2',
+        'Ethanol'] produced, ['Glucose'] consumed: 40 -> 2 kmol/h, beyond
+        1 % although it does not vanish); the pump P1 -> ([], []); a
+        missing unit id -> ([], []); a port without phases or composition
+        -> None. _no_conversion: P1 -> True (mass closes, every species
+        balances), R1 -> False; deleting s1's total_mass_flow (P1's outlet)
+        -> False (the evidence is gone)."""
+        sc = ctx(r5_doc())
+        self.assertEqual(C._species_conversion(sc, "R1"),
+                         (["CO2", "Ethanol"], ["Glucose"]))
+        self.assertEqual(C._species_conversion(sc, "P1"), ([], []))
+        self.assertEqual(C._species_conversion(sc, None), ([], []))
+        self.assertTrue(C._no_conversion(sc, 0))
+        self.assertFalse(C._no_conversion(sc, 2))
+        doc = r5_doc()
+        sp = doc["streams"][1]["stream_properties"]
+        del sp["phases"]
+        sp.pop("composition", None)
+        self.assertIsNone(C._species_conversion(ctx(doc), "P1"))
+        doc = r5_doc()
+        del doc["streams"][1]["stream_properties"]["total_mass_flow"]
+        self.assertFalse(C._no_conversion(ctx(doc), 0))
+
+    def test_physics_contradictions_r6_kinds(self):
+        """_physics_contradictions (R6.1 kinds) on r5_doc: R1 carries
+        'conversion' ('Glucose consumed beyond 1% without declared
+        reactions': it neither appears nor vanishes) and 'changed' (CO2 and
+        Ethanol produced, Glucose consumed, as identity keys); P1 carries
+        neither and no 'mass' (its balance closes). With s3's mass flow
+        doubled R1's total mass no longer closes: 'mass' appears and the
+        species evidence of a balance is withheld ('conversion' / 'changed'
+        absent: a missing port could explain it), while 'species'
+        (appearing / vanishing) stays."""
+        sc = ctx(r5_doc())
+        physics = sc.unit_physics[2]
+        self.assertEqual(physics["conversion"],
+                         "Glucose consumed beyond 1% without declared "
+                         "reactions")
+        produced, consumed = physics["changed"]
+        self.assertEqual(set(produced), {"CO2", "Ethanol"})
+        self.assertEqual(set(consumed), {"Glucose"})
+        self.assertIn("n:co2", produced["CO2"])
+        for kind in ("conversion", "changed", "mass"):
+            self.assertNotIn(kind, sc.unit_physics[0])
+        doc = r5_doc()
+        doc["streams"][3]["stream_properties"]["total_mass_flow"] *= 2
+        physics = ctx(doc).unit_physics[2]
+        self.assertIn("mass balance does not close", physics["mass"])
+        self.assertNotIn("conversion", physics)
+        self.assertNotIn("changed", physics)
+        self.assertIn("species", physics)
+
+    def test_physics_contradiction_r6_claims(self):
+        """_physics_contradiction for R6.1 claims: an exact core Pump, an
+        unpinned curated HPPump and a label-only exchanger are contradicted
+        by 'species' or 'conversion' ('implausible for a unit that hosts no
+        chemistry'); a custom pump class located in the pinned package
+        (confidence 1) and a label-only tank are not; the exact Junction by
+        'conversion', 'splitter' (T / P) and 'mass'; the Scaler by
+        'species' and 'splitter' but not 'conversion' or 'mass' (it scales
+        its inlet); a label-only junction by 'species' or a duty only; a
+        _BUILTIN_CHEMISTRY class through its signature. _ports_plausible
+        passes the class's confidence on."""
+        species = {"species": "CO2 appears without declared reactions"}
+        conversion = {"conversion": "Glucose consumed beyond 1% without "
+                                    "declared reactions"}
+        split = {"splitter": "outlet temperature 1 differs from the inlet"}
+        mass = {"mass": "mass balance does not close (in 1, out 2)"}
+        heat = {"heat": "records a non-zero heat duty (steam)"}
+        for physics in (species, conversion):
+            self.assertIn("implausible for a unit that hosts no chemistry",
+                          C._physics_contradiction("Pump", "pump", physics))
+            self.assertIsNotNone(C._physics_contradiction(
+                "HPPump", "pump", physics, False, 0.75))
+            self.assertIsNotNone(C._physics_contradiction(
+                None, "hx_utility", physics, False))
+            self.assertIsNone(C._physics_contradiction(
+                "FooPump", "pump", physics, False, 1.0))
+            self.assertIsNone(C._physics_contradiction(
+                None, "tank", physics, False))
+        for physics in (conversion, split, mass, heat):
+            self.assertIn("implausible for a junction", C._physics_contradiction(
+                "Junction", "junction", physics), physics)
+        for physics, contradicts in ((species, True), (split, True),
+                                     (conversion, False), (mass, False)):
+            self.assertEqual(C._physics_contradiction(
+                "Scaler", "junction", physics) is not None, contradicts,
+                physics)
+        for physics, contradicts in ((species, True), (heat, True),
+                                     (conversion, False), (split, False)):
+            self.assertEqual(C._physics_contradiction(
+                None, "junction", physics, False) is not None, contradicts,
+                physics)
+        dryer = {"changed": ({"Ethanol": C._species_keys("Ethanol")}, {})}
+        self.assertIn("implausible for DrumDryer",
+                      C._physics_contradiction("DrumDryer", "dryer", dryer))
+        self.assertIsNone(C._physics_contradiction("DrumDryer", "dryer",
+                                                   species))
+        self.assertFalse(C._ports_plausible("HPPump", "pump", False, (1, 1),
+                                            species, 0.75))
+        self.assertTrue(C._ports_plausible("FooPump", "pump", False, (1, 1),
+                                           species, 1.0))
+
+    def test_hosts_chemistry_and_rules(self):
+        """_hosts_chemistry / _chemistry_rules / _rules_score (R6.1(b)): the
+        label-only 'Holding tank' of r6_tank_doc with balancing ports ->
+        not hosting (rules None, not reactive); with its ports' phases
+        deleted -> hosting (reactor rules, reactive, in the CMP-UOP-02
+        population); declaring a well-formed reaction -> hosting whatever
+        its streams show. _unit_spec_score of a hosting unit is the LOWER
+        of _rules_score over its own rules (tau stated: 1) and over the
+        reactor rules (T and tau: 0.5)."""
+        sc = ctx(r6_tank_doc())
+        self.assertEqual(sc.unit_classes[4], (None, "tank", 0.5))
+        self.assertFalse(C._hosts_chemistry(sc, 4))
+        self.assertIsNone(C._chemistry_rules(sc, 4))
+        self.assertIsNone(C._reactive_reason(sc, 4))
+        self.assertEqual(C._rules_score(sc, 4, C._unit_rules(sc, 4)),
+                         (1.0, []))
+        sc = ctx(r6_tank_doc(balanced=False))
+        self.assertTrue(C._hosts_chemistry(sc, 4))
+        self.assertIs(C._chemistry_rules(sc, 4), C._FAMILY_RULES["reactor"])
+        self.assertEqual(C._reactive_reason(sc, 4),
+                         "tank claim that can host chemistry")
+        self.assertIn(4, C._spec_population(sc))
+        own = C._rules_score(sc, 4, C._unit_rules(sc, 4))
+        reactor = C._rules_score(sc, 4, C._FAMILY_RULES["reactor"])
+        self.assertEqual(own[0], 1.0)
+        self.assertLess(reactor[0], own[0])
+        self.assertEqual(C._unit_spec_score(sc, 4), reactor)
+        doc = r6_tank_doc()
+        doc["units"][4]["reactions"] = [dict(SWEEP_REACTION)]
+        self.assertTrue(C._hosts_chemistry(ctx(doc), 4))
+
+    def test_reaction_step_keywords(self):
+        """R6.1(d): ammonia addition, (over)liming, conditioning,
+        acidification, (trans)esterification and mashing name a reactor --
+        before a vessel head too ('Mash tank') -- while a column head keeps
+        its family ('Esterification column' a distillation column, R6.1(b)
+        instead) and a cooler head its own ('Mash cooler')."""
+        for text in ("Ammonia addition tank", "Conditioning tank",
+                     "Overliming tank", "Liming tank", "Acidification tank",
+                     "Mash tank", "Transesterification", "Ammonia addition"):
+            self.assertEqual(C._keyword_family(text), "reactor", text)
+        self.assertEqual(C._keyword_family("Esterification column"),
+                         "distillation")
+        self.assertEqual(C._keyword_family("Mash cooler"), "hx_utility")
+
+    def test_relabelled_fermenter_never_pays_off(self):
+        """R6.1 reviewer cases on r5_doc (the syn2 flowsheet): relabelling
+        the fermenter R1 -- reactor-labelled R6_REACTOR scored 0.461 in the
+        reviewer's environment -- as an exact Junction / Scaler / ConveyingBelt / DrumDryer /
+        MolecularSieve / HXutility / StorageTank / IsenthalpicValve used to
+        score 0.5284-0.5468, label-only 'Junction' / 'Conveyor' / 'Heater'
+        0.5095-0.5297, and the honest labels of chemistry-hosting steps
+        0.5095-0.5115. None now scores above the reactor-labelled version
+        (overall or representable); every exact relabel is physically
+        implausible (unknown family), and every relabelled R1 is in the
+        CMP-RXN-01 population. (Chemical names resolve against no database
+        here, name_lookup, so the scores do not depend on the environment.)"""
+        with name_lookup(set()):
+            reference = C.score_flowsheet_completeness(r6_doc(*R6_REACTOR))
+        cases = ([("Unit", name) for name in R6_EXACT]
+                 + [(label, None) for label in R6_LABELS + R6_HONEST_LABELS])
+        for unit_type, class_name in cases:
+            doc = r6_doc(unit_type, class_name)
+            with name_lookup(set()):
+                report = C.score_flowsheet_completeness(doc)
+            sc = ctx(doc)
+            with self.subTest(unit_type=unit_type, class_name=class_name):
+                self.assertLessEqual(report.score, reference.score + 1e-12)
+                self.assertLessEqual(report.representable_score,
+                                     reference.representable_score + 1e-12)
+                self.assertIn(2, dict(C._reactive_units(sc)))
+                if class_name:
+                    self.assertEqual(sc.unit_classes[2], (None, None, 0.0))
+                    self.assertIn("is physically implausible",
+                                  C._class_note(sc, 2))
+
+    def test_label_only_tank_sweeps(self):
+        """Strict deletion sweeps (TestRevision4PartC.assert_sweep_clean)
+        over r6_tank_doc: the label-only 'Holding tank' with balancing ports
+        (not reactive: deleting any of that evidence only adds the reaction
+        need and the reactor rules back) and without them (reactive, its
+        CMP-UOP-02 score the reactor rules' lower one). Neither raises the
+        overall score or any criterion, nor turns one not-applicable."""
+        TestRevision4PartC.assert_sweep_clean(self, r6_tank_doc())
+        with name_lookup(set()):
+            raised, lowered, n = deletion_violations(
+                r6_tank_doc(balanced=False), skip=frozenset())
+        self.assertGreater(n, 220)
+        self.assertEqual(raised, [])
+        self.assertGreater(lowered, n // 2)
+
+    def test_endpoint_and_id_deletions_keep_guards(self):
+        """Monotonicity gaps the label-only tank sweep exposed (present
+        before R6): on sweep_doc('unit_type'), deleting s4's source_unit_id
+        (R1's liquid outlet) used to make R1's ports all single-phase
+        (CMP-RXN-04 phase credit rose) -- _single_phase_ports is now False
+        while a stream without a stated endpoint may be a missing port
+        (R5.8). On r6_tank_doc(balanced=False), deleting s5's sink_unit_id
+        left the flash F1 without inlets, which lifted its species guard --
+        _species_consistency now stays False ('may be a missing port');
+        deleting F1's id made it an undeclared (phantom) unit whose outlets
+        escaped the guard -- CMP-UOP-04 now keeps them unverified ('the
+        unit is referenced but not declared'). None of the three raises
+        CMP-RXN-04 / CMP-UOP-04."""
+        doc = sweep_doc("unit_type")
+        self.assertTrue(C._single_phase_ports(ctx(doc), 3))
+        cut = deleted(doc, ("streams", 6, "source_unit_id"))
+        self.assertFalse(C._single_phase_ports(ctx(cut), 3))
+        self.assertLessEqual(run(C._score_rxn_04, cut)[0],
+                             run(C._score_rxn_04, doc)[0])
+        doc = r6_tank_doc(balanced=False)
+        base = run(C._score_uop_04, doc)[0]
+        cut = deleted(doc, ("streams", 7, "sink_unit_id"))
+        ok, why = C._species_consistency(ctx(cut), 5)
+        self.assertFalse(ok)
+        self.assertIn("may be a missing port", why)
+        self.assertLessEqual(run(C._score_uop_04, cut)[0], base)
+        cut = deleted(doc, ("units", 5, "id"))
+        score, _message, missing = run(C._score_uop_04, cut)
+        self.assertLessEqual(score, base)
+        self.assertTrue(any("the unit is referenced but not declared" in m
+                            for m in missing))
+
+    # ---- R6.2 reaction mass conservation --------------------------------
+
+    def test_closure_error_and_conserves_mass(self):
+        """_coefficient_sources / _closure_error / _conserves_mass (R6.2)
+        against rxn_doc's chemicals: 'Glucose -> 2 Ethanol + 2 CO2' closes
+        (error < 1e-4, the molar masses rounded); the reviewer's 'Glucose -> 5 Ethanol' is off by
+        28 % on a mol basis and 400 % on a wt basis -> not conserving;
+        'Glucose -> Ethanol' closes on a wt basis (sum nu = 0); a species
+        without a molar mass leaves the reaction untested (None, conserving);
+        a reaction with a closing stoichiometry beside a non-closing
+        equation has two sources and conserves (the smaller error);
+        with the closing source alone broken it does not."""
+        sc = ctx(rxn_doc(None))
+        self.assertLess(C._closure_error(sc, {"equation": GLUCOSE_EQ}), 1e-4)
+        bad = {"equation": "Glucose -> 5 Ethanol"}
+        self.assertAlmostEqual(C._closure_error(sc, bad), 0.2786, places=3)
+        self.assertFalse(C._conserves_mass(sc, bad))
+        self.assertTrue(C._conserves_mass(sc, {"equation": "Glucose -> "
+                                                           "Ethanol"}))
+        self.assertIsNone(C._closure_error(sc, {"equation": "Glucose -> Q"}))
+        self.assertTrue(C._conserves_mass(sc, {"equation": "Glucose -> Q"}))
+        both = {"equation": "Glucose -> 5 Ethanol",
+                "stoichiometry": {"Glucose": -1, "Ethanol": 2, "CO2": 2}}
+        self.assertEqual(len(C._coefficient_sources(sc, both)), 2)
+        self.assertTrue(C._conserves_mass(sc, both))
+        broken = dict(both, stoichiometry={"Glucose": -1, "Ethanol": 2})
+        self.assertFalse(C._conserves_mass(sc, broken))
+        self.assertEqual(C._coefficient_sources(sc, {}), [])
+
+    def test_non_conserving_reaction_is_not_well_formed(self):
+        """R6.2 through the criteria: sc.well_formed rejects 'Glucose -> 5
+        Ethanol' (cached per reaction object), so a reactor carrying only
+        it does not carry reactions (unit_reacts False, CMP-RXN-01 0) and
+        CMP-RXN-02 scores it 0 with the _NONCONSERVING_REACTION locator;
+        _malformed_note -> '' for a well-formed reaction, the
+        no-species note for 'x'."""
+        doc = rxn_doc([reaction(equation="Glucose -> 5 Ethanol",
+                                reactant="Glucose")])
+        sc = ctx(doc)
+        r = sc.units[0]["reactions"][0]
+        self.assertFalse(sc.well_formed(r))
+        self.assertIs(sc._well_formed[id(r)][0], r)
+        self.assertEqual(sc.unit_reacts, [False])
+        self.assertEqual(run(C._score_rxn_01, doc)[0], 0.0)
+        score, _m, missing = run(C._score_rxn_02, doc)
+        self.assertEqual(score, 0.0)
+        self.assertIn(C._NONCONSERVING_REACTION, missing[0])
+        self.assertEqual(C._malformed_note(sc, r), C._NONCONSERVING_REACTION)
+        self.assertEqual(C._malformed_note(sc, {"equation": GLUCOSE_EQ}), "")
+        self.assertEqual(C._malformed_note(sc, {"equation": "x"}),
+                         C._MALFORMED_REACTION)
+
+    def test_broken_closure_sweep(self):
+        """The fermenter R1 of sweep_doc('unit_type') stating its reaction by
+        stoichiometry only ({Glucose: -1, Ethanol: 2, CO2: 2}): deleting the
+        CO2 coefficient breaks the closure (R6.2: not well-formed, the
+        overall score falls), deleting Glucose leaves nothing consumed; the
+        strict deletion sweep over the document raises nothing."""
+        doc = sweep_doc("unit_type")
+        reaction_ = doc["units"][3]["reactions"][0]
+        del reaction_["equation"]
+        reaction_["stoichiometry"] = {"Glucose": -1, "Ethanol": 2, "CO2": 2}
+        sc = ctx(doc)
+        self.assertEqual(sc.unit_reacts[3], True)
+        path = ("units", 3, "reactions", 0, "stoichiometry", "CO2")
+        cut = deleted(doc, path)
+        self.assertFalse(ctx(cut).unit_reacts[3])
+        self.assertLess(overall(cut), overall(doc))
+        with name_lookup(set()):
+            raised, lowered, n = deletion_violations(doc, skip=frozenset())
+        self.assertGreater(n, 240)
         self.assertEqual(raised, [])
         self.assertGreater(lowered, n // 2)
 

@@ -658,6 +658,48 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
             self.assertLess(after["CMP-UOP-02"].score,
                             was["CMP-UOP-02"].score, label)
 
+    def test_revision_6_on_the_corpus(self):
+        """Revision 6 on the real files. R6.1: no exact class claim of any
+        corpus unit is contradicted by its stream physics (no 'class ...'
+        _physics_notes entry), so no family becomes unknown; the honest
+        built-in-chemistry units keep their classes -- AmineAbsorption A301
+        (8 files, MEA and water consumed), AmmoniaAdditionTank T203 (4,
+        unpinned, its neutralization), DrumDryer (25, natural gas burnt),
+        ProcessWaterCenter (18), ThermalOxidizer (1), BoilerTurbogenerator
+        (17) -- and no corpus unit hosts chemistry under a claim that does
+        not fix it (_hosts_chemistry). R6.2, the tolerance choice: of the
+        6587 structurally well-formed reactions whose participants all
+        have molar masses, 6223 close within 0.025 % and the 364 others are
+        off by more than 1.5 % (atom-imbalanced as written), so
+        RXN_CLOSURE_RTOL = 1 % rejects exactly those."""
+        kept = {}
+        errors = []
+        for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
+            sc = C._ScoringContext(C._read_flowsheet(str(path)))
+            for position, unit in enumerate(sc.units):
+                where = (path.name, unit.get("id"))
+                self.assertFalse([n for n in C._physics_notes(sc, position)
+                                  if n.startswith("class '")], where)
+                self.assertFalse(C._hosts_chemistry(sc, position), where)
+                name = C._dsm_class(unit)[0]
+                if name in C._BUILTIN_CHEMISTRY:
+                    self.assertEqual(sc.unit_classes[position][0], name, where)
+                    kept[name] = kept.get(name, 0) + 1
+            for _i, _j, reaction in sc.reactions:
+                if C._well_formed(reaction, sc.chem_ids, sc.chem_by_index):
+                    error = C._closure_error(sc, reaction)
+                    if error is not None:
+                        errors.append(error)
+        self.assertEqual(kept, {"AmineAbsorption": 8, "AmmoniaAdditionTank": 4,
+                                "DrumDryer": 25, "ProcessWaterCenter": 18,
+                                "ThermalOxidizer": 1,
+                                "BoilerTurbogenerator": 17})
+        closing = [e for e in errors if e <= C.RXN_CLOSURE_RTOL]
+        self.assertEqual((len(errors), len(closing)), (6587, 6223))
+        self.assertLess(max(closing), 2.5e-4)
+        self.assertGreater(min(e for e in errors if e > C.RXN_CLOSURE_RTOL),
+                           0.015)
+
 
 if __name__ == "__main__":
     unittest.main()
