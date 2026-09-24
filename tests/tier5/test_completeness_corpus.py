@@ -679,7 +679,11 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         (_chemistry_rules); and no honest unit loses its family to the
         widened non-hosting set (evaporator, crystallizer, solids
         handling, steam-injection heater, dryer): every unit of unknown
-        family names the bare class Unit and no unit_type keyword family.
+        family names the bare class Unit and no unit_type keyword family,
+        except (fix2) the three legacy 'Phase splitter' units S301 of
+        SF_BST_03 / 07 / 11, whose two non-empty inlets contradict both the
+        exact PhaseSplitter class (one inlet) and, since the label names a
+        pure splitter, the label's convention (one inlet).
         R6.2, the tolerance choice: of the
         6587 structurally well-formed reactions whose participants all
         have molar masses, 6223 close within 0.025 % and the 364 others are
@@ -687,6 +691,7 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         RXN_CLOSURE_RTOL = 1 % rejects exactly those."""
         kept = {}
         errors = []
+        both_ports = set()
         for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
             sc = C._ScoringContext(C._read_flowsheet(str(path)))
             self.assertEqual(C._unexplained_hosts(sc), [], path.name)
@@ -697,6 +702,11 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                 self.assertFalse(C._hosting_claim(sc, position), where)
                 self.assertIsNone(C._chemistry_rules(sc, position), where)
                 if sc.unit_classes[position][1] is None:
+                    notes = C._port_notes(sc, position)
+                    if len(notes) == 2:
+                        # fix2: class and label both contradicted by ports.
+                        both_ports.add((path.name, unit.get("id")))
+                        continue
                     self.assertEqual(C._dsm_class(unit)[0], "Unit", where)
                     self.assertIsNone(
                         C._keyword_family(unit.get("unit_type")), where)
@@ -709,6 +719,9 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                     error = C._closure_error(sc, reaction)
                     if error is not None:
                         errors.append(error)
+        self.assertEqual(both_ports, {("SF_BST_03.json", "S301"),
+                                      ("SF_BST_07.json", "S301"),
+                                      ("SF_BST_11.json", "S301")})
         self.assertEqual(kept, {"AmineAbsorption": 8, "AmmoniaAdditionTank": 4,
                                 "DrumDryer": 25, "ProcessWaterCenter": 18,
                                 "ThermalOxidizer": 1,
@@ -759,8 +772,16 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         file's DDGS and liquids centrifuges C603 / C603_2 and molecular
         sieve X504 (drawing power), and the sludge centrifuge, belt
         thickener and reverse osmosis of the wastewater files (0.2 bar to
-        1 atm with the power of their built-in pumps)."""
-        kept = set()
+        1 atm with the power of their built-in pumps).
+
+        fix2 (#5d), asserted directly rather than by skipping every unit
+        whose evidence shows some kind: a unit loses the splitter family
+        only when the label's own claim is contradicted
+        (_physics_contradiction / _port_contradiction under that label),
+        never by a power duty -- no contradiction reason names one -- and
+        every unit recording power or dropping pressure whose claim is
+        otherwise uncontradicted keeps it."""
+        kept, powered = set(), set()
         for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
             doc = copy.deepcopy(C._read_flowsheet(str(path)))
             for unit in doc["units"]:
@@ -772,14 +793,23 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                         or C._pure_splitter_label(label)):
                     continue
                 physics = sc.unit_physics[position]
-                if ({"heat", "species", "conversion", "hot", "cold"}
-                        & set(physics)) or ("rise" in physics
-                                            and "power" not in physics):
-                    continue
                 where = (path.name, unit.get("id"), label)
+                why = (C._physics_contradiction(None, "splitter", physics,
+                                                label=label)
+                       or C._port_contradiction(None, "splitter", False,
+                                                sc.unit_ports[position],
+                                                label))
+                self.assertNotIn("power duty", why or "", where)
+                self.assertIsNone(C._physics_contradiction(
+                    None, "splitter", {"power": "p"}, label=label), where)
+                if why:
+                    continue
                 self.assertEqual(sc.unit_classes[position][1], "splitter",
                                  where)
                 kept.add((path.name, unit.get("id")))
+                if "power" in physics:
+                    powered.add((path.name, unit.get("id")))
+        self.assertGreaterEqual(len(powered), 6)
         self.assertLessEqual({("SF_BST_01.json", "C603"),
                               ("SF_BST_01.json", "C603_2"),
                               ("SF_BST_01.json", "X504"),
@@ -792,8 +822,10 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         separator label (_sorption_label: 'Adsorption', 'Cation exchange',
         'Anion exchange', 'Amine absorption', 'Molecular sieve') keeps the
         splitter family, heat duties (regeneration steam) included, and
-        every 'Polishing filter' reads as the reactor family its class
-        (biosteam.wastewater's PolishingFilter) is."""
+        (fix2, #7) every 'Polishing filter' reads as a filter (the splitter
+        family) that declares its reactions, so it is held to reactor rules
+        (_reactor_candidate, R8.4) and its chilled-water duty contradicts
+        nothing."""
         kept, filters = set(), 0
         for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
             doc = copy.deepcopy(C._read_flowsheet(str(path)))
@@ -809,7 +841,8 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                     kept.add((path.name, unit.get("id")))
                 elif label == "Polishing filter":
                     self.assertEqual(sc.unit_classes[position][1],
-                                     "reactor", where)
+                                     "splitter", where)
+                    self.assertTrue(C._reactor_candidate(sc, position), where)
                     filters += 1
         self.assertLessEqual({("SF_BST_01.json", "X504"),
                               ("SF_BST_02.json", "A301"),
