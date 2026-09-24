@@ -139,7 +139,9 @@ DERIVED_CREDIT = 0.75
 # chemical's molar mass or formula, 1; a well-formed registry id the database
 # cannot resolve (or any while the database is unavailable) -- nothing can
 # check it -- REGISTRY_UNRESOLVED_CREDIT; the chemical id resolves by name
-# (the lookup thermosteam's Chemical(ID) performs) AND the record's molar mass
+# (the lookup thermosteam's Chemical(ID) performs, R4.1: its database search
+# with CamelCase splitting, then its built-in pseudo-components such as
+# Cellulose, Starch, Yeast or Ash) AND the record's molar mass
 # (or formula) matches the chemical's own (verified), or resolves with
 # nothing stated to verify it against (unverified); or only a formula
 # narrows it down (R2.3).
@@ -237,43 +239,267 @@ def _design_spec_registry():
 _CHEMICALS_SEARCH = []
 _NAME_LOOKUP = {}
 
+# thermosteam.chemicals.identifiers.spaceout_words: a space before every
+# capital letter that does not begin a word ('AceticAcid' -> 'Acetic Acid').
+_SPACEOUT_RE = re.compile(r'\B([A-Z])')
+
+
+def _spaceout_words(text):
+    """thermosteam's ``spaceout_words``: 'AceticAcid' -> 'Acetic Acid',
+    'CalciumDihydroxide' -> 'Calcium Dihydroxide', 'CO2' -> 'C O2'."""
+    return _SPACEOUT_RE.sub(r' \1', text)
+
+
+# thermosteam's ChemicalMetadataDB files, in its list order: it pops them
+# from the END on a lookup miss, so the small databases load first and the
+# large one last, and a name keeps the first record that claimed it.
+_METADATA_FILES = ('chemical identifiers pubchem large.tsv', 'Inorganic db.tsv',
+                   'Anion db.tsv', 'Cation db.tsv',
+                   'chemical identifiers example user db.tsv',
+                   'chemical identifiers pubchem small.tsv')
+_MetadataRecord = namedtuple('_MetadataRecord', 'name formula MW')
+
+
+class _MetadataDB:
+    """Import-light mirror of thermosteam's ``ChemicalMetadataDB``
+    (``thermosteam/chemicals/identifiers.py``) over the `chemicals`
+    package's identifier files (R4.1). The `chemicals` package's own
+    database differs in ways that change answers: it keeps the LAST record
+    claiming a name ('acetate' -> the acetate anion, where thermosteam's
+    first-wins index gives acetic acid), tries SMILES and formulas before
+    names ('CO' -> methanol) and never splits CamelCase ('AceticAcid').
+    Indexes start with the elements; a lookup miss loads the next file and
+    retries, exactly as thermosteam's ``search`` does."""
+
+    _INDEXES = ('CAS', 'pubchem', 'smiles', 'InChI', 'InChI_key', 'name',
+                'formula')
+
+    def __init__(self, folder, elements, homonuclear, check_cas, cas_to_int,
+                 serialize_formula):
+        self.index = {key: {} for key in self._INDEXES}
+        self.unloaded = [os.path.join(folder, f) for f in _METADATA_FILES]
+        self.check_cas, self.cas_to_int = check_cas, cas_to_int
+        self.serialize_formula = serialize_formula
+        index = self.index
+        for ele in elements:
+            name = ele.name.lower()
+            record = _MetadataRecord(name, ele.symbol, ele.MW)
+            index['InChI_key'][ele.InChI_key] = record
+            index['CAS'][int(ele.CAS.replace('-', ''))] = record
+            index['pubchem'][ele.PubChem] = record
+            index['smiles'][ele.smiles] = record
+            index['InChI'][ele.InChI] = record
+            index['formula'][ele.symbol] = record
+            index['name'][('monatomic ' + name) if ele.number in homonuclear
+                          else name] = record
+
+    def load(self, path):
+        """Index one identifier file: a CAS number seen before keeps its
+        record (and its other index entries); names (iupac, common and
+        synonyms, ';'-separated, lower-cased) keep their first record."""
+        index = self.index
+        names = index['name']
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                values = line.rstrip('\n').split('\t')
+                (pubchemid, cas, formula, mw, smiles, inchi,
+                 inchi_key) = values[:7]
+                cas = int(cas.replace('-', ''))
+                record = index['CAS'].get(cas)
+                if record is None:
+                    common = values[8] if len(values) > 8 else ''
+                    record = _MetadataRecord(common, formula, float(mw))
+                    index['CAS'][cas] = record
+                    index['pubchem'][int(pubchemid)] = record
+                    index['smiles'][smiles] = record
+                    index['InChI'][inchi] = record
+                    index['InChI_key'][inchi_key] = record
+                    index['formula'][formula] = record
+                for synonyms in values[7:]:
+                    for name in synonyms.split(';'):
+                        if name:
+                            names.setdefault(name.lower(), record)
+
+    def _get(self, index, key):
+        return self.index[index].get(key)
+
+    def _search(self, ID):
+        """thermosteam's ``ChemicalMetadataDB._search`` over the loaded
+        files, None for a miss: a CAS number by CAS, then as a name; '_' ->
+        ' '; an 'InChI=1S/' / 'InChI=1/', 'InChIKey=', 'PubChem=' or
+        'SMILES=' prefix searches only that index; otherwise the lower-cased
+        CamelCase-split id (_spaceout_words), then the lower-cased id, as
+        names; last the id as a formula."""
+        if self.check_cas(ID):
+            return (self._get('CAS', self.cas_to_int(ID))
+                    or self._get('name', ID))
+        ID = ID.replace('_', ' ')
+        low = ID.lower()
+        if len(ID) > 9:
+            inchi = (ID[9:] if low[:9] == 'inchi=1s/'
+                     else ID[8:] if low[:8] == 'inchi=1/' else None)
+            if inchi:
+                return self._get('InChI', inchi)
+            if low[:9] == 'inchikey=':
+                return self._get('InChI_key', ID[9:])
+        if len(ID) > 8 and low[:8] == 'pubchem=':
+            return self._get('pubchem', int(ID[8:]))
+        if len(ID) > 7 and low[:7] == 'smiles=':
+            return self._get('smiles', ID[7:])
+        for name in (_spaceout_words(ID).lower(), low):
+            record = self._get('name', name)
+            if record:
+                return record
+        try:
+            formula = self.serialize_formula(ID)
+        except Exception:
+            return None
+        return self._get('formula', formula)
+
+    def search(self, ID):
+        """The record `ID` resolves to, loading the next file after each
+        miss (thermosteam's ``search``); None when nothing resolves it."""
+        def attempt():
+            try:
+                return self._search(ID)
+            except Exception:
+                return None
+        record = attempt()
+        while record is None and self.unloaded:
+            self.load(self.unloaded.pop())
+            record = attempt()
+        return record
+
 
 def _chemicals_search():
-    """``chemicals.identifiers.search_chemical`` -- the lookup thermosteam's
-    ``Chemical(ID)`` performs (names, synonyms, formulas, CAS, SMILES) --
-    imported lazily once; None when the package cannot be imported (the
-    CMP-THM-02 name tier is then unavailable)."""
+    """The database lookup thermosteam's ``Chemical(ID)`` performs before it
+    falls back to its built-in pseudo-components (R4.1) -- a search function
+    (id -> metadata record with ``MW`` and ``formula``, or None / raising
+    when unresolved) -- built lazily once; None when the `chemicals` package
+    cannot be imported (the CMP-THM-02 database tiers are then unavailable).
+    It searches a _MetadataDB (thermosteam's algorithm over the `chemicals`
+    identifier files) built on first use; when thermosteam has already
+    replaced the `chemicals` database in this process with its own, that
+    database's ``search`` is used instead (same algorithm, already loaded).
+    No thermosteam import is made."""
     if not _CHEMICALS_SEARCH:
         try:
-            from chemicals.identifiers import search_chemical
+            from chemicals import identifiers
+            from chemicals.elements import (homonuclear_elemental_gases,
+                                            periodic_table, serialize_formula)
+            own = []
+
+            def search(ID):
+                ID = ID.strip()
+                if not ID:
+                    return None
+                db = getattr(identifiers, 'pubchem_db', None)
+                if hasattr(db, 'unloaded_files'):  # thermosteam's database
+                    return db.search(ID)
+                if not own:
+                    own.append(_MetadataDB(
+                        identifiers.folder, periodic_table,
+                        homonuclear_elemental_gases, identifiers.check_CAS,
+                        identifiers.CAS_to_int, serialize_formula))
+                return own[0].search(ID)
         except Exception:
-            search_chemical = None
-        _CHEMICALS_SEARCH.append(search_chemical)
+            search = None
+        _CHEMICALS_SEARCH.append(search)
     return _CHEMICALS_SEARCH[0]
 
 
-def _name_record(name):
+def _database_record(name):
     """The `chemicals` database record `name` (a chemical name, synonym,
     CAS number, InChI, or an 'InChIKey='/'SMILES='-prefixed registry id --
-    see _registry_query) resolves to, or None. Cached per name, so a failed
-    lookup costs one search (the first also loads the database, ~1 s);
-    never raises -- an unavailable package or any lookup error means
-    None."""
+    see _registry_query) resolves to by thermosteam's lookup
+    (_chemicals_search), or None. Cached per name, so a failed lookup costs
+    one search (the first also loads the database, ~1 s); never raises --
+    an unavailable package or any lookup error means None."""
     if not _nonempty_str(name):
         return None
     name = name.strip()
     if name not in _NAME_LOOKUP:
         search = _chemicals_search()
         try:
-            _NAME_LOOKUP[name] = search(name) if search is not None else None
+            record = search(name) if search is not None else None
         except Exception:
-            _NAME_LOOKUP[name] = None
+            record = None
+        _NAME_LOOKUP[name] = record if record else None
     return _NAME_LOOKUP[name]
 
 
+# thermosteam's built-in bioprocess pseudo-components (R4.1): the chemicals
+# ``Chemical(ID)`` builds from ``thermosteam/_biorefinery_chemicals.py`` when
+# its database lookup fails. STATIC -- generated once from the thermosteam
+# source (no runtime import): each registered name or alias (the function
+# name, its register() aliases, their lower-case forms) under thermosteam's
+# normalised key (spaces, '-' and '_' removed, lower-cased), keeping only the
+# keys the `chemicals` database does NOT resolve (Glucan, Lignin, Xylitol,
+# Cellobiose, H3PO4, P4O10, Glucose, Sucrose, Xylose and their aliases
+# resolve there first, so Chemical(ID) never reaches the built-in). Value:
+# (built-in name, molar mass, formula or None, locked phase). Rubber's
+# mass-fraction combustion formula is no molecular formula (None);
+# CarbonBlack's '1C' is written 'C'.
+_Builtin = namedtuple('_Builtin', 'name MW formula phase')
+_BUILTIN_SPECS = (
+    ('Ash', 1.0, None, 's', ('ash',)),
+    ('Flocculant', 1.0, None, 's', ('flocculant',)),
+    ('Solids', 1.0, None, 's', ('solids',)),
+    ('Bacteria', 21.824692, 'CH1.8O0.5', 's', ('bacteria', 'drybacteria')),
+    ('NitrogenBacteria', 24.626032, 'CH1.8O0.5N0.2', 's',
+     ('nbacteria', 'nitrogenbacteria')),
+    ('Yeast', 22.5931474, 'CH1.61O0.56', 's', ('dryyeast', 'yeast')),
+    ('NitrogenYeast', 24.8342194, 'CH1.61O0.56N0.16', 's',
+     ('nitrogenyeast', 'nyeast')),
+    ('Sluge', 23.2372561, 'CH1.64O0.39N0.23S0.0035', 's',
+     ('sluge', 'wwtsludge')),
+    ('Protein', 22.8393778, 'CH1.57O0.31N0.29S0.007', 's',
+     ('amylase', 'cellulase', 'enzyme', 'protein')),
+    ('Glucan', 162.1406, 'C6H10O5', 's', ('cellulose',)),
+    ('Starch', 162.1406, 'C6H10O5', 's', ('starch',)),
+    ('Fiber', 162.1406, 'C6H10O5', 's', ('fiber',)),
+    ('Hemicellulose', 132.11462, 'C5H8O4', 's', ('hemicellulose',)),
+    ('Xylan', 132.11462, 'C5H8O4', 's', ('arabinan', 'xylan')),
+    ('SolubleLignin', 152.14732, 'C8H8O3', 'l', ('solublelignin',)),
+    ('GlucoseOligomer', 162.1406, 'C6H10O5', 'l',
+     ('galactoseoligomer', 'glucoseoligomer', 'mannoseoligomer')),
+    ('XyloseOligomer', 132.11462, 'C5H8O4', 'l',
+     ('arabinoseoligomer', 'xyloseoligomer')),
+    ('Rubber', 0.9999766, None, 's', ('rubber',)),
+    ('CarbonBlack', 12.0107, 'C', 's',
+     ('activatedcarbon', 'carbonblack', 'char', 'rawcarbonblack')),
+)
+_BUILTIN_CHEMICALS = {key: _Builtin(name, mw, formula, phase)
+                      for name, mw, formula, phase, keys in _BUILTIN_SPECS
+                      for key in keys}
+
+
+def _builtin_key(name):
+    """thermosteam's normalised built-in key: spaces, '-' and '_' removed,
+    lower-cased ('Dry_Yeast' -> 'dryyeast')."""
+    return (name.strip().replace(' ', '').replace('-', '').replace('_', '')
+            .lower())
+
+
+def _builtin_record(name):
+    """The built-in pseudo-component (_Builtin) `name` names under
+    thermosteam's normalised key, or None; never raises."""
+    if not _nonempty_str(name):
+        return None
+    return _BUILTIN_CHEMICALS.get(_builtin_key(name))
+
+
+def _name_record(name):
+    """What thermosteam's ``Chemical(name)`` resolves `name` to (R4.1): the
+    `chemicals` database record (_database_record), else the built-in
+    pseudo-component (_builtin_record), else None. Both carry ``MW`` and
+    ``formula``; a built-in also its locked ``phase``. Never raises."""
+    return _database_record(name) or _builtin_record(name)
+
+
 def _name_resolvable(name):
-    """True when chemical id `name` resolves in the `chemicals` database
-    (CMP-THM-02 name tier; see _name_record)."""
+    """True when chemical id `name` resolves by name as thermosteam's
+    ``Chemical(ID)`` resolves it (CMP-THM-02 name tier; see _name_record)."""
     return _name_record(name) is not None
 
 #%% Criteria registry (criteria.yaml)
@@ -1181,8 +1407,10 @@ def _record_agreement(record, chem, rtol=NAME_MW_RTOL):
 def _name_tier(chem, cid):
     """CMP-THM-02 name tier of chemical id `cid` (chem: its declared entry,
     or None): None when the id is not a string, is an isomer-ambiguous
-    formula (_isomer_ambiguous), or does not resolve by name; else the
-    _record_agreement of the resolved record with the chemical."""
+    formula (_isomer_ambiguous), or does not resolve by name as
+    thermosteam's Chemical(ID) resolves it (_name_record: the database,
+    then the built-in pseudo-components); else the _record_agreement of the
+    resolved record with the chemical."""
     if not _nonempty_str(cid) or _isomer_ambiguous(cid):
         return None
     record = _name_record(cid)
@@ -1322,7 +1550,8 @@ def _registry_status(chem):
     `chemicals` database resolves it and nothing contradicts it), 'unresolved'
     (well-formed, but the database does not know it: a real but unlisted
     number, or an invented one) or 'unavailable' (well-formed; the database
-    cannot be imported). Lookups are cached (_name_record); never raises."""
+    cannot be imported). Lookups are cached (_database_record: the
+    database only, never a built-in pseudo-component); never raises."""
     rid = _as_dict(chem).get('registry_id')
     if rid is None or (isinstance(rid, str) and not rid.strip()):
         return 'absent'
@@ -1333,7 +1562,7 @@ def _registry_status(chem):
         return 'contradicted'
     if _chemicals_search() is None:
         return 'unavailable'
-    record = _name_record(query)
+    record = _database_record(query)
     if record is None:
         return 'unresolved'
     if _record_agreement(record, chem, REGISTRY_MW_RTOL) == 'mismatch':
@@ -1342,10 +1571,12 @@ def _registry_status(chem):
 
 
 def _database_resolved(chem, cid):
-    """True when the `chemicals` database identifies the chemical (R3.2):
-    its registry id resolves without contradiction, or its id resolves by
-    name with a verified or unverified record (_name_tier). With the
-    database unavailable nothing resolves."""
+    """True when the chemical is identified as thermosteam would identify
+    it (R3.2, R4.1): its registry id resolves in the `chemicals` database
+    without contradiction, or its id resolves by name -- in the database or
+    as a built-in pseudo-component (_name_record) -- with a verified or
+    unverified record (_name_tier). With the database unavailable only a
+    built-in resolves."""
     return ((chem is not None and _registry_status(chem) == 'resolved')
             or _name_tier(chem, cid) in ('verified', 'unverified'))
 
@@ -3046,13 +3277,16 @@ def _thm_02_credit(chem, cid):
             'resolve it: unverifiable)' if status == 'unresolved' else
             '.registry_id (well-formed; the chemicals database is unavailable '
             'to resolve it)')))
+    record = _name_record(cid) if tier in ('verified', 'unverified') else None
+    how = (f"a thermosteam built-in pseudo-component ({record.name})"
+           if isinstance(record, _Builtin) else 'name')
     if tier == 'verified':
-        options.append((NAME_RESOLVED_CREDIT, 'name', '.registry_id (id '
-                        'resolvable by name only; molar mass verified)'))
+        options.append((NAME_RESOLVED_CREDIT, 'name', f'.registry_id (id '
+                        f'resolvable by {how} only; molar mass verified)'))
     elif tier == 'unverified':
-        options.append((NAME_UNVERIFIED_CREDIT, 'unverified', '.registry_id '
-                        '(id resolvable by name only; no molar mass or formula '
-                        'to verify the match)'))
+        options.append((NAME_UNVERIFIED_CREDIT, 'unverified', f'.registry_id '
+                        f'(id resolvable by {how} only; no molar mass or '
+                        f'formula to verify the match)'))
     why = (' (the name resolves to a compound of another molar mass)'
            if tier == 'mismatch' else
            ' (id is a molecular formula with >= 2 carbon atoms: '
@@ -3066,26 +3300,59 @@ def _thm_02_credit(chem, cid):
     return credit, note + (f'; {fault}' if fault else ''), best
 
 
+def _referenced_mean(scored):
+    """R4.7 aggregate of CMP-THM-02/03 over [(score, referenced)]: with no
+    chemical referenced, the plain mean; otherwise the mean over the
+    referenced chemicals plus every unreferenced chemical that lowers it --
+    the minimum over all sets S (referenced <= S <= all) of mean(S), reached
+    by adding unreferenced scores in ascending order while each lies below
+    the running mean. It is never above min(mean over referenced, mean over
+    all), so unreferenced chemicals can lower the score but never raise it
+    (12 well-identified unreferenced chemicals padded onto a sparse file
+    change nothing), and it stays deletion-monotone where that literal
+    min(...) is not: a chemical losing its last reference (a deleted
+    composition or reaction equation) only widens the family minimised
+    over, whereas min(referenced mean, overall mean) would rise when a
+    low-scoring chemical left the referenced mean."""
+    if not any(ref for _s, ref in scored):
+        return _mean([s for s, _ref in scored])
+    chosen = [s for s, ref in scored if ref]
+    total, n = sum(chosen), len(chosen)
+    for s in sorted(s for s, ref in scored if not ref):
+        if s >= total / n:
+            break
+        total, n = total + s, n + 1
+    return total / n
+
+
 def _score_thm_02(sc):  # CMP-THM-02
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
-    scores, missing, tiers = [], [], []
+    refs = _chemical_references(sc)
+    scored, missing, tiers, builtin = [], [], [], 0
     for chem, label, cid in population:
         if chem is None:
-            scores.append(0.0)
+            scored.append((0.0, True))
             missing.append(f'{label}: not declared')
             continue
         credit, note, tier = _thm_02_credit(chem, cid)
-        scores.append(credit)
+        scored.append((credit, cid in refs))
         tiers.append(tier)
+        builtin += (tier in ('name', 'unverified')
+                    and isinstance(_name_record(cid), _Builtin))
         if note:
             missing.append(label + note)
-    return (_mean(scores), f'{tiers.count("registry")} of {len(scores)} '
-            f'chemical(s) carry a database-resolved registry id, '
-            f'{tiers.count("name")} more resolve by a verified name, '
-            f'{tiers.count("unverified")} by an unverified one, '
-            f'{tiers.count("unresolved")} carry an unresolvable id', missing)
+    unreferenced = sum(1 for _s, ref in scored if not ref)
+    return (_referenced_mean(scored), f'{tiers.count("registry")} of '
+            f'{len(scored)} chemical(s) carry a database-resolved registry '
+            f'id, {tiers.count("name")} more resolve by a verified name, '
+            f'{tiers.count("unverified")} by an unverified one '
+            f'({builtin} of these as thermosteam built-in pseudo-components), '
+            f'{tiers.count("unresolved")} carry an unresolvable id'
+            + (f'; {unreferenced} unreferenced chemical(s) can only lower the '
+               f'score' if unreferenced and len(scored) > unreferenced
+               else ''), missing)
 
 
 def _score_thm_03(sc):  # CMP-THM-03
@@ -3093,20 +3360,76 @@ def _score_thm_03(sc):  # CMP-THM-03
     if not population:
         return _empty_chemical_population(sc)
     derive = _validator()._molar_mass_from_formula  # same rule as _Context.molar_mass
-    ok, missing = 0, []
-    for chem, label, _cid in population:
+    refs = _chemical_references(sc)
+    scored, missing = [], []
+    for chem, label, cid in population:
         if chem is None:
+            scored.append((0.0, True))
             missing.append(f'{label}: not declared')
             continue
         declared = _num(chem.get('molar_mass'))
         formula = chem.get('formula')
-        if (declared is not None and declared > 0) or (
-                _nonempty_str(formula) and derive(formula) is not None):
-            ok += 1
-        else:
+        ok = (declared is not None and declared > 0) or (
+            _nonempty_str(formula) and derive(formula) is not None)
+        scored.append((1.0 if ok else 0.0, cid in refs))
+        if not ok:
             missing.append(f'{label}.molar_mass (or a parseable formula)')
-    return (ok / len(population),
-            f'{ok} of {len(population)} chemical(s) have a molar mass', missing)
+    ok = sum(s for s, _ref in scored)
+    return (_referenced_mean(scored),
+            f'{ok:g} of {len(scored)} chemical(s) have a molar mass', missing)
+
+
+# CMP-THM-04 credit of included_in_thermo: false on a chemical the streams
+# never show, which says it is locked but not in which phase (R4.5).
+FLAG_UNOBSERVED_CREDIT = 0.5
+
+
+def _builtin_phase(chem, cid):
+    """The locked phase of the thermosteam built-in pseudo-component that
+    chemical id `cid` resolves to (R4.1: the database misses it, its
+    normalised name is a built-in, and its molar mass or formula does not
+    contradict the chemical's), else None."""
+    record = _name_record(cid)
+    if not isinstance(record, _Builtin) or _name_tier(chem, cid) not in (
+            'verified', 'unverified'):
+        return None
+    return record.phase
+
+
+def _thm_04_credit(chem, cid, seen):
+    """(credit, note or None) of one declared chemical's phase behaviour:
+    the MAXIMUM over (R4.5) (a) its ``included_in_thermo`` flag -- true (it
+    partitions) and not contradicted by the streams showing it only ever as
+    a solid, 1; false (locked) and shown in exactly one phase, 1; false and
+    never shown, FLAG_UNOBSERVED_CREDIT (the locked phase is unnamed); a
+    contradicted flag (false but shown in >= 2 phases, true but only ever
+    's') or a non-boolean one counts as absent -- (b) the stream phases
+    `seen` alone, two or more (partitions) or only 's' (locked),
+    DERIVED_CREDIT; (c) the locked phase of the thermosteam built-in the id
+    resolves to (_builtin_phase), DERIVED_CREDIT."""
+    flag = _as_dict(chem).get('included_in_thermo')
+    contradicted = ((flag is True and seen == {'s'})
+                    or (flag is False and len(seen) >= 2))
+    options = [(0.0, 'phase behaviour not stated (included_in_thermo)')]
+    if (flag is True and not contradicted) or (flag is False
+                                               and len(seen) == 1):
+        options.append((1.0, None))
+    elif flag is False and not seen:
+        options.append((FLAG_UNOBSERVED_CREDIT, 'included_in_thermo false '
+                        '(locked), but no stream shows the phase it is locked '
+                        'in'))
+    if len(seen) >= 2 or seen == {'s'}:
+        options.append((DERIVED_CREDIT, 'phase behaviour derived from the '
+                        'stream phases only'))
+    phase = _builtin_phase(chem, cid)
+    if phase:
+        options.append((DERIVED_CREDIT, f'phase behaviour derived from the '
+                        f"thermosteam built-in's locked phase '{phase}' only"))
+    credit, note = max(options, key=lambda option: option[0])
+    if note and contradicted:
+        note += (f'; included_in_thermo {str(flag).lower()} contradicts the '
+                 f'stream phases')
+    return credit, note
 
 
 def _score_thm_04(sc):  # CMP-THM-04
@@ -3114,21 +3437,24 @@ def _score_thm_04(sc):  # CMP-THM-04
     if not population:
         return _empty_chemical_population(sc)
     phases = _chemical_phases(sc)
-    derived, missing = 0, []
+    scores, missing, full, derived = [], [], 0, 0
     for chem, label, cid in population:
         if chem is None:
+            scores.append(0.0)
             missing.append(f'{label}: not declared')
             continue
         seen = phases.get(cid, set()) if cid else set()
-        if len(seen) >= 2 or seen == {'s'}:
-            derived += 1
-        else:
+        credit, note = _thm_04_credit(chem, cid, seen)
+        scores.append(credit)
+        full += credit == 1.0
+        derived += credit == DERIVED_CREDIT
+        if note:
             shown = ','.join(sorted(seen)) or 'none'
-            missing.append(f'{label}: phase behaviour (locked state / '
-                           f'phase_ref) not stated; stream phases seen: {shown}')
-    return (DERIVED_CREDIT * derived / len(population),
-            f'not representable; derivable from stream data for {derived} of '
-            f'{len(population)} chemical(s)', missing)
+            missing.append(f'{label}: {note}; stream phases seen: {shown}')
+    return (_mean(scores), f'{full} of {len(scores)} chemical(s) state '
+            f'included_in_thermo consistently with the stream phases; '
+            f'{derived} more derivable (stream phases or a built-in locked '
+            f'phase)', missing)
 
 
 def _score_thm_05(sc):  # CMP-THM-05
@@ -3137,25 +3463,30 @@ def _score_thm_05(sc):  # CMP-THM-05
     # properties for every member). Exempt only a chemical the `chemicals`
     # database actually RESOLVES (R3.2, _database_resolved): a registry id
     # it finds without contradiction, or a verified/unverified name (not a
-    # mismatching or isomer-ambiguous one). A well-formed id the database
-    # does not know (an invented CAS, or a real one it does not list, such
-    # as cellulose's) proves nothing, and with the database unavailable
-    # nothing is exempt. An undeclared referenced id is judged by its name.
+    # mismatching or isomer-ambiguous one) -- resolved as thermosteam's
+    # Chemical(ID) resolves it, its built-in pseudo-components included
+    # (R4.1: Cellulose, Starch, Yeast, Ash, ... come with their property
+    # models). A well-formed id the database does not know (an invented
+    # CAS, or a real one it does not list, such as cellulose's) proves
+    # nothing, and with the database unavailable only a built-in is exempt.
+    # An undeclared referenced id is judged by its name.
     population = _chemical_population(sc)
     if not population:
         return _empty_chemical_population(sc)
     lacking = [label for chem, label, cid in population
                if not _database_resolved(chem, cid)]
     if not lacking:
-        return (None, 'every chemical resolves in the chemicals database '
-                '(registry id or name)', [])
+        return (None, 'every chemical resolves as thermosteam resolves it '
+                '(database registry id or name, or a built-in '
+                'pseudo-component)', [])
     missing = [f'{label}: property data (V, Cn, H/S reference, Hf, '
                f'Psat/Tb/Hvap, LHV) not representable' for label in lacking]
-    unavailable = ('; the chemicals database is unavailable, so none resolves'
+    unavailable = ('; the chemicals database is unavailable, so only '
+                   'built-in pseudo-components resolve'
                    if _chemicals_search() is None else '')
-    return (0.0, f'{len(lacking)} chemical(s) the chemicals database resolves '
-            f'neither by registry id nor by name need property data no SFF '
-            f'field can state{unavailable}', missing)
+    return (0.0, f'{len(lacking)} chemical(s) resolved neither by registry '
+            f'id nor by name (database or thermosteam built-in) need '
+            f'property data no SFF field can state{unavailable}', missing)
 
 
 _TPP_KEYS = ('mixture', 'gamma', 'phi', 'PCF')
@@ -3373,6 +3704,28 @@ def _states_flow(stream):
     return total is not None and abs(total) > ZERO_FLOW
 
 
+# CMP-FEED-01 composition credit of a feed whose plausible composition is a
+# legacy flat list with an untagged entry: its phase split is unknown, and
+# BioSTEAM would assume liquid (R4.6).
+UNTAGGED_COMPOSITION_CREDIT = 0.75
+
+# thermosteam's phase symbols (thermosteam._phase.valid_phases).
+_PHASE_SYMBOLS = frozenset({'s', 'l', 'g', 'S', 'L'})
+
+
+def _feed_phases_stated(stream):
+    """True when a feed's phases are stated (R4.6): its composition is given
+    per phase (``stream_properties.phases``, _phases_ok), or its legacy flat
+    composition tags every entry with a thermosteam phase symbol."""
+    sp = _as_dict(_as_dict(stream).get('stream_properties'))
+    if _phases_ok(sp.get('phases')):
+        return True
+    entries = _as_list(sp.get('composition'))
+    return bool(entries) and all(
+        isinstance(e, dict) and isinstance(e.get('phase'), str)
+        and e['phase'] in _PHASE_SYMBOLS for e in entries)
+
+
 def _score_feed_01(sc):  # CMP-FEED-01
     # Equal weights; every feed counts (R1.0); every part of a feed's state
     # must be plausible (R2.0: T in (0, T_MAX) K, P > 0, flow >= 0, a
@@ -3392,7 +3745,11 @@ def _score_feed_01(sc):  # CMP-FEED-01
     # zero-flow feeds earns nothing -- each scores as missing its flow.
     # A stream with both endpoints at the boundary (isolated: a feed whose
     # sink_unit_id was lost) stays in the population, so deleting an
-    # endpoint never sheds an incomplete feed (R3.8).
+    # endpoint never sheds an incomplete feed (R3.8). R4.6: a plausible
+    # composition earns its full part only with its phases stated (per-phase
+    # shape, or every legacy flat entry phase-tagged); an untagged legacy
+    # entry leaves the phase to BioSTEAM's liquid default, so the part earns
+    # UNTAGGED_COMPOSITION_CREDIT.
     feeds = sorted(sc.feeds + sc.isolated)
     if not feeds:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
@@ -3413,11 +3770,20 @@ def _score_feed_01(sc):  # CMP-FEED-01
             why = (' (a zero flow, while no feed states a non-zero one)'
                    if not anchored else ' (a zero flow into a unit whose '
                    'class is not known exactly: no fixed placeholder port)')
-        scores.append(sum(state.values()) / len(state))
-        full += all(state.values())
+        parts = dict(state)
+        untagged = state['composition'] and not _feed_phases_stated(
+            sc.streams[i])
+        if untagged:  # R4.6
+            parts['composition'] = UNTAGGED_COMPOSITION_CREDIT
+        scores.append(sum(parts.values()) / len(parts))
+        full += all(state.values()) and not untagged
         missing.extend(f'{sc.stream_labels[i]}.{_STATE_PATHS[k]}'
                        + (why if k == 'flow' else '')
                        for k, ok in state.items() if not ok)
+        if untagged:
+            missing.append(f'{sc.stream_labels[i]}.stream_properties.'
+                           f'composition[*].phase (untagged: BioSTEAM would '
+                           f'assume liquid)')
     message = f'{full + len(credited)} of {len(feeds)} feed(s) fully stated'
     if empties:
         message += (f'; {len(empties)} empty feed(s) (zero flow), '
@@ -4511,17 +4877,39 @@ def _utility_refs(sc):
     return refs
 
 
+def _agent_phase_ok(composition):
+    """True when a heat agent's phase is stated (R4.2): a non-empty
+    composition whose every entry carries the same phase, 'l' or 'g' --
+    BioSTEAM's UtilityAgent is a one-phase stream (liquid cooling water,
+    vapor steam), and its latent heat depends on that phase."""
+    entries = _as_list(composition)
+    phases = [entry.get('phase') if isinstance(entry, dict) else None
+              for entry in entries]
+    return bool(phases) and phases[0] in ('l', 'g') and all(
+        phase == phases[0] for phase in phases)
+
+
+# Parts of an agent scored by CMP-UTIL-01, per group (R4.2: heat agents
+# also need their phase).
+_AGENT_PARTS = {'power_utilities': 1, 'heat_utilities': 4}
+_OTHER_AGENT_PARTS = 3
+
+
 def _agent_gaps(group, agent):
     """Unstated or implausible required fields of one declared agent (R3.3,
     the shared stream-state predicates: heat/other agents need a plausible
     temperature (_valid_T) and pressure (_valid_P) and a plausible
-    composition (_composition_ok); power: an id)."""
+    composition (_composition_ok); a heat agent also its phase
+    (_agent_phase_ok, R4.2); power: an id)."""
     if group == 'power_utilities':
         return [] if _nonempty_str(agent.get('id')) else ['id']
     gaps = [k for k, valid in (('temperature', _valid_T), ('pressure', _valid_P))
             if valid(agent.get(k)) is None]
     if not _composition_ok(agent.get('composition')):
         gaps.append('composition')
+    if group == 'heat_utilities' and not _agent_phase_ok(
+            agent.get('composition')):
+        gaps.append('composition[*].phase (one phase, l or g, on every entry)')
     return gaps
 
 
@@ -4581,7 +4969,7 @@ def _score_util_01(sc):  # CMP-UTIL-01
                            f"{unit_label})")
     for group, agent, label in sc.agents:
         gaps = _agent_gaps(group, agent)
-        size = 1 if group == 'power_utilities' else 3
+        size = _AGENT_PARTS.get(group, _OTHER_AGENT_PARTS)
         scores.append(1.0 - len(gaps) / size)
         missing.extend(f'{label}.{gap}' for gap in gaps)
     kinds = _missing_agent_kinds(sc)
@@ -4843,14 +5231,37 @@ def _target_products_designated(sc):
                     and p['stream_id'] in outlet_ids for p in products))
 
 
+# R4.9: a TEA currency is an ISO 4217 code; a TEA (dollar) year an integer in
+# [TEA_YEAR_MIN, TEA_YEAR_MAX].
+_CURRENCY_RE = re.compile(r'^[A-Z]{3}$')
+TEA_YEAR_MIN, TEA_YEAR_MAX = 1900, 2100
+
+
+def _valid_tea_currency(x):
+    """True for a three-capital-letter currency code ('USD', 'EUR'); 'x',
+    'dollars' or 'usd' state nothing BioSTEAM's TEA can use (R4.9)."""
+    return isinstance(x, str) and bool(_CURRENCY_RE.match(x))
+
+
+def _valid_tea_year(x):
+    """True for an integral year in [TEA_YEAR_MIN, TEA_YEAR_MAX] (an int, an
+    integral float, or a legacy inline {value, units}); 99999 or 1.5 is
+    implausible and counts as unstated (R4.9)."""
+    year = _num(x)
+    return (year is not None and year.is_integer()
+            and TEA_YEAR_MIN <= year <= TEA_YEAR_MAX)
+
+
 def _score_sys_02(sc):  # CMP-SYS-02
-    year = _num(sc.metadata.get('TEA_year'))
-    stated = {'currency': _nonempty_str(sc.metadata.get('TEA_currency')),
-              'dollar year (cost basis)': year is not None and year > 0,
+    stated = {'currency': _valid_tea_currency(sc.metadata.get('TEA_currency')),
+              'dollar year (cost basis)': _valid_tea_year(
+                  sc.metadata.get('TEA_year')),
               'target product': _target_products_designated(sc)}
     missing = [f'metadata.{field}{note}' for field, item, note in
-               (('TEA_currency', 'currency', ''),
-                ('TEA_year', 'dollar year (cost basis)', ' (cost year)'),
+               (('TEA_currency', 'currency', ' (a three-letter code such as '
+                 'USD)'),
+                ('TEA_year', 'dollar year (cost basis)', ' (cost year: an '
+                 f'integer in [{TEA_YEAR_MIN}, {TEA_YEAR_MAX}])'),
                 ('products', 'target product', ' (non-empty; every stream_id '
                  'a declared boundary outlet)'))
                if not stated[item]]
@@ -4969,12 +5380,30 @@ def _score_int_04(sc):  # CMP-INT-04
         ok = total - len(missing)
         return (ok / total, f'legacy inline shape: {ok} of {total} '
                 f'quantities carry units', missing)
+    # R4.11: current shape -- QU-01 (every quantity field has a
+    # quantity_units_global alias) and QU-02 (every unit string parses), half
+    # each; a QU-02 result that is missing or skipped earns nothing.
     result = sc.check_result('QU-01')
     if result is None or result.status == 'skip':
         return None, 'QU-01 not evaluated', []
-    if result.status == 'pass':
-        return 1.0, 'every quantity field has a quantity_units_global alias', []
-    return 0.0, 'QU-01 fails', [_clip(result.message)]
+    parseable = sc.check_result('QU-02')
+    passes, missing = 0, []
+    for check_id, r, what in (
+            ('QU-01', result, 'a quantity field lacks a quantity_units_global '
+             'alias'),
+            ('QU-02', parseable, 'a quantity-unit string does not parse')):
+        if r is not None and r.status == 'pass':
+            passes += 1
+        else:
+            status = 'not evaluated' if r is None else f'{r.status}s'
+            missing.append(_clip(f'{check_id} {status} ({what})'
+                                 + (f': {r.message}' if r is not None
+                                    and r.message else '')))
+    message = ('every quantity field has a quantity_units_global alias and '
+               'every unit string parses' if passes == 2 else
+               f'{passes} of QU-01 (aliases) and QU-02 (parseable unit '
+               f'strings) pass')
+    return passes / 2, message, missing
 
 #%% Criterion registry (id -> scorer; order and ids must match criteria.yaml)
 

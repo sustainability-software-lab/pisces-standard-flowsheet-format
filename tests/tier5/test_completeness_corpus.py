@@ -242,20 +242,22 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
 
     def test_revision_3_part_b_registry_ids_on_the_corn_file(self):
         """R3.2 review case on SF_BST_01 with the installed `chemicals`
-        database (skipped when unavailable): the seven pseudo-components
-        (Starch, Fiber, SolubleProtein, InsolubleProtein, Yeast, Ash,
-        Cellulose) are exactly the chemicals below the name tier. Giving
-        all seven registry_id 'C' (methane: contradicted) or 'InChI=1S/x'
-        (malformed) leaves CMP-THM-02 at 13/22 = 0.591 (the review measured
-        0.841 before the fix); an invented valid-check-digit CAS
-        (98765-43-6) or a fake InChIKey reaches only the unresolved tier:
-        (1 + 14 * 0.75 + 7 * 0.5) / 22 = 0.682. CMP-THM-05 stays scored 0
-        with all seven listed in every case, including Cellulose and Starch
-        given their real but unlisted CAS numbers (9004-34-6, 9005-25-8)."""
+        database (skipped when unavailable), as revised by R4.1/R4.7: the
+        two pseudo-components thermosteam does not know (SolubleProtein,
+        InsolubleProtein; formula only, 0.25) are exactly the chemicals
+        below the name tier -- Starch, Fiber, Yeast, Ash and Cellulose now
+        resolve as thermosteam built-ins. CMP-THM-02 is the referenced mean
+        (the 4 unreferenced chemicals all score 0.75, above it): (1 + 2 *
+        0.25 + 15 * 0.75) / 18 = 0.708. Giving both registry_id 'C'
+        (methane: contradicted) or 'InChI=1S/x' (malformed) leaves it there;
+        an invented valid-check-digit CAS (98765-43-6) or a fake InChIKey
+        reaches only the unresolved tier: (1 + 2 * 0.5 + 15 * 0.75) / 18 =
+        0.736. CMP-THM-05 stays scored 0 with both listed in every case;
+        Cellulose and Starch given their real but unlisted CAS numbers
+        (9004-34-6, 9005-25-8) are still exempt by their built-in names."""
         if C._chemicals_search() is None:
             self.skipTest("chemicals package not importable")
-        pseudo = {"Starch", "Fiber", "SolubleProtein", "InsolubleProtein",
-                  "Yeast", "Ash", "Cellulose"}
+        pseudo = {"SolubleProtein", "InsolubleProtein"}
         below = {c["id"] for c in self.corn["chemicals"]
                  if C._thm_02_credit(c, c["id"])[0] < C.NAME_RESOLVED_CREDIT}
         self.assertEqual(below, pseudo)
@@ -268,17 +270,68 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
             sc = C._ScoringContext(doc)
             return C._score_thm_02(sc)[0], C._score_thm_05(sc)
 
-        for rid, expected in (("C", 13 / 22), ("InChI=1S/x", 13 / 22),
-                              ("98765-43-6", 15 / 22),
-                              ("ABCDEFGHIJKLMN-OPQRSTUVWX-Y", 15 / 22)):
+        base = 12.75 / 18
+        for rid, expected in (("C", base), ("InChI=1S/x", base),
+                              ("98765-43-6", 13.25 / 18),
+                              ("ABCDEFGHIJKLMN-OPQRSTUVWX-Y", 13.25 / 18)):
             thm02, (thm05, _m, missing) = gamed(dict.fromkeys(pseudo, rid))
             with self.subTest(registry_id=rid):
                 self.assertAlmostEqual(thm02, expected)
-                self.assertEqual((thm05, len(missing)), (0.0, 7))
+                self.assertEqual((thm05, len(missing)), (0.0, 2))
         _thm02, (thm05, _m, missing) = gamed({"Cellulose": "9004-34-6",
                                                "Starch": "9005-25-8"})
-        self.assertEqual((thm05, len(missing)), (0.0, 7))
-        self.assertTrue(any(m.startswith("chemicals[Cellulose]") for m in missing))
+        self.assertEqual((thm05, len(missing)), (0.0, 2))
+        self.assertFalse(any(m.startswith("chemicals[Cellulose]") for m in missing))
+
+    def test_revision_4_part_a_on_the_corn_file(self):
+        """Revision 4 part A review cases on SF_BST_01 (real database;
+        skipped when unavailable). R4.1: Ash, Yeast, Cellulose (as Glucan),
+        Starch and Fiber resolve as thermosteam built-ins with agreeing
+        molar masses, so CMP-THM-05 lists exactly SolubleProtein and
+        InsolubleProtein (it flagged 7 before). R4.5: CMP-THM-04 is
+        representable and = (14 x 1 + 5 x 0.75 + 3 x 0.5) / 22 = 0.875: 14
+        flags agree with the stream phases, Ethanol/CO2/O2/N2 are exported
+        false yet seen as g and l (contradicted: stream evidence only) and
+        Cellulose earns its built-in's locked 's'; H3PO4, P4O10 and SO2
+        (false, never in a stream) earn 0.5. R4.2: deleting the phase of
+        every heat agent's composition entries lowers CMP-UTIL-01 from 1 to
+        (2 x 0.75 + 3) / 5 = 0.9. R4.9: TEA_currency 'x' or 'dollars', or
+        TEA_year 99999 or 1.5, lowers CMP-SYS-02 from 3/14 to 2/14. R4.11:
+        the real validator's QU-01 and QU-02 both pass, CMP-INT-04 = 1."""
+        if C._chemicals_search() is None:
+            self.skipTest("chemicals package not importable")
+        by_id = {c.criterion_id: c for c in self.base.criteria}
+        chems = {c["id"]: c for c in self.corn["chemicals"]}
+        for cid, builtin in (("Ash", "Ash"), ("Yeast", "Yeast"),
+                             ("Cellulose", "Glucan"), ("Starch", "Starch"),
+                             ("Fiber", "Fiber")):
+            with self.subTest(chemical=cid):
+                self.assertEqual(C._name_record(cid).name, builtin)
+                self.assertEqual(C._name_tier(chems[cid], cid), "verified")
+        thm05 = by_id["CMP-THM-05"]
+        self.assertEqual((thm05.score, sorted(m.split("]")[0] for m in
+                                              thm05.missing)),
+                         (0.0, ["chemicals[InsolubleProtein",
+                                "chemicals[SolubleProtein"]))
+        thm04 = by_id["CMP-THM-04"]
+        self.assertTrue(thm04.representable)
+        self.assertAlmostEqual(thm04.score, (14 + 5 * 0.75 + 3 * 0.5) / 22)
+        self.assertEqual(by_id["CMP-UTIL-01"].score, 1.0)
+        doc = copy.deepcopy(self.corn)
+        for agent in doc["utilities"]["heat_utilities"]:
+            for entry in agent["composition"]:
+                del entry["phase"]
+        util01 = C._score_util_01(C._ScoringContext(doc))[0]
+        self.assertAlmostEqual(util01, 0.9)
+        self.assertAlmostEqual(by_id["CMP-SYS-02"].score, 3 / 14)
+        for field, junk in (("TEA_currency", "x"), ("TEA_currency", "dollars"),
+                            ("TEA_year", 99999), ("TEA_year", 1.5)):
+            doc = copy.deepcopy(self.corn)
+            doc["metadata"][field] = junk
+            with self.subTest(field=field, value=junk):
+                self.assertAlmostEqual(
+                    C._score_sys_02(C._ScoringContext(doc))[0], 2 / 14)
+        self.assertEqual(by_id["CMP-INT-04"].score, 1.0)
 
     def test_revision_3_part_b_quantity_units_on_the_corn_file(self):
         """R3.4 review case: SF_BST_01 with every stream (and phase) and

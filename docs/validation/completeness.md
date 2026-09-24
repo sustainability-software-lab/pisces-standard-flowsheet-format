@@ -42,8 +42,9 @@ validator's verdict:
 
 - `CMP-INT-01` scores the schema gate (`SCHEMA`).
 - `CMP-INT-02` scores the referential-integrity aggregate (`XREF-01`).
-- `CMP-INT-04` scores `QU-01`: every quantity has declared units. For a legacy
-  inline-shape file, it checks the units carried by each inline quantity.
+- `CMP-INT-04` scores `QU-01` and `QU-02`, half each: every quantity has
+  declared units, and every unit string parses. For a legacy inline-shape
+  file, it checks the units carried by each inline quantity.
 
 The separate recipe route (below) uses `MET-07`. The pass fraction of the semantic
 checks is deliberately *not* scored. Deleting the data a failing check looks at
@@ -105,16 +106,24 @@ has its own tiers, and each chemical scores the best tier it reaches:
 - a registry id (CAS, InChI, InChIKey or SMILES) that the `chemicals` database
   resolves, to a record that agrees with the chemical's molar mass or formula,
   earns 1;
-- a name that resolves in the property database, with its molar mass verified,
-  earns 0.75;
+- a name that resolves the way thermosteam's `Chemical(ID)` resolves it, with
+  its molar mass verified, earns 0.75. The lookup mirrors thermosteam's: its
+  database search (`_` read as a space, CamelCase split into words, so
+  `AceticAcid` finds acetic acid), then its built-in bioprocess
+  pseudo-components (`Cellulose`, `Starch`, `Fiber`, `Yeast`, `Ash`, ...,
+  kept as a static table so the scorer never imports thermosteam);
 - a well-formed registry id that the database cannot resolve (an invented
   number, or a real one it does not list, such as cellulose's CAS), or any
   registry id while the database is unavailable, earns 0.5;
 - a name that resolves but cannot be verified earns 0.5;
 - a formula alone earns 0.25.
 
-Only a chemical the database actually resolves is spared the property-data
-requirement of `CMP-THM-05`; an unresolvable id proves nothing about it.
+Only a chemical that actually resolves (in the database or as a built-in) is
+spared the property-data requirement of `CMP-THM-05`; an unresolvable id proves
+nothing about it. Chemicals that no stream, agent or reaction references can
+lower the identity and molar-mass scores (`CMP-THM-02`, `CMP-THM-03`) but never
+raise them, so padding a file with well-identified chemicals it never uses
+earns nothing.
 
 ### Invalid is missing
 
@@ -228,12 +237,12 @@ $ python pisces_sff/completeness/_completeness.py pisces_sff/export/exported_flo
 SFF completeness report
   sff_version         : 0.2.0   (valid: yes)
   validator checks    : error 23 pass / 2 skip; warning 15 pass; info 2 pass / 1 fail
-  overall score       : 0.783   (all scored criteria)
-  representable score : 0.921   (criteria this sff_version can state)
+  overall score       : 0.801   (all scored criteria)
+  representable score : 0.927   (criteria this sff_version can state)
   recipe route        : embedded load script + environment; digests valid; 'reproducible' declared
 
   by category:
-    thermo     0.621  Thermodynamic basis (chemicals and property package)
+    thermo     0.716  Thermodynamic basis (chemicals and property package)
     topology   0.903  Flowsheet topology
     feeds      0.992  Feeds and boundary streams
     unit_ops   0.854  Unit operations
@@ -242,13 +251,20 @@ SFF completeness report
     utilities  0.762  Utility agents
     system     0.207  System and TEA settings
     integrity  1.000  Integrity (validator-derived)
-  by criticality: essential 0.865  costing 0.582  supplementary 0.821  integrity 1.000
+  by criticality: essential 0.894  costing 0.582  supplementary 0.821  integrity 1.000
 
   criterion    wt crit rep score  message
   CMP-THM-01    4 E    yes 1.000  18 of 18 referenced chemical(s) declared
-  CMP-THM-02    5 E    yes 0.591  1 of 22 chemical(s) carry a database-resolved registry id, 14 more resolve by a verified name, 0 by an unverified one, 0 carry an unresolvable id
+  CMP-THM-02    5 E    yes 0.708  1 of 22 chemical(s) carry a database-resolved registry id, 19 more resolve by a verified name, 0 by an unverified one (5 of these as thermosteam built-in pseudo-components), 0 carry an unresolvable id; 4 unreferenced chemical(s) can only lower the score
       - chemicals[Ethanol].registry_id (id resolvable by name only; molar mass verified)
       ... and 20 more
+  ...
+  CMP-THM-04    2 E    yes 0.875  14 of 22 chemical(s) state included_in_thermo consistently with the stream phases; 5 more derivable (stream phases or a built-in locked phase)
+      - chemicals[Ethanol]: phase behaviour derived from the stream phases only; included_in_thermo false contradicts the stream phases; stream phases seen...
+      ... and 7 more
+  CMP-THM-05    4 E    no  0.000  2 chemical(s) resolved neither by registry id nor by name (database or thermosteam built-in) need property data no SFF field can state
+      - chemicals[SolubleProtein]: property data (V, Cn, H/S reference, Hf, Psat/Tb/Hvap, LHV) not representable
+      ... and 1 more
   ...
   CMP-TOP-02    4 E    no  0.806  not representable; 100 of 142 unit port side(s) unambiguous by convention
       - units[MH101].ins: port index not representable (unexported or empty ports may exist)
@@ -276,7 +292,7 @@ first missing locators.
 ## Interpreting results
 
 The corn reference file is a complete, valid, reproducible simulator export, yet
-its overall score is about 0.78 while its representable score is about 0.92.
+its overall score is about 0.80 while its representable score is about 0.93.
 The gaps fall into two groups.
 
 **What SFF cannot state (schema gaps).** These criteria are marked `rep = no`:
@@ -296,10 +312,12 @@ The gaps fall into two groups.
   corn file's port sides are unambiguous by convention (a mixer's inlets, a
   single-outlet unit). The rest are not.
 - **Chemical data outside the database.** SFF has no field for pure-component
-  property data. Seven chemicals, including biomass pseudo-components such as
-  `Ash`, resolve neither by registry id nor by name, so their property data
-  cannot be stated. SFF also cannot state phase behaviour (a chemical locked in
-  one phase).
+  property data. Two corn pseudo-components, `SolubleProtein` and
+  `InsolubleProtein`, resolve neither by registry id nor by name (thermosteam's
+  built-ins such as `Ash`, `Fiber` or `Cellulose` do), so their property data
+  cannot be stated. SFF can say whether a chemical is locked in one phase
+  (`included_in_thermo`), but not which phase; the corn file's flags are also
+  partly contradicted by its own stream phases (`CMP-THM-04`).
 - **Costing detail.** SFF cannot state the target cost index (CEPCI), parallel
   equipment counts or equipment lifetimes. The cost index earns derived credit
   because it can be back-derived from the recorded correlations. Counts earn
@@ -340,7 +358,7 @@ proposals for a future schema version, not part of the current format.
 | Information | Candidate optional field(s) | Criteria it would unlock |
 | ----------- | --------------------------- | ------------------------ |
 | Unit port order | `streams[].source_port_index` and `streams[].sink_port_index` (the position in the unit's `outs` / `ins`) | `CMP-TOP-02` |
-| Chemical phase behaviour | `chemicals[].phase_ref` and `chemicals[].locked_state` (`s`, `l` or `g`) | `CMP-THM-04` |
+| The phase a locked chemical is locked in (`included_in_thermo` only says it is locked) | `chemicals[].phase_ref` and `chemicals[].locked_state` (`s`, `l` or `g`) | full credit in `CMP-THM-04` for a locked chemical no stream shows |
 | Property data for chemicals outside the database | `chemicals[].properties`: key constants and models such as `Hf`, `Cn`, liquid density (or molar volume `V`), `LHV`, `Tb`, `Tc`, `Pc` and a vapor-pressure model | `CMP-THM-05`; also the property overrides excluded as `undetectable_need` |
 | Reaction basis and phase | `units[].reactions[].basis` (`mol` or `wt`) and `units[].reactions[].phase` | `CMP-RXN-04` |
 | TEA parameters and operating hours | a `metadata.TEA` object: operating days or hours per year, plant start year and duration, IRR, income tax, depreciation schedule, construction schedule, start-up period and fractions, working capital, the fixed-operating-cost model, the capital-cost model (Lang or DPI/TDC/FCI factors, OSBL unit ids, TEA class), financing, and the price book (`stream_prices`, including utility-port prices) | `CMP-SYS-01`, `CMP-SYS-02`; the zero-price half credits of `CMP-FEED-02` and `CMP-UTIL-02` |
@@ -394,7 +412,7 @@ come in four kinds:
 | CMP-THM-01 | Chemical registry covers every referenced chemical | 4 | essential | all versions |
 | CMP-THM-02 | Chemicals resolvable against a property database | 5 | essential | all versions |
 | CMP-THM-03 | Molar mass available for every chemical | 2 | essential | all versions |
-| CMP-THM-04 | Phase behaviour of each chemical | 2 | essential | never |
+| CMP-THM-04 | Phase behaviour of each chemical | 2 | essential | all versions |
 | CMP-THM-05 | Property data for chemicals outside the database | 4 | essential | never |
 | CMP-THM-06 | Thermodynamic property package stated | 3 | essential | all versions |
 | CMP-THM-07 | Chemical-set identity in multi-thermo flowsheets | 1 | supplementary | all versions |
@@ -403,16 +421,16 @@ CMP-THM-01 -- Chemical registry covers every referenced chemical
 : BioSTEAM compiles one Chemicals object before any stream or reaction can exist: every component a stream, utility agent or reaction mentions must be defined there, or constructing the Stream, UtilityAgent or Reaction fails with an undefined-chemical error. A referenced but undeclared component therefore blocks the rebuild outright, which makes coverage of the chemical registry the first gate of any re-import.
 
 CMP-THM-02 -- Chemicals resolvable against a property database
-: thermosteam builds a pure-component model (vapor pressure, heat capacity, heat of vaporization, molar volume, viscosity, ...) by looking the chemical up in the chemicals/thermo databases. Each chemical scores the best of the tiers it reaches, so deleting one datum only removes an option. A registry id -- a CAS number with a correct check digit, an InChI whose formula layer parses, an InChIKey or SMILES -- that the chemicals database RESOLVES (looked up as that kind of identifier: "InChIKey=" and "SMILES=" prefixes, so "C" means methane, not carbon) to a record whose molar mass (within 2 %) or formula agrees with the chemical's, when the chemical states one, identifies the species and brings the database's correlations with it (credit 1). A well-formed id the database cannot resolve -- a real number it does not list, such as cellulose's CAS, or an invented one with a valid check digit -- or any id while the database is unavailable, brings nothing checkable and earns 0.5. A malformed id ("x", "InChI=1S/x"), one whose database record or InChI formula layer contradicts the chemical's molar mass or formula, counts as no id. An id that the chemicals database resolves by name, as Chemical(ID) does, identifies it when the record's molar mass (or formula) matches the chemical's declared or formula-derived one within 1 % (verified, 0.75), probably identifies it when the chemical states neither (unverified, 0.5), and misidentifies it on a mismatch (the name tier is then withheld: "HP" resolves to hematoporphyrin, not 3-hydroxypropionic acid). An id that is itself a molecular formula with two or more carbon atoms (C2H6O: ethanol or dimethyl ether) earns no name credit, being isomer-ambiguous; a formula id with at most one carbon atom (CO2, O2, CH4, NH3, H2SO4, P4O10, CaO) names one compound and earns name credit like any other name. The lookup is lazy and cached, and unavailable when the chemicals package cannot be imported. A formula alone -- a parseable formula field, or a formula-like id -- narrows the search but does not identify an isomer (C2H6O is ethanol or dimethyl ether), so it earns 0.25. Without any of these, every property must be supplied by hand. The population is every declared chemical plus every referenced but undeclared id (which scores 0); a flowsheet with streams or units but no chemicals at all scores 0.
+: thermosteam builds a pure-component model (vapor pressure, heat capacity, heat of vaporization, molar volume, viscosity, ...) by looking the chemical up in the chemicals/thermo databases. Each chemical scores the best of the tiers it reaches, so deleting one datum only removes an option. A registry id -- a CAS number with a correct check digit, an InChI whose formula layer parses, an InChIKey or SMILES -- that the chemicals database RESOLVES (looked up as that kind of identifier: "InChIKey=" and "SMILES=" prefixes, so "C" means methane, not carbon) to a record whose molar mass (within 2 %) or formula agrees with the chemical's, when the chemical states one, identifies the species and brings the database's correlations with it (credit 1). A well-formed id the database cannot resolve -- a real number it does not list, such as cellulose's CAS, or an invented one with a valid check digit -- or any id while the database is unavailable, brings nothing checkable and earns 0.5. A malformed id ("x", "InChI=1S/x"), one whose database record or InChI formula layer contradicts the chemical's molar mass or formula, counts as no id. The chemical id is also looked up by name exactly as thermosteam's Chemical(ID) looks it up: its search of the chemicals identifier database (a CAS number as such; otherwise the id with "\_" read as a space and CamelCase split into words -- AceticAcid as "acetic acid", CalciumDihydroxide as "calcium dihydroxide" -- then the id itself, as names, the first database file claiming a name keeping it; last the id as a formula), then thermosteam's built-in bioprocess pseudo-components (Cellulose, Starch, Fiber, Yeast, Ash, Protein, Xylan, ... -- the names its database does not know, with the molar mass, formula and locked phase thermosteam gives them). A name so resolved identifies the chemical when the record's molar mass (or formula) matches the chemical's declared or formula-derived one within 1 % (verified, 0.75), probably identifies it when the chemical states neither (unverified, 0.5), and misidentifies it on a mismatch (the name tier is then withheld: "HP" resolves to hematoporphyrin, not 3-hydroxypropionic acid; "Lignin" to the database's C81H92O28 record, not a C8H8O3 monomer). An id that is itself a molecular formula with two or more carbon atoms (C2H6O: ethanol or dimethyl ether) earns no name credit, being isomer-ambiguous; a formula id with at most one carbon atom (CO2, O2, CH4, NH3, H2SO4, P4O10, CaO) names one compound and earns name credit like any other name. The lookup is lazy and cached, and unavailable when the chemicals package cannot be imported. A formula alone -- a parseable formula field, or a formula-like id -- narrows the search but does not identify an isomer (C2H6O is ethanol or dimethyl ether), so it earns 0.25. Without any of these, every property must be supplied by hand. The population is every declared chemical plus every referenced but undeclared id (which scores 0); a flowsheet with streams or units but no chemicals at all scores 0. When any chemical is referenced (by a stream or agent composition or a reaction), the score is the mean over the referenced chemicals plus every unreferenced one that lowers it -- the lowest mean over any set between the referenced chemicals and all of them, never above the lesser of the referenced and the overall means -- so unreferenced chemicals can lower the score but never raise it: padding a sparse file with well-identified chemicals it never uses earns nothing, and a chemical losing its last reference never lifts the score. With nothing referenced it is the plain mean.
 
 CMP-THM-03 -- Molar mass available for every chemical
-: Molar mass converts every flow between the mass and molar bases that BioSTEAM uses internally, closes stoichiometric mass balances, and sizes equipment costed on kg/hr. Pseudo-components such as Fiber or Protein have no database entry, so their molecular weight must be stated explicitly or implied by a formula. Scored over declared plus referenced-but-undeclared chemicals (the latter score 0).
+: Molar mass converts every flow between the mass and molar bases that BioSTEAM uses internally, closes stoichiometric mass balances, and sizes equipment costed on kg/hr. Pseudo-components such as Fiber or Protein have no database entry, so their molecular weight must be stated explicitly or implied by a formula. Scored over declared plus referenced-but-undeclared chemicals (the latter score 0), aggregated as CMP-THM-02 is: unreferenced chemicals can lower the score, never raise it.
 
 CMP-THM-04 -- Phase behaviour of each chemical
-: BioSTEAM distinguishes chemicals that partition between phases from chemicals locked in one state (Chemical.at\_state, phase\_ref, default phase): cellulose, ash or cell mass are fixed solids, and a flash or column that treated them as volatile would fail for want of a vapor pressure or partition them wrongly. No SFF field states this. Derived credit is given when the stream data show a chemical in two or more phases (it partitions) or only ever as a solid (it is locked). Scored over declared plus referenced-but-undeclared chemicals (the latter score 0).
+: BioSTEAM distinguishes chemicals that partition between phases from chemicals locked in one state (Chemical.at\_state, phase\_ref, default phase): cellulose, ash or cell mass are fixed solids, and a flash or column that treated them as volatile would fail for want of a vapor pressure or partition them wrongly. The base field chemicals\[\].included\_in\_thermo says whether a chemical takes part in phase equilibrium, but not which phase a locked one is locked in. Each chemical scores the best of: its flag, when the stream phases do not contradict it -- true (it partitions), 1; false (locked) and shown in exactly one phase, which names the locked phase, 1; false and never shown in a stream, 0.5 -- where a flag the streams contradict (false but shown in two or more phases, true but only ever as a solid) counts as absent; the stream phases alone, two or more (it partitions) or only ever solid (it is locked), 0.75 (derived); or the locked phase of the thermosteam built-in pseudo-component its id resolves to (see CMP-THM-02), 0.75 (derived). The reference exporter currently mispopulates the flag (true only for the members of one representative stream's vapor-liquid equilibrium set, so ethanol or CO2 seen as vapor and as liquid are exported false), and such contradicted flags earn nothing beyond the stream evidence. Scored over declared plus referenced-but-undeclared chemicals (the latter score 0).
 
 CMP-THM-05 -- Property data for chemicals outside the database
-: A chemical that cannot be resolved from a database must be created with hand-supplied property models: molar volume, heat capacity, reference enthalpy and entropy, heat of formation (for heats of reaction and combustion), and vapor pressure, boiling point and heat of vaporization when it is volatile, plus a lower heating value for combustibles burned in a boiler. Thermosteam refuses to compile a chemical set with missing required properties -- for every member, so a declared but unreferenced chemical counts too -- and no SFF field can carry these models. The criterion looks at every declared and every referenced id and applies to each one the chemicals database does not resolve -- neither by a registry id it finds without contradiction nor by a verified or unverified name (a mismatching or isomer-ambiguous name does not count; an undeclared id is judged by its name alone) -- and then scores 0. A well-formed but unresolvable registry id exempts nothing (an invented CAS number, or cellulose's real one, brings no property data), and with the database unavailable nothing is exempt. Such a custom chemical also lacks what phase-equilibrium models need beyond pure-component data -- UNIFAC or Dortmund group assignments for activity-coefficient packages and any binary interaction parameters -- which no SFF field carries either; this criterion stands for that gap too. Weighted heavily because one such chemical blocks the whole rebuild.
+: A chemical that cannot be resolved from a database must be created with hand-supplied property models: molar volume, heat capacity, reference enthalpy and entropy, heat of formation (for heats of reaction and combustion), and vapor pressure, boiling point and heat of vaporization when it is volatile, plus a lower heating value for combustibles burned in a boiler. Thermosteam refuses to compile a chemical set with missing required properties -- for every member, so a declared but unreferenced chemical counts too -- and no SFF field can carry these models. The criterion looks at every declared and every referenced id and applies to each one thermosteam cannot resolve -- neither by a registry id the chemicals database finds without contradiction nor by a verified or unverified name, looked up as Chemical(ID) looks it up (see CMP-THM-02: the database, then thermosteam's built-in pseudo-components such as Cellulose, Starch, Fiber, Yeast and Ash, which come with their property models; a mismatching or isomer-ambiguous name does not count; an undeclared id is judged by its name alone) -- and then scores 0. A well-formed but unresolvable registry id exempts nothing (an invented CAS number, or cellulose's real one, brings no property data), and with the database unavailable only a built-in is exempt. Such a custom chemical also lacks what phase-equilibrium models need beyond pure-component data -- UNIFAC or Dortmund group assignments for activity-coefficient packages and any binary interaction parameters -- which no SFF field carries either; this criterion stands for that gap too. Weighted heavily because one such chemical blocks the whole rebuild.
 
 CMP-THM-06 -- Thermodynamic property package stated
 : The Thermo object pairs the chemicals with a mixture model, activity coefficients (ideal or Dortmund-modified UNIFAC, ...), fugacity coefficients and Poynting correction factors. These decide every vapor-liquid and liquid-liquid split, so the same flowsheet under a different package produces different flash, column and evaporator results. A descriptor counts only when its leading identifier is a thermosteam model class of its role (IdealMixture or an EOS mixture; an activity-coefficient class such as DortmundActivityCoefficients; a fugacity-coefficient class; a Poynting-correction class, either spelling), since only those rebuild the package; "x" or a bare "NRTL" count as absent. Units are family-weighted, so a column's package counts more than a pump's.
@@ -441,7 +459,7 @@ CMP-TOP-02 -- Port order of multi-stream inlets and outlets
 | CMP-FEED-02 | Boundary stream prices | 3 | costing | all versions |
 
 CMP-FEED-01 -- Feed streams fully stated
-: In BioSTEAM's sequential-modular solve the feeds are the degrees of freedom: every feed's temperature, pressure, flow rate and composition must be set before System.simulate, and every other stream is computed from them; this is the heaviest single criterion. Each part counts only when plausible: a temperature in (0, 1e4) K, a pressure above zero, a flow of at least zero, and a composition whose every entry names its component and whose mol (or mass) fractions lie in \[0, 1\] and sum to 1 within 1e-3 per phase. A flowsheet with no feed defines no problem and scores 0. Feeds weigh equally and every feed counts: one whose state says it is empty (total flow numerically zero, an unused placeholder port) scores 1, since its zero flow states all such a port needs -- but only when some feed states a non-zero flow and the unit it enters has a class known exactly (confidence 1), whose fixed ports make a placeholder feed legitimate. Otherwise a stated zero counts as a missing flow with no composition exemption: with no non-zero feed nothing sets the problem's scale, and zero-flow feeds padding a unit of unknown class state nothing (so writing zeros earns nothing). The message reports how many feeds are empty and how many of those earn the placeholder credit. A stream with both endpoints at the boundary counts as a feed, so losing a feed's sink\_unit\_id never drops it. A feed whose flow is unknown scores its stated parts (temperature, pressure, composition). (Leaving empty feeds out, or weighting by mass-flow share, let deleting a flow raise the score.)
+: In BioSTEAM's sequential-modular solve the feeds are the degrees of freedom: every feed's temperature, pressure, flow rate and composition must be set before System.simulate, and every other stream is computed from them; this is the heaviest single criterion. Each part counts only when plausible: a temperature in (0, 1e4) K, a pressure above zero, a flow of at least zero, and a composition whose every entry names its component and whose mol (or mass) fractions lie in \[0, 1\] and sum to 1 within 1e-3 per phase. A composition earns full credit only when its phases are stated -- given per phase (stream\_properties.phases), or a legacy flat list tagging every entry with a phase -- and 0.75 when a legacy flat list leaves an entry untagged, since BioSTEAM would then assume the feed liquid. A flowsheet with no feed defines no problem and scores 0. Feeds weigh equally and every feed counts: one whose state says it is empty (total flow numerically zero, an unused placeholder port) scores 1, since its zero flow states all such a port needs -- but only when some feed states a non-zero flow and the unit it enters has a class known exactly (confidence 1), whose fixed ports make a placeholder feed legitimate. Otherwise a stated zero counts as a missing flow with no composition exemption: with no non-zero feed nothing sets the problem's scale, and zero-flow feeds padding a unit of unknown class state nothing (so writing zeros earns nothing). The message reports how many feeds are empty and how many of those earn the placeholder credit. A stream with both endpoints at the boundary counts as a feed, so losing a feed's sink\_unit\_id never drops it. A feed whose flow is unknown scores its stated parts (temperature, pressure, composition). (Leaving empty feeds out, or weighting by mass-flow share, let deleting a flow raise the score.)
 
 CMP-FEED-02 -- Boundary stream prices
 : Stream.price on feeds and products drives the material cost and sales revenue of the TEA, and therefore every minimum selling price or NPV. Every boundary stream counts (one with both endpoints at the boundary too, so losing an endpoint never drops an unpriced stream): an empty one (total flow numerically zero) needs no price and scores 1; every other one needs a price. An explicit zero is a valid statement, except on a feed that is a unit's utility-port material, which BioSTEAM prices itself when the stream's price is 0 (from bst.stream\_utility\_prices, or a class default) in a way SFF cannot state, so it earns half credit: natural gas (at least 50 mol% CH4) into a combustor, dryer, boiler or boiler-turbogenerator; lime or boiler chemicals into a boiler or boiler-turbogenerator; water-dominated makeup water into a process-water center (or a facility of unknown kind). The port material is identified by the feed's composition; a feed whose composition is unknown may be one and is treated as one, so deleting a composition never raises the score. Air and every other zero-priced feed are scored like any stated price.
@@ -540,7 +558,7 @@ CMP-COST-07 -- Equipment lifetimes
 | CMP-UTIL-05 | Agent selection parameters | 1 | costing | never |
 
 CMP-UTIL-01 -- Utility agents declared and specified
-: Heat utilities are satisfied by utility agents (cooling water, steam at several pressures, refrigerants) that BioSTEAM selects by temperature and that are defined by temperature, pressure and composition. A duty cannot be assigned to an agent that is not declared, and an agent without its state cannot be instantiated. Each part of a heat or other agent's state counts only when plausible, by the same predicates as a stream's (a temperature in (0, 1e4) K and a positive pressure, after conversion to internal units; a composition whose entries name their components and whose fractions lie in \[0, 1\] and sum to 1). Applicable when a unit is in a utility-using family (heat exchange, electricity or fuel: reactors, columns, heaters, pumps, compressors, agitated tanks, conveyors, mixer-settlers, boilers, dryers, ...), any unit records utility results, or any agent is declared; with that need and no agent at all it scores 0. Need is also judged per kind: when a unit exchanges heat (a heat-exchanging family) but no heat-utility agent is declared, a missing "heat agent" entry scores 0 beside the declared and referenced agents; likewise a missing "power utility" entry when a unit draws or delivers electricity (pumps, compressors, turbines, solids handling, boiler-turbogenerators) but no power utility is declared -- a declared power utility does not stand in for steam.
+: Heat utilities are satisfied by utility agents (cooling water, steam at several pressures, refrigerants) that BioSTEAM selects by temperature and that are defined by temperature, pressure and composition. A duty cannot be assigned to an agent that is not declared, and an agent without its state cannot be instantiated. Each part of a heat or other agent's state counts only when plausible, by the same predicates as a stream's (a temperature in (0, 1e4) K and a positive pressure, after conversion to internal units; a composition whose entries name their components and whose fractions lie in \[0, 1\] and sum to 1). A heat agent is scored over four parts: also its phase, stated when every composition entry carries the same phase, l or g -- BioSTEAM's utility agent is a one-phase stream (liquid cooling water, vapor steam) whose heat duty per kg depends on it. Applicable when a unit is in a utility-using family (heat exchange, electricity or fuel: reactors, columns, heaters, pumps, compressors, agitated tanks, conveyors, mixer-settlers, boilers, dryers, ...), any unit records utility results, or any agent is declared; with that need and no agent at all it scores 0. Need is also judged per kind: when a unit exchanges heat (a heat-exchanging family) but no heat-utility agent is declared, a missing "heat agent" entry scores 0 beside the declared and referenced agents; likewise a missing "power utility" entry when a unit draws or delivers electricity (pumps, compressors, turbines, solids handling, boiler-turbogenerators) but no power utility is declared -- a declared power utility does not stand in for steam.
 
 CMP-UTIL-02 -- Utility prices
 : Heat agents are priced per mole regenerated or per unit of heat transferred, electricity per kWh, and other utilities per unit flow; together they make up the utility share of the variable operating cost in the TEA. A price counts only when finite, and a heat agent's regeneration or heat-transfer price only when also at least zero. A zero price on an other-utility agent that is a fuel (its id names natural gas or a fuel, or its composition is at least 50 mol% CH4) -- or may be one, its composition not being plausibly stated -- earns half credit: BioSTEAM then prices the fuel from bst.stream\_prices, which SFF cannot state (as CMP-FEED-02 treats utility-port feeds). Same applicability as CMP-UTIL-01; scored over declared agents plus referenced but undeclared ones and the missing heat-agent or power-utility kinds of CMP-UTIL-01 (all of which score 0).
@@ -567,7 +585,7 @@ CMP-SYS-01 -- Annual operating hours
 : The TEA's operating days (or hours) per year convert hourly flows into annual costs and revenues. No SFF field states them.
 
 CMP-SYS-02 -- TEA parameter set
-: A BioSTEAM TEA needs fourteen groups of assumptions: the currency; the dollar (cost) year every price and cost is expressed in; the target product whose selling price the TEA solves for; the plant's start year and duration; the internal rate of return; income tax; the depreciation schedule; the construction schedule; the startup period and fractions; working capital; the fixed-operating-cost model; the capital-cost model (a Lang factor or DPI/TDC/FCI factors, with the OSBL units and TEA class it is applied to); financing; and the price book (bst.stream\_prices, which also prices zero-priced utility ports). SFF can state three: TEA\_currency, TEA\_year -- the cost year, per the schema, not the plant's start year -- and the target products (metadata.products, non-empty, every stream\_id a declared boundary outlet), so at most three of fourteen are available.
+: A BioSTEAM TEA needs fourteen groups of assumptions: the currency; the dollar (cost) year every price and cost is expressed in; the target product whose selling price the TEA solves for; the plant's start year and duration; the internal rate of return; income tax; the depreciation schedule; the construction schedule; the startup period and fractions; working capital; the fixed-operating-cost model; the capital-cost model (a Lang factor or DPI/TDC/FCI factors, with the OSBL units and TEA class it is applied to); financing; and the price book (bst.stream\_prices, which also prices zero-priced utility ports). SFF can state three: TEA\_currency, TEA\_year -- the cost year, per the schema, not the plant's start year -- and the target products (metadata.products, non-empty, every stream\_id a declared boundary outlet), so at most three of fourteen are available. A currency counts only as a three-capital-letter code (USD, EUR), and a year only as an integer in \[1900, 2100\]: "x", "dollars", 99999 or 1.5 state nothing a TEA can use.
 
 CMP-SYS-03 -- Convergence settings
 : The recycle-convergence method (Wegstein, Aitken, fixed-point, ...), the molar and temperature tolerances and the iteration limit decide whether, and to what, a recycle-heavy flowsheet converges. No SFF field states them.
@@ -590,7 +608,7 @@ CMP-INT-02 -- Cross-references resolve
 : The validator's XREF-01 aggregate fails when any referential check fails (a stream to an unknown unit, a component missing from the chemicals, a utility result naming no agent); information behind a dangling reference cannot be used. Not applicable to a document with neither units nor streams.
 
 CMP-INT-04 -- Quantity units declared
-: Without units every number is ambiguous (K or degC, kg/hr or kmol/hr), and a re-import must convert each value into BioSTEAM's internal units. Current-shape files declare units once in quantity\_units\_global (QU-01); legacy files carry them inline on each quantity, so there the score is the fraction of quantities carrying units, where a bare numeric design result (no inline units at all) counts as a quantity without units. Not applicable to a document with neither units nor streams.
+: Without units every number is ambiguous (K or degC, kg/hr or kmol/hr), and a re-import must convert each value into BioSTEAM's internal units. Current-shape files declare units once in quantity\_units\_global, and a unit is only useful if it parses: the score is 1 when the validator's QU-01 (every quantity field has a quantity\_units\_global alias) and QU-02 (every quantity-unit string is parseable) both pass, 0.5 when exactly one does (a QU-02 result that is missing earns nothing), and 0 otherwise. Legacy files carry units inline on each quantity, so there the score is the fraction of quantities carrying units, where a bare numeric design result (no inline units at all) counts as a quantity without units. Not applicable to a document with neither units nor streams.
 
 ### Exclusions (deliberately not scored)
 
