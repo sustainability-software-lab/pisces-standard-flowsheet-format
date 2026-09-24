@@ -98,7 +98,11 @@ def targeted_paths(doc):
     feeds (CMP-FEED-02 utility ports identified by composition), a
     formula-named chemical's molar_mass (the corrected CMP-THM-02 name
     tier), and an outlet's phases of a physical-only unit (the R2.4 species
-    guard then cannot verify it)."""
+    guard then cannot verify it). Revision 5 (R5.8) adds endpoint deletions
+    of internal streams: both keys of s35 (a 12 kg/h stream into the
+    batch fermenter V405, whose sink deletion raised CMP-TOP-02 0.8732 ->
+    0.8785 and CMP-FEED-02) and of the first, middle and last internal
+    stream."""
     units, streams = doc["units"], doc["streams"]
     described = [(i, C._is_core_class(*C._dsm_class(u)))
                  for i, u in enumerate(units)
@@ -165,6 +169,16 @@ def targeted_paths(doc):
                      "no guarded physical-only unit")
     outlet = sc.unit_outlets[sc.units[guarded]["id"]][0]
     paths.append(("streams", outlet, "stream_properties", "phases"))
+    # Revision 5 (R5.8): endpoint keys of internal streams.
+    internal = [i for i, s in enumerate(streams)
+                if not C._is_boundary(s.get("source_unit_id"))
+                and not C._is_boundary(s.get("sink_unit_id"))]
+    s35 = _first([i for i, s in enumerate(streams) if s.get("id") == "s35"],
+                 "no stream s35")
+    for i in dict.fromkeys((s35, internal[0], internal[len(internal) // 2],
+                            internal[-1])):
+        paths += [("streams", i, "sink_unit_id"),
+                  ("streams", i, "source_unit_id")]
     paths += [(section,) for section in SECTIONS]
     return paths
 
@@ -183,6 +197,33 @@ def sampled_paths(doc):
         pool = sorted(strata[key], key=repr)
         paths += rng.sample(pool, min(PER_STRATUM, len(pool)))
     return list(dict.fromkeys(paths))
+
+
+def mass_twin(doc):
+    """Copy of `doc` stating its phases on the mass basis only (R5.3): every
+    phase's total_molar_flow and every composition entry's mol_fraction
+    dropped (SF_BST_01 states both bases per phase); stream totals and the
+    chemicals' molar masses kept."""
+    twin = copy.deepcopy(doc)
+    for stream in twin["streams"]:
+        for phase in stream["stream_properties"].get("phases", {}).values():
+            phase.pop("total_molar_flow", None)
+            for entry in phase.get("composition", []):
+                entry.pop("mol_fraction", None)
+    return twin
+
+
+# SF_BST_01 units the Revision 5 reviewer stripped of specs, costs and
+# utility results (keeping their streams) and relabelled exact Mixer (<= 1
+# outlet) or Splitter: honest 0.723 vs relabelled 0.758 before R5.1.
+_R5_STRIPPED_CLASSES = frozenset({
+    "Pump", "HXutility", "StorageTank", "MixTank", "BinaryDistillation",
+    "MultiEffectEvaporator", "HXprocess"})
+_R5_STRIPPED_KEYS = (
+    "design_input_specs", "purchase_costs", "installed_costs",
+    "purchase_cost_correlations", "design_results",
+    "quantity_units_for_design_results", "utility_consumption_results",
+    "utility_production_results")
 
 
 class TestCompletenessCorpus(RealBiosteamTestCase):
@@ -340,8 +381,10 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         methods deleted -> no criterion rises and the overall score drops
         (before the fix the bare class names became exact classes:
         CMP-UOP-02 0.9921 -> 0.9950, CMP-COST-01/02 0.9462 -> 0.9670,
-        CMP-COST-07 0.500 -> 0.511, overall up 0.0007); both units resolve
-        to keyword families only (splitter, evaporator; confidence < 1) and
+        CMP-COST-07 0.500 -> 0.511, overall up 0.0007); neither unit keeps
+        an exact class (confidence < 1): Ev607 resolves to its keyword
+        family (evaporator), C603's 'Separator' label is a pure-splitter
+        claim its streams contradict (R5.1), so its family is unknown; both
         stay in the costed population. R4.8: no class claim on the corn file
         is contradicted by its ports (every design_simulation_method class
         survives, and the four HXprocess units' bare 'Heat exchanger'
@@ -381,7 +424,9 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                     self.assertLessEqual(c.score,
                                          was[c.criterion_id].score + TOL)
         sc = C._ScoringContext(stripped)
-        for uid, family in (("C603", "splitter"), ("Ev607", "evaporator")):
+        # R5.1: C603's 'Separator' label is a label-only (pure) splitter
+        # claim its streams contradict, so its family is unknown.
+        for uid, family in (("C603", None), ("Ev607", "evaporator")):
             position = sc.unit_positions[uid]
             name, fam, confidence = sc.unit_classes[position]
             self.assertEqual((name, fam), (None, family), uid)
@@ -451,33 +496,110 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         self.assertEqual(len(strata), 11)
 
     def test_deleting_values_never_raises_score(self):
-        """Deletion monotonicity on the REAL SF_BST_01.json: for each
-        sampled deletion (targeted_paths + the stratified sample, leaves and
-        whole sub-objects), score_flowsheet_completeness -> score <= the
-        full file's score (tolerance 1e-12), and every criterion scored on
-        the full file stays scored with a score <= its full-file score (a
-        whole top-level section is held to the overall bound only). The
+        """Deletion monotonicity on the REAL SF_BST_01.json and on its
+        mass-basis twin (mass_twin, R5.3): for each sampled deletion
+        (targeted_paths -- incl. the R5.8 endpoint deletions of internal
+        streams -- + the stratified sample, leaves and whole sub-objects),
+        score_flowsheet_completeness -> score <= the full document's score
+        (tolerance 1e-12), and every criterion scored on the full document
+        stays scored with a score <= its full-document score (a whole
+        top-level section is held to the overall bound only). The
         per-criterion bound is what catches a defect here: on this file a
-        criterion's rise is usually outweighed by drops elsewhere. Expected:
-        no violation, and some deletions lower the score."""
-        base = self.base
-        before = {c.criterion_id: c for c in base.criteria}
-        violations, lowered = [], 0
-        paths = sampled_paths(self.corn)
-        for path in paths:
-            report = C.score_flowsheet_completeness(without(self.corn, path))
-            if report.score > base.score + TOL:
-                violations.append((path, "overall", report.score - base.score))
-            lowered += report.score < base.score - TOL
-            if len(path) == 1:
+        criterion's rise is usually outweighed by drops elsewhere.
+        Expected: no violation, and some deletions lower the score."""
+        for name, doc, base in (("molar", self.corn, self.base),
+                                ("mass", mass_twin(self.corn), None)):
+            base = base or C.score_flowsheet_completeness(doc)
+            before = {c.criterion_id: c for c in base.criteria}
+            violations, lowered = [], 0
+            paths = sampled_paths(doc)
+            for path in paths:
+                report = C.score_flowsheet_completeness(without(doc, path))
+                if report.score > base.score + TOL:
+                    violations.append((path, "overall",
+                                       report.score - base.score))
+                lowered += report.score < base.score - TOL
+                if len(path) == 1:
+                    continue
+                for c in report.criteria:
+                    b = before[c.criterion_id]
+                    if b.status == "scored" and (
+                            c.status != "scored" or c.score > b.score + TOL):
+                        violations.append((path, c.criterion_id, c.status,
+                                           c.score))
+            with self.subTest(basis=name):
+                self.assertEqual(violations, [])
+                self.assertGreater(lowered, len(paths) // 4)
+
+    def test_revision_5_on_the_corpus(self):
+        """Revision 5 on the real files. R5.1: every exact mixer-family or
+        pure-splitter unit of SF_BST_01 (6) and SF_BST_07 (19) meets the
+        physics bounds (_physics_contradiction None: no false positive;
+        SF_BST_07's EnzymeHydrolysateMixer M301 records agitator power,
+        allowed for the @cost-decorated Mixer subclasses); the reviewer's
+        36-unit case -- SF_BST_01's pumps, utility and process exchangers,
+        tanks, columns and evaporators stripped of specs, costs and utility
+        results, then relabelled exact Mixer (<= 1 outlet) or Splitter --
+        no longer pays off (honest > relabelled, overall and
+        representable; before R5.1 0.723 < 0.758). R5.3: the mass-basis
+        twin of SF_BST_01 scores every criterion exactly as the original
+        except CMP-INT-01 (the schema requires each phase's
+        total_molar_flow). R5.8: deleting s35's sink_unit_id (12 kg/h into
+        V405) raises none of CMP-TOP-01/02, CMP-FEED-01/02."""
+        for path, expected in ((CORN, 6), (CORPUS_DIR / "SF_BST_07.json", 19)):
+            sc = C._ScoringContext(C._read_flowsheet(str(path)))
+            checked = 0
+            for position, unit in enumerate(sc.units):
+                name = C._dsm_class(unit)[0]
+                family = C._class_family(name) if name else None
+                if name in C.PURE_SPLITTER_CLASSES or family == "mixer":
+                    checked += 1
+                    self.assertIsNone(C._physics_contradiction(
+                        name, family, sc.unit_physics[position]),
+                        (path.name, unit["id"]))
+            self.assertEqual(checked, expected, path.name)
+        honest, lie = copy.deepcopy(self.corn), copy.deepcopy(self.corn)
+        outlets = {}
+        for stream in self.corn["streams"]:
+            source = stream["source_unit_id"]
+            outlets[source] = outlets.get(source, 0) + 1
+        stripped = 0
+        for good, bad in zip(honest["units"], lie["units"]):
+            if C._dsm_class(good)[0] not in _R5_STRIPPED_CLASSES:
                 continue
-            for c in report.criteria:
-                b = before[c.criterion_id]
-                if b.status == "scored" and (
-                        c.status != "scored" or c.score > b.score + TOL):
-                    violations.append((path, c.criterion_id, c.status, c.score))
-        self.assertEqual(violations, [])
-        self.assertGreater(lowered, len(paths) // 4)
+            stripped += 1
+            for unit in (good, bad):
+                for key in _R5_STRIPPED_KEYS:
+                    if key in unit:
+                        unit[key] = {}
+            name = "Mixer" if outlets.get(bad["id"], 0) <= 1 else "Splitter"
+            bad["unit_type"] = name
+            bad["design_simulation_method"] = (
+                f"{name} on https://github.com/BioSTEAMDevelopmentGroup/"
+                f"biosteam/blob/master/biosteam/units/mixing.py")
+        self.assertEqual(stripped, 36)
+        truthful = C.score_flowsheet_completeness(honest)
+        relabelled = C.score_flowsheet_completeness(lie)
+        self.assertGreater(truthful.score, relabelled.score)
+        self.assertGreater(truthful.representable_score,
+                           relabelled.representable_score)
+        twin = C.score_flowsheet_completeness(mass_twin(self.corn))
+        was = {c.criterion_id: c for c in self.base.criteria}
+        for c in twin.criteria:
+            if c.criterion_id == "CMP-INT-01":
+                continue
+            with self.subTest(criterion=c.criterion_id):
+                self.assertEqual(c.status, was[c.criterion_id].status)
+                if c.status == "scored":
+                    self.assertAlmostEqual(c.score, was[c.criterion_id].score,
+                                           delta=1e-9)
+        s35 = next(i for i, s in enumerate(self.corn["streams"])
+                   if s["id"] == "s35")
+        cut = C.score_flowsheet_completeness(
+            without(self.corn, ("streams", s35, "sink_unit_id")))
+        after = {c.criterion_id: c for c in cut.criteria}
+        for cid in ("CMP-TOP-01", "CMP-TOP-02", "CMP-FEED-01", "CMP-FEED-02"):
+            self.assertLessEqual(after[cid].score, was[cid].score + TOL, cid)
 
 
 if __name__ == "__main__":

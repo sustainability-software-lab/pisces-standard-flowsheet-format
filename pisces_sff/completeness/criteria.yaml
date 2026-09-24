@@ -54,7 +54,14 @@
 # Units, streams, chemicals and utility agents sharing an id are collapsed
 # to the first occurrence, so repetition inflates nothing. A derivation from
 # stream data needs the unit's mass balance (and, for a physical unit, every
-# species' balance) to close within 1 %. A conditional requirement is waived
+# species' balance) to close within 1 %; species flows are compared on the
+# molar basis when every port states mol data, else on the mass basis when
+# every port states mass data (per-phase flows with mol or mass fractions).
+# A stream endpoint that is not stated (a missing source_unit_id or
+# sink_unit_id key, null or blank) is dangling, never the boundary: such a
+# stream may be a missing port of any unit whose balance cannot rule it
+# out, so none of those units' balances counts as closed. A conditional
+# requirement is waived
 # only when the data affirmatively show its condition false. Stream and
 # utility-agent temperatures, pressures and flows are first converted to
 # BioSTEAM's internal units (K, Pa, kg/hr, kmol/hr, m3/hr) from their stated
@@ -318,7 +325,9 @@ criteria:
       the flowsheet graph from that wiring. A stream endpoint naming no unit
       (and not the system boundary) cannot be wired, and a unit attached to no
       stream is never reached by the simulation, so both leave the rebuilt
-      system different from the original.
+      system different from the original. Only the explicit sentinel "None"
+      states the boundary: an endpoint that is not stated (a missing key,
+      null or blank) is dangling and does not resolve.
 
   - id: CMP-TOP-02
     category: topology
@@ -343,9 +352,12 @@ criteria:
       placeholders, like unexported ports) earns full credit on a
       single-port side (pumps, valves, heat exchangers, ...) and derived
       credit elsewhere (unexported or empty ports may exist) -- but both
-      rest on the stream count, so only while the unit's balances close
-      (no material-carrying port is missing; detaching a stream never earns
-      credit). Sides with several material-carrying streams earn derived
+      rest on the stream count, so only while the unit's TOTAL mass balance
+      closes, which alone shows no material-carrying port is missing
+      whether or not its species flows are computable, and no dangling
+      stream (an endpoint not stated) could be a missing port of it that
+      the balance cannot rule out (detaching a stream never earns credit).
+      Sides with several material-carrying streams earn derived
       credit only when the order follows from the data (a flash's vapor and
       liquid outlets, a splitter with explicit split fractions) and the
       unit's balances close. A unit without an id, whose ports no stream can
@@ -375,8 +387,10 @@ criteria:
       flow of at least zero, and a composition whose every entry names its
       component and whose mol (or mass) fractions lie in [0, 1] and sum to 1
       within 1e-3 per phase. A composition earns full credit only when its
-      phases are stated -- given per phase (stream_properties.phases), or a
-      legacy flat list tagging every entry with a phase -- and 0.75 when a
+      phases are stated -- given per phase (stream_properties.phases, each
+      phase with a molar or a mass flow -- or, for a single-phase stream,
+      the stream total -- and mol or mass fractions), or a legacy flat list
+      tagging every entry with a phase -- and 0.75 when a
       legacy flat list leaves an entry untagged, since BioSTEAM would then
       assume the feed liquid. A flowsheet with no feed defines no problem
       and scores 0. Feeds weigh equally and every feed counts: one whose state
@@ -390,8 +404,11 @@ criteria:
       unknown class state nothing (so writing zeros earns nothing). The
       message reports how many feeds are empty and how many of those earn
       the placeholder credit. A stream with both endpoints at the boundary
-      counts as a feed, so losing a feed's sink_unit_id never drops it. A
-      feed whose
+      counts as a feed. A dangling stream (an endpoint not stated: a
+      missing key, null or blank -- never the boundary) may be a feed, so
+      it stays in the population but scores 0 and anchors nothing: losing
+      a feed's endpoint never drops it, and detaching an internal stream
+      never adds a credited feed. A feed whose
       flow is unknown scores its stated parts (temperature, pressure,
       composition). (Leaving empty feeds out, or weighting by mass-flow
       share, let deleting a flow raise the score.)
@@ -409,9 +426,12 @@ criteria:
       Stream.price on feeds and products drives the material cost and sales
       revenue of the TEA, and therefore every minimum selling price or NPV.
       Every boundary stream counts (one with both endpoints at the boundary
-      too, so losing an endpoint never drops an unpriced stream): an empty
-      one (total flow numerically zero) needs no price and scores 1; every
-      other one needs a price. An
+      too): an empty one (total flow numerically zero) needs no price and
+      scores 1; every other one needs a price. A dangling stream (an
+      endpoint not stated: a missing key, null or blank -- never the
+      boundary) may be a boundary stream, so it counts too but scores 0,
+      even when empty or priced: losing an endpoint never drops an unpriced
+      stream nor turns a priced internal stream into a credited product. An
       explicit zero is a valid statement, except on a feed that is a unit's
       utility-port material, which BioSTEAM prices itself when the stream's
       price is 0 (from bst.stream_utility_prices, or a class default) in a
@@ -420,7 +440,8 @@ criteria:
       lime or boiler chemicals into a boiler or boiler-turbogenerator;
       water-dominated makeup water into a process-water center (or a
       facility of unknown kind). The port material is identified by the
-      feed's composition; a feed whose composition is unknown may be one and
+      feed's mol fractions (from mol data, else from mass fractions and the
+      chemicals' molar masses); a feed whose composition is unknown may be one and
       is treated as one, so deleting a composition never raises the score.
       Air and every other zero-priced feed are scored like any stated
       price.
@@ -478,7 +499,22 @@ criteria:
       than two inlets that are not stated empty (a one-inlet 'mixer' mixes
       nothing and would hide a reactor or an exchanger) -- counts as
       unstated; a bare 'heat exchanger' with two inlets and outlets is a
-      process-process exchanger. A unit whose family stays unknown carries
+      process-process exchanger. So does a claim that removes needs but
+      that the unit's streams or duties contradict: a mixer claim (exact
+      class or label) whose outlet is more than 1 K hotter than its
+      hottest inlet or more than 1 % above its highest inlet pressure
+      (upper bounds only: a mixer may cool and mixes at the lowest inlet
+      pressure), and a pure-splitter claim (Splitter, PhaseSplitter,
+      MockSplitter / FakeSplitter, or a splitter label without an exact
+      class) whose outlet differs from its inlet by more than 1 K or 1 %,
+      either one across which a species appears or vanishes (flows
+      computable, no well-formed reaction declared) or that records a
+      non-zero heat or power duty (an adiabatic Mixer draws nothing; the
+      @cost-decorated Mixer subclasses may draw agitator power). Streams
+      stated empty are ignored and a bound is tested only on stated values,
+      so deleting data never creates a contradiction; relabelling a pump,
+      heater or fermenter as a mixer thus leaves its family unknown instead
+      of shedding its needs. A unit whose family stays unknown carries
       every family-dependent need (reactions, heat and power agents,
       utility results, costing). A unit id that stream endpoints reference
       but no unit declares scores 0. Every per-unit average in this
@@ -539,9 +575,12 @@ criteria:
       specification recoverable from stream states, design results or a
       class default earns derived credit, and one read from stream data
       only when the unit's mass balance -- and, for a physical unit, every
-      species' balance -- closes within 1 % and, for a physical-only unit
-      without declared reactions, no species appears or vanishes across it
-      (nor can the check be ruled out by uncomputable species flows); an
+      species' balance, on the molar basis or else the mass basis --
+      closes within 1 %, no dangling stream (an endpoint not stated) could
+      be a missing port the balance cannot rule out, and, for a
+      physical-only unit without declared reactions, no species appears or
+      vanishes across it (nor can the check be ruled out by uncomputable
+      species flows); an
       explicit T or P that
       contradicts the unit's outlet streams earns nothing. A conditional
       requirement (the vapor fraction on a phase change, phase0/phase1 of a
@@ -602,9 +641,12 @@ criteria:
       turbine, flash, column, evaporator, steam mixer, tank, or a splitter
       -- or a unit of unknown family -- not identified as a custom class)
       that declares no reactions cannot
-      create or destroy species; when one appears or vanishes across it, or
-      its species flows cannot be computed for every connected stream, its
-      outlets' compositions do not count as stated. Mass-balance guard:
+      create or destroy species; when one appears or vanishes across it
+      (compared on the molar basis when every connected stream states mol
+      data, else on the mass basis), its outlets' compositions do not count
+      as stated ('inconsistent'), nor do they when its species flows cannot
+      be computed on either basis for every connected stream ('unverified';
+      the message tells the two apart). Mass-balance guard:
       when every inlet and outlet of a unit states its mass flow and the
       totals disagree by more than 1 %, its outlets' flows do not count as
       stated (nothing tells which stated flow is wrong; a stated-zero flow
@@ -615,7 +657,8 @@ criteria:
       natural gas without drawing the oxygen from any inlet). A stream
       whose source_unit_id is not stated (only the "None" sentinel affirms
       the boundary) may be internal, so it stays in the population and
-      scores 0: its state is no unit's outlet state.
+      scores 0: its state is no unit's outlet state; a unit's outlet whose
+      sink_unit_id is not stated stays in as that unit's outlet.
 
   - id: CMP-UOP-05
     category: unit_ops
@@ -686,8 +729,9 @@ criteria:
       gas-fed bioreactors, and units whose type names a neutralizer,
       hydrotreater, gasifier, pyrolysis or hydrolysis step) and every unit
       whose family is unknown (no class, no keyword family, or a claim its
-      ports contradict: it could be a reactor, and only affirmative
-      evidence waives a need), each of which
+      ports or stream physics contradict -- a 'mixer' across which species
+      appear is one: it could be a reactor, and only affirmative evidence
+      waives a need), each of which
       must declare at least one well-formed reaction: an equation or
       stoichiometry naming at least one consumed and one produced species
       ([{}] or an equation "x" counts as none). Declared reactions and
@@ -782,9 +826,11 @@ criteria:
       re-costed flowsheet and the only cost information for procedurally
       costed units. Scored over the costed units -- every unit except the
       cost-free ones (mixers, Splitter-type splitters, junctions), which
-      only a class named by design_simulation_method and known exactly
-      makes (a 'Mixer' or 'Separator' unit_type, or a family inferred from
-      specification keys, is no evidence a unit carries no cost) -- each
+      only a class named by design_simulation_method, known exactly and
+      not contradicted by the unit's ports or stream physics makes (a
+      'Mixer' or 'Separator' unit_type, or a family inferred from
+      specification keys, is no evidence a unit carries no cost, nor is a
+      'Mixer' whose outlet is hotter than its inlets) -- each
       needing a purchase_costs object holding at least one numeric cost of at
       least zero ({"a": null} records nothing). Each unit counts once.
 

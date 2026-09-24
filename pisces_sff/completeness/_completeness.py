@@ -714,9 +714,18 @@ def _filled(x):
 
 
 def _is_boundary(endpoint):
-    """The boundary sentinel "None"; JSON null, a missing key and "" are
-    tolerated as the same."""
-    return endpoint is None or endpoint in ('', BOUNDARY)
+    """True only for the explicit boundary sentinel "None" (R5.8: a missing
+    key, JSON null or "" is no boundary but a dangling endpoint,
+    _is_dangling)."""
+    return endpoint == BOUNDARY
+
+
+def _is_dangling(endpoint):
+    """R5.8: a stream endpoint that is not stated -- a missing
+    source_unit_id / sink_unit_id key (read as None), JSON null, a
+    non-string or a blank string (INVALID == MISSING): neither a unit id
+    nor the boundary sentinel, so the stream's connectivity is unknown."""
+    return not _nonempty_str(endpoint)
 
 
 def _label(kind, obj, position):
@@ -761,18 +770,39 @@ def _composition_ok(composition):
     return True
 
 
-def _phases_ok(phases):
-    """Every phase states a valid (>= 0) total_molar_flow and at least one
+# R5.3: the (flow key, fraction key) of each species-flow basis.
+_BASIS_KEYS = {'molar': ('total_molar_flow', 'mol_fraction'),
+               'mass': ('total_mass_flow', 'mass_fraction')}
+
+
+def _phase_flow(phase, sp, single, key):
+    """Valid (>= 0) flow `key` (total_molar_flow / total_mass_flow) of one
+    phase of a stream, or None; the only phase of a single-phase stream
+    falls back to the stream-level total of the same key (R5.3)."""
+    flow = _valid_flow(_as_dict(phase).get(key))
+    if flow is None and single:
+        flow = _valid_flow(_as_dict(sp).get(key))
+    return flow
+
+
+def _phases_ok(phases, sp=None):
+    """Every phase states a valid (>= 0) flow -- total_molar_flow OR
+    total_mass_flow, or, for the only phase of a single-phase stream, the
+    stream-level total of stream_properties `sp` (R5.3) -- and at least one
     carries flow; each phase with flow has a plausible composition
-    (_composition_ok), while a zero-flow phase is exempt and may be empty
-    (the exporter serializes a phase with F_mol <= ZERO_FLOW as empty -- see
-    STR-13)."""
+    (_composition_ok: mol OR mass fractions), while a zero-flow phase is
+    exempt and may be empty (the exporter serializes a phase with F_mol <=
+    ZERO_FLOW as empty -- see STR-13)."""
     if not isinstance(phases, dict) or not phases:
         return False
-    populated = False
+    populated, single = False, len(phases) == 1
     for phase in phases.values():
-        flow = _valid_flow(phase.get('total_molar_flow')) \
-            if isinstance(phase, dict) else None
+        flow = None
+        if isinstance(phase, dict):
+            for key in ('total_molar_flow', 'total_mass_flow'):
+                flow = _phase_flow(phase, sp, single, key)
+                if flow is not None:
+                    break
         if flow is None:
             return False
         if flow > ZERO_FLOW:
@@ -796,14 +826,14 @@ def _stream_state(stream, empty_exempt=True):
     """Booleans {T, P, flow, composition}: which parts of a stream's state are
     stated with a plausible value (R2.0: temperature in (0, T_MAX) K,
     pressure > 0, total flow >= 0, composition per _phases_ok -- per-phase
-    shape, 0.0.9+ -- or _composition_ok on the legacy flat
-    ``stream_properties.composition``). With `empty_exempt`, a stream stating
-    a zero total flow satisfies composition. Missing stream_properties -> all
-    False."""
+    shape, 0.0.9+, molar or mass basis -- or _composition_ok on the legacy
+    flat ``stream_properties.composition``). With `empty_exempt`, a stream
+    stating a zero total flow satisfies composition. Missing
+    stream_properties -> all False."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
     composition = ((empty_exempt and total is not None and total <= ZERO_FLOW)
-                   or _phases_ok(sp.get('phases'))
+                   or _phases_ok(sp.get('phases'), sp)
                    or _composition_ok(sp.get('composition')))
     return {'T': _valid_T(sp.get('temperature')) is not None,
             'P': _valid_P(sp.get('pressure')) is not None,
@@ -833,12 +863,17 @@ def _phase_entries(stream):
             yield entry.get('phase'), entry
 
 
-def _species_flows(stream):
-    """{component: molar flow} of a stream, or None when not computable from
-    valid data (no valid molar flow basis, an implausible composition, an
-    entry without a valid mol fraction, or a legacy flat composition over
-    several phases, whose phase split is unknown). A zero-flow stream ->
-    {}; so is a per-phase stream whose every phase states a zero flow."""
+def _species_flows(stream, basis='molar'):
+    """{component: flow} of a stream on `basis` -- 'molar' (phase
+    total_molar_flow x mol_fraction) or 'mass' (phase total_mass_flow x
+    mass_fraction; R5.3) -- or None when not computable from valid data on
+    that basis (no valid flow of the basis for some phase -- the only phase
+    of a single-phase stream may use the stream-level total -- an
+    implausible composition, an entry without a valid fraction of the
+    basis, or a legacy flat composition over several phases, whose phase
+    split is unknown). A zero-flow stream -> {}; so is a per-phase stream
+    whose every phase states a zero flow."""
+    flow_key, fraction_key = _BASIS_KEYS[basis]
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
     total = _total_flow(sp)
     if total is not None and total <= ZERO_FLOW:
@@ -848,7 +883,7 @@ def _species_flows(stream):
         blocks = []
         for phase in phases.values():
             phase = _as_dict(phase)
-            flow = _valid_flow(phase.get('total_molar_flow'))
+            flow = _phase_flow(phase, sp, len(phases) == 1, flow_key)
             if flow is None:
                 return None
             if flow > ZERO_FLOW:
@@ -856,21 +891,34 @@ def _species_flows(stream):
                     return None
                 blocks.append((flow, phase['composition']))
     elif _composition_ok(sp.get('composition')) \
-            and _valid_flow(sp.get('total_molar_flow')) is not None \
+            and _valid_flow(sp.get(flow_key)) is not None \
             and len({e.get('phase') if isinstance(e.get('phase'), str) else None
                      for e in sp['composition']}) == 1:
-        blocks = [(_valid_flow(sp.get('total_molar_flow')), sp['composition'])]
+        blocks = [(_valid_flow(sp.get(flow_key)), sp['composition'])]
     else:
         return None
     flows = {}
-    for molar_flow, composition in blocks:
+    for flow, composition in blocks:
         for entry in composition:
-            x = _valid_fraction(entry.get('mol_fraction'))
+            x = _valid_fraction(entry.get(fraction_key))
             if x is None:
                 return None
             name = entry['component_name']
-            flows[name] = flows.get(name, 0.0) + molar_flow * x
+            flows[name] = flows.get(name, 0.0) + flow * x
     return flows
+
+
+def _basis_flows(streams):
+    """(basis, [species flows per stream]) of a set of streams compared
+    together -- one unit's ports (R5.3): the molar basis when every stream's
+    molar species flows are computable (_species_flows), else the mass
+    basis when every stream's mass species flows are (never a mix of the
+    two); None when neither basis covers them all."""
+    for basis in _BASIS_KEYS:
+        flows = [_species_flows(stream, basis) for stream in streams]
+        if all(f is not None for f in flows):
+            return basis, flows
+    return None
 
 
 # A thermosteam phase tag on a reaction species: 'Glucose,l', 'CO2, g'.
@@ -2402,9 +2450,124 @@ def _port_contradiction(class_name, family, core, ports):
     return None
 
 
-def _ports_plausible(class_name, family, core, ports):
-    """True unless the claim is contradicted (_port_contradiction)."""
-    return _port_contradiction(class_name, family, core, ports) is None
+# R5.1: classes whose claim is a PURE splitter (no heat, work or chemistry:
+# every outlet at the inlet's T and P). Other splitter-family classes
+# (solids separators, centrifuges, settlers, the T-setting Separator) are not.
+PURE_SPLITTER_CLASSES = frozenset({'Splitter', 'PhaseSplitter',
+                                   'MockSplitter', 'FakeSplitter'})
+
+
+def _recorded_duty(sc, position):
+    """R5.1: {'heat': locator, 'power': locator} of the first non-zero
+    duty of each kind unit `position` records -- a numeric, non-zero
+    utility_consumption_results / utility_production_results entry; its
+    agent's group decides the kind: power_utilities -> 'power',
+    heat_utilities or an undeclared agent (kind unknown) -> 'heat',
+    other_utilities (material flows, not duties) -> ignored."""
+    utilities = _as_dict(sc.doc.get('utilities'))
+    groups = {}
+    for group in ('heat_utilities', 'power_utilities', 'other_utilities'):
+        for agent in _dicts(utilities.get(group)):
+            if _nonempty_str(agent.get('id')):
+                groups.setdefault(agent['id'], group)
+    found = {}
+    unit = sc.units[position]
+    for key in _UTILITY_RESULT_KEYS:
+        for agent_id, value in _as_dict(unit.get(key)).items():
+            group = groups.get(agent_id)
+            if group == 'other_utilities' or not _num(value):
+                continue
+            kind = 'power' if group == 'power_utilities' else 'heat'
+            found.setdefault(kind, f'{key}.{agent_id}')
+    return found
+
+
+def _physics_contradictions(sc, position):
+    """R5.1: the stream / duty evidence against a need-removing claim on
+    unit `position`, as {kind: reason} (kinds absent when there is none):
+    'heat' / 'power' -- it records a non-zero heat (or unknown-kind) /
+    power duty (_recorded_duty); 'species' -- declaring no well-formed
+    reaction, species appear or vanish across it (_species_change, flows
+    computable); 'mixer' -- some outlet's T exceeds the hottest inlet's by
+    more than GUARD_T_ABS, or its P the highest inlet's by more than
+    GUARD_P_RTOL (upper bounds only: a mixer may cool, and mixes at the
+    lowest inlet pressure); 'splitter' -- some outlet's T or P differs
+    from its one inlet's by more than GUARD_T_ABS / GUARD_P_RTOL. Streams
+    stated empty carry nothing and are ignored; a bound is tested only when
+    every non-empty inlet states the quantity, and only outlets stating it
+    are compared -- deleting a value never creates a contradiction.
+    _physics_contradiction decides which kinds contradict which claim."""
+    uid = sc.units[position].get('id')
+    if not _nonempty_str(uid):
+        return {}
+    ins, outs = ([sc.streams[i] for i in index.get(uid, [])
+                  if not _is_empty_stream(sc.streams[i])]
+                 for index in (sc.unit_inlets, sc.unit_outlets))
+    found = {kind: f'records a non-zero {kind} duty ({where})'
+             for kind, where in _recorded_duty(sc, position).items()}
+    if not sc.unit_reacts[position]:
+        change = _species_change(sc, uid)
+        if change:
+            found['species'] = (f"{', '.join(change[:3])} without declared "
+                                f"reactions")
+    mixer, splitter = [], []
+    for part, name in (('T', 'temperature'), ('P', 'pressure')):
+        inlet = [_stream_value(s, part) for s in ins]
+        outlet = [v for v in (_stream_value(s, part) for s in outs)
+                  if v is not None]
+        if not inlet or any(v is None for v in inlet) or not outlet:
+            continue
+        top = max(inlet)
+        limit = (top + GUARD_T_ABS if part == 'T'
+                 else top * (1.0 + GUARD_P_RTOL))
+        if max(outlet) > limit:
+            mixer.append(f'outlet {name} {max(outlet):.6g} above the '
+                         f'highest inlet {name} {top:.6g}')
+        if len(inlet) == 1:
+            off = [v for v in outlet if abs(v - top) > (
+                GUARD_T_ABS if part == 'T' else GUARD_P_RTOL * top)]
+            if off:
+                splitter.append(f'outlet {name} {off[0]:.6g} differs from '
+                                f'the inlet {name} {top:.6g}')
+    for kind, reasons in (('mixer', mixer), ('splitter', splitter)):
+        if reasons:
+            found[kind] = '; '.join(reasons)
+    return found
+
+
+def _physics_contradiction(class_name, family, physics):
+    """R5.1: why the stream / duty evidence `physics`
+    (_physics_contradictions; None or {} when there is none) contradicts a
+    need-removing claim, or None. A mixer claim is any claim of the mixer
+    family (exact class or label): contradicted by a heat duty, a power
+    duty (except for the @cost-decorated Mixer subclasses of
+    _COSTED_CLASSES, whose cost item may carry agitator kW), species
+    appearing / vanishing, or its T / P upper bounds ('mixer'). A
+    pure-splitter claim -- a PURE_SPLITTER_CLASSES class, or a splitter
+    family claim without an exact class (`class_name` None: a unit_type
+    keyword, an abstract class, a key-set inference) -- by any duty,
+    species appearing / vanishing, or T / P deviations ('splitter'). Other
+    claims are not tested; an implausible one counts as absent."""
+    physics = physics or {}
+    if family == 'mixer':
+        kinds = ('heat', 'species', 'mixer') if class_name in _COSTED_CLASSES \
+            else ('heat', 'power', 'species', 'mixer')
+        what = 'a mixer'
+    elif (class_name in PURE_SPLITTER_CLASSES if class_name
+          else family == 'splitter'):
+        kinds, what = ('heat', 'power', 'species', 'splitter'), 'a pure splitter'
+    else:
+        return None
+    reasons = [physics[kind] for kind in kinds if physics.get(kind)]
+    return f"implausible for {what}: {'; '.join(reasons)}" if reasons else None
+
+
+def _ports_plausible(class_name, family, core, ports, physics=None):
+    """True unless the claim is contradicted by its ports
+    (_port_contradiction, R4.8/R4.14) or by its stream physics
+    (_physics_contradiction, R5.1)."""
+    return (_port_contradiction(class_name, family, core, ports) is None
+            and _physics_contradiction(class_name, family, physics) is None)
 
 
 def _generic_exchanger(text):
@@ -2424,7 +2587,8 @@ def _generic_exchanger(text):
             and _ANY_EXCHANGER_RE.fullmatch(spaced, -start, end) is not None)
 
 
-def _unit_class(unit, registry=None, pinned_repo=None, ports=None):
+def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
+                physics=None):
     """(class_name or None, family or None, confidence) for one unit.
 
     R4.3: exact class identity comes ONLY from design_simulation_method
@@ -2452,7 +2616,13 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None):
     unit_type family, a named abstract class's family, the inferred family.
     An invalid claim counts as absent (INVALID == MISSING). A bare 'heat
     exchanger' unit_type (_generic_exchanger) whose ports rule out a
-    utility exchanger names a process-process exchanger (hx_process)."""
+    utility exchanger names a process-process exchanger (hx_process).
+
+    R5.1: `physics` -- the unit's stream / duty evidence
+    (_physics_contradictions), None when unknown -- likewise invalidates
+    every mixer claim and pure-splitter claim it contradicts
+    (_physics_contradiction); with no other valid claim the family is
+    unknown, so the unit carries every need (R4.13)."""
     unit = _as_dict(unit)
     registry = _as_dict(registry)
     name, source = _dsm_class(unit)
@@ -2461,10 +2631,11 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None):
     if keyword == 'hx_utility' and _generic_exchanger(unit_type) and not (
             _ports_plausible(None, keyword, False, ports)):
         keyword = 'hx_process'  # a bare 'heat exchanger' with 2 ins / outs
-    if not _ports_plausible(None, keyword, False, ports):
+    if not _ports_plausible(None, keyword, False, ports, physics):
         keyword = None
     inferred = _infer_class_from_specs(unit, registry)
-    if inferred and not _ports_plausible(None, inferred[1], False, ports):
+    if inferred and not _ports_plausible(None, inferred[1], False, ports,
+                                         physics):
         inferred = None
     if name:
         confidence = _class_confidence(name, source, pinned_repo)
@@ -2473,11 +2644,11 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None):
             if family is None and name not in _CLASS_TABLE:
                 family = keyword or (inferred[1] if inferred else None)
             if _ports_plausible(name, family, _is_core_class(name, source),
-                                ports):
+                                ports, physics):
                 return name, family, confidence
-            name = None  # R4.8: a contradicted class claims nothing
+            name = None  # R4.8 / R5.1: a contradicted class claims nothing
     named = _class_family(name) if name else None
-    if not _ports_plausible(None, named, False, ports):
+    if not _ports_plausible(None, named, False, ports, physics):
         named = None
     stated = keyword or named
     if stated:
@@ -2846,21 +3017,27 @@ def _physical_unit(sc, position):
             and not sc.unit_reacts[position])
 
 
+def _stream_mass(stream):
+    """Mass a stream carries: 0.0 when it states a zero total flow (mass or
+    molar: no mass), else its valid total_mass_flow, else None."""
+    if _is_empty_stream(stream):
+        return 0.0
+    return _valid_flow(_as_dict(stream.get('stream_properties'))
+                       .get('total_mass_flow'))
+
+
 def _mass_balance(sc, position):
     """(evaluable, closes, reason) of unit `position`'s total mass balance:
     evaluable when it has connected streams and each states a valid
-    total_mass_flow or a zero total flow (no mass); it closes when mass in
-    and out agree within CLOSURE_RTOL. reason says why not ('' when it
-    closes)."""
+    total_mass_flow or a zero total flow (no mass, _stream_mass); it closes
+    when mass in and out agree within CLOSURE_RTOL. reason says why not
+    ('' when it closes)."""
     uid = sc.units[position].get('id')
     ins = sc.unit_inlets.get(uid, []) if isinstance(uid, str) else []
     outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
     if not ins + outs:
         return False, False, 'no connected streams'
-    # A stream stating a zero total flow (mass or molar) carries no mass.
-    masses = [0.0 if _is_empty_stream(sc.streams[i]) else
-              _valid_flow(_as_dict(sc.streams[i].get('stream_properties'))
-                          .get('total_mass_flow')) for i in ins + outs]
+    masses = [_stream_mass(sc.streams[i]) for i in ins + outs]
     if any(m is None for m in masses):
         return (False, False,
                 'a connected stream states no valid total_mass_flow')
@@ -2871,44 +3048,114 @@ def _mass_balance(sc, position):
     return True, True, ''
 
 
+def _dangling_port(sc, position):
+    """R5.8: why a dangling stream (_is_dangling endpoint: its
+    source_unit_id / sink_unit_id not stated) may be a missing port of
+    unit `position`, or '' when none can be. A stream whose sink is not
+    stated may be an inlet of any unit, one whose source is not stated an
+    outlet of any unit; it is ruled out only when it carries no mass, or
+    when the unit's total mass balance, which closes without it, would not
+    close with it (so, on a consistent document, it was not this unit's
+    port). A stream of unknown mass is never ruled out. Called on a unit
+    whose mass balance is evaluable."""
+    uid = sc.units[position].get('id')
+    masses = [[_stream_mass(sc.streams[i]) for i in index.get(uid, [])]
+              for index in (sc.unit_inlets, sc.unit_outlets)]
+    m_in, m_out = sum(masses[0]), sum(masses[1])
+    for i in sc.dangling:
+        stream = sc.streams[i]
+        mass = _stream_mass(stream)
+        if mass == 0.0:
+            continue
+        for key, side in (('sink_unit_id', 'inlet'), ('source_unit_id',
+                                                      'outlet')):
+            if not _is_dangling(stream.get(key)):
+                continue
+            if mass is not None:
+                a, b = (m_in + mass, m_out) if side == 'inlet' else (
+                    m_in, m_out + mass)
+                if abs(a - b) > CLOSURE_RTOL * max(a, b):
+                    continue
+            return (f'{sc.stream_labels[i]} ({key} not stated) may be a '
+                    f'missing {side}: the balance cannot rule it out')
+    return ''
+
+
+def _mass_closure(sc, position):
+    """(closes, reason) of unit `position`'s TOTAL mass closure: its mass
+    balance is evaluable and closes (_mass_balance), and no dangling
+    stream may be a missing port of it (_dangling_port, R5.8). What the
+    CMP-TOP-02 single-port credit rests on (R5.3: enough to show no
+    material-carrying port is missing, whatever the species basis).
+    Cached per context."""
+    cache = sc.mass_closures
+    if position not in cache:
+        _evaluable, closes, why = _mass_balance(sc, position)
+        if closes:
+            why = _dangling_port(sc, position)
+            closes = not why
+        cache[position] = closes, why
+    return cache[position]
+
+
+def _side_species(sc, unit_id):
+    """(basis, {species: flow in}, {species: flow out}) over unit
+    `unit_id`'s inlets and outlets, all on one basis (_basis_flows, R5.3:
+    molar when every port's molar species flows are computable, else mass
+    when every port's mass species flows are); None when no basis covers
+    every connected stream."""
+    ins = sc.unit_inlets.get(unit_id, []) if isinstance(unit_id, str) else []
+    outs = sc.unit_outlets.get(unit_id, []) if isinstance(unit_id, str) else []
+    found = _basis_flows([sc.streams[i] for i in ins + outs])
+    if found is None:
+        return None
+    basis, flows = found
+    sides = []
+    for part in (flows[:len(ins)], flows[len(ins):]):
+        acc = {}
+        for species in part:
+            for name, value in species.items():
+                acc[name] = acc.get(name, 0.0) + value
+        sides.append(acc)
+    return basis, sides[0], sides[1]
+
+
+# R5.3: reason prefix of a species check whose inputs are missing (as
+# opposed to one that found the species inconsistent).
+_NOT_COMPUTABLE = 'species flows not computable'
+
+
 def _closure(sc, position):
     """(closes, reason) of unit `position`'s balances (R2.2): the total
-    mass flow in and out (every connected stream stating a valid
-    total_mass_flow, or a zero total flow: no mass) agree within
-    CLOSURE_RTOL, and, for a physical unit
-    (_physical_unit), so does every species' molar flow (relative to the
-    total molar throughput), and the R2.4 species-appearance guard finds it
-    consistent (_species_consistency). reason says why not ('' when it
-    closes). Cached per context."""
+    mass closure (_mass_closure: every connected stream stating a valid
+    total_mass_flow, or a zero total flow, in and out agreeing within
+    CLOSURE_RTOL, and no dangling stream possibly a missing port, R5.8),
+    and, for a physical unit (_physical_unit), every species' flow --
+    molar, else mass (_side_species, R5.3) -- relative to the total
+    throughput on that basis, and the R2.4 species-appearance guard finds
+    it consistent (_species_consistency). reason says why not ('' when it
+    closes); it tells species flows that are not computable from ones
+    that do not balance. Cached per context."""
     cache = sc.closures
     if position in cache:
         return cache[position]
     uid = sc.units[position].get('id')
-    ins = sc.unit_inlets.get(uid, []) if isinstance(uid, str) else []
-    outs = sc.unit_outlets.get(uid, []) if isinstance(uid, str) else []
-    result = _mass_balance(sc, position)[1:]
+    result = _mass_closure(sc, position)
     if result[0]:
         if _physical_unit(sc, position):
-            sides = []
-            for streams in (ins, outs):
-                acc = {}
-                for i in streams:
-                    flows = _species_flows(sc.streams[i])
-                    if flows is None:
-                        result = False, ('species flows not computable for a '
-                                         'physical unit')
-                        break
-                    for name, value in flows.items():
-                        acc[name] = acc.get(name, 0.0) + value
-                sides.append(acc)
-            if result[0]:
-                total = max(sum(sides[0].values()), sum(sides[1].values()))
-                off = sorted(n for n in set(sides[0]) | set(sides[1])
-                             if abs(sides[0].get(n, 0.0) - sides[1].get(n, 0.0))
+            found = _side_species(sc, uid)
+            if found is None:
+                result = False, (f'{_NOT_COMPUTABLE} (molar or mass basis) '
+                                 f'for every port of a physical unit')
+            else:
+                basis, flows_in, flows_out = found
+                total = max(sum(flows_in.values()), sum(flows_out.values()))
+                off = sorted(n for n in set(flows_in) | set(flows_out)
+                             if abs(flows_in.get(n, 0.0) - flows_out.get(n, 0.0))
                              > CLOSURE_RTOL * total)
                 if off:
                     result = False, (f"species balance does not close for "
-                                     f"{', '.join(off[:3])}")
+                                     f"{', '.join(off[:3])} ({basis} basis)")
         if result[0]:  # R2.4: species evidence blocks derivations too
             result = _species_consistency(sc, position)
     cache[position] = result
@@ -3198,21 +3445,26 @@ def _first_by_id(elements):
 
 def _topology(streams, unit_ids):
     """Classify streams and index unit ports. Returns a dict with lists of
-    stream positions -- feeds (boundary source, real sink), outlets (real
-    source, boundary sink), isolated (both boundary), internal -- and
-    inlets/outlets: {unit_id: [stream positions]}."""
+    stream positions -- dangling (R5.8: an endpoint not stated,
+    _is_dangling; in no other list), feeds (boundary source, real sink),
+    outlets (real source, boundary sink), isolated (both boundary),
+    internal -- and inlets/outlets: {unit_id: [stream positions]} (a
+    dangling stream still indexes under its stated unit endpoint)."""
     topo = {'feeds': [], 'outlets': [], 'isolated': [], 'internal': [],
-            'inlets': {uid: [] for uid in unit_ids},
+            'dangling': [], 'inlets': {uid: [] for uid in unit_ids},
             'unit_outlets': {uid: [] for uid in unit_ids}}
     for i, stream in enumerate(streams):
         source, sink = stream.get('source_unit_id'), stream.get('sink_unit_id')
         source_b, sink_b = _is_boundary(source), _is_boundary(sink)
-        kind = ('isolated' if source_b and sink_b else 'feeds' if source_b
-                else 'outlets' if sink_b else 'internal')
+        if _is_dangling(source) or _is_dangling(sink):
+            kind = 'dangling'
+        else:
+            kind = ('isolated' if source_b and sink_b else 'feeds' if source_b
+                    else 'outlets' if sink_b else 'internal')
         topo[kind].append(i)
-        if not sink_b and isinstance(sink, str):
+        if not sink_b and _nonempty_str(sink):
             topo['inlets'].setdefault(sink, []).append(i)
-        if not source_b and isinstance(source, str):
+        if not source_b and _nonempty_str(source):
             topo['unit_outlets'].setdefault(source, []).append(i)
     return topo
 
@@ -3258,6 +3510,8 @@ class _ScoringContext:
         topo = _topology(self.streams, self.unit_ids)
         self.feeds, self.outlets = topo['feeds'], topo['outlets']
         self.isolated, self.internal = topo['isolated'], topo['internal']
+        # R5.8: streams with an endpoint not stated (_is_dangling).
+        self.dangling = topo['dangling']
         self.unit_inlets, self.unit_outlets = topo['inlets'], topo['unit_outlets']
         # R3.8: unit ids stream endpoints reference but no unit declares.
         # They join the unit populations of CMP-UOP-01/02 and CMP-TOP-02
@@ -3265,17 +3519,27 @@ class _ScoringContext:
         self.phantom_units = sorted(
             {e for s in self.streams
              for e in (s.get('source_unit_id'), s.get('sink_unit_id'))
-             if isinstance(e, str) and not _is_boundary(e)
+             if _nonempty_str(e) and not _is_boundary(e)
              and e not in self.unit_ids})
 
+        # Per unit: declares >= 1 well-formed reaction (R2.0).
+        self.unit_reacts = [any(self.well_formed(r)
+                                for r in _dicts(u.get('reactions')))
+                            for u in self.units]
         # Unit class identity: (class, family, confidence) per unit, whether
         # the class is core BioSTEAM, and its design-spec registry class.
         self.pinned_repo = _pinned_repository(self.metadata)
         # R4.8: per unit, its (non-empty inlets, non-empty outlets).
         self.unit_ports = [self.nonempty_ports(u.get('id')) for u in self.units]
+        # R5.1: per unit, its stream / duty evidence against a mixer or a
+        # pure-splitter claim (_physics_contradictions).
+        self.unit_physics = [_physics_contradictions(self, p)
+                             for p in range(len(self.units))]
         self.unit_classes = [_unit_class(u, self.registry, self.pinned_repo,
-                                         ports)
-                             for u, ports in zip(self.units, self.unit_ports)]
+                                         ports, physics)
+                             for u, ports, physics in zip(
+                                 self.units, self.unit_ports,
+                                 self.unit_physics)]
         # The URL counts only when design_simulation_method named the class
         # the unit resolved to (not when an abstract one fell through to it).
         self.unit_core = [
@@ -3289,11 +3553,8 @@ class _ScoringContext:
         self.reactions = [(i, j, r) for i, u in enumerate(self.units)
                           for j, r in enumerate(_as_list(u.get('reactions')))
                           if isinstance(r, dict)]
-        # Per unit: declares >= 1 well-formed reaction (R2.0).
-        self.unit_reacts = [any(self.well_formed(r)
-                                for r in _dicts(u.get('reactions')))
-                            for u in self.units]
         self.closures = {}  # _closure cache: position -> (closes, reason)
+        self.mass_closures = {}  # _mass_closure cache (R5.3 / R5.8)
         self.consistency = {}  # _species_consistency cache (R2.4)
         self.unit_positions = {}
         for i, u in enumerate(self.units):
@@ -3318,6 +3579,23 @@ class _ScoringContext:
                                _label(f'utilities.{group}', agent, i)))
         self.agents = agents
         self._vctx = None
+        self._molar_masses = None
+
+    @property
+    def molar_masses(self):
+        """{chemical id: molar mass} of the declared chemicals whose molar
+        mass is known (_chemical_molar_mass: declared, else from the
+        formula), built on first use -- R5.3's mass-basis mole
+        fractions."""
+        if self._molar_masses is None:
+            self._molar_masses = {}
+            for chem in self.chemicals:
+                cid = chem.get('id')
+                if _nonempty_str(cid) and cid not in self._molar_masses:
+                    mw = _chemical_molar_mass(chem)
+                    if mw:
+                        self._molar_masses[cid] = mw
+        return self._molar_masses
 
     def nonempty_ports(self, unit_id):
         """(inlets, outlets) of unit `unit_id` that are not stated empty
@@ -3778,6 +4056,9 @@ def _score_top_01(sc):  # CMP-TOP-01
             if _is_boundary(endpoint) or (isinstance(endpoint, str)
                                           and endpoint in sc.unit_ids):
                 resolved += 1
+            elif _is_dangling(endpoint):  # R5.8: never the boundary
+                missing.append(f'{label}.{key}: not stated (dangling: '
+                               f'neither a unit id nor the "None" boundary)')
             else:
                 missing.append(f'{label}.{key}: {endpoint!r} is not a unit id')
     attached = 0
@@ -3850,10 +4131,13 @@ def _side_credit(sc, position, side):
     stated-empty streams are placeholders, like unexported MissingStream
     ports) -> 1 on a single-port side, else DERIVED_CREDIT (unexported or
     empty ports may exist) -- both resting on the stream COUNT, so only when
-    the unit's balances close (R2.2: no material-carrying port is missing;
-    detaching a stream's endpoint then can never raise the credit); else 0.
-    Two or more material-carrying streams -> DERIVED_CREDIT when their order
-    is derivable, else 0."""
+    the unit's TOTAL mass closes (_mass_closure, R5.3: that alone shows no
+    material-carrying port is missing, whatever basis -- or none -- its
+    species flows are computable on; R5.8: nor may a dangling stream be a
+    missing port, so detaching a stream's endpoint can never raise the
+    credit); else 0. Two or more material-carrying streams ->
+    DERIVED_CREDIT when their order is derivable (which reads stream data,
+    so needs the full _closure), else 0."""
     family, label = sc.unit_classes[position][1], sc.unit_labels[position]
     if not _nonempty_str(sc.units[position].get('id')):
         # R3.8: no stream can name the ports of a unit without an id (its
@@ -3866,7 +4150,7 @@ def _side_credit(sc, position, side):
         return 1.0, None
     m = sum(1 for i in streams if not _is_empty_stream(sc.streams[i]))
     if m <= 1:
-        closes, why = _closure(sc, position)
+        closes, why = _mass_closure(sc, position)
         if not closes:
             return 0.0, (f'{label}.{side}: port index not representable (no '
                          f'port convention applies: {why})')
@@ -3923,6 +4207,18 @@ def _states_flow(stream):
     return total is not None and abs(total) > ZERO_FLOW
 
 
+def _dangling_note(sc, position):
+    """Missing locator of dangling stream `position` (R5.8) in the
+    CMP-FEED-01/02 populations: the endpoint key(s) not stated, and that it
+    scores 0 there (its connectivity is unknown: it may be a boundary
+    stream, but is never credited as one)."""
+    stream = sc.streams[position]
+    keys = '|'.join(key for key in ('source_unit_id', 'sink_unit_id')
+                    if _is_dangling(stream.get(key)))
+    return (f'{sc.stream_labels[position]}.{keys}: not stated (dangling: '
+            f'never a boundary stream, scores 0)')
+
+
 # CMP-FEED-01 composition credit of a feed whose plausible composition is a
 # legacy flat list with an untagged entry: its phase split is unknown, and
 # BioSTEAM would assume liquid (R4.6).
@@ -3934,10 +4230,11 @@ _PHASE_SYMBOLS = frozenset({'s', 'l', 'g', 'S', 'L'})
 
 def _feed_phases_stated(stream):
     """True when a feed's phases are stated (R4.6): its composition is given
-    per phase (``stream_properties.phases``, _phases_ok), or its legacy flat
-    composition tags every entry with a thermosteam phase symbol."""
+    per phase (``stream_properties.phases``, _phases_ok: molar or mass
+    basis, R5.3), or its legacy flat composition tags every entry with a
+    thermosteam phase symbol."""
     sp = _as_dict(_as_dict(stream).get('stream_properties'))
-    if _phases_ok(sp.get('phases')):
+    if _phases_ok(sp.get('phases'), sp):
         return True
     entries = _as_list(sp.get('composition'))
     return bool(entries) and all(
@@ -3968,9 +4265,13 @@ def _score_feed_01(sc):  # CMP-FEED-01
     # composition earns its full part only with its phases stated (per-phase
     # shape, or every legacy flat entry phase-tagged); an untagged legacy
     # entry leaves the phase to BioSTEAM's liquid default, so the part earns
-    # UNTAGGED_COMPOSITION_CREDIT.
+    # UNTAGGED_COMPOSITION_CREDIT. R5.8: a stream with an endpoint not
+    # stated (dangling) may be a feed -- a feed whose source or sink key was
+    # lost is one -- so it stays in the population, but it is never a
+    # boundary stream: it scores 0 and anchors nothing (else detaching an
+    # internal stream would add a fully stated 'feed').
     feeds = sorted(sc.feeds + sc.isolated)
-    if not feeds:
+    if not feeds + sc.dangling:
         return (0.0, 'no feed streams: nothing defines the degrees of freedom',
                 ['streams: no feed (source_unit_id "None", sink a unit)'])
     anchored = any(_states_flow(sc.streams[i]) for i in feeds)
@@ -3978,6 +4279,9 @@ def _score_feed_01(sc):  # CMP-FEED-01
     credited = [i for i in empties
                 if anchored and _placeholder_port_feed(sc, i)]
     scores, missing, full = [], [], 0
+    for i in sc.dangling:
+        scores.append(0.0)
+        missing.append(_dangling_note(sc, i))
     for i in feeds:
         if i in credited:
             scores.append(1.0)
@@ -4004,6 +4308,9 @@ def _score_feed_01(sc):  # CMP-FEED-01
                            f'composition[*].phase (untagged: BioSTEAM would '
                            f'assume liquid)')
     message = f'{full + len(credited)} of {len(feeds)} feed(s) fully stated'
+    if sc.dangling:
+        message += (f'; {len(sc.dangling)} dangling stream(s) (an endpoint '
+                    f'not stated) score 0')
     if empties:
         message += (f'; {len(empties)} empty feed(s) (zero flow), '
                     f'{len(credited)} credited as placeholder port(s) of a '
@@ -4034,10 +4341,16 @@ _PORT_MATERIAL_IDS = {
 PORT_MATERIAL_MIN = 0.5  # mol fraction making a feed a port's material
 
 
-def _mole_fractions(stream):
+def _mole_fractions(stream, molar_masses=None):
     """{lowercase component id: mol fraction} of a non-empty stream whose
-    species flows are computable (_species_flows), else None."""
+    molar species flows are computable (_species_flows), else -- R5.3 --
+    whose mass species flows are and every component of which has a molar
+    mass in `molar_masses` ({chemical id: g/mol}); else None."""
     flows = _species_flows(stream)
+    if flows is None and molar_masses:
+        mass = _species_flows(stream, 'mass')
+        if mass is not None and all(molar_masses.get(n) for n in mass):
+            flows = {n: m / molar_masses[n] for n, m in mass.items()}
     total = sum(flows.values()) if flows else 0.0
     if not total > 0.0:
         return None
@@ -4078,7 +4391,7 @@ def _utility_port_feed(sc, position):
     materials = _port_materials(sc, unit) if unit is not None else ()
     if not materials:
         return None
-    fractions = _mole_fractions(sc.streams[position])
+    fractions = _mole_fractions(sc.streams[position], sc.molar_masses)
     for material in materials:
         if fractions is None or sum(
                 x for name, x in fractions.items()
@@ -4094,12 +4407,17 @@ def _score_feed_02(sc):  # CMP-FEED-02
     # its stream_properties) can only lower its credit -- excluding it let
     # that deletion move a priced empty stream into the population. An
     # isolated stream (both endpoints at the boundary) counts too: deleting
-    # an unpriced product's source_unit_id must not drop it (R3.8).
+    # an unpriced product's source_unit_id must not drop it (R3.8). R5.8: a
+    # dangling stream (an endpoint not stated) may be a boundary stream, so
+    # it stays in the population, but it is never credited as one: it
+    # scores 0, even when empty (else detaching a priced or empty internal
+    # stream's endpoint would add a credited 'boundary' stream).
     positions = sc.feeds + sc.outlets + sc.isolated
-    if not positions:
+    if not positions + sc.dangling:
         return None, 'no boundary streams', []
     feeds = set(sc.feeds)
-    scores, missing = [], []
+    scores = [0.0 for _i in sc.dangling]
+    missing = [_dangling_note(sc, i) for i in sc.dangling]
     empty = 0
     for i in positions:
         if _is_empty_stream(sc.streams[i]):
@@ -4124,8 +4442,9 @@ def _score_feed_02(sc):  # CMP-FEED-02
     ok = scores.count(1.0) - empty
     return (_mean(scores), f'{ok} of {len(positions) - empty} non-empty '
             f'boundary stream(s) priced' + (f' ({empty} empty, needing no '
-                                            f'price)' if empty else ''),
-            missing)
+                                            f'price)' if empty else '')
+            + (f'; {len(sc.dangling)} dangling stream(s) (an endpoint not '
+               f'stated) score 0' if sc.dangling else ''), missing)
 
 #%% Criteria -- unit operations
 
@@ -4138,14 +4457,20 @@ def _class_note(sc, position):
         return None
     named = _dsm_class(unit)
     contradicted = _port_notes(sc, position)
-    suffix = (f"; ignored as contradicted by its ports (R4.8): "
-              f"{'; '.join(contradicted)}" if contradicted else '')
+    implausible = _physics_notes(sc, position)
+    suffix = ((f"; ignored as contradicted by its ports (R4.8): "
+               f"{'; '.join(contradicted)}" if contradicted else '')
+              + (f"; ignored as physically implausible (R5.1): "
+                 f"{'; '.join(implausible)}" if implausible else ''))
     if name is None and named[0]:
+        by_ports = any(n.startswith(f"class '{named[0]}' ")
+                       for n in contradicted)
         why = ('is abstract' if named[0] in _ABSTRACT_CLASSES else
                'is not a concrete core BioSTEAM class, although its URL '
                'claims biosteam' if _class_confidence(
                    named[0], named[1], sc.pinned_repo) is None else
-               'is contradicted by its ports')
+               'is contradicted by its ports' if by_ports else
+               'is physically implausible')
         return (f"{label}.design_simulation_method: class '{named[0]}' {why}"
                 + (f" (family '{family}' only)" if family else
                    ' (no family either)') + suffix)
@@ -4186,6 +4511,26 @@ def _port_notes(sc, position):
     if why and not (keyword == 'hx_utility'
                     and _generic_exchanger(unit.get('unit_type'))
                     and _ports_plausible(None, 'hx_process', False, ports)):
+        notes.append(f"unit_type family '{keyword}' ({why})")
+    return notes
+
+
+def _physics_notes(sc, position):
+    """R5.1: the mixer / pure-splitter claims of unit `position` its stream
+    physics contradict (sc.unit_physics, _physics_contradiction), each as
+    "<claim> (<why>)" -- a design_simulation_method class (with its
+    family) and the unit_type keyword family."""
+    unit, physics = sc.units[position], sc.unit_physics[position]
+    notes = []
+    name, source = _dsm_class(unit)
+    keyword = _keyword_family(unit.get('unit_type'))
+    if name and _class_confidence(name, source, sc.pinned_repo) is not None:
+        why = _physics_contradiction(name, _class_family(name) or keyword,
+                                     physics)
+        if why:
+            notes.append(f"class '{name}' ({why})")
+    why = _physics_contradiction(None, keyword, physics)
+    if why:
         notes.append(f"unit_type family '{keyword}' ({why})")
     return notes
 
@@ -4292,9 +4637,12 @@ def _score_uop_04(sc):  # CMP-UOP-04
     # scores 0 -- its state cannot be attributed to any unit's outlet, so
     # it verifies nothing (else deleting a feed's source would add a fully
     # stated stream).
+    # R5.8: a unit outlet whose sink is not stated (dangling) stays in too.
     unsourced = [i for i, s in enumerate(sc.streams)
                  if not _nonempty_str(s.get('source_unit_id'))]
-    positions = sorted(set(sc.internal + sc.outlets + unsourced))
+    positions = sorted(set(sc.internal + sc.outlets + unsourced) | {
+        i for i in sc.dangling
+        if not _is_boundary(sc.streams[i].get('source_unit_id'))})
     if not positions:
         return None, 'no internal or product streams', []
     # R2.4 consistency guard: the outlets of a physical-only unit whose
@@ -4350,10 +4698,21 @@ def _score_uop_04(sc):  # CMP-UOP-04
             elif (key == 'composition' and i in suspect
                   and sc.stream_states[i][key]):
                 label, why = suspect[i]
-                note = f' (stated, but inconsistent at {label}: {why})'
+                note = (f' (stated, but unverified at {label}: {why})'
+                        if why.startswith(_NOT_COMPUTABLE) else
+                        f' (stated, but inconsistent at {label}: {why})')
             missing.append(f'{sc.stream_labels[i]}.{_STATE_PATHS[key]}{note}')
-    notes = [f'{len(suspect)} outlet(s) of physical-only units fail the '
-             f'species-consistency guard' if suspect else '',
+    # R5.3: an unverifiable guard (species flows not computable) and a
+    # failed one (species appear / vanish) are reported apart.
+    unverified = sum(1 for _label, why in suspect.values()
+                     if why.startswith(_NOT_COMPUTABLE))
+    inconsistent = len(suspect) - unverified
+    notes = [f'{inconsistent} outlet(s) of physical-only units fail the '
+             f'species-consistency guard (species appear or vanish)'
+             if inconsistent else '',
+             f'{unverified} outlet(s) of physical-only units left unverified '
+             f'by the species-consistency guard ({_NOT_COMPUTABLE})'
+             if unverified else '',
              f'{len(unbalanced)} outlet(s) of units whose mass balance does '
              f'not close earn no flow credit' if unbalanced else '',
              f'{len(unsourced)} stream(s) without a stated source score 0'
@@ -4558,22 +4917,18 @@ def _score_uop_06(sc):  # CMP-UOP-06
 def _species_change(sc, unit_id):
     """Species that appear in (or vanish from) a unit's outlets relative to
     its inlets, as evidence strings ('CO2 appears'); [] when the unit lacks
-    inlets or outlets or nothing changes; None when some connected stream's
-    species flows are not computable (_species_flows), so a change cannot be
-    ruled out."""
+    inlets or outlets or nothing changes; None when the connected streams'
+    species flows are not computable on one basis -- molar, else mass
+    (_side_species, R5.3) -- so a change cannot be ruled out."""
     if not isinstance(unit_id, str):
         return []
     ins, outs = sc.unit_inlets.get(unit_id, []), sc.unit_outlets.get(unit_id, [])
     if not ins or not outs:
         return []
-    flows_in, flows_out = {}, {}
-    for positions, acc in ((ins, flows_in), (outs, flows_out)):
-        for i in positions:
-            flows = _species_flows(sc.streams[i])
-            if flows is None:
-                return None
-            for name, value in flows.items():
-                acc[name] = acc.get(name, 0.0) + value
+    found = _side_species(sc, unit_id)
+    if found is None:
+        return None
+    _basis, flows_in, flows_out = found
     total = max(sum(flows_in.values()), sum(flows_out.values()))
     tol = max(ZERO_FLOW, SPECIES_RTOL * total)
     appear = [n for n, v in flows_out.items()
@@ -4605,9 +4960,11 @@ def _species_consistency(sc, position):
     """(consistent, reason) of the R2.4 consistency guard for unit
     `position`, cached per context: (True, '') unless the unit is guarded
     (_species_guarded); a guarded unit is consistent only when every
-    connected stream's species flows are computable and no species appears
-    or vanishes. An uncomputable port leaves consistency unverified (False),
-    so deleting a stream's composition never lifts the guard."""
+    connected stream's species flows are computable on one basis (molar,
+    else mass: R5.3) and no species appears or vanishes. An uncomputable
+    port leaves consistency unverified (False; the reason then starts with
+    _NOT_COMPUTABLE, telling it from an inconsistency), so deleting a
+    stream's composition never lifts the guard."""
     cache = sc.consistency
     if position in cache:
         return cache[position]
@@ -4615,9 +4972,9 @@ def _species_consistency(sc, position):
     if _species_guarded(sc, position):
         change = _species_change(sc, sc.units[position].get('id'))
         if change is None:
-            result = False, ('species flows not computable for every '
-                             'connected stream, so no undeclared reaction '
-                             'can be ruled out')
+            result = False, (f'{_NOT_COMPUTABLE} (molar or mass basis) for '
+                             f'every connected stream, so no undeclared '
+                             f'reaction can be ruled out')
         elif change:
             result = False, (f"{', '.join(change[:3])} across a "
                              f"physical-only unit without declared reactions")

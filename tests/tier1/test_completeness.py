@@ -508,11 +508,18 @@ class TestReaders(unittest.TestCase):
         self.assertEqual(C._clip("abc", 6), "abc")
 
     def test_boundary_and_label(self):
-        """_is_boundary: 'None', null, '' -> True; a unit id -> False.
-        _label: id -> kind[id]; no id -> kind[#pos]."""
-        for b in ("None", None, ""):
-            self.assertTrue(C._is_boundary(b))
-        self.assertFalse(C._is_boundary("U1"))
+        """_is_boundary: only the sentinel 'None' -> True; null (a missing
+        key reads as None), '', blanks and a unit id -> False (R5.8).
+        _is_dangling: None, '', '  ', a non-string -> True (not stated);
+        'None' and a unit id -> False. _label: id -> kind[id]; no id ->
+        kind[#pos]."""
+        self.assertTrue(C._is_boundary("None"))
+        for b in (None, "", "U1"):
+            self.assertFalse(C._is_boundary(b))
+        for e in (None, "", "  ", 3):
+            self.assertTrue(C._is_dangling(e))
+        for e in ("None", "U1"):
+            self.assertFalse(C._is_dangling(e))
         self.assertEqual(C._label("units", {"id": "U1"}, 0), "units[U1]")
         self.assertEqual(C._label("units", {}, 3), "units[#3]")
 
@@ -1251,16 +1258,25 @@ class TestUnitClass(unittest.TestCase):
 class TestContext(unittest.TestCase):
     def test_topology(self):
         """_topology: feed/outlet/isolated/internal classification and
-        per-unit inlet/outlet indexes."""
+        per-unit inlet/outlet indexes; R5.8: a stream with an endpoint not
+        stated (null, '', a missing key) is 'dangling' -- in no other
+        class -- while still indexed under its stated unit endpoint."""
         streams = [{"source_unit_id": "None", "sink_unit_id": "A"},
                    {"source_unit_id": "A", "sink_unit_id": "B"},
+                   {"source_unit_id": "B", "sink_unit_id": "None"},
+                   {"source_unit_id": "None", "sink_unit_id": "None"},
                    {"source_unit_id": "B", "sink_unit_id": None},
-                   {"source_unit_id": "", "sink_unit_id": "None"}]
+                   {"source_unit_id": "", "sink_unit_id": "None"},
+                   {"sink_unit_id": "A"}]
         topo = C._topology(streams, {"A", "B"})
         self.assertEqual((topo["feeds"], topo["internal"], topo["outlets"],
-                          topo["isolated"]), ([0], [1], [2], [3]))
+                          topo["isolated"], topo["dangling"]),
+                         ([0], [1], [2], [3], [4, 5, 6]))
         self.assertEqual(topo["inlets"]["B"], [1])
+        self.assertEqual(topo["inlets"]["A"], [0, 6])
         self.assertEqual(topo["unit_outlets"]["A"], [1])
+        self.assertEqual(topo["unit_outlets"]["B"], [2, 4])
+        self.assertNotIn("", topo["inlets"])
 
     def test_context_on_valid_doc(self):
         """_ScoringContext(valid_doc): one feed, one outlet, labels by id;
@@ -2831,10 +2847,12 @@ class TestReactionCriteria(unittest.TestCase):
     def test_reactive_reason(self):
         """_reactive_reason (R2.4, need only): a reactor family (incl. the
         keyword reactors 'Neutralization tank', 'Hydrotreater') -> 'reactor
-        family'; declared reactions on a mixer, species evidence on a mixer,
-        a facility, a Gibbs reactor -> None. R4.13: a unit of unknown family
-        (valid_doc's one-inlet 'Mixer' label, R4.14; a 'Widget') -> 'family
-        unknown' (it could be a reactor)."""
+        family'; declared reactions on a mixer, species evidence on an
+        HXutility, a facility, a Gibbs reactor -> None. R4.13: a unit of
+        unknown family (valid_doc's one-inlet 'Mixer' label, R4.14; a
+        'Widget'; R5.1: an exact Mixer across which CO2 appears, which
+        contradicts the mixer claim) -> 'family unknown' (it could be a
+        reactor)."""
         for doc in (valid_doc(), unit_doc({"unit_type": "Widget"})):
             self.assertEqual(C._reactive_reason(ctx(doc), 0), "family unknown")
         self.assertEqual(C._reactive_reason(ctx(unit_doc(cls("NRELFermentation"))), 0),
@@ -2844,7 +2862,13 @@ class TestReactionCriteria(unittest.TestCase):
                 ctx(unit_doc({"unit_type": unit_type})), 0), "reactor family")
         self.assertIsNone(C._reactive_reason(
             ctx(unit_doc({**cls("Mixer"), "reactions": [reaction()]})), 0))
-        self.assertIsNone(C._reactive_reason(ctx(self._appearing_doc()), 0))
+        # R2.4: species appearing across a non-reactor is no need by
+        # itself (an HXutility stays non-reactive); R5.1: across an exact
+        # Mixer it contradicts the mixer claim, leaving the family unknown.
+        self.assertIsNone(C._reactive_reason(
+            ctx(self._appearing_doc(cls("HXutility"))), 0))
+        self.assertEqual(C._reactive_reason(ctx(self._appearing_doc()), 0),
+                         "family unknown")
         self.assertIsNone(C._reactive_reason(
             ctx(self._appearing_doc(cls("ProcessWaterCenter"))), 0))
         self.assertIsNone(C._reactive_reason(
@@ -2852,12 +2876,16 @@ class TestReactionCriteria(unittest.TestCase):
 
     def test_rxn_01_reactive_units(self):
         """_score_rxn_01 (CMP-RXN-01): no reactive unit -> None, also when
-        species appear across a mixer (R2.4: evidence is a consistency
-        guard, not need); a reactor without reactions -> 0 ('none
+        species appear across an HXutility (R2.4: evidence is a consistency
+        guard, not need); species appearing across an exact Mixer
+        contradict the mixer claim (R5.1), so the unit of unknown family
+        is reactive -> 0; a reactor without reactions -> 0 ('none
         well-formed declared (reactor family)'); with a reaction -> 1; with
         only malformed ones -> 0."""
         self.assertIsNone(run(C._score_rxn_01, exact_mixer_doc())[0])
-        self.assertIsNone(run(C._score_rxn_01, self._appearing_doc())[0])
+        self.assertIsNone(run(C._score_rxn_01,
+                              self._appearing_doc(cls("HXutility")))[0])
+        self.assertEqual(run(C._score_rxn_01, self._appearing_doc())[0], 0.0)
         reactor = spec_unit("SinglePhaseReactor")
         score, _m, missing = run(C._score_rxn_01, self._appearing_doc(reactor))
         self.assertEqual(score, 0.0)
@@ -3348,9 +3376,12 @@ class TestUtilityCriteria(unittest.TestCase):
     def test_util_01_resolution(self):
         """_score_util_01 (CMP-UTIL-01): no need -> None; a Pump and no agent
         -> 0; referenced but undeclared -> 0; declared complete + referenced
-        -> 1; a heat agent without composition -> 2/4 (its phase goes too,
-        R4.2); only its phase deleted -> 3/4, the missing entry naming the
-        phase; an other agent without composition -> 2/3."""
+        -> 1 (R5.1: the steam duty U1 records contradicts its mixer label,
+        so U1 of unknown family needs a power agent too -- only steam
+        declared -> 1/2, with a grid agent -> 1); a heat agent without
+        composition -> 2/4 (its phase goes too, R4.2); only its phase
+        deleted -> 3/4, the missing entry naming the phase; an other agent
+        without composition -> 2/3."""
         self.assertIsNone(run(C._score_util_01, label_mixer_doc())[0])
         score, _m, missing = run(C._score_util_01, one_unit_doc(spec_unit("Pump")))
         self.assertEqual((score, missing), (0.0, ["utilities: no agents declared"]))
@@ -3358,7 +3389,10 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertEqual(score, 0.0)
         self.assertIn("no agent 'steam' (referenced by units[U1])", missing[0])
         self.assertEqual(run(C._score_util_01, with_agents(
-            [STEAM], consumption={"steam": 1}))[0], 1.0)
+            [STEAM], consumption={"steam": 1}))[0], 0.5)
+        self.assertEqual(run(C._score_util_01, with_agents(
+            [STEAM], [{"id": "grid", "price": 0.07}],
+            consumption={"steam": 1}))[0], 1.0)
         self.assertAlmostEqual(run(C._score_util_01, with_agents(
             [dict(STEAM, composition=[])]))[0], 2 / 4)
         untagged = dict(STEAM, composition=[{"component_name": "Water",
@@ -3374,7 +3408,9 @@ class TestUtilityCriteria(unittest.TestCase):
     def test_util_02_prices(self):
         """_score_util_02 (CMP-UTIL-02): priced heat agent and legacy-priced
         power agent -> 1; unpriced other agent -> 2/3 overall; a referenced
-        but undeclared agent counts 0 (-> 1/2 beside priced steam); a Pump
+        but undeclared agent counts 0 (-> 1/3 beside priced steam: R5.1,
+        the duty U1 records on it contradicts U1's mixer label, so U1 of
+        unknown family also needs a power agent, missing -> 0); a Pump
         with no agent -> 0; no need -> None."""
         doc = with_agents([STEAM], [{"id": "grid", "price": 0.07}],
                           [{"id": "gas"}])
@@ -3383,7 +3419,7 @@ class TestUtilityCriteria(unittest.TestCase):
         self.assertEqual(missing, ["utilities.other_utilities[gas].price"])
         score, _m, missing = run(C._score_util_02, with_agents(
             [STEAM], consumption={"power": 3.0}))
-        self.assertEqual(score, 0.5)
+        self.assertAlmostEqual(score, 1 / 3)
         self.assertIn("no agent 'power' to price", missing[0])
         self.assertEqual(run(C._score_util_02, one_unit_doc(spec_unit("Pump")))[0], 0.0)
         self.assertIsNone(run(C._score_util_02, label_mixer_doc())[0])
@@ -4699,12 +4735,14 @@ def facility_doc():
             "chemicals": chemicals, "utilities": utilities}
 
 
-def splitter_doc():
-    """feed (Water 90 + Glucose 10 kmol/h) -> S1, a core Splitter with an
-    explicit split, -> outA + outB; outA also carries 0.01 kmol/h of CO2
-    that no inlet has, so CO2 appears across a physical-only unit without
-    reactions (R2.4 consistency guard). Mass and species balances still
-    close within 1 %, so only the appearance evidence trips the guard."""
+def splitter_doc(class_name="Splitter"):
+    """feed (Water 90 + Glucose 10 kmol/h) -> S1, a core splitter-family
+    class `class_name` (default the pure Splitter) with an explicit split,
+    -> outA + outB; outA also carries 0.01 kmol/h of CO2 that no inlet has,
+    so CO2 appears across a physical-only unit without reactions (R2.4
+    consistency guard; R5.1: it also contradicts a PURE splitter claim).
+    Mass and species balances still close within 1 %, so only the
+    appearance evidence trips the guard."""
     mw = {"Water": 18.015, "Glucose": 180.156, "CO2": 44.01}
     def sp(flows):
         return {"temperature": 300.0, "pressure": 101325.0,
@@ -4718,8 +4756,8 @@ def splitter_doc():
     streams = [{"id": sid, "source_unit_id": src, "sink_unit_id": snk,
                 "stream_properties": sp(flows), "price": 0.1}
                for sid, src, snk, flows in edges]
-    unit = {"id": "S1", "unit_type": "Splitter",
-            "design_simulation_method": f"Splitter on {BST_URL}",
+    unit = {"id": "S1", "unit_type": class_name,
+            "design_simulation_method": f"{class_name} on {BST_URL}",
             "design_input_specs": {"split": [0.5, 0.5, 1.0]}}
     chemicals = [{"id": n, "registry_id": cas, "molar_mass": mw[n]}
                  for n, cas in (("Water", "7732-18-5"), ("Glucose", "50-99-7"),
@@ -4925,23 +4963,38 @@ class TestRevision2PartB(unittest.TestCase):
         self.assertGreater(lowered, n // 3)
 
     def test_splitter_guard_deletions_never_raise(self):
-        """The R2.4 consistency guard is monotone: in splitter_doc CO2
-        appears across the core Splitter S1 without reactions, so both
-        outlets' compositions do not count (CMP-UOP-04 = 0.75) and the
-        split derivation is blocked; deleting outA's phases (the stream
-        carrying the evidence) leaves the guard tripped (its species flows
-        can no longer be computed), so no score rises -- nor does any other
-        deletion; a custom splitter class (CleaningSystem) is not guarded
-        (UOP-04 = 1)."""
-        doc = splitter_doc()
+        """The R2.4 consistency guard is monotone: in
+        splitter_doc('MolecularSieve') CO2 appears across the core
+        splitter-family S1 without reactions (not a PURE splitter, so R5.1
+        leaves its claim standing: ('MolecularSieve', 'splitter', 1.0)),
+        so both outlets' compositions do not count (CMP-UOP-04 = 0.75, the
+        missing entries saying 'inconsistent') and the split derivation is
+        blocked; deleting outA's phases (the stream carrying the evidence)
+        leaves the guard tripped (species flows no longer computable: the
+        UOP-04 entry now says 'unverified'), so no score rises -- nor does
+        any other deletion. With the pure Splitter class (the default
+        splitter_doc) the appearance also contradicts the claim itself
+        (R5.1): S1's family is unknown and _class_note names the
+        contradiction. A custom splitter class (CleaningSystem) is not
+        guarded (UOP-04 = 1)."""
+        doc = splitter_doc("MolecularSieve")
         sc = ctx(doc)
+        self.assertEqual(sc.unit_classes[0], ("MolecularSieve", "splitter", 1.0))
         self.assertFalse(C._species_consistency(sc, 0)[0])
-        self.assertEqual(run(C._score_uop_04, doc)[0], 0.75)
+        score, _message, missing = run(C._score_uop_04, doc)
+        self.assertEqual(score, 0.75)
+        self.assertIn("(stated, but inconsistent at units[S1]: CO2 appears",
+                      missing[0])
         self.assertFalse(C._closure(sc, 0)[0])
         base = overall(doc)
         stripped = deleted(doc, ("streams", 1, "stream_properties", "phases"))
         self.assertLessEqual(overall(stripped), base)
-        self.assertLessEqual(run(C._score_uop_04, stripped)[0], 0.75)
+        score, message, missing = run(C._score_uop_04, stripped)
+        self.assertLessEqual(score, 0.75)
+        self.assertIn("left unverified by the species-consistency guard",
+                      message)
+        self.assertIn("(stated, but unverified at units[S1]: species flows "
+                      "not computable", "\n".join(missing))
         self.assertIn("not computable",
                       C._species_consistency(ctx(stripped), 0)[1])
         with name_lookup(set()):
@@ -4949,6 +5002,10 @@ class TestRevision2PartB(unittest.TestCase):
         self.assertGreater(n, 40)
         self.assertEqual(raised, [])
         self.assertGreater(lowered, n // 3)
+        pure = ctx(splitter_doc())
+        self.assertEqual(pure.unit_classes[0], (None, None, 0.0))
+        self.assertIn("implausible for a pure splitter: CO2 appears without "
+                      "declared reactions", C._class_note(pure, 0))
         custom = copy.deepcopy(doc)
         custom["units"][0]["design_simulation_method"] = \
             f"CleaningSystem on {BIP_URL}"
@@ -5638,22 +5695,33 @@ class TestRevision3PartB(unittest.TestCase):
 
     def test_isolated_streams_stay_in_feed_populations(self):
         """R3.8 gap found by the extended deletion test: deleting the
-        source_unit_id of rich_doc's unpriced 'waste' product made it
-        isolated (both endpoints at the boundary) and dropped it from
-        CMP-FEED-02 (0.8 -> 1.0). Isolated streams now stay in the
-        CMP-FEED-02 and CMP-FEED-01 populations: FEED-02 stays 0.8, and a
-        feed whose sink_unit_id is deleted keeps its FEED-01 score."""
+        source_unit_id of rich_doc's unpriced 'waste' product dropped it
+        from CMP-FEED-02 (0.8 -> 1.0). R5.8: a missing endpoint key makes
+        the stream dangling (never a boundary), and dangling streams stay
+        in the CMP-FEED-01 and CMP-FEED-02 populations scoring 0: the
+        orphaned waste stream is dangling, not isolated, and FEED-02 stays
+        0.8; a feed whose sink_unit_id is deleted drops from 0.75 to 0 in
+        FEED-01 (0.875 -> 0.5); an explicitly isolated stream ('None' at
+        both ends) is still a feed of FEED-01."""
         with name_lookup(RICH_NAMES):
             doc = rich_doc()
             self.assertAlmostEqual(run(C._score_feed_02, doc)[0], 0.8)
             orphan = deleted(doc, ("streams", 1, "source_unit_id"))
-            self.assertEqual(ctx(orphan).isolated, [1])
+            self.assertEqual((ctx(orphan).isolated, ctx(orphan).dangling),
+                             ([], [1]))
             self.assertAlmostEqual(run(C._score_feed_02, orphan)[0], 0.8)
             half = one_unit_doc(spec_unit("Mixer"), ins=({}, {"T": None}))
             before = run(C._score_feed_01, half)[0]
             self.assertAlmostEqual(before, 0.875)
             lost = deleted(half, ("streams", 1, "sink_unit_id"))
-            self.assertEqual(run(C._score_feed_01, lost)[0], before)
+            score, message, missing = run(C._score_feed_01, lost)
+            self.assertAlmostEqual(score, 0.5)
+            self.assertIn("1 dangling stream(s)", message)
+            self.assertIn("sink_unit_id: not stated (dangling", missing[0])
+            isolated = copy.deepcopy(half)
+            isolated["streams"][1]["sink_unit_id"] = "None"
+            self.assertEqual(ctx(isolated).isolated, [1])
+            self.assertAlmostEqual(run(C._score_feed_01, isolated)[0], 0.875)
 
     def test_distillation_spec_plausibility(self):
         """R3.11: _spec_above_one / _spec_open_fraction; _valid_spec('k')
@@ -6814,6 +6882,475 @@ class TestRevision4PartC(unittest.TestCase):
                               message)
                 self.assertIn(f"streams[{sid}].source_unit_id (not stated",
                               "\n".join(missing))
+
+
+# ------------------------------------------------------------- Revision 5
+
+R5_MW = {"Water": 18.01528, "Glucose": 180.15588, "Ethanol": 46.06844,
+         "CO2": 44.0095}
+# unit id -> (unit_type, design_simulation_method class)
+R5_HONEST = {"P1": ("Pump", "Pump"), "H1": ("Heater", "HXutility"),
+             "R1": ("Fermentation reactor", "AnaerobicBioreactor"),
+             "F1": ("Flash drum", "Flash")}
+R5_LIE = {"P1": ("Mixer", "Mixer"), "H1": ("Mixer", "Mixer"),
+          "R1": ("Mixer", "Mixer"), "F1": ("Splitter", "Splitter")}
+
+
+def _r5_stream(sid, source, sink, T, P, phases):
+    """A stream in degC / bar / t/h (quantity_units_global of r5_doc) whose
+    {phase: {component: kmol/h}} `phases` are stated per phase with BOTH
+    bases: total_molar_flow + mol_fraction and total_mass_flow (t/h) +
+    mass_fraction; stream totals of both."""
+    out, mass, moles = {}, 0.0, 0.0
+    for symbol, flows in phases.items():
+        n = sum(flows.values())
+        m = sum(f * R5_MW[c] for c, f in flows.items())
+        mass, moles = mass + m, moles + n
+        out[symbol] = {"total_molar_flow": n, "total_mass_flow": m / 1000,
+                       "composition": [
+                           {"component_name": c, "mol_fraction": f / n,
+                            "mass_fraction": f * R5_MW[c] / m}
+                           for c, f in flows.items()]}
+    return {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+            "stream_properties": {"temperature": T, "pressure": P,
+                                  "total_mass_flow": mass / 1000,
+                                  "total_molar_flow": moles, "phases": out}}
+
+
+def r5_doc(labels=None):
+    """The Revision 5 reviewer flowsheet: feed -> P1 (pump, 1 -> 3 bar) ->
+    H1 (heater, 25.1 -> 80 degC) -> R1 (fermenter: Glucose -> Ethanol +
+    CO2, no reaction declared) -> F1 (flash to 1 bar: vapor + liquid), in
+    degC / bar / t/h (quantity_units_global), every stream stating both
+    bases (_r5_stream); each unit named by unit_type and 'Class on
+    <biosteam url>' from `labels` (default R5_HONEST); chemicals carry
+    molar masses; no utilities, costs or specs."""
+    labels = labels or R5_HONEST
+    water, glucose = 1600.0, 40.0
+    streams = [
+        _r5_stream("feed", "None", "P1", 25.0, 1.0,
+                   {"l": {"Water": water, "Glucose": glucose}}),
+        _r5_stream("s1", "P1", "H1", 25.1, 3.0,
+                   {"l": {"Water": water, "Glucose": glucose}}),
+        _r5_stream("s2", "H1", "R1", 80.0, 3.0,
+                   {"l": {"Water": water, "Glucose": glucose}}),
+        _r5_stream("s3", "R1", "F1", 80.0, 3.0,
+                   {"l": {"Water": water, "Glucose": 2.0, "Ethanol": 76.0,
+                          "CO2": 76.0}}),
+        _r5_stream("vap", "F1", "None", 80.0, 1.0,
+                   {"g": {"CO2": 76.0, "Ethanol": 6.0, "Water": 20.0}}),
+        _r5_stream("liq", "F1", "None", 80.0, 1.0,
+                   {"l": {"Water": water - 20.0, "Glucose": 2.0,
+                          "Ethanol": 70.0}})]
+    units = [{"id": uid, "unit_type": unit_type,
+              "design_simulation_method": f"{name} on {BST_URL}"}
+             for uid, (unit_type, name) in labels.items()]
+    qug = {"temperature": {"aliases": ["temperature", "T"],
+                           "quantity_units": "degC"},
+           "pressure": {"aliases": ["pressure", "P"], "quantity_units": "bar"},
+           "mass_flow": {"aliases": ["mass_flow", "total_mass_flow"],
+                         "quantity_units": "t/h"},
+           "molar_flow": {"aliases": ["molar_flow", "total_molar_flow"],
+                          "quantity_units": "kmol/hr"}}
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD",
+                         "TEA_year": 2020},
+            "quantity_units_global": qug, "units": units, "streams": streams,
+            "chemicals": [{"id": c, "molar_mass": mw}
+                          for c, mw in R5_MW.items()],
+            "utilities": {}}
+
+
+def mass_basis(doc):
+    """Copy of `doc` whose streams keep only mass-basis phase data (R5.3):
+    every phase's total_molar_flow and every composition entry's
+    mol_fraction are dropped; a phase without total_mass_flow gets it from
+    its molar flow and SWEEP_MW / R5_MW (mass_fraction likewise); stream
+    totals (mass and molar) and the chemicals' molar masses are kept."""
+    doc = copy.deepcopy(doc)
+    mw = dict(SWEEP_MW, **R5_MW)
+    for stream in doc["streams"]:
+        for phase in stream["stream_properties"].get("phases", {}).values():
+            n = phase.pop("total_molar_flow", None)
+            entries = phase.get("composition", [])
+            if "total_mass_flow" not in phase:
+                masses = [n * e["mol_fraction"] * mw[e["component_name"]]
+                          for e in entries]
+                phase["total_mass_flow"] = sum(masses)
+                for e, m in zip(entries, masses):
+                    e["mass_fraction"] = m / phase["total_mass_flow"]
+            for e in entries:
+                e.pop("mol_fraction", None)
+    return doc
+
+
+class TestRevision5(unittest.TestCase):
+    """Revision 5: physics plausibility of need-removing mixer / pure-
+    splitter claims (R5.1), mass-basis stream data (R5.3), and missing
+    endpoint keys as dangling streams (R5.8)."""
+
+    # ---- R5.3 mass-basis stream data -------------------------------------
+
+    def test_phase_flow_and_mass_basis_phases(self):
+        """_phase_flow: a phase's own valid flow of the key, else -- for the
+        only phase of a stream -- the stream-level total, else None.
+        _phases_ok (R5.3): a phase stating only total_mass_flow with mass
+        fractions is stated; a single phase with no flow of its own is
+        stated from the stream totals `sp`, but not without them, nor when
+        the stream has two phases."""
+        sp = {"total_mass_flow": 5.0}
+        self.assertEqual(C._phase_flow({"total_mass_flow": 2.0}, sp, True,
+                                       "total_mass_flow"), 2.0)
+        self.assertEqual(C._phase_flow({}, sp, True, "total_mass_flow"), 5.0)
+        self.assertIsNone(C._phase_flow({}, sp, False, "total_mass_flow"))
+        self.assertIsNone(C._phase_flow({}, sp, True, "total_molar_flow"))
+        entry = {"component_name": "A", "mass_fraction": 1.0}
+        mass_phase = {"total_mass_flow": 2.0, "composition": [entry]}
+        self.assertTrue(C._phases_ok({"l": mass_phase}))
+        bare = {"composition": [entry]}
+        self.assertTrue(C._phases_ok({"l": bare}, sp))
+        self.assertFalse(C._phases_ok({"l": bare}))
+        self.assertFalse(C._phases_ok({"l": bare, "g": mass_phase}, sp))
+
+    def test_species_flows_on_both_bases(self):
+        """_species_flows(stream, 'mass') -> {component: kg/h} from phase
+        total_mass_flow x mass_fraction (the molar default needs mol data
+        and returns None on a mass-only stream); _basis_flows: molar when
+        every stream has mol data, else mass when every one has mass data
+        (never a mix), else None; _side_species over a unit's ports
+        reports the basis used and the per-side sums."""
+        doc = r5_doc()
+        feed = C._internal_stream(doc["streams"][0],
+                                  C._quantity_unit_index(doc))
+        molar = C._species_flows(feed)
+        self.assertAlmostEqual(molar["Glucose"], 40.0)
+        mass = mass_basis(doc)
+        mfeed = C._internal_stream(mass["streams"][0],
+                                   C._quantity_unit_index(mass))
+        self.assertIsNone(C._species_flows(mfeed))
+        by_mass = C._species_flows(mfeed, "mass")
+        self.assertAlmostEqual(by_mass["Glucose"], 40.0 * R5_MW["Glucose"])
+        self.assertEqual(C._basis_flows([feed, feed])[0], "molar")
+        self.assertEqual(C._basis_flows([feed, mfeed])[0], "mass")
+        self.assertIsNone(C._basis_flows([feed, {"stream_properties": {}}]))
+        sc = ctx(mass)
+        basis, flows_in, flows_out = C._side_species(sc, "R1")
+        self.assertEqual(basis, "mass")
+        self.assertNotIn("CO2", flows_in)
+        self.assertGreater(flows_out["CO2"], 0.0)
+        self.assertEqual(C._side_species(ctx(doc), "P1")[0], "molar")
+        del doc["streams"][0]["stream_properties"]["phases"]
+        self.assertIsNone(C._side_species(ctx(doc), "P1"))
+
+    def test_mole_fractions_from_mass_basis(self):
+        """_mole_fractions (CMP-FEED-02 port materials): a mass-only feed
+        -> None without molar masses; with _ScoringContext.molar_masses
+        (declared, else from the formula) the mass flows convert to mol
+        fractions equal to the molar document's; a component without a
+        molar mass leaves them None."""
+        doc = mass_basis(r5_doc())
+        sc = ctx(doc)
+        self.assertEqual(sc.molar_masses, R5_MW)
+        feed = sc.streams[0]
+        self.assertIsNone(C._mole_fractions(feed))
+        fractions = C._mole_fractions(feed, sc.molar_masses)
+        expected = C._mole_fractions(ctx(r5_doc()).streams[0])
+        for name, x in expected.items():
+            self.assertAlmostEqual(fractions[name], x)
+        self.assertIsNone(C._mole_fractions(feed, {"Water": 18.0}))
+        formula_only = ctx({"chemicals": [{"id": "W", "formula": "H2O"}]})
+        self.assertAlmostEqual(formula_only.molar_masses["W"], 18.015, 2)
+
+    def test_mass_basis_twin_scores_like_the_molar_original(self):
+        """R5.3 reviewer case: r5_doc with every phase's molar flow and mol
+        fractions removed (stream totals and molar masses kept) scored
+        0.3599 against the molar original's 0.4565 (CMP-FEED-01 1 -> 0.75,
+        CMP-UOP-02 0.61 -> 0.05, CMP-UOP-04 1 -> 0.75 citing the
+        species-consistency guard, CMP-TOP-02 0.91 -> 0.19). Now every
+        criterion scores exactly as on the original; the pump P1 keeps its
+        single-port CMP-TOP-02 credit (1 on both sides: its TOTAL mass
+        closes, _mass_closure) and its full closure holds on the mass
+        basis; the fermenter's CO2 appearance is still found (mass
+        basis), so its message says inconsistent, not uncomputable."""
+        doc = r5_doc()
+        twin = mass_basis(doc)
+        before, after = criterion_results(doc), criterion_results(twin)
+        for cid, result in before.items():
+            self.assertEqual(after[cid].status, result.status, cid)
+            if result.status == "scored":
+                self.assertAlmostEqual(after[cid].score, result.score,
+                                       msg=cid)
+        self.assertAlmostEqual(overall(twin), overall(doc))
+        sc = ctx(twin)
+        pump = sc.unit_positions["P1"]
+        self.assertEqual(C._side_credit(sc, pump, "ins"), (1.0, None))
+        self.assertEqual(C._side_credit(sc, pump, "outs"), (1.0, None))
+        self.assertEqual(C._mass_closure(sc, pump), (True, ""))
+        self.assertEqual(C._closure(sc, pump), (True, ""))
+        self.assertEqual(C._species_change(sc, "R1"),
+                         ["CO2 appears", "Ethanol appears"])
+
+    def test_uop_04_tells_unverified_from_inconsistent(self):
+        """CMP-UOP-04 messages (R5.3): an exact Flash whose outlet carries a
+        species its inlet lacks -> 'fail the species-consistency guard
+        (species appear or vanish)' and 'inconsistent at' entries; the
+        same Flash whose inlet phases are deleted (species flows not
+        computable on any basis) -> 'left unverified by the
+        species-consistency guard (species flows not computable)' and
+        'unverified at' entries, never 'inconsistent'."""
+        doc = r5_doc()
+        doc["units"] = [u for u in doc["units"] if u["id"] == "F1"]
+        doc["streams"] = doc["streams"][3:]
+        doc["streams"][0]["source_unit_id"] = "None"
+        doc["streams"][1]["stream_properties"]["phases"]["g"][
+            "composition"][0]["component_name"] = "Glucose"
+        _score, message, missing = run(C._score_uop_04, doc)
+        self.assertIn("fail the species-consistency guard (species appear "
+                      "or vanish)", message)
+        self.assertIn("inconsistent at units[F1]", "\n".join(missing))
+        del doc["streams"][0]["stream_properties"]["phases"]
+        _score, message, missing = run(C._score_uop_04, doc)
+        self.assertIn("left unverified by the species-consistency guard "
+                      "(species flows not computable)", message)
+        self.assertIn("unverified at units[F1]: species flows not "
+                      "computable", "\n".join(missing))
+        self.assertNotIn("inconsistent", "\n".join(missing))
+
+    def test_mass_basis_sweeps(self):
+        """The strict deletion sweeps (TestRevision4PartC.assert_sweep_clean)
+        over the mass-basis twins of both sweep_doc variants (every phase
+        stating only total_mass_flow + mass fractions, R5.3) find no
+        violation: switching a unit's ports to the mass basis, or losing
+        it, never raises a criterion."""
+        for identity in ("unit_type", "design_simulation_method"):
+            doc = mass_basis(sweep_doc(identity))
+            self.assertNotIn("total_molar_flow", doc["streams"][2][
+                "stream_properties"]["phases"]["l"])
+            with self.subTest(identity=identity):
+                TestRevision4PartC.assert_sweep_clean(self, doc)
+
+    # ---- R5.1 physics plausibility ---------------------------------------
+
+    def test_recorded_duty(self):
+        """_recorded_duty: the first non-zero result per kind -- a
+        power_utilities agent -> 'power', a heat_utilities agent or an
+        undeclared one -> 'heat' -- while other_utilities agents (material
+        flows) and zero values are ignored."""
+        doc = r5_doc()
+        doc["utilities"] = {"heat_utilities": [{"id": "steam"}],
+                            "power_utilities": [{"id": "grid"}],
+                            "other_utilities": [{"id": "gas"}]}
+        unit = doc["units"][0]
+        unit["utility_consumption_results"] = {"gas": 5.0, "grid": 0.0}
+        self.assertEqual(C._recorded_duty(ctx(doc), 0), {})
+        unit["utility_consumption_results"]["grid"] = 2.0
+        unit["utility_production_results"] = {"steam": -3.0, "x": 1.0}
+        self.assertEqual(C._recorded_duty(ctx(doc), 0), {
+            "power": "utility_consumption_results.grid",
+            "heat": "utility_production_results.steam"})
+
+    def test_physics_contradictions(self):
+        """_physics_contradictions on r5_doc (degC / bar converted): P1 ->
+        'mixer' (outlet P 3e5 above the highest inlet 1e5) and 'splitter'
+        (differs); H1 -> T above / differs; R1 (no reaction) -> 'species'
+        (CO2 and Ethanol appear; Glucose only drops); F1 -> 'splitter' P
+        differs, but no 'mixer' entry (an outlet may be colder / at a
+        lower P). A well-formed reaction on R1 removes 'species'; a unit
+        without an id -> {}; deleting s1's temperature (P1's outlet, H1's
+        inlet) removes both units' temperature evidence (a deletion never
+        creates one)."""
+        sc = ctx(r5_doc())
+        physics = dict(zip((u["id"] for u in sc.units), sc.unit_physics))
+        self.assertEqual(set(physics["P1"]), {"mixer", "splitter"})
+        self.assertIn("outlet pressure 300000 above the highest inlet "
+                      "pressure 100000", physics["P1"]["mixer"])
+        self.assertIn("outlet temperature 353.15 differs from the inlet "
+                      "temperature 298.25", physics["H1"]["splitter"])
+        self.assertEqual(physics["R1"]["species"],
+                         "CO2 appears, Ethanol appears without declared "
+                         "reactions")
+        self.assertEqual(set(physics["F1"]), {"splitter"})
+        doc = r5_doc()
+        doc["units"][2]["reactions"] = [{
+            "index": 0, "equation": "Glucose -> 2 Ethanol + 2 CO2",
+            "reactant": "Glucose", "conversion": 0.95}]
+        self.assertNotIn("species", ctx(doc).unit_physics[2])
+        self.assertEqual(C._physics_contradictions(ctx({"units": [{}]}), 0),
+                         {})
+        doc = r5_doc()
+        del doc["streams"][1]["stream_properties"]["temperature"]
+        for position in (0, 1):
+            self.assertNotIn("temperature", str(ctx(doc).unit_physics[position]))
+
+    def test_physics_contradiction_by_claim(self):
+        """_physics_contradiction: a mixer-family claim is contradicted by
+        'heat', 'power', 'species' or 'mixer' evidence -- except 'power'
+        for the @cost-decorated Mixer subclasses (_COSTED_CLASSES, agitator
+        kW); a PURE_SPLITTER_CLASSES class, or a label-only splitter
+        family claim, by 'heat', 'power', 'species' or 'splitter'; a
+        splitter-family class that is not pure (SolidsCentrifuge), and any
+        other family, never; no evidence -> None. _ports_plausible joins it
+        with the port contradiction."""
+        heat = {"heat": "records a non-zero heat duty (x)"}
+        power = {"power": "records a non-zero power duty (grid)"}
+        self.assertEqual(C._physics_contradiction("Mixer", "mixer", heat),
+                         "implausible for a mixer: records a non-zero heat "
+                         "duty (x)")
+        self.assertIsNone(C._physics_contradiction(
+            "EnzymeHydrolysateMixer", "mixer", power))
+        self.assertIsNotNone(C._physics_contradiction(
+            "EnzymeHydrolysateMixer", "mixer", heat))
+        self.assertIsNotNone(C._physics_contradiction(None, "mixer", power))
+        split = {"splitter": "outlet pressure 1 differs from the inlet"}
+        self.assertIsNone(C._physics_contradiction("Mixer", "mixer", split))
+        for name in sorted(C.PURE_SPLITTER_CLASSES) + [None]:
+            family = C._class_family(name) if name else "splitter"
+            self.assertIn("implausible for a pure splitter",
+                          C._physics_contradiction(name, family, split))
+        self.assertIsNone(C._physics_contradiction(
+            "SolidsCentrifuge", "splitter", split))
+        self.assertIsNone(C._physics_contradiction("Pump", "pump", heat))
+        self.assertIsNone(C._physics_contradiction("Mixer", "mixer", None))
+        self.assertFalse(C._ports_plausible("Mixer", "mixer", True, (1, 1),
+                                            heat))
+        self.assertTrue(C._ports_plausible("Mixer", "mixer", True, (1, 1)))
+
+    def test_relabelled_units_never_pay_off(self):
+        """R5.1 reviewer cases on r5_doc: relabelling the fermenter R1 an
+        exact core Mixer raised the score 0.4565 -> 0.5335, and relabelling
+        every unit Mixer / Splitter (R5_LIE) by +0.17 (representable 0.503
+        -> 0.696). Each relabelled claim is now physically implausible
+        (P1: pressure rise; H1: temperature rise; R1: CO2 and Ethanol
+        appear; F1: outlet pressure differs from the inlet's), so the unit
+        is of unknown family (None, None, 0.0) and carries every need: no
+        relabelling raises the overall or representable score, and each
+        _class_note names the contradiction (R5.1)."""
+        honest = C.score_flowsheet_completeness(r5_doc())
+        cases = {uid: dict(R5_HONEST, **{uid: ("Mixer", "Mixer")})
+                 for uid in ("P1", "H1", "R1")}
+        cases["all"] = R5_LIE
+        for case, labels in cases.items():
+            doc = r5_doc(labels)
+            report = C.score_flowsheet_completeness(doc)
+            sc = ctx(doc)
+            with self.subTest(case=case):
+                self.assertLess(report.score, honest.score)
+                self.assertLess(report.representable_score,
+                                honest.representable_score)
+                for position, unit in enumerate(sc.units):
+                    if labels[unit["id"]] == R5_HONEST[unit["id"]]:
+                        continue
+                    self.assertEqual(sc.unit_classes[position],
+                                     (None, None, 0.0), unit["id"])
+                    self.assertIn("is physically implausible",
+                                  C._class_note(sc, position))
+                    self.assertTrue(C._physics_notes(sc, position))
+        note = C._class_note(ctx(r5_doc(cases["R1"])), 2)
+        self.assertIn("class 'Mixer' (implausible for a mixer: CO2 appears, "
+                      "Ethanol appears without declared reactions)", note)
+        self.assertIn("unit_type family 'mixer'", note)
+
+    def test_plausible_claims_stand(self):
+        """No false positive on consistent units: sweep_doc's exact Mixer
+        (two feeds at the same T / P) and Splitter (outlets at the inlet's
+        state) keep their classes with empty _physics_notes; a mixer
+        outlet colder than its hottest inlet is plausible (upper bounds
+        only), and an EnzymeHydrolysateMixer recording agitator power keeps
+        its mixer family."""
+        doc = sweep_doc("design_simulation_method")
+        sc = ctx(doc)
+        for uid, name in (("M1", "Mixer"), ("S1", "Splitter")):
+            position = sc.unit_positions[uid]
+            self.assertEqual(sc.unit_classes[position][0], name)
+            self.assertEqual(C._physics_notes(sc, position), [])
+        doc["streams"][0]["stream_properties"]["temperature"] = 350.0
+        doc["streams"][2]["stream_properties"]["temperature"] = 320.0
+        self.assertEqual(ctx(doc).unit_classes[0][0], "Mixer")
+        doc["units"][0]["design_simulation_method"] = (
+            f"EnzymeHydrolysateMixer on {BIP_URL}")
+        doc["units"][0]["utility_consumption_results"] = {"grid": 70.0}
+        self.assertEqual(ctx(doc).unit_classes[0][:2],
+                         ("EnzymeHydrolysateMixer", "mixer"))
+        doc["units"][0]["design_simulation_method"] = f"Mixer on {BST_URL}"
+        self.assertEqual(ctx(doc).unit_classes[0], (None, None, 0.0))
+
+    # ---- R5.8 missing endpoint keys --------------------------------------
+
+    def test_dangling_streams(self):
+        """R5.8 on sweep_doc: _stream_mass -> a stated-empty stream 0.0, a
+        valid total_mass_flow, else None. A dangling stream (sink not
+        stated) of 1e-3 kg/h may be a missing inlet of any unit whose
+        balance closes with it: _dangling_port names it for P2 and
+        _mass_closure / _closure fail there; one of 1000 kg/h is ruled out
+        ('' , P2 closes); a stated-empty or explicitly bounded one never
+        counts; one of unknown mass is never ruled out. _dangling_note
+        names the key(s) not stated. CMP-TOP-01 counts the missing key as
+        unresolved."""
+        empty = {"stream_properties": {"total_molar_flow": 0.0}}
+        self.assertEqual(C._stream_mass(empty), 0.0)
+        self.assertEqual(C._stream_mass(
+            {"stream_properties": {"total_mass_flow": 2.0}}), 2.0)
+        self.assertIsNone(C._stream_mass({"stream_properties": {}}))
+        base = sweep_doc("design_simulation_method")
+        p2 = [u["id"] for u in base["units"]].index("P2")
+        self.assertEqual(C._mass_closure(ctx(base), p2), (True, ""))
+        for mass, rules_out in ((1e-3, False), (1000.0, True), (0.0, True),
+                                (None, False)):
+            doc = copy.deepcopy(base)
+            sp = {} if mass is None else {"total_mass_flow": mass}
+            doc["streams"].append({"id": "tiny", "source_unit_id": "P1",
+                                   "stream_properties": sp})
+            sc = ctx(doc)
+            self.assertEqual(sc.dangling, [len(doc["streams"]) - 1])
+            why = C._dangling_port(sc, p2)
+            with self.subTest(mass=mass):
+                if rules_out:
+                    self.assertEqual(why, "")
+                    self.assertTrue(C._mass_closure(sc, p2)[0])
+                else:
+                    self.assertEqual(why, "streams[tiny] (sink_unit_id not "
+                                     "stated) may be a missing inlet: the "
+                                     "balance cannot rule it out")
+                    self.assertEqual(C._mass_closure(sc, p2), (False, why))
+                    self.assertFalse(C._closure(sc, p2)[0])
+        doc = copy.deepcopy(base)
+        doc["streams"].append({"id": "tiny", "sink_unit_id": "",
+                               "stream_properties": {}})
+        sc = ctx(doc)
+        self.assertEqual(C._dangling_note(sc, len(doc["streams"]) - 1),
+                         "streams[tiny].source_unit_id|sink_unit_id: not "
+                         "stated (dangling: never a boundary stream, "
+                         "scores 0)")
+        _score, _message, missing = run(C._score_top_01, doc)
+        self.assertIn("streams[tiny].source_unit_id: not stated (dangling",
+                      "\n".join(missing))
+
+    def test_endpoint_deletions_never_raise(self):
+        """R5.8 reviewer case in miniature (SF_BST_01's s35 sink raised
+        CMP-TOP-02 0.8732 -> 0.8785): on sweep_doc('unit_type') with a
+        small (0.01 kg/h) priced recycle S1 -> R1 beside s3, deleting that
+        stream's sink_unit_id (formerly: a priced 'outlet' joining
+        CMP-FEED-02, and R1's inlet count dropping from 2 to 1 so its
+        count-based CMP-TOP-02 credit rose) or source_unit_id lowers or
+        keeps every scored criterion: the stream joins CMP-FEED-01/02 at 0
+        and no unit whose balance could hide it keeps a count-based port
+        credit."""
+        doc = sweep_doc("unit_type")
+        doc["streams"].append({
+            "id": "trickle", "source_unit_id": "S1", "sink_unit_id": "R1",
+            "price": 0.3, "stream_properties": _sweep_sp({"Water": 0.01 /
+                                                          18.015}, "l")})
+        base = criterion_results(doc)
+        position = len(doc["streams"]) - 1
+        for key in ("sink_unit_id", "source_unit_id"):
+            after = criterion_results(deleted(doc, ("streams", position, key)))
+            with self.subTest(key=key):
+                for cid, before in base.items():
+                    if before.status == "scored":
+                        self.assertEqual(after[cid].status, "scored", cid)
+                        self.assertLessEqual(after[cid].score,
+                                             before.score + 1e-12, cid)
+                self.assertLess(after["CMP-FEED-02"].score,
+                                base["CMP-FEED-02"].score)
 
 
 if __name__ == "__main__":
