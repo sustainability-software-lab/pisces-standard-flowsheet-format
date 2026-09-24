@@ -2891,7 +2891,8 @@ def _core_class_known(sc, position):
 #   when      -- a data / class-knowledge condition gating the whole
 #                requirement (None: always); it is waived only on affirmative
 #                evidence, so an unevaluable condition applies it (R2.13;
-#                see _requirement_applies).
+#                see _requirement_applies). A waived requirement still
+#                counts, as met (R5.9: _unit_spec_score).
 #   guard     -- key -> 'T'|'P'|'T_main': an explicit value must agree with
 #                every non-empty outlet stream ('T_main': with the
 #                largest-flow outlet only) -- T within GUARD_T_ABS K, P within
@@ -3453,7 +3454,9 @@ def _requirement_applies(req, sc, position):
     registry entry lacks `batch` or is absent (batch_param), the unit's
     exactly known class affirmatively taking none of the requirement's keys
     (class_param, R3.5: _class_lacks_param). An unevaluable condition
-    applies it, so deleting data can only add requirements."""
+    applies it, so deleting data can only un-waive a requirement; a waived
+    one scores as met (R5.9), so un-waiving can only lower a unit's
+    score."""
     if req.when is None:
         return True
     unit = sc.units[position]
@@ -3572,9 +3575,20 @@ def _requirement_locator(label, req, score, inconsistent=(), blocked=''):
 
 
 def _unit_spec_score(sc, position):
-    """(score, missing) of one unit against its essential rules; an unknown
-    family scores 0 (no way to know what to specify); (None, []) when no
-    requirement applies."""
+    """(score, missing) of one unit against its essential rules: the mean
+    over EVERY requirement its rules list, a waived one counting as met
+    (R5.9); an unknown family scores 0 (no way to know what to specify);
+    (None, []) only for an empty rule set.
+
+    R5.9: a requirement waived on affirmative evidence (_requirement_applies:
+    phase sets known and equal, a known pressure rise, an exactly known
+    class lacking the parameter) stays in the mean and scores 1 -- the
+    evidence that it is irrelevant is itself the information (unchanged
+    phases fix the phase outcome as a stated V would). The requirement set
+    is thus fixed by family / class need, never shrunk by data: deleting
+    the waiving evidence turns that 1 into the requirement's own score and
+    can only lower the mean (dropping the requirement instead let a stated
+    key join a mean it then raised)."""
     unit, label = sc.units[position], sc.unit_labels[position]
     rules = _unit_rules(sc, position)
     if rules is None:
@@ -3584,6 +3598,7 @@ def _unit_spec_score(sc, position):
     scores, missing = [], []
     for req in rules:
         if not _requirement_applies(req, sc, position):
+            scores.append(1.0)  # waived: met (R5.9)
             continue
         score = _requirement_score(req, sc, position, explicit)
         scores.append(score)
@@ -4979,7 +4994,9 @@ def _uop_05_unit(sc, position, facility):
     what its absence does), and a requirement that deleted evidence
     un-waives can only lower the minimum. A unit none of whose
     requirements applies needs no unit (1); one whose requirements are
-    unknown (unknown family or facility kind) scores `base`."""
+    unknown (unknown family or facility kind) scores `base`. A waived
+    requirement counts as met (credit 1, R5.9, as in CMP-UOP-02), the
+    identity of the minimum, so skipping it is the same thing."""
     label = sc.unit_labels[position]
     name, family, confidence = sc.unit_classes[position]
     base = (DERIVED_CREDIT if name and confidence == 1.0 and family is not None
@@ -4997,6 +5014,7 @@ def _uop_05_unit(sc, position, facility):
     credits, missing = [], []
     for req in rules:
         if not facility and not _requirement_applies(req, sc, position):
+            credits.append(1.0)  # waived: met (R5.9)
             continue
         known, unitless = 0, []
         for key in sorted(_counted_keys(req, sc, position, explicit)):

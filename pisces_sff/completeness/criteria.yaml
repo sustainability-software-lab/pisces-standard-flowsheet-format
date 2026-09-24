@@ -62,7 +62,9 @@
 # stream may be a missing port of any unit whose balance cannot rule it
 # out, so none of those units' balances counts as closed. A conditional
 # requirement is waived
-# only when the data affirmatively show its condition false. Stream and
+# only when the data affirmatively show its condition false, and a waived
+# requirement counts as met: the requirements a unit is scored on are fixed
+# by its family and class, never shrunk by data. Stream and
 # utility-agent temperatures, pressures and flows are first converted to
 # BioSTEAM's internal units (K, Pa, kg/hr, kmol/hr, m3/hr) from their stated
 # quantity units (quantity_units_global, or a legacy inline pair) by a small
@@ -572,7 +574,8 @@ criteria:
       duty per kg of feed (duty_per_kg). Such a class-knowledge requirement
       is waived only for a class known exactly (confidence 1) that
       affirmatively takes none of its parameters (a plain Splitter,
-      MolecularSieve or liquids centrifuge has no moisture_content); a
+      MolecularSieve or liquids centrifuge has no moisture_content), and a
+      waived requirement counts as met (see below); a
       class inferred from specification keys gets its family's rules only,
       and so does a unit_type that merely spells a class name ('Separator'):
       only design_simulation_method identifies a class exactly.
@@ -617,7 +620,12 @@ criteria:
       process exchanger, dP_design) is waived only when the data show its
       condition false (both phase sets known and equal, a pressure rise of
       at least 1 Pa, over a unit whose balances close so no port is
-      missing); when the data cannot tell, it applies. Units of unknown
+      missing); when the data cannot tell, it applies. A waived requirement
+      stays in the unit's mean and counts as met: the evidence that it is
+      irrelevant is itself the information (unchanged phases fix the phase
+      outcome as a stated vapor fraction would), so a unit is always scored
+      on the requirements its family and class need, and deleting the
+      waiving evidence can only lower its score. Units of unknown
       family, and unit ids that stream endpoints reference but no unit
       declares, score zero because nothing tells the importer what to
       specify. Each unit counts once.
@@ -717,7 +725,8 @@ criteria:
       that are dimensionless or unit-stated; else derived credit for an
       exactly known class, else 0 (so a key stated without a unit scores
       what its absence does, and deleting one never raises the score). A
-      unit none of whose requirements applies needs no unit. Applies to
+      waived requirement counts as met, as in CMP-UOP-02, so a unit none of
+      whose requirements applies needs no unit. Applies to
       every unit that needs operating specifications or facility settings
       (the CMP-UOP-02 and CMP-UOP-06 populations).
 

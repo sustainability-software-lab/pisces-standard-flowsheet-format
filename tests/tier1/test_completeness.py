@@ -1637,14 +1637,17 @@ class TestFamilyRules(unittest.TestCase):
 
     def test_splitter_dryer_extraction(self):
         """splitter/dryer: explicit split 1, derivable from full ports 0.75,
-        not derivable 0; VentScrubber's split is its 'gas' list;
+        not derivable 0 -- a plain Splitter's moisture requirement is waived
+        (its exact class lacks moisture_content) and counts as met (R5.9),
+        so the unit scores 1, 0.875 and 0.5; VentScrubber's split is its
+        'gas' list;
         MultiStageMixerSettlers: N_stages without feed_stages (a constructor
         default, R2.8: must be stated) -> 0.5, with it 1; MixerSettler has
         no requirement."""
         two = ({}, {})
         self.check(1.0, "Splitter", {"split": [0.5]}, outs=two)
-        self.check(0.75, "Splitter", outs=two)
-        self.check(0.0, "Splitter", outs=({}, {"T": None}))
+        self.check(0.875, "Splitter", outs=two)
+        self.check(0.5, "Splitter", outs=({}, {"T": None}))
         self.check(0.75, "DrumDryer", outs=two)
         self.check(1.0, "VentScrubber", {"gas": ["CO2"]}, outs=two)
         self.check(0.5, "MultiStageMixerSettlers", {"N_stages": 4})
@@ -1673,17 +1676,19 @@ class TestFamilyRules(unittest.TestCase):
         self.check(0.0, "PhasePartition")
 
     def test_hx_utility(self):
-        """HXutility: T -> 1; non-rigorous V alone -> 0.75 (T derived); a
-        rigorous V alone -> 1; T with a non-rigorous l->g change -> 0.875 (V
-        derivable from outlet phases); T + V on the change -> 1; an
-        inconsistent T -> 0."""
+        """HXutility: T -> 1; non-rigorous V alone on liquid in / liquid out
+        -> 0.875 (T derived 0.75; the phase-change V requirement waived, so
+        met, R5.9); a rigorous V alone -> 1; T with a non-rigorous l->g
+        change -> 0.875 (V derivable from outlet phases); T + V on the
+        change -> 1; an inconsistent T -> 0.5 (0 for T|V|H, the waived V
+        requirement met)."""
         vap = ({"phases": VAP},)
         self.check(1.0, "HXutility", {"T": 300.0})
-        self.check(0.75, "HXutility", {"V": 1})
+        self.check(0.875, "HXutility", {"V": 1})
         self.check(1.0, "HXutility", {"V": 1, "rigorous": True}, outs=vap)
         self.check(0.875, "HXutility", {"T": 300.0}, outs=vap)
         self.check(1.0, "HXutility", {"T": 300.0, "V": 1}, outs=vap)
-        self.check(0.0, "HXutility", {"T": 350.0})
+        self.check(0.5, "HXutility", {"T": 350.0})
 
     def test_hx_process_and_steam_injection(self):
         """HXprocess dT -> 1; with a phase change also phase0|phase1 (derivable
@@ -1701,7 +1706,8 @@ class TestFamilyRules(unittest.TestCase):
 
     def test_pump_valve_compressor(self):
         """Pump: P with no pressure rise also needs dP_design (0.5, with it
-        1); P with a rise -> 1; an inconsistent P -> 0. Valve P -> 1;
+        1); P with a rise -> 1; an inconsistent P over a known rise -> 0.5
+        (0 for P, the waived dP_design requirement met, R5.9). Valve P -> 1;
         IsentropicCompressor P without eta -> 0.5; the abstract Compressor
         (R2.6) names no class but STATES its family (R3.1): P alone (which
         the tightest registry entry, a valve, also holds) never swaps it ->
@@ -1710,7 +1716,7 @@ class TestFamilyRules(unittest.TestCase):
         self.check(0.5, "Pump", {"P": 101325.0})
         self.check(1.0, "Pump", {"P": 101325.0, "dP_design": 101325.0})
         self.check(1.0, "Pump", {"P": 2e5}, outs=({"P": 2e5},))
-        self.check(0.0, "Pump", {"P": 3e5}, outs=({"P": 2e5},))
+        self.check(0.5, "Pump", {"P": 3e5}, outs=({"P": 2e5},))
         self.check(1.0, "IsenthalpicValve", {"P": 101325.0})
         self.check(0.5, "IsentropicCompressor", {"P": 101325.0})
         sc = ctx(one_unit_doc(spec_unit("Compressor", {"P": 101325.0})))
@@ -2646,21 +2652,23 @@ class TestUnitOpCriteria(unittest.TestCase):
 
     def test_uop_02_essential_specs(self):
         """_score_uop_02 (CMP-UOP-02): mixer only -> None; HXutility with a T
-        matching its outlet -> 1; the same T against a 300 K outlet -> 0 with
-        an 'inconsistent' locator (consistency guard); HXutility with only an
-        outlet T -> DERIVED_CREDIT; unknown family (R4.14: valid_doc's
-        one-inlet 'Mixer' label) -> 0."""
+        matching its outlet -> 1; the same T against a 300 K outlet -> 0.5
+        (T|H|V 0 with an 'inconsistent' locator, the consistency guard; the
+        phase-change V requirement waived on liquid in / liquid out and so
+        met, R5.9); HXutility with only an outlet T -> (DERIVED_CREDIT + 1)
+        / 2; unknown family (R4.14: valid_doc's one-inlet 'Mixer' label) ->
+        0."""
         self.assertIsNone(run(C._score_uop_02, label_mixer_doc())[0])
         self.assertEqual(run(C._score_uop_02, valid_doc())[0], 0.0)
         self.assertEqual(run(C._score_uop_02, unit_doc(
             cls("HXutility"), {"T": 350.0}, out_T=350.0))[0], 1.0)
         score, _m, missing = run(C._score_uop_02,
                                  unit_doc(cls("HXutility"), {"T": 350.0}))
-        self.assertEqual(score, 0.0)
+        self.assertEqual(score, 0.5)
         self.assertIn("(inconsistent: T disagrees with the outlet stream)",
                       missing[0])
         score, _m, missing = run(C._score_uop_02, unit_doc(cls("HXutility"), {}))
-        self.assertEqual(score, C.DERIVED_CREDIT)
+        self.assertEqual(score, (C.DERIVED_CREDIT + 1.0) / 2)
         self.assertIn("one of T|H|V (only derivable", missing[0])
         self.assertEqual(run(C._score_uop_02, unit_doc({"unit_type": "Widget"}))[0], 0.0)
 
@@ -4498,14 +4506,18 @@ class TestValidityGating(unittest.TestCase):
         """R2.2 end to end: the Splitter's split and the HXutility's outlet T
         are derivable (0.75) on balanced docs, unavailable (0) when the
         outlets carry 10x the inlet, with the reason in the locator; TOP-02
-        port-order derivation (_port_order_derivable) is blocked too."""
+        port-order derivation (_port_order_derivable) is blocked too. Each
+        unit's second requirement (the plain Splitter's moisture, waived by
+        class; the HXutility's phase-change V, waived by equal phase sets on
+        balanced ports only) counts as met while waived (R5.9): Splitter
+        0.875 / 0.5, HXutility 0.875 / 0 (unbalanced ports un-waive V)."""
         tenfold = ({"mass": 460.7}, {"mass": 460.7})
-        self.assertEqual(spec_score("Splitter", outs=({}, {}))[0], 0.75)
+        self.assertEqual(spec_score("Splitter", outs=({}, {}))[0], 0.875)
         score, missing = spec_score("Splitter", outs=tenfold)
-        self.assertEqual(score, 0.0)
+        self.assertEqual(score, 0.5)
         self.assertIn("derivation from stream data unavailable: mass balance",
                       missing[0])
-        self.assertEqual(spec_score("HXutility")[0], 0.75)
+        self.assertEqual(spec_score("HXutility")[0], 0.875)
         self.assertEqual(spec_score("HXutility", outs=({"mass": 460.7},))[0], 0.0)
         sc = ctx(one_unit_doc(spec_unit("Splitter", {"split": [0.5]}),
                               outs=tenfold))
@@ -4630,12 +4642,13 @@ class TestAdversarialGaming(unittest.TestCase):
 
     def test_tenfold_splitter(self):
         """A Splitter whose outlets carry 10x its inlet earns no `split`
-        derivation (UOP-02 0 for the unit), where a balanced one earns
-        DERIVED_CREDIT."""
+        derivation (UOP-02 0.5 for the unit: split 0, the class-waived
+        moisture requirement met, R5.9), where a balanced one earns
+        DERIVED_CREDIT for split ((DERIVED_CREDIT + 1) / 2 for the unit)."""
         self.assertEqual(spec_score("Splitter", outs=(
-            {"mass": 460.7}, {"mass": 460.7}))[0], 0.0)
+            {"mass": 460.7}, {"mass": 460.7}))[0], 0.5)
         self.assertEqual(spec_score("Splitter", outs=({}, {}))[0],
-                         C.DERIVED_CREDIT)
+                         (C.DERIVED_CREDIT + 1.0) / 2)
 
     def test_formula_ids_get_no_verified_name_credit(self):
         """ids 'HP' (declared MW 90.08; the database's 'HP' is
@@ -7651,19 +7664,21 @@ class TestRevision5PartB(unittest.TestCase):
         [0.5] -> CMP-UOP-02 1; the chemical's index deleted, or the vector
         lengthened to [0.5, 0.5] -> the split counts as unstated and the
         requirement falls to derived credit (DERIVED_CREDIT, from the full
-        port states); a dict split keyed by the declared Ethanol -> 1, by an
-        undeclared Water -> DERIVED_CREDIT."""
+        port states; the unit scores (DERIVED_CREDIT + 1) / 2 with its
+        class-waived moisture requirement met, R5.9); a dict split keyed by
+        the declared Ethanol -> 1, by an undeclared Water -> derived."""
         def uop_02(split, drop_index=False):
             doc = one_unit_doc(spec_unit("Splitter", {"split": split}),
                                outs=({}, {}))
             if drop_index:
                 del doc["chemicals"][0]["index"]
             return run(C._score_uop_02, doc)[0]
+        derived = (C.DERIVED_CREDIT + 1.0) / 2
         self.assertEqual(uop_02([0.5]), 1.0)
-        self.assertEqual(uop_02([0.5], drop_index=True), C.DERIVED_CREDIT)
-        self.assertEqual(uop_02([0.5, 0.5]), C.DERIVED_CREDIT)
+        self.assertEqual(uop_02([0.5], drop_index=True), derived)
+        self.assertEqual(uop_02([0.5, 0.5]), derived)
         self.assertEqual(uop_02({"Ethanol": 0.5}), 1.0)
-        self.assertEqual(uop_02({"Water": 0.5}), C.DERIVED_CREDIT)
+        self.assertEqual(uop_02({"Water": 0.5}), derived)
 
     # ---- R5.5 / R5.6 chemical identity and molar mass --------------------
 
@@ -7879,6 +7894,237 @@ class TestRevision5PartB(unittest.TestCase):
                     if before.status == "scored":
                         self.assertLessEqual(after[cid].score,
                                              before.score + 1e-12, cid)
+
+
+# ------------------------------------------ Revision 5, part C (R5.9)
+
+# id, source, sink, flows (kmol/h), phase, T, P, price: feed -> P1 Pump
+# (pressure rise 101325 -> 3e5 Pa) -> H1 HXutility (liquid in and out) ->
+# X1 HXprocess (second side: hot water feed -> hot_out; liquid throughout)
+# -> R1 EnzymeTreatment (no reaction, flows unchanged) -> S1 Splitter -> two
+# products. Internal streams state flows and one-phase compositions (every
+# balance closes) but no temperature, so no outlet-T derivation is
+# available; only s1 and the boundary streams state a pressure.
+WAIVER_EDGES = (
+    ("feed", "None", "P1", {"Water": 90.0, "Glucose": 10.0}, "l", 300.0,
+     101325.0, 0.1),
+    ("s1", "P1", "H1", {"Water": 90.0, "Glucose": 10.0}, "l", None, 3.0e5,
+     None),
+    ("s2", "H1", "X1", {"Water": 90.0, "Glucose": 10.0}, "l", None, None,
+     None),
+    ("hot", "None", "X1", {"Water": 50.0}, "l", 380.0, 101325.0, 0.0),
+    ("s3", "X1", "R1", {"Water": 90.0, "Glucose": 10.0}, "l", None, None,
+     None),
+    ("hot_out", "X1", "None", {"Water": 50.0}, "l", 330.0, 101325.0, 0.0),
+    ("s4", "R1", "S1", {"Water": 90.0, "Glucose": 10.0}, "l", None, None,
+     None),
+    ("out1", "S1", "None", {"Water": 45.0, "Glucose": 5.0}, "l", 320.0,
+     101325.0, 0.05),
+    ("out2", "S1", "None", {"Water": 45.0, "Glucose": 5.0}, "l", 320.0,
+     101325.0, 0.05))
+# Each unit states its class exactly AND a family-bearing unit_type, so
+# deleting design_simulation_method keeps the family but loses the class.
+WAIVER_UNITS = (
+    ("P1", "Pump", "Feed pump", {"dP_design": 2.0e5}),
+    ("H1", "HXutility", "Heat exchanger", {"V": 0.0}),
+    ("X1", "HXprocess", "Process heat exchanger", {"phase0": "l"}),
+    ("R1", "EnzymeTreatment", "Enzyme treatment reactor",
+     {"tau": 2.0, "batch": False}),
+    ("S1", "Splitter", "Splitter", {"moisture_content": 0.5}))
+# unit id -> (the keys of its waived requirement, why it is waived).
+WAIVED = {"P1": (("dP_design",), "pressure rise known >= 1 Pa"),
+          "H1": (("V",), "phase sets known and equal, non-rigorous"),
+          "X1": (("phase0", "phase1"), "phase sets known and equal"),
+          "R1": (("batch",), "named class takes no batch"),
+          "S1": (("moisture_content", "sludge_moisture"),
+                 "exact class takes no moisture_content")}
+
+
+def waiver_doc():
+    """A consistent flowsheet (WAIVER_EDGES / WAIVER_UNITS) in which every
+    CMP-UOP-02 waiver path is active on a unit that nonetheless STATES the
+    waived key and misses another requirement (so the waiver decides the
+    unit score): P1 (Pump, dP_design stated, P only derivable; waived by
+    the known pressure rise), H1 (HXutility, non-rigorous V stated, no T;
+    waived by equal liquid phase sets), X1 (HXprocess, phase0 stated, no
+    dT / T_lim / H_lim and no derivable outlet T; waived by equal phase
+    sets), R1 (EnzymeTreatment, batch stated, no T or V_wf; waived by its
+    class lacking batch) and S1 (Splitter, moisture_content stated, split
+    neither stated nor derivable; waived by its exact class lacking
+    moisture_content). P1 and H1 record utility results; chemicals carry
+    formula and molar mass; steam and grid agents are declared."""
+    streams = []
+    for sid, source, sink, flows, phase, T, P, price in WAIVER_EDGES:
+        stream_ = {"id": sid, "source_unit_id": source, "sink_unit_id": sink,
+                   "stream_properties": _sweep_sp(flows, phase, T, P)}
+        if price is not None:
+            stream_["price"] = price
+        streams.append(stream_)
+    units = [{"id": uid, "unit_type": label,
+              "design_simulation_method": f"{name} on {BST_URL}",
+              "design_input_specs": dict(specs)}
+             for uid, name, label, specs in WAIVER_UNITS]
+    units[0]["utility_consumption_results"] = {"grid": 1.0}
+    units[1]["utility_consumption_results"] = {"steam": 50.0}
+    chemicals = [{"id": "Water", "formula": "H2O",
+                  "molar_mass": SWEEP_MW["Water"]},
+                 {"id": "Glucose", "formula": "C6H12O6",
+                  "molar_mass": SWEEP_MW["Glucose"]}]
+    utilities = {
+        "heat_utilities": [{"id": "steam", "temperature": 412.0,
+                            "pressure": 344738.0, "composition": [
+                                {"phase": "g", "component_name": "Water",
+                                 "mol_fraction": 1.0}]}],
+        "power_utilities": [{"id": "grid", "electrical_energy_price": 0.07}]}
+    return {"metadata": {"sff_version": "0.2.1", "TEA_currency": "USD"},
+            "units": units, "streams": streams, "chemicals": chemicals,
+            "utilities": utilities}
+
+
+class TestRevision5PartC(unittest.TestCase):
+    """Revision 5 part C (R5.9): a requirement WAIVED on affirmative
+    evidence (equal phase sets, a known pressure rise, an exactly known
+    class lacking the parameter) stays in the unit's CMP-UOP-02 mean and
+    counts as met. Dropping it instead let deleting the waiving evidence
+    add a stated -- hence satisfied -- requirement to the mean and raise
+    the unit score on a consistent document."""
+
+    def unit_score(self, doc, uid):
+        sc = ctx(doc)
+        return C._unit_spec_score(sc, sc.unit_positions[uid])[0]
+
+    def waived_req(self, doc, uid):
+        """Whether the requirement of unit `uid` whose keys WAIVED names
+        applies (_requirement_applies)."""
+        sc = ctx(doc)
+        position = sc.unit_positions[uid]
+        req = next(r for r in C._unit_rules(sc, position)
+                   if r.keys == WAIVED[uid][0])
+        return C._requirement_applies(req, sc, position)
+
+    def test_hx_process_phase_waiver_counts_as_met(self):
+        """The reported defect: an HXprocess (two liquid inlets, two liquid
+        outlets, no outlet T, so T_lim0 is not derivable; none of dT /
+        T_lim / H_lim stated -> first requirement 0) stating phase0, its
+        phase sets known and unchanged. Expected: phase0|phase1 waived and
+        met -> unit 0.5 (was 0.0); deleting every outlet's phase data
+        un-waives it (phase0 stated -> 1) -> still 0.5 (was 0.5: a rise
+        from 0.0), never higher."""
+        doc = one_unit_doc(spec_unit("HXprocess", {"phase0": "l"}),
+                           ins=({}, {}), outs=({"T": None}, {"T": None}))
+        sc = ctx(doc)
+        first, phases = C._unit_rules(sc, 0)
+        self.assertEqual(C._requirement_score(first, sc, 0, {"phase0"}), 0.0)
+        self.assertFalse(C._requirement_applies(phases, sc, 0))
+        self.assertEqual(C._unit_spec_score(sc, 0), (
+            0.5, ["units[U1].design_input_specs: one of "
+                  "dT|T_lim0|T_lim1|H_lim0|H_lim1"]))
+        for stream_ in doc["streams"][2:]:
+            del stream_["stream_properties"]["phases"]
+        sc = ctx(doc)
+        self.assertTrue(C._requirement_applies(phases, sc, 0))
+        self.assertEqual(C._unit_spec_score(sc, 0)[0], 0.5)
+
+    def test_pump_dp_design_waiver_counts_as_met(self):
+        """A Pump stating only dP_design, inlet 101325 Pa -> outlet 3e5 Pa
+        (P derivable from the outlet: 0.75; dP_design waived by the known
+        rise and met) -> (0.75 + 1) / 2 = 0.875 (was 0.75). Deleting the
+        inlet pressure un-waives dP_design (stated -> 1) -> 0.875 (was a
+        rise to 0.875); deleting the outlet pressure instead also loses the
+        P derivation -> 0.5. CMP-UOP-05 (a min over requirements, P only
+        derivable -> DERIVED_CREDIT for the exact class) stays at
+        DERIVED_CREDIT when dP_design is un-waived (stated without a unit):
+        the waived requirement's credit 1 is the min's identity."""
+        doc = one_unit_doc(spec_unit("Pump", {"dP_design": 2.0e5}),
+                           outs=({"P": 3.0e5},))
+        sc = ctx(doc)
+        self.assertEqual(C._unit_spec_score(sc, 0)[0], 0.875)
+        self.assertEqual(C._uop_05_unit(sc, 0, False)[0], C.DERIVED_CREDIT)
+        no_inlet_P = deleted(doc, ("streams", 0, "stream_properties",
+                                   "pressure"))
+        sc = ctx(no_inlet_P)
+        self.assertEqual(C._unit_spec_score(sc, 0)[0], 0.875)
+        self.assertEqual(C._uop_05_unit(sc, 0, False)[0], C.DERIVED_CREDIT)
+        no_outlet_P = deleted(doc, ("streams", 1, "stream_properties",
+                                    "pressure"))
+        self.assertEqual(C._unit_spec_score(ctx(no_outlet_P), 0)[0], 0.5)
+
+    def test_class_waivers_count_as_met(self):
+        """Class-knowledge waivers (R3.5), each on a unit that states the
+        waived key: a Splitter (exact class, no moisture_content) stating
+        moisture_content, split neither stated nor derivable (an outlet
+        without T) -> (0 + 1) / 2 = 0.5 (was 0.0); an EnzymeTreatment
+        (named class, no batch) stating tau and batch, its outlet without T
+        -> (0 + 1 + 0 + 1) / 4 = 0.5 (was 1/3). Replacing each class by a
+        family-only unit_type ('Splitter', 'Enzyme treatment reactor')
+        un-waives the requirement (stated -> 1) and leaves the score at 0.5
+        (a rise to 0.5 before R5.9)."""
+        for name, label, specs, outs in (
+                ("Splitter", "Splitter", {"moisture_content": 0.5},
+                 ({}, {"T": None})),
+                ("EnzymeTreatment", "Enzyme treatment reactor",
+                 {"tau": 2.0, "batch": False}, ({"T": None},))):
+            with self.subTest(name=name):
+                unit = dict(spec_unit(name, specs), unit_type=label)
+                doc = one_unit_doc(unit, outs=outs)
+                sc = ctx(doc)
+                self.assertEqual(sc.unit_classes[0][0::2], (name, 1.0))
+                waived = [r for r in C._unit_rules(sc, 0)
+                          if not C._requirement_applies(r, sc, 0)]
+                self.assertEqual(len(waived), 1)
+                self.assertEqual(C._unit_spec_score(sc, 0)[0], 0.5)
+                sc = ctx(deleted(doc, ("units", 0,
+                                       "design_simulation_method")))
+                self.assertNotEqual(sc.unit_classes[0][2], 1.0)
+                self.assertTrue(C._requirement_applies(waived[0], sc, 0))
+                self.assertEqual(C._unit_spec_score(sc, 0)[0], 0.5)
+
+    def test_waiver_doc_deletion_sweep(self):
+        """waiver_doc(): every waiver path active before the sweep (each
+        unit's WAIVED requirement does not apply) and un-waived by one
+        deletion -- the feed's pressure (P1), s2's phases (H1 and X1: its
+        phase set becomes unknown), R1's and S1's design_simulation_method
+        (the unit_type family remains, the exact class goes) -- without the
+        unit score rising. Unit scores: P1 0.875, H1 0.5, X1 0.5, R1 0.5,
+        S1 0.5 -- also on the mass-basis twin (mass_basis, R5.3). The STRICT
+        sweep deleting every field (ids, endpoints, unit_type,
+        design_simulation_method, spec keys, pressures, phases,
+        compositions), over both documents, raises neither the overall
+        score nor any criterion and turns no scored criterion
+        not-applicable."""
+        for basis, doc in (("molar", waiver_doc()),
+                           ("mass", mass_basis(waiver_doc()))):
+            with self.subTest(basis=basis):
+                self.assert_waivers_hold(doc)
+
+    def assert_waivers_hold(self, doc):
+        """The waiver_doc assertions of test_waiver_doc_deletion_sweep on
+        one basis: exact classes, active waivers, unit scores, one-deletion
+        un-waiving without a rise, and a clean strict sweep."""
+        sc = ctx(doc)
+        self.assertEqual(
+            [c[0::2] for c in sc.unit_classes],
+            [(name, 1.0) for _u, name, _l, _s in WAIVER_UNITS])
+        for uid in WAIVED:
+            self.assertFalse(self.waived_req(doc, uid), uid)
+        self.assertEqual({uid: self.unit_score(doc, uid) for uid in WAIVED},
+                         {"P1": 0.875, "H1": 0.5, "X1": 0.5, "R1": 0.5,
+                          "S1": 0.5})
+        unwaiving = {"P1": ("streams", 0, "stream_properties", "pressure"),
+                     "H1": ("streams", 2, "stream_properties", "phases"),
+                     "X1": ("streams", 2, "stream_properties", "phases"),
+                     "R1": ("units", 3, "design_simulation_method"),
+                     "S1": ("units", 4, "design_simulation_method")}
+        for uid, path in unwaiving.items():
+            after = deleted(doc, path)
+            self.assertTrue(self.waived_req(after, uid), uid)
+            self.assertLessEqual(self.unit_score(after, uid),
+                                 self.unit_score(doc, uid), uid)
+        with name_lookup(set()):
+            raised, lowered, n = deletion_violations(doc, skip=frozenset())
+        self.assertGreater(n, 180)
+        self.assertEqual(raised, [])
+        self.assertGreater(lowered, n // 2)
 
 
 if __name__ == "__main__":
