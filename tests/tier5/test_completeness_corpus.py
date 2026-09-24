@@ -388,9 +388,10 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         CMP-UOP-02 0.9921 -> 0.9950, CMP-COST-01/02 0.9462 -> 0.9670,
         CMP-COST-07 0.500 -> 0.511, overall up 0.0007); neither unit keeps
         an exact class (confidence < 1): Ev607 resolves to its keyword
-        family (evaporator), C603's 'Separator' label is a pure-splitter
-        claim its streams contradict (R5.1), so its family is unknown; both
-        stay in the costed population. R4.8: no class claim on the corn file
+        family (evaporator), and C603's 'Separator' label names a
+        separator, which may draw power (R8.3: not a pure-splitter word, so
+        its electricity no longer contradicts it), so it resolves to the
+        splitter family; both stay in the costed population. R4.8: no class claim on the corn file
         is contradicted by its ports (every design_simulation_method class
         survives, and the four HXprocess units' bare 'Heat exchanger'
         unit_type reads as hx_process, not as a contradicted hx_utility);
@@ -429,9 +430,9 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                     self.assertLessEqual(c.score,
                                          was[c.criterion_id].score + TOL)
         sc = C._ScoringContext(stripped)
-        # R5.1: C603's 'Separator' label is a label-only (pure) splitter
-        # claim its streams contradict, so its family is unknown.
-        for uid, family in (("C603", None), ("Ev607", "evaporator")):
+        # R8.3: C603's 'Separator' label is a separator claim its power
+        # duty does not contradict.
+        for uid, family in (("C603", "splitter"), ("Ev607", "evaporator")):
             position = sc.unit_positions[uid]
             name, fam, confidence = sc.unit_classes[position]
             self.assertEqual((name, fam), (None, family), uid)
@@ -745,6 +746,46 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
             without(self.corn, ("units", d610, "id")))
         after = {c.criterion_id: c.score for c in report.criteria}
         self.assertLess(after["CMP-FEED-02"], feed01["CMP-FEED-02"].score)
+
+    def test_revision_8_label_only_separators(self):
+        """R8.3 on the corpus read label-only (every design_simulation_method
+        removed, as an extracted file states no class): no separator label
+        -- a splitter-family unit_type whose head noun is not a
+        pure-splitter word (_pure_splitter_label) -- loses its family to a
+        power duty or a pressure drop. Every such unit whose stream / duty
+        evidence shows no heat duty, converted species, outlet more than
+        LABEL_T_ABS outside its inlets' temperature band, or pressure rise
+        without a power duty keeps the splitter family; among them the corn
+        file's DDGS and liquids centrifuges C603 / C603_2 and molecular
+        sieve X504 (drawing power), and the sludge centrifuge, belt
+        thickener and reverse osmosis of the wastewater files (0.2 bar to
+        1 atm with the power of their built-in pumps)."""
+        kept = set()
+        for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
+            doc = copy.deepcopy(C._read_flowsheet(str(path)))
+            for unit in doc["units"]:
+                unit.pop("design_simulation_method", None)
+            sc = C._ScoringContext(doc)
+            for position, unit in enumerate(sc.units):
+                label = unit.get("unit_type")
+                if (C._keyword_family(label) != "splitter"
+                        or C._pure_splitter_label(label)):
+                    continue
+                physics = sc.unit_physics[position]
+                if ({"heat", "species", "conversion", "hot", "cold"}
+                        & set(physics)) or ("rise" in physics
+                                            and "power" not in physics):
+                    continue
+                where = (path.name, unit.get("id"), label)
+                self.assertEqual(sc.unit_classes[position][1], "splitter",
+                                 where)
+                kept.add((path.name, unit.get("id")))
+        self.assertLessEqual({("SF_BST_01.json", "C603"),
+                              ("SF_BST_01.json", "C603_2"),
+                              ("SF_BST_01.json", "X504"),
+                              ("SF_BST_04.json", "C501"),
+                              ("SF_BST_04.json", "U504"),
+                              ("SF_BST_04.json", "U506")}, kept)
 
 
 if __name__ == "__main__":

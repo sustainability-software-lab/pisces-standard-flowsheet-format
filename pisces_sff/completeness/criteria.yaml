@@ -70,8 +70,10 @@
 #   - Deletions on an internally inconsistent document, one whose parts
 #     contradict each other: included_in_thermo flags the stream data
 #     contradict (CMP-THM-04); a unit claim that the unit's own ports,
-#     streams or duties contradict -- a 'Mixer' heating its feed, species
-#     converting across a 'Membrane' or 'Pelletizer' label -- where
+#     streams or duties contradict -- a 'Mixer' heating its feed, a
+#     'Splitter' drawing power, a 'Centrifuge' taking steam, species
+#     converting across a 'Membrane' or 'Pelletizer' label (a separator
+#     label drawing power or dropping pressure is not one) -- where
 #     deleting the data that shows the contradiction restores the claim
 #     and sheds the needs its unknown family carried (CMP-UOP-01); a
 #     reaction that does not conserve mass with the document's own molar
@@ -431,7 +433,9 @@ criteria:
       Sides with several material-carrying streams earn derived
       credit only when the order follows from the data (a flash's vapor and
       liquid outlets, a splitter with explicit split fractions) and the
-      unit's balances close. A unit without an id, whose ports no stream can
+      unit's balances close. A claim held to reactor rules for the
+      reactions it declares (see CMP-UOP-02) takes the lower of its own
+      family's port convention and a reactor's: it may be that reactor. A unit without an id, whose ports no stream can
       name, scores 0, and so do both sides of every unit id a stream
       endpoint references but no unit declares. Each unit counts once.
 
@@ -568,10 +572,18 @@ criteria:
       keywords only, even when it spells a class name ('Separator',
       'Evaporator'), since extracted files and exporters alike use class
       names as labels. Keywords are read from the head noun -- the rightmost
-      equipment word ('Wastewater pump' is a pump, 'Fermentation tank' a
-      reactor, 'Feed/effluent heat exchanger' a process-process exchanger);
-      a service word (wastewater, boiler, process / chilled / cooling water,
-      CIP, fire water) decides only when the head is generic (system,
+      equipment word ('Wastewater pump' is a pump, 'Extraction column' an
+      extractor, 'Heat pump' an exchanger, 'CHP unit' a
+      boiler-turbogenerator, 'Feed/effluent heat exchanger' a
+      process-process exchanger); a reaction, flash or settling word makes
+      a tank, vessel or drum head a reactor, flash or separator only when
+      it directly modifies it ('Fermentation tank', 'Reaction vessel',
+      'Continuous stirred tank', 'Flash drum', 'Decanter tank'), never
+      across a service qualifier or what the vessel holds, nor as a
+      product noun ('Fermenter feed tank', 'Hydrolysate storage tank' and
+      'Hydrolysate tank' stay tanks, which may host chemistry); a service
+      word (wastewater, boiler, process / chilled / cooling water, CIP,
+      fire water) decides only when the head is generic (system,
       treatment, package, unit, ...) or absent. Full credit needs a
       concrete class: one on the scorer's static list of concrete BioSTEAM
       unit classes (enumerated from the biosteam source, facilities and the
@@ -605,17 +617,31 @@ criteria:
       nothing and would hide a reactor or an exchanger) -- counts as
       unstated; a bare 'heat exchanger' with two inlets and outlets is a
       process-process exchanger. So does a claim that removes needs but
-      that the unit's streams or duties contradict: a mixer claim (exact
-      class or label) whose outlet is more than 1 K hotter than its
-      hottest inlet or more than 1 % above its highest inlet pressure
-      (upper bounds only: a mixer may cool and mixes at the lowest inlet
-      pressure), and a pure-splitter claim (Splitter, PhaseSplitter,
-      MockSplitter / FakeSplitter, or a splitter label without an exact
-      class) whose outlet differs from its inlet by more than 1 K or 1 %,
-      either one across which a species appears or vanishes (flows
-      computable, no well-formed reaction declared) or that records a
-      non-zero heat or power duty (an adiabatic Mixer draws nothing; the
-      @cost-decorated Mixer subclasses may draw agitator power). Streams
+      that the unit's streams or duties contradict: a mixer class claim
+      whose outlet is more than 1 K hotter than its hottest inlet or more
+      than 1 % above its highest inlet pressure (upper bounds only: a
+      mixer may cool and mixes at the lowest inlet pressure), and a
+      pure-splitter claim (Splitter, PhaseSplitter, MockSplitter /
+      FakeSplitter, or a label whose head noun is splitter, split,
+      divider, tee or manifold) whose outlet differs from its inlet by
+      more than 1 K or 1 %, either one across which a species appears or
+      vanishes (flows computable, no well-formed reaction declared) or
+      that records a non-zero heat or power duty (an adiabatic Mixer draws
+      nothing; the @cost-decorated Mixer subclasses may draw agitator
+      power). A claim without a class names equipment that may do work,
+      so it is judged by what no such unit does: any other separator
+      label (centrifuge, filter, press, screen, sieve, membrane, settler,
+      chromatography, ...) or splitter key-set inference may draw power
+      and drop pressure, and is implausible with a heat duty, an outlet
+      more than 5 K outside its inlets' temperature range, a pressure rise
+      of more than 1 % without a power duty (a built-in pump's work: the
+      sludge-handling units and reverse osmosis of biosteam.wastewater
+      raise their outlets to 1 atm), or converted species; a mixer,
+      conveyor, mill or other solids-handling label may draw power and is
+      implausible with a heat duty, a pressure rise of more than 1 %, an
+      outlet more than 5 K hotter than its hottest inlet, or converted
+      species; a 'Junction' or 'Scaler' label is held to that exact
+      class's bounds. Streams
       stated empty are ignored and a bound is tested only on stated values,
       so deleting data never creates a contradiction; relabelling a pump,
       heater or fermenter as a mixer thus leaves its family unknown instead
@@ -755,9 +781,19 @@ criteria:
       the flowsheet-level evidence of CMP-RXN-01 is absent) scores the
       lower of that and the best reactor variant: it must be specified as
       the reactor it may be too, so relabelling a fermenter as a holding
-      tank cannot pay off. Columns and extractors are never held to
+      tank cannot pay off. Declared chemistry is never ruled out: a claim
+      without a class of any family but a reactor's -- and such a tank
+      claim -- that declares reactions of its own is held to the lower of
+      its rules and the best reactor variant whatever the evidence says
+      (the flowsheet-level evidence rules out only undeclared chemistry),
+      so a fermenter declaring its reactions sheds none of its needs as a
+      'Reaction tank', 'Holding tank', 'Mixer' or 'Conveyor'; a combustor,
+      boiler, facility or dryer label is exempt only when every reaction it
+      declares is well-formed and makes nothing its own combustion cannot.
+      Columns and extractors declaring no reaction are never held to
       reactor rules (a reactive column is still specified as a column),
-      and every other label cannot host chemistry at all (see CMP-UOP-01).
+      and every other label declaring none cannot host chemistry at all
+      (see CMP-UOP-01).
       Units of unknown
       family, and unit ids that stream endpoints reference but no unit
       declares, score zero because nothing tells the importer what to
@@ -888,8 +924,10 @@ criteria:
       waived requirement counts as met, as in CMP-UOP-02, so a unit none of
       whose requirements applies needs no unit. As in CMP-UOP-02, a family
       claim naming no class is measured against its best legitimate
-      rule-set variant, and a tank that may host hidden chemistry against
-      the lower of that and the best reactor variant. Applies to
+      rule-set variant, and a tank that may host hidden chemistry, or a
+      claim held to reactor rules for the reactions it declares (a
+      facility's settings included), against the lower of that and the
+      best reactor variant. Applies to
       every unit that needs operating specifications or facility settings
       (the CMP-UOP-02 and CMP-UOP-06 populations).
 
@@ -941,10 +979,14 @@ criteria:
       without its reaction set. The population is defined by need alone: the
       units of a reactor family (continuous reactors, batch, aerated and
       gas-fed bioreactors, and units whose type names a neutralizer,
-      hydrotreater, gasifier, reformer, autoclave, pyrolysis, hydrolysis,
-      ammonia-addition, (over)liming, conditioning, acidification,
-      (trans)esterification or mashing step -- 'Overliming tank', 'Mash
-      tank'); every unit whose
+      hydrotreater, hydrocracker, gasifier, reformer, converter, calciner,
+      autoclave, CSTR, kettle, pyrolysis, hydrolysis, ammonia-addition,
+      (over)liming, conditioning, acidification, (trans)esterification or
+      mashing step, or a vessel a reaction word directly modifies --
+      'Overliming tank', 'Mash tank', 'Reaction vessel'); every claim held
+      to reactor rules for the reactions it declares (see CMP-UOP-02: it
+      could be that reactor, as its unknown family would be once its label
+      is deleted); every unit whose
       family is unknown (no class, no keyword family, or a claim its ports
       or stream physics contradict -- see CMP-UOP-01: a 'mixer', 'heater',
       'Junction' or exact StorageTank across which species convert is one:
@@ -976,9 +1018,11 @@ criteria:
       conserve mass as written ('Glucose -> 5 Ethanol') still counts as
       declared -- its definition is discounted in CMP-RXN-02 -- so what a
       unit declares depends only on the species its reactions name, which
-      deleting a field can only shrink. Declared reactions and species appearing in a
-      unit's outlets do not by themselves make a unit reactive (a
-      population read from data let deleting that data shrink it); species
+      deleting a field can only shrink. Species appearing in a unit's
+      outlets do not by themselves make a unit reactive (a population read
+      from data let deleting that data shrink it), and declared reactions
+      only as above -- deleting a field of a reaction keeps its object;
+      species
       appearing across a physical-only unit (or one of unknown family) is
       a consistency guard on CMP-UOP-04 and on derivations. Families whose
       chemistry the class itself fixes (combustors, boilers,

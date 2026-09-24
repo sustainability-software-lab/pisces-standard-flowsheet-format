@@ -2587,30 +2587,46 @@ _ANY_EXCHANGER_RE = re.compile(r'(?:heat )?exchanger|hx')
 # heater; 'MESH distillation' / 'Stripping column' staged columns; 'Crushing
 # mill' a splitter, not a mill; 'Heat exchanger network'; 'Aerated
 # bioreactor'; 'Batch co-fermentation'). Two exceptions override the head:
-# a reaction or flash word before a vessel head (tank, vessel, drum) makes
-# it a reactor / flash ('Neutralization tank', 'Fermentation tank', 'Flash
-# drum'); a feed/effluent, interchanger, economizer or recuperator word with
-# a heat-exchanger head makes it a process-process exchanger ('Feed/effluent
-# heat exchanger'). A junction marker (junction, scaler, duplicator, mass
-# balance, diagram only, mock) anywhere wins outright.
+# a reaction, flash or settling word DIRECTLY before a vessel head (tank,
+# vessel, drum) makes it a reactor, flash or splitter ('Neutralization
+# tank', 'Fermentation tank', 'Reaction vessel', 'Flash drum', 'Decanter
+# tank'; R8.1: _vessel_modifier); a feed/effluent, interchanger, economizer
+# or recuperator word with a heat-exchanger head makes it a process-process
+# exchanger ('Feed/effluent heat exchanger'). A junction marker (junction,
+# scaler, duplicator, mass balance, diagram only, mock) anywhere wins
+# outright.
 _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in (
-    ('boiler_turbogenerator', r'turbo ?generator'),
+    # R8.2: a combined heat and power (CHP) or cogeneration unit is one too.
+    ('boiler_turbogenerator', r'turbo ?generator|combined heat (?:and|&) '
+                              r'power|\bchp\b|cogenerat\w*'),
     ('heat_exchanger_network', r'heat exchanger network|\bhxn\b'),
     # R5.7: a fire-water tank (BioSTEAM's FireWaterTank) is a facility.
     ('facility', r'cooling tower|fire ?water(?: storage)?(?: tank)?'),
-    ('extraction', r'mixer ?settlers?|extract\w*|liquid ?liquid|'
-                   r'\blle\b(?: (?:centrifuge|settler))?'),
+    # R8.2: an extraction, LLE or wash column / tower is an extractor (its
+    # head absorbed, like the adsorber's); only the word 'extraction' takes
+    # a column, so 'Extractive distillation column' stays a column.
+    ('extraction', r'(?:(?:liquid ?liquid|\blle\b|solvent|counter ?current) )?'
+                   r'extraction (?:column|tower)|'
+                   r'(?:liquid ?liquid|wash(?:ing)?) (?:column|tower)|'
+                   r'mixer ?settlers?|extract\w*|liquid ?liquid|'
+                   r'\blle\b(?: (?:centrifuge|settler|column|tower))?'),
     ('steam_injection_heater', r'steam ?mixer|jet ?cooker|steam injection'
                                r'(?: heater)?|direct steam(?: \w+)?'),
+    # R8.2: an absorption or stripping tower is a staged column too.
     ('staged_column', r'\bmesh\b(?: distillation| column)?|multi ?stage '
                       r'(?:equilibrium|vle)(?: column)?|adiabatic multi ?stage'
                       r'(?: (?:equilibrium|vle))?(?: column)?|'
-                      r'absor(?:ber|ption column)|stripp(?:er|ing column)'),
-    ('combustor', r'combust\w*|oxidi[sz]er|furnace|incinerat\w*|burner'),
+                      r'absor(?:ber|ption (?:column|tower))|'
+                      r'stripp(?:er|ing (?:column|tower))'),
+    # R8.2: a flare burns its feed like a thermal oxidizer.
+    ('combustor', r'combust\w*|oxidi[sz]er|furnace|incinerat\w*|burner|'
+                  r'\bflares?\b'),
     ('dryer', r'dryer|drier\b|drying'),
     ('equilibrium_reactor', r'(?:gibbs )?equilibrium reactor|gibbs'),
+    # R8.2: a bare bubble column is a gas-sparged (aerated) bioreactor.
     ('aerated_bioreactor', r'\baerated(?: (?:bio)?reactor| ferment\w*)?|'
-                           r'gas ?fed(?: (?:bio)?reactor| ferment\w*)?'),
+                           r'gas ?fed(?: (?:bio)?reactor| ferment\w*)?|'
+                           r'bubble columns?\b'),
     ('batch_bioreactor', r'batch ?(?:bio)?reactor|batch ?(?:co ?)?ferment\w*|'
                          r'\bssf\b|simultaneous saccharification'
                          r'(?: (?:and )?ferment\w*)?'),
@@ -2618,9 +2634,10 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
     # R5.7: a chiller or a steriliser is a utility-heated / -cooled
     # exchanger; a fan or blower a compressor; an expander a turbine; a kiln
     # a reactor; a knock-out drum a flash; ion exchange and an adsorber
-    # (adsorption column) a splitter.
+    # (adsorption column) a splitter. R8.2: a heat pump moves heat (never
+    # a pump).
     ('hx_utility', r'hx ?utilit\w*|heat exchanger|heater|cooler|condenser|'
-                   r'reboiler|\bhx\b|chiller|sterili[sz]\w*'),
+                   r'reboiler|\bhx\b|chiller|sterili[sz]\w*|heat pumps?'),
     ('pump', r'pump'),
     ('valve', r'valve'),
     ('compressor', r'compress\w*|blower|\bfans?\b'),
@@ -2632,20 +2649,26 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
     # conditioning, acidification, (trans)esterification and mashing name a
     # reactor too ('Ammonia addition tank', 'Overliming tank', 'Mash tank'
     # through the vessel exception). R7.5: so do a reformer and an
-    # autoclave.
+    # autoclave. R8.2: and a converter, a hydrocracker, a calciner, a CSTR
+    # and a (reaction) kettle -- a 'Kettle reboiler' stays an exchanger.
     ('reactor', r'reactor|ferment\w*|saccharif\w*|digest\w*|hydroly\w*|'
                 r'liquefaction|\brx\b|\bmbr\b|seed train|neutrali[sz]\w*|'
                 r'hydrotreat\w*|gasif\w*|pyroly\w*|oxidation|\bkilns?\b|'
                 r'ammonia ?addition|(?:over)?liming|condition\w*|'
                 r'acidif\w*|esterif\w*|\bmash(?:ing)?\b|reformer|'
-                r'autoclave'),
+                r'autoclave|converter|hydrocrack\w*|calcin\w*|\bcstr\b|'
+                r'kettles?'),
     # R7.5: ultra-, nano- and microfiltration, pervaporation and pressure
     # swing adsorption (PSA, a whole token only) separate too; a membrane
     # is a splitter unless a later head names more ('Membrane bioreactor'
     # stays a reactor). Like the adsorber and ion-exchange alternatives,
     # both PSA forms absorb a trailing column/bed head, so 'Pressure swing
     # adsorption column' and 'PSA column' stay splitters rather than
-    # yielding the head to distillation.
+    # yielding the head to distillation. R8.2: so do chromatography, resin,
+    # (activated) carbon, guard and simulated-moving-bed (SMB) columns and
+    # beds; reverse osmosis (RO, a whole token) and electrodialysis
+    # separate too; a divider, tee or manifold only divides a stream (a
+    # pure-splitter word, _PURE_SPLITTER_WORD_RE).
     ('splitter', r'splitter|\bsplit\w*|centrifuge|filter|\bpress\b|screen|'
                  r'separator|decanter|settler|sieve|scrubber|clarifier|'
                  r'adsor[bp]\w*(?: (?:column|bed))?|absorp\w*|membrane|'
@@ -2653,7 +2676,12 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
                  r'ion ?exchang\w*(?: (?:column|bed|resin))?|'
                  r'(?:ultra|nano|micro) ?filtration|pervaporat\w*|'
                  r'\bpsa\b(?: (?:column|bed))?|'
-                 r'pressure swing adsorption(?: (?:column|bed))?'),
+                 r'pressure swing adsorption(?: (?:column|bed))?|'
+                 r'chromatograph\w*(?: (?:columns?|beds?))?|'
+                 r'(?:resin|(?:activated )?carbon|guard) (?:columns?|beds?)|'
+                 r'activated carbon|(?:simulated moving bed|\bsmb\b)'
+                 r'(?: (?:columns?|beds?|chromatograph\w*))?|'
+                 r'\bro\b|electrodialy\w*|dividers?|\btees?\b|manifolds?'),
     ('distillation', r'distillation|column|rectifier'),
     ('tank', r'tank|storage|vessel|hopper|\bsilo|\bbin\b|\bdrum\b'),
     # R7.5: a pelletizer (pelletiser) handles solids.
@@ -2664,11 +2692,32 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
 ))
 _JUNCTION_RE = re.compile(r'\bjunction|\bscaler\b|duplicator|mass balance|'
                           r'diagram only|\bmock\b')
-# The vessel exception (a reaction or flash word before a vessel head) and
-# the process-exchanger exception (a heat-exchanger head with a feed/effluent
-# word).
+# The vessel exception (a reaction, flash or settling word directly before a
+# vessel head) and the process-exchanger exception (a heat-exchanger head
+# with a feed/effluent word).
 _VESSEL_RE = re.compile(r'tank|vessel|\bdrum\b')
 _VESSEL_MODIFIER_FAMILIES = REACTOR_FAMILIES | {'flash'}
+# R8.1 / R8.4: words that make a vessel head a reactor only as its direct
+# modifier ('Reaction tank', 'Hydrogenation vessel', 'Continuous stirred
+# tank', 'Pretreatment tank'), besides the reactor family's own keywords;
+# and R8.2: those that make it a splitter ('Settling tank', 'Decanter tank',
+# 'Separation vessel', 'Phase separator drum').
+_VESSEL_REACTOR_MODIFIER_RE = re.compile(
+    r'reaction|reacting|stirred|pre ?treat\w*|hydrogenat\w*|'
+    r'polymeri[sz]\w*|precipitat\w*|isomeri[sz]\w*|saponif\w*|acidulat\w*|'
+    r'conversion')
+_VESSEL_SPLITTER_MODIFIER_RE = re.compile(
+    r'settl\w*|decant\w*|sediment\w*|(?:phase )?separat(?:or|ion|ing)s?')
+# R8.1: product nouns name what a vessel holds, not a reaction in it
+# (hydrolysate, digestate, broth, beer, filtrate, liquor), and so does a
+# reaction verb's past participle ('Fermented mash tank', 'Neutralized
+# slurry tank'): neither makes a vessel a reactor.
+_PRODUCT_NOUN_RE = re.compile(
+    r'hydroly[sz]ates?|digestates?|broths?|beers?|filtrates?|liquors?|'
+    r'(?:ferment|neutrali[sz]|hydroly[sz]|digest|saccharifi|liquefi|'
+    r'condition|acidifi|esterifi|hydrotreat|gasifi|pyroly[sz]|oxidi[sz]|'
+    r'hydrogenat|polymeri[sz]|precipitat|isomeri[sz]|saponifi|acidulat|'
+    r'pre ?treat|mash|lim|react|convert|reform|calcin)ed')
 _HX_PROCESS_MODIFIER_RE = re.compile(r'feed ?effluent|interchang|economi[sz]|'
                                      r'recuperat')
 # Generic head nouns: a phrase ending in one names no equipment itself, so a
@@ -2727,12 +2776,44 @@ def _phrase_family(text):
         return None
     end, start, family = head
     if family == 'tank' and _VESSEL_RE.fullmatch(text, -start, end):
-        before = [m for m in matches
-                  if m[0] <= -start and m[2] in _VESSEL_MODIFIER_FAMILIES]
-        if before:
-            return max(before)[2]
+        family = _vessel_modifier(text, -start, matches) or family
     if family == 'hx_utility' and _HX_PROCESS_MODIFIER_RE.search(text):
         return 'hx_process'
+    return family
+
+
+def _vessel_modifier(text, start, matches):
+    """R8.1: the family a vessel head (tank, vessel, drum) starting at
+    `start` in normalized phrase `text` takes from the word DIRECTLY
+    before it -- a reactor-family or flash keyword (`matches`, the phrase's
+    _equipment_matches) or a vessel-only reactor word
+    (_VESSEL_REACTOR_MODIFIER_RE: 'Reaction tank', 'Continuous stirred
+    tank') gives that family, a settling / decanting / separating word
+    (_VESSEL_SPLITTER_MODIFIER_RE) the splitter -- or None. Any word
+    between them -- a service qualifier (feed, storage, surge, holding,
+    buffer, day, product, effluent, ...: 'Fermenter feed tank', 'Reformer
+    feed drum') or what the vessel holds ('Fermentation broth tank') --
+    keeps the tank family, and so does a product noun or a reaction
+    verb's past participle (_PRODUCT_NOUN_RE: 'Hydrolysate tank',
+    'Fermented mash tank'). Such tanks stay hosting claims: R7.1 covers
+    the chemistry they may hide."""
+    found = [m for m in matches
+             if m[2] in _VESSEL_MODIFIER_FAMILIES and m[0] <= start]
+    for pattern, family in ((_VESSEL_REACTOR_MODIFIER_RE, 'reactor'),
+                            (_VESSEL_SPLITTER_MODIFIER_RE, 'splitter')):
+        found += [(m.end(), -m.start(), family)
+                  for m in pattern.finditer(text, 0, start)]
+    found = [m for m in found if not text[m[0]:start].strip()]
+    if not found:
+        return None
+    end, begin, family = max(found)
+    words = text[:end].split()
+    # The participle qualifies the modifier ('fermented mash') unless it
+    # belongs to a multi-word modifier match itself.
+    qualified = (len(words) > 1 and -begin >= end - len(words[-1])
+                 and _PRODUCT_NOUN_RE.fullmatch(words[-2]))
+    if _PRODUCT_NOUN_RE.fullmatch(words[-1]) or qualified:
+        return None
     return family
 
 
@@ -2896,6 +2977,23 @@ PURE_SPLITTER_CLASSES = frozenset({'Splitter', 'PhaseSplitter',
 # atm): its claim is exempt from the T / P bounds, not from the species and
 # duty checks.
 MOCK_SPLITTER_CLASSES = frozenset({'MockSplitter', 'FakeSplitter'})
+# R8.3: head nouns of a label that claims a PURE splitter (it only divides a
+# stream). Any other splitter-family label (centrifuge, filter, press,
+# screen, sieve, membrane, RO / UF / NF, PSA, thickener, scrubber, settler,
+# decanter, chromatography, ...) may draw power and drop pressure.
+_PURE_SPLITTER_WORD_RE = re.compile(
+    r'splitters?|split\w*|dividers?|tees?|manifolds?')
+# R8.3: the temperature band (K) a label-only separator, mixer or
+# solids-handling claim keeps its outlets in: [coldest inlet - LABEL_T_ABS,
+# hottest inlet + LABEL_T_ABS] (a mixer and a solids handler: the upper
+# bound only). Wider than GUARD_T_ABS, since such a unit may do work on its
+# streams (a centrifuge, a mill) without a heat duty.
+LABEL_T_ABS = 5.0
+# R8.3 (N8): the junction word a label-only junction claim names, and the
+# exact class whose bounds it is then held to (a 'Junction' label to the
+# Junction's, a 'Scaler' label to the Scaler's).
+_JUNCTION_LABEL_CLASSES = (('Junction', re.compile(r'\bjunction')),
+                           ('Scaler', re.compile(r'\bscaler\b')))
 
 
 def _recorded_duty(sc, position):
@@ -2933,7 +3031,11 @@ def _physics_contradictions(sc, position):
     more than GUARD_T_ABS, or its P the highest inlet's by more than
     GUARD_P_RTOL (upper bounds only: a mixer may cool, and mixes at the
     lowest inlet pressure); 'splitter' -- some outlet's T or P differs
-    from its one inlet's by more than GUARD_T_ABS / GUARD_P_RTOL. Streams
+    from its one inlet's by more than GUARD_T_ABS / GUARD_P_RTOL. R8.3:
+    'rise' -- some outlet's P exceeds the highest inlet's by more than
+    GUARD_P_RTOL (the pressure half of 'mixer'); 'hot' / 'cold' -- some
+    outlet's T lies more than LABEL_T_ABS above the hottest / below the
+    coldest inlet's (the band of a label-only claim). Streams
     stated empty carry nothing and are ignored; a bound is tested only when
     every non-empty inlet states the quantity, and only outlets stating it
     are compared -- deleting a value never creates a contradiction.
@@ -2994,6 +3096,17 @@ def _physics_contradictions(sc, position):
         if max(outlet) > limit:
             mixer.append(f'outlet {name} {max(outlet):.6g} above the '
                          f'highest inlet {name} {top:.6g}')
+            if part == 'P':
+                found['rise'] = mixer[-1]
+        # R8.3: the looser band of a label-only claim (LABEL_T_ABS).
+        if part == 'T' and max(outlet) > top + LABEL_T_ABS:
+            found['hot'] = (f'outlet temperature {max(outlet):.6g} more '
+                            f'than {LABEL_T_ABS:g} K above the hottest '
+                            f'inlet temperature {top:.6g}')
+        if part == 'T' and min(outlet) < min(inlet) - LABEL_T_ABS:
+            found['cold'] = (f'outlet temperature {min(outlet):.6g} more '
+                             f'than {LABEL_T_ABS:g} K below the coldest '
+                             f'inlet temperature {min(inlet):.6g}')
         if len(inlet) == 1:
             off = [v for v in outlet if abs(v - top) > (
                 GUARD_T_ABS if part == 'T' else GUARD_P_RTOL * top)]
@@ -3091,31 +3204,40 @@ def _builtin_contradiction(class_name, family, physics):
 
 
 def _physics_contradiction(class_name, family, physics, core=None,
-                           confidence=None):
+                           confidence=None, label=None):
     """R5.1 / R6.1: why the stream / duty evidence `physics`
     (_physics_contradictions; None or {} when there is none) contradicts a
-    need-removing claim, or None. A mixer claim is any claim of the mixer
-    family (exact class or label): contradicted by a heat duty, a power
-    duty (except for the @cost-decorated Mixer subclasses of
-    _COSTED_CLASSES, whose cost item may carry agitator kW), species
-    appearing / vanishing or otherwise converted ('species',
-    'conversion'), or its T / P upper bounds ('mixer'). A pure-splitter
-    claim -- a PURE_SPLITTER_CLASSES class, or a splitter family claim
-    without an exact class (`class_name` None: a unit_type keyword, an
-    abstract class, a key-set inference) -- by any duty, converted species,
-    or T / P deviations ('splitter'); a MOCK_SPLITTER_CLASSES claim by a
-    duty or species appearing / vanishing only (it does nothing when
-    simulated, so its outlets' T and P are set elsewhere).
+    need-removing claim, or None. A mixer claim with a class (exact or
+    named): contradicted by a heat duty, a power duty (except for the
+    @cost-decorated Mixer subclasses of _COSTED_CLASSES, whose cost item
+    may carry agitator kW), species appearing / vanishing or otherwise
+    converted ('species', 'conversion'), or its T / P upper bounds
+    ('mixer'). A pure-splitter claim -- a PURE_SPLITTER_CLASSES class, or
+    (R8.3) a splitter family claim without a class whose `label` (the
+    unit_type, or the named abstract class) has a pure-splitter head noun
+    (_pure_splitter_label: splitter, split, divider, tee, manifold) -- by
+    any duty, converted species, or T / P deviations ('splitter'); a
+    MOCK_SPLITTER_CLASSES claim by a duty or species appearing /
+    vanishing only (it does nothing when simulated, so its outlets' T and
+    P are set elsewhere). R8.3: every other splitter claim without a class
+    (a centrifuge, filter, press, membrane, ... label, or a key-set
+    inference: `label` None) by a heat duty (a power duty is allowed),
+    converted species, a pressure rise ('rise': a pressure drop is
+    allowed) or an outlet T outside the inlets' band widened by
+    LABEL_T_ABS ('hot', 'cold'); a mixer claim without a class by the
+    same except power and 'cold' (a mixer may cool); a solids-handling
+    claim without a class by the same as the mixer's.
 
     R6.1(a) / R7.1: every other claim that cannot host chemistry
     (_chemistry_claim 'none': an exact core class without built-in
     chemistry, or a pump, valve, compressor, turbine, exchanger, flash,
-    junction, evaporator, crystallizer, solids-handling or steam-injection
-    heater claim without an exact class's code) by converted species; a
-    junction claim also by any duty, the exact Junction and Scaler by the
+    junction, evaporator, crystallizer or steam-injection heater claim
+    without an exact class's code) by converted species; a junction claim
+    also by any duty, the exact Junction and Scaler (and, R8.3, a
+    'Junction' / 'Scaler' label: _junction_label_class) by the
     pure-splitter T / P bounds, the Junction by a total mass balance that
     does not close ('mass'), and the junctions that conserve nothing
-    species by species (_NONCONSERVING_JUNCTIONS, and any label-only
+    species by species (_NONCONSERVING_JUNCTIONS, and any other label-only
     junction claim) only by species appearing / vanishing. R6.1(c): a
     _BUILTIN_CHEMISTRY class, or a combustor / boiler / facility / dryer
     claim without an exact class's code (_FAMILY_CHEMISTRY), by a
@@ -3130,22 +3252,42 @@ def _physics_contradiction(class_name, family, physics, core=None,
     chemistry = _chemistry_claim(class_name, family, core,
                                  1.0 if confidence is None else confidence)
     converted = ('species', 'conversion')
-    if family == 'mixer':
+    if family == 'mixer' and class_name is None:
+        # R8.3: a label-only mixer may draw power (an agitated blend tank).
+        kinds, what = ('heat',) + converted + ('rise', 'hot'), 'a mixer'
+    elif family == 'mixer':
         kinds = (('heat',) if class_name in _COSTED_CLASSES
                  else ('heat', 'power')) + converted + ('mixer',)
         what = 'a mixer'
     elif class_name in MOCK_SPLITTER_CLASSES:
         kinds, what = ('heat', 'power', 'species'), 'a mock splitter'
     elif (class_name in PURE_SPLITTER_CLASSES if class_name
-          else family == 'splitter'):
+          else family == 'splitter' and _pure_splitter_label(label)):
         kinds = ('heat', 'power') + converted + ('splitter',)
         what = 'a pure splitter'
+    elif family == 'splitter' and class_name is None:
+        # R8.3: any other label-only separator may draw power and drop
+        # pressure; a heat duty, an outlet outside the inlets' temperature
+        # band, or a pressure rise without a power duty (the work of a
+        # built-in pump, as BioSTEAM's sludge-handling units and reverse
+        # osmosis raise their outlets to 1 atm) contradicts it.
+        kinds = (('heat',) + converted + ('hot', 'cold')
+                 + (() if physics.get('power') else ('rise',)))
+        what = 'a separator'
+    elif family == 'solids_handling' and class_name is None:
+        # R8.3 (N8): a label-only conveyor, mill or screw may draw power
+        # and heat its solids a little, not take a heat duty.
+        kinds = converted + ('heat', 'rise', 'hot')
+        what = 'a solids-handling unit'
     elif family == 'junction' and chemistry == 'none':
-        conserving = (class_name is not None
-                      and class_name not in _NONCONSERVING_JUNCTIONS)
+        # R8.3 (N8): a 'Junction' / 'Scaler' label is held to that exact
+        # class's bounds.
+        exact = class_name or _junction_label_class(label)
+        conserving = (exact is not None
+                      and exact not in _NONCONSERVING_JUNCTIONS)
         kinds = (('heat', 'power') + (converted if conserving else ('species',))
-                 + (('splitter',) if class_name in _T_P_JUNCTIONS else ())
-                 + (('mass',) if class_name == 'Junction' else ()))
+                 + (('splitter',) if exact in _T_P_JUNCTIONS else ())
+                 + (('mass',) if exact == 'Junction' else ()))
         what = 'a junction'
     elif chemistry == 'none':
         kinds, what = converted, 'a unit that hosts no chemistry'
@@ -3158,13 +3300,57 @@ def _physics_contradiction(class_name, family, physics, core=None,
 
 
 def _ports_plausible(class_name, family, core, ports, physics=None,
-                     confidence=None):
+                     confidence=None, label=None):
     """True unless the claim is contradicted by its ports
     (_port_contradiction, R4.8/R4.14) or by its stream physics
-    (_physics_contradiction, R5.1 / R6.1)."""
+    (_physics_contradiction, R5.1 / R6.1; `label`: the text naming a claim
+    without a class, R8.3)."""
     return (_port_contradiction(class_name, family, core, ports) is None
             and _physics_contradiction(class_name, family, physics, core,
-                                       confidence) is None)
+                                       confidence, label) is None)
+
+
+def _label_head(text):
+    """R8.3: (family, head-noun text) of a unit_type or class name, read
+    as _keyword_family reads it (its CamelCase-split form, else its raw
+    lowercase form); (None, None) when it names no family."""
+    if not _nonempty_str(text):
+        return None, None
+    raw, spaced = _normalized_texts(text)
+    for variant in (spaced, raw):
+        family = _phrase_family(variant)
+        if family is not None:
+            matches = _equipment_matches(variant)
+            if not matches:
+                return family, None
+            end, start, _head = max(matches)
+            return family, variant[-start:end]
+    return None, None
+
+
+def _pure_splitter_label(text):
+    """R8.3: True when `text` (a unit_type or class name) names a splitter
+    whose head noun is a pure-splitter word (_PURE_SPLITTER_WORD_RE:
+    'Splitter', 'Stream split', 'Divider', 'Tee', 'Manifold') -- a claim
+    that the unit only divides a stream; False for every other splitter
+    label ('Centrifuge', 'Filter press', 'Membrane', 'Settling tank')."""
+    family, head = _label_head(text)
+    return (family == 'splitter' and head is not None
+            and _PURE_SPLITTER_WORD_RE.fullmatch(head) is not None)
+
+
+def _junction_label_class(text):
+    """R8.3 (N8): 'Junction' or 'Scaler' when `text` (a unit_type or class
+    name) names that junction word (_JUNCTION_LABEL_CLASSES), whose exact
+    class's bounds the label-only claim is held to; else None (a
+    duplicator, mass-balance, diagram-only or mock label)."""
+    if not _nonempty_str(text):
+        return None
+    variants = _normalized_texts(text)
+    for name, pattern in _JUNCTION_LABEL_CLASSES:
+        if any(pattern.search(v) for v in variants):
+            return name
+    return None
 
 
 def _generic_exchanger(text):
@@ -3218,7 +3404,10 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
     R5.1: `physics` -- the unit's stream / duty evidence
     (_physics_contradictions), None when unknown -- likewise invalidates
     every mixer claim and pure-splitter claim it contradicts
-    (_physics_contradiction); with no other valid claim the family is
+    (_physics_contradiction; R8.3: the unit_type, or the named abstract
+    class, is the `label` that tells a pure-splitter claim from any other
+    separator label, which may draw power and drop pressure); with no
+    other valid claim the family is
     unknown, so the unit carries every need (R4.13). R6.1 / R7.1: so does
     every claim that cannot host chemistry across which species convert
     (an exact core class without built-in chemistry, a pump / valve /
@@ -3239,7 +3428,8 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
     if keyword == 'hx_utility' and _generic_exchanger(unit_type) and not (
             _ports_plausible(None, keyword, False, ports)):
         keyword = 'hx_process'  # a bare 'heat exchanger' with 2 ins / outs
-    if not _ports_plausible(None, keyword, False, ports, physics):
+    if not _ports_plausible(None, keyword, False, ports, physics,
+                            label=unit_type):
         keyword = None
     inferred = _infer_class_from_specs(unit, registry)
     if inferred and not _ports_plausible(None, inferred[1], False, ports,
@@ -3256,7 +3446,7 @@ def _unit_class(unit, registry=None, pinned_repo=None, ports=None,
                 return name, family, confidence
             name = None  # R4.8 / R5.1: a contradicted class claims nothing
     named = _class_family(name) if name else None
-    if not _ports_plausible(None, named, False, ports, physics):
+    if not _ports_plausible(None, named, False, ports, physics, label=name):
         named = None
     stated = keyword or named
     if stated:
@@ -3612,15 +3802,68 @@ def _chemistry_rules(sc, position):
     variant and the reactor rules' best one (it must be specified both as
     the vessel it claims to be and as the reactor it may be), CMP-UOP-05
     likewise -- relabelling a fermenter 'Holding tank' cannot trade a
-    reactor's needs for a tank's. Never for columns or extractors (they
-    carry chemistry only as reactive separations, specified as columns),
-    nor for claims that cannot host chemistry (a conversion across those
-    makes them implausible instead, R6.1(a) / R7.1)."""
-    if (sc.unit_classes[position][1] != 'tank'
-            or not _hosting_claim(sc, position)
-            or _ruled_out(sc, position)):
-        return None
-    return [(f, _FAMILY_RULES[f]) for f in _REACTOR_VARIANTS]
+    reactor's needs for a tank's. Not for an undeclaring column or
+    extractor (it carries chemistry only as a reactive separation,
+    specified as a column), nor for claims that cannot host chemistry (a
+    conversion across those makes them implausible instead, R6.1(a) /
+    R7.1).
+
+    R8.4: declared chemistry is never ruled out. The reactor variants
+    apply too to a claim without a class, whatever family it claims, and
+    to a hosting tank claim, that declares reactions of its own
+    (_declared_chemistry), whatever the per-unit or flowsheet-level
+    evidence says: that evidence (_ruled_out) rules out only UNDECLARED
+    chemistry."""
+    if _declared_chemistry(sc, position) or (
+            sc.unit_classes[position][1] == 'tank'
+            and _hosting_claim(sc, position)
+            and not _ruled_out(sc, position)):
+        return [(f, _FAMILY_RULES[f]) for f in _REACTOR_VARIANTS]
+    return None
+
+
+def _declared_chemistry(sc, position):
+    """R8.4: True when unit `position` is claimed without a class (a
+    unit_type label, an abstract or unverifiable class, a key-set
+    inference) for a known family other than the reactor families, or
+    makes a hosting tank claim (_hosting_claim: an unpinned custom tank
+    class too), and declares reactions of its own -- a non-empty list of
+    reaction objects,
+    as the CMP-RXN-02..04 population counts them, so deleting a field of
+    a reaction never lifts the reactor rules -- that its family's own
+    chemistry does not account for. A family whose class fixes its
+    chemistry (_FAMILY_CHEMISTRY: combustor, boiler, boiler-
+    turbogenerator, facility, dryer) accounts for declared reactions only
+    on affirmative evidence (R2.13): every one well-formed and every
+    species it produces or consumes within the family's signature
+    (_builtin_contradiction), as a boiler declaring its combustion does.
+    Such a unit is scored by the lower of its own rules and the reactor
+    variants (_chemistry_rules) and is reactive itself (_reactive_reason):
+    relabelling a fermenter that declares its reactions 'Reaction tank',
+    'Holding tank', 'Mixer' or 'Conveyor' cannot shed a reactor's needs,
+    nor can deleting such a label (the unknown family is reactive too)."""
+    name, family, _confidence = sc.unit_classes[position]
+    if family is None or family in REACTOR_FAMILIES:
+        return False
+    if name is not None and not (family == 'tank'
+                                 and _hosting_claim(sc, position)):
+        return False
+    reactions = _dicts(sc.units[position].get('reactions'))
+    if not reactions:
+        return False
+    if family not in _FAMILY_CHEMISTRY:
+        return True
+    if not all(sc.well_formed(r) for r in reactions):
+        return True
+    consumed, produced = set(), set()
+    for reaction in reactions:
+        left, right = sc.reaction_sides(reaction)
+        consumed |= left
+        produced |= right
+    formulas = {c.get('id'): c.get('formula') for c in sc.chemicals}
+    changed = tuple({n: _species_keys(n, formulas.get(n)) for n in names}
+                    for names in (produced, consumed))
+    return _builtin_contradiction(None, family, {'changed': changed}) is not None
 
 
 def _spec_population(sc):
@@ -4984,16 +5227,17 @@ def _side_streams(sc, position, side):
     return index.get(uid, []) if isinstance(uid, str) else []
 
 
-def _port_order_derivable(sc, position, side):
+def _port_order_derivable(sc, position, side, family=None):
     """Whether the order of a multi-stream side follows from the data: flash
     outs (exactly one all-vapor and one all-liquid outlet), splitter outs
     (explicit split + full port states), distillation outs (explicit LHK +
     outlet compositions), HXprocess sides (all four streams carry
     composition). Every one reads stream data, so the unit's balances must
-    close (R2.2, _closure)."""
+    close (R2.2, _closure). `family`: the family whose convention is read
+    (default: the unit's)."""
     if not _closure(sc, position)[0]:
         return False
-    family = sc.unit_classes[position][1]
+    family = sc.unit_classes[position][1] if family is None else family
     explicit = _explicit_keys(sc.units[position], family)
     streams = _side_streams(sc, position, side)
     if family == 'flash' and side == 'outs':
@@ -5014,7 +5258,24 @@ def _port_order_derivable(sc, position, side):
 
 
 def _side_credit(sc, position, side):
-    """(credit, missing locator or None) for the port order of one unit side:
+    """(credit, missing locator or None) for the port order of one unit side
+    (_family_side_credit under the unit's family). R8.4: a claim held to
+    reactor rules for the reactions it declares (_declared_chemistry) takes
+    the lower of its own family's port convention and the reactor
+    family's -- it may be that reactor, whose ports have no convention --
+    so a 'Tank', 'Pump' or 'Flash drum' label cannot trade a declared
+    fermentation's port needs for a tank's, pump's or flash's."""
+    family = sc.unit_classes[position][1]
+    if _declared_chemistry(sc, position):
+        return min((_family_side_credit(sc, position, side, f)
+                    for f in (family, 'reactor')),
+                   key=lambda result: result[0])
+    return _family_side_credit(sc, position, side, family)
+
+
+def _family_side_credit(sc, position, side, family):
+    """(credit, missing locator or None) for the port order of one unit side
+    under the conventions of `family`:
     order-free -> 1; a unit without an id -> 0 (R3.8: no stream can name its
     ports). A side on which at most one stream carries material (m <= 1;
     stated-empty streams are placeholders, like unexported MissingStream
@@ -5027,7 +5288,7 @@ def _side_credit(sc, position, side):
     credit); else 0. Two or more material-carrying streams ->
     DERIVED_CREDIT when their order is derivable (which reads stream data,
     so needs the full _closure), else 0."""
-    family, label = sc.unit_classes[position][1], sc.unit_labels[position]
+    label = sc.unit_labels[position]
     if not _nonempty_str(sc.units[position].get('id')):
         # R3.8: no stream can name the ports of a unit without an id (its
         # streams, if any, dangle as an undeclared referenced id).
@@ -5047,7 +5308,7 @@ def _side_credit(sc, position, side):
             return 1.0, None
         return DERIVED_CREDIT, (f'{label}.{side}: port index not representable '
                                 f'(unexported or empty ports may exist)')
-    if _port_order_derivable(sc, position, side):
+    if _port_order_derivable(sc, position, side, family):
         return DERIVED_CREDIT, (f'{label}.{side}: order of {n} streams not '
                                 f'representable (derivable from stream data)')
     return 0.0, f'{label}.{side}: order of {n} streams not representable'
@@ -5569,7 +5830,8 @@ def _physics_notes(sc, position):
                                      confidence)
         if why:
             notes.append(f"class '{name}' ({why})")
-    why = _physics_contradiction(None, keyword, physics)
+    why = _physics_contradiction(None, keyword, physics,
+                                 label=unit.get('unit_type'))
     if why:
         notes.append(f"unit_type family '{keyword}' ({why})")
     return notes
@@ -5843,24 +6105,30 @@ def _uop_05_unit(sc, position, facility):
     base = (DERIVED_CREDIT if name and confidence == 1.0 and family is not None
             else 0.0)
     convention = ' (class conventions imply it)' if base else ''
+    # R8.4: a facility claim declaring chemistry its family does not
+    # account for is measured over the reactor variants too.
+    chemistry = _chemistry_rules(sc, position)
     if facility:
         rules = _FACILITY_RULES.get(_facility_kind(sc, position))
         if rules is None:
-            return base, [f'{label}.design_input_specs: specification '
-                          f'units unknown (its needs are unknown)'
-                          f'{convention}']
-        return _uop_05_credit(sc, position, rules, family, base, True,
-                              _facility_explicit(sc, position) if rules
-                              else set())
-    # R7.2: the best legitimate rule-set variant of a claim without an
-    # exact class; R7.1: a hosting tank not ruled out is measured over the
-    # reactor variants too (the lower of the two).
-    variants = _rule_variants(sc, position)
-    if not variants:
-        return base, [f'{label}.design_input_specs: specification units '
-                      f'unknown (its needs are unknown){convention}']
-    results = []
-    for rule_sets in (variants, _chemistry_rules(sc, position)):
+            results = [(base, [f'{label}.design_input_specs: specification '
+                               f'units unknown (its needs are unknown)'
+                               f'{convention}'])]
+        else:
+            results = [_uop_05_credit(sc, position, rules, family, base,
+                                      True, _facility_explicit(sc, position)
+                                      if rules else set())]
+        rule_sets_list = (chemistry,)
+    else:
+        # R7.2: the best legitimate rule-set variant of a claim without an
+        # exact class; R7.1: a hosting tank not ruled out is measured over
+        # the reactor variants too (the lower of the two).
+        variants = _rule_variants(sc, position)
+        if not variants:
+            return base, [f'{label}.design_input_specs: specification units '
+                          f'unknown (its needs are unknown){convention}']
+        results, rule_sets_list = [], (variants, chemistry)
+    for rule_sets in rule_sets_list:
         if rule_sets:
             results.append(max(
                 (_uop_05_credit(sc, position, rules, f, base, False,
@@ -5961,7 +6229,8 @@ _FACILITY_RULES = {
 # Facility kind of a class-less facility-family unit, by keyword on its
 # class name or unit_type (first match wins); 'cost_only' is excluded.
 _FACILITY_KIND_KEYWORDS = tuple((kind, re.compile(pattern)) for kind, pattern in (
-    ('BoilerTurbogenerator', r'turbo ?generator'),
+    ('BoilerTurbogenerator', r'turbo ?generator|combined heat (?:and|&) '
+                             r'power|\bchp\b|cogenerat\w*'),  # R8.2
     ('Boiler', r'\bboiler\b'),
     ('HeatExchangerNetwork', r'heat exchanger network|\bhxn\b'),
     ('CoolingTower', r'cooling tower'),
@@ -6225,12 +6494,21 @@ def _reactive_reason(sc, position):
     reaction set) never enters individually, evident conversion or not:
     one flowsheet-level pseudo-member stands for all of them
     (_unexplained_hosts), so an evident and an unverifiable hosting unit
-    weigh the same and moving between them changes nothing."""
+    weigh the same and moving between them changes nothing.
+
+    R8.4: a claim held to reactor rules for the reactions it declares
+    (_declared_chemistry: a label of any non-reactor family, or a hosting
+    tank claim, listing reaction objects its family's own chemistry does
+    not account for) is reactive -- as its unknown family would be once
+    its label is deleted -- and scores by whether one is well-formed; a
+    hosting claim among them is then no pseudo-member host."""
     family = sc.unit_classes[position][1]
     if family is None:
         return 'family unknown'
     if family in REACTOR_FAMILIES - CLASS_IMPLIED_CHEMISTRY_FAMILIES:
         return 'reactor family'
+    if _declared_chemistry(sc, position):
+        return 'declares reactions, so held to reactor rules'
     return None
 
 
@@ -6303,7 +6581,8 @@ def _flowsheet_evidence(sc):
 
 def _unexplained_hosts(sc):
     """R7.1: positions of the HOSTING units (_hosting_claim) that declare
-    no well-formed reaction and are not ruled out per unit
+    no well-formed reaction (R8.4: nor reactions they are held to reactor
+    rules for, _declared_chemistry) and are not ruled out per unit
     (_no_conversion), when flowsheet-level evidence is absent
     (_flowsheet_explained); else []. Cached per context. When non-empty,
     ONE pseudo-member ('unexplained conversion possible among <units>')
@@ -6314,6 +6593,7 @@ def _unexplained_hosts(sc):
     if sc.hidden_hosts is None:
         hosts = [p for p in range(len(sc.units))
                  if _hosting_claim(sc, p) and not sc.unit_reacts[p]
+                 and not _declared_chemistry(sc, p)
                  and not _no_conversion(sc, p)]
         sc.hidden_hosts = hosts if hosts and not (
             _flowsheet_explained(sc)[0]) else []
