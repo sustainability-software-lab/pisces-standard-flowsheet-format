@@ -1386,7 +1386,12 @@ criteria:
       where the scorer's own unit reader is more lenient: the scorer reads
       unit strings QU-02 rejects (psia, psig or barg, for example) to
       convert the values it scores, but a file that states them is not
-      conformant, so this criterion does not credit them. Legacy files carry units inline on each
+      conformant, so this criterion does not credit them. QU-02 parses
+      with thermosteam's unit registry (the SFF unit system); where
+      thermosteam cannot be imported every non-empty unit string fails
+      QU-02, so a
+      current-shape file scores at most 0.5 here in that environment.
+      Legacy files carry units inline on each
       quantity, so there the score is
       the fraction of quantities carrying units, where a bare numeric design
       result (no inline units at all) counts as a quantity without units.

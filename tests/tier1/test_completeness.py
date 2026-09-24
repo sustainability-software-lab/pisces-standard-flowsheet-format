@@ -12,10 +12,14 @@
 # imports pisces_sff/biosteam. Criterion functions are called directly on a
 # _ScoringContext with hand-made validator results, so the real validator's
 # QU-02 (which needs the real thermosteam unit registry, poisoned by the Tier-1
-# biosteam stub) is never consulted for a verdict. The few end-to-end calls of
-# score_flowsheet_completeness/main use documents WITHOUT any quantity-unit
-# strings, so QU-02 has nothing to parse and never imports thermosteam; they
-# assert report structure, never the validator verdict.
+# biosteam stub) is never consulted for a verdict. End-to-end calls of
+# score_flowsheet_completeness/main either use documents WITHOUT any
+# quantity-unit strings, so QU-02 has nothing to parse and never imports
+# thermosteam, or compare two scores taken in the same process state, or run
+# inside unit_registry(), which fakes the validator's unit parser -- an
+# end-to-end score pinned without it would differ between a run of this file
+# alone and a run collecting the other Tier-1 modules (which install the
+# stub).
 
 import contextlib
 import copy
@@ -158,6 +162,30 @@ def name_lookup(resolvable=(), search="fake"):
         C._CHEMICALS_SEARCH[:] = saved_search
         C._NAME_LOOKUP.clear()
         C._NAME_LOOKUP.update(saved_cache)
+
+
+@contextlib.contextmanager
+def unit_registry(parseable=("K", "Pa", "kg/hr", "hr")):
+    """Point the validator's QU-02 unit parser (its module-level `_UREG`
+    cache of thermosteam's pint registry) at a fake that parses exactly
+    `parseable`; restores it afterwards. For end-to-end scores of documents
+    that carry unit strings: the Tier-1 thermosteam stub has no unit
+    registry, so without this QU-02 (and hence CMP-INT-04 and the overall
+    score) would depend on whether that stub or the real thermosteam is in
+    sys.modules when the test runs."""
+    class Registry:
+        @staticmethod
+        def Quantity(value, units):
+            if units not in parseable:
+                raise ValueError(f"unit {units!r} not recognized")
+            return value
+    validator = C._validator()
+    saved = validator._UREG
+    validator._UREG = Registry()
+    try:
+        yield
+    finally:
+        validator._UREG = saved
 
 
 # ------------------------------------------------- lazy sibling modules
@@ -9481,12 +9509,14 @@ class TestRevision7(unittest.TestCase):
         (0.5315 with the suspicion switched off). It is no longer charged:
         CMP-RXN-01 / 02 / 03 = 1, CMP-UOP-02 = 6/7 and CMP-UOP-05 = 5/7
         (only H1's V and S1's moisture content are missing), which with
-        the installed chemical database gives the reviewer's 0.5315 (the
-        overall is not pinned here: the thermo criteria depend on the
-        environment). Without the vent's composition (no flowsheet-level
-        evidence) it scores strictly less, with CMP-RXN-01 = 0.5 (R1 plus
-        the pseudo-member)."""
-        with name_lookup(set()):
+        the installed chemical database gives the reviewer's 0.5315. With
+        no chemical name resolvable and its unit strings parseable
+        (unit_registry: QU-01 fails on molar_mass / price, QU-02 passes,
+        CMP-INT-04 = 0.5) the overall is 0.4827 in any process state.
+        Without the vent's composition (no flowsheet-level evidence) it
+        scores strictly less, with CMP-RXN-01 = 0.5 (R1 plus the
+        pseudo-member)."""
+        with name_lookup(set()), unit_registry():
             report = C.score_flowsheet_completeness(r7_sparse_doc())
             bare = C.score_flowsheet_completeness(
                 r7_sparse_doc(vent_composition=False))
@@ -9495,6 +9525,8 @@ class TestRevision7(unittest.TestCase):
             self.assertEqual(by_id[cid], 1.0, cid)
         self.assertAlmostEqual(by_id["CMP-UOP-02"], 6 / 7)
         self.assertAlmostEqual(by_id["CMP-UOP-05"], 5 / 7)
+        self.assertEqual(by_id["CMP-INT-04"], 0.5)
+        self.assertAlmostEqual(report.score, 0.482663, places=6)
         self.assertLess(bare.score, report.score)
         self.assertEqual({c.criterion_id: c.score for c in bare.criteria}[
             "CMP-RXN-01"], 0.5)
