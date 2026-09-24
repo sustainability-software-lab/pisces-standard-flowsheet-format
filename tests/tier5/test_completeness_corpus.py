@@ -680,10 +680,13 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         widened non-hosting set (evaporator, crystallizer, solids
         handling, steam-injection heater, dryer): every unit of unknown
         family names the bare class Unit and no unit_type keyword family,
-        except (fix2) the three legacy 'Phase splitter' units S301 of
-        SF_BST_03 / 07 / 11, whose two non-empty inlets contradict both the
-        exact PhaseSplitter class (one inlet) and, since the label names a
-        pure splitter, the label's convention (one inlet).
+        except the legacy 'Phase splitter' units S301 of SF_BST_03 / 11
+        (a PhaseSplitter and a MockSplitter sharing one id, so their ports
+        merge): their two non-empty inlets contradict the exact
+        PhaseSplitter class (one inlet), and their outlets, which do not
+        carry the two inlets' mixture, contradict the pure-splitter label
+        (R8.3, _unmixed). SF_BST_07's S301 keeps the label's family: its
+        species flows are not computable, so nothing contradicts it.
         R6.2, the tolerance choice: of the
         6587 structurally well-formed reactions whose participants all
         have molar masses, 6223 close within 0.025 % and the 364 others are
@@ -702,9 +705,11 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                 self.assertFalse(C._hosting_claim(sc, position), where)
                 self.assertIsNone(C._chemistry_rules(sc, position), where)
                 if sc.unit_classes[position][1] is None:
-                    notes = C._port_notes(sc, position)
+                    notes = C._port_notes(sc, position) + [
+                        n for n in C._physics_notes(sc, position)
+                        if not n.startswith("class '")]
                     if len(notes) == 2:
-                        # fix2: class and label both contradicted by ports.
+                        # The class (ports) and the label both contradicted.
                         both_ports.add((path.name, unit.get("id")))
                         continue
                     self.assertEqual(C._dsm_class(unit)[0], "Unit", where)
@@ -720,7 +725,6 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                     if error is not None:
                         errors.append(error)
         self.assertEqual(both_ports, {("SF_BST_03.json", "S301"),
-                                      ("SF_BST_07.json", "S301"),
                                       ("SF_BST_11.json", "S301")})
         self.assertEqual(kept, {"AmineAbsorption": 8, "AmmoniaAdditionTank": 4,
                                 "DrumDryer": 25, "ProcessWaterCenter": 18,
@@ -762,26 +766,23 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
 
     def test_revision_8_label_only_separators(self):
         """R8.3 on the corpus read label-only (every design_simulation_method
-        removed, as an extracted file states no class): no separator label
-        -- a splitter-family unit_type whose head noun is not a
-        pure-splitter word (_pure_splitter_label) -- loses its family to a
-        power duty or a pressure drop. Every such unit whose stream / duty
-        evidence shows no heat duty, converted species, outlet more than
-        LABEL_T_ABS outside its inlets' temperature band, or pressure rise
-        without a power duty keeps the splitter family; among them the corn
-        file's DDGS and liquids centrifuges C603 / C603_2 and molecular
-        sieve X504 (drawing power), and the sludge centrifuge, belt
-        thickener and reverse osmosis of the wastewater files (0.2 bar to
-        1 atm with the power of their built-in pumps).
-
-        fix2 (#5d), asserted directly rather than by skipping every unit
-        whose evidence shows some kind: a unit loses the splitter family
-        only when the label's own claim is contradicted
-        (_physics_contradiction / _port_contradiction under that label),
-        never by a power duty -- no contradiction reason names one -- and
-        every unit recording power or dropping pressure whose claim is
-        otherwise uncontradicted keeps it."""
-        kept, powered = set(), set()
+        removed, as an extracted file states no class): no honest
+        separator or solids handler is flagged. Every unit whose unit_type
+        is a splitter-family label with a head noun other than a
+        pure-splitter word (_pure_splitter_label), or a solids-handling
+        label, is contradicted neither by its stream / duty evidence
+        (_physics_contradiction under that label: a heat duty, converted
+        species, an outlet outside the inlets' temperature band, a
+        pressure rise without power or with power beyond 1 atm, power
+        produced) nor by its ports (_port_contradiction), so it keeps its
+        family -- 161 separators (among them the corn file's DDGS and
+        liquids centrifuges C603 / C603_2 and molecular sieve X504, drawing
+        power, and the sludge centrifuge, belt thickener and reverse
+        osmosis of the wastewater files, raised from 0.2 bar to 1 atm by
+        the power of their built-in pumps) and 39 solids handlers. No
+        allow-list is needed. A power duty alone never contradicts a
+        separator label."""
+        kept, powered, solids = set(), set(), set()
         for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
             doc = copy.deepcopy(C._read_flowsheet(str(path)))
             for unit in doc["units"]:
@@ -789,26 +790,30 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
             sc = C._ScoringContext(doc)
             for position, unit in enumerate(sc.units):
                 label = unit.get("unit_type")
-                if (C._keyword_family(label) != "splitter"
-                        or C._pure_splitter_label(label)):
+                family = C._keyword_family(label)
+                if family not in ("splitter", "solids_handling") or (
+                        family == "splitter"
+                        and C._pure_splitter_label(label)):
                     continue
                 physics = sc.unit_physics[position]
                 where = (path.name, unit.get("id"), label)
-                why = (C._physics_contradiction(None, "splitter", physics,
+                why = (C._physics_contradiction(None, family, physics,
                                                 label=label)
-                       or C._port_contradiction(None, "splitter", False,
+                       or C._port_contradiction(None, family, False,
                                                 sc.unit_ports[position],
                                                 label))
-                self.assertNotIn("power duty", why or "", where)
+                self.assertIsNone(why, where)
+                self.assertEqual(sc.unit_classes[position][1], family,
+                                 where)
+                if family == "solids_handling":
+                    solids.add((path.name, unit.get("id")))
+                    continue
                 self.assertIsNone(C._physics_contradiction(
                     None, "splitter", {"power": "p"}, label=label), where)
-                if why:
-                    continue
-                self.assertEqual(sc.unit_classes[position][1], "splitter",
-                                 where)
                 kept.add((path.name, unit.get("id")))
                 if "power" in physics:
                     powered.add((path.name, unit.get("id")))
+        self.assertEqual((len(kept), len(solids)), (161, 39))
         self.assertGreaterEqual(len(powered), 6)
         self.assertLessEqual({("SF_BST_01.json", "C603"),
                               ("SF_BST_01.json", "C603_2"),
@@ -817,12 +822,48 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                               ("SF_BST_04.json", "U504"),
                               ("SF_BST_04.json", "U506")}, kept)
 
+    def test_label_only_boilers_keep_facility_rules(self):
+        """R8.4 on the corpus read label-only: every boiler-turbogenerator
+        (17) declares BioSTEAM's per-species combustion set, whose
+        decomposition reactions release O2 ('NitricOxide -> 0.5 O2 + 0.5
+        N2', 'CaSO4 -> O2 + SO2 + 40.1 Ash'); that is its family's own
+        chemistry (_declared_chemistry, _elemental_product), so it keeps
+        its family, is no reactor candidate, carries no reactor rules in
+        CMP-UOP-02 and keeps its facility rules in CMP-UOP-06 (no
+        'declares reactions' zero)."""
+        boilers = 0
+        for path in sorted(CORPUS_DIR.glob("SF_BST_*.json")):
+            doc = copy.deepcopy(C._read_flowsheet(str(path)))
+            for unit in doc["units"]:
+                unit.pop("design_simulation_method", None)
+            sc = C._ScoringContext(doc)
+            uop02 = C._score_uop_02(sc)[2]
+            uop06 = C._score_uop_06(sc)[2]
+            for position, unit in enumerate(sc.units):
+                if C._keyword_family(unit.get("unit_type")) not in (
+                        "boiler", "boiler_turbogenerator"):
+                    continue
+                where = (path.name, unit.get("id"))
+                locator = f"units[{unit.get('id')}]"
+                self.assertIn(sc.unit_classes[position][1],
+                              ("boiler", "boiler_turbogenerator"), where)
+                self.assertTrue(unit.get("reactions"), where)
+                self.assertFalse(C._declared_chemistry(sc, position), where)
+                self.assertFalse(C._reactor_candidate(sc, position), where)
+                self.assertIsNone(C._chemistry_rules(sc, position), where)
+                self.assertFalse([m for m in uop02
+                                  if m.startswith(locator)], where)
+                self.assertFalse([m for m in uop06 if m.startswith(locator)
+                                  and "declares reactions" in m], where)
+                boilers += 1
+        self.assertEqual(boilers, 17)
+
     def test_label_only_sorption_and_biofilm_labels(self):
         """The corpus read label-only: every sorption or regeneration
         separator label (_sorption_label: 'Adsorption', 'Cation exchange',
         'Anion exchange', 'Amine absorption', 'Molecular sieve') keeps the
         splitter family, heat duties (regeneration steam) included, and
-        (fix2, #7) every 'Polishing filter' reads as a filter (the splitter
+        every 'Polishing filter' reads as a filter (the splitter
         family) that declares its reactions, so it is held to reactor rules
         (_reactor_candidate, R8.4) and its chilled-water duty contradicts
         nothing."""

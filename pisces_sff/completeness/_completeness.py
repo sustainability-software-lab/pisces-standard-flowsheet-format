@@ -2195,6 +2195,16 @@ NO_CHEMISTRY_FAMILIES = frozenset({
 # tank claim is also held to reactor rules (_chemistry_rules).
 HOSTING_FAMILIES = frozenset({'tank', 'distillation', 'staged_column',
                               'extraction'})
+# Families whose BioSTEAM units exchange no heat with an agent (a pump, a
+# valve, a turbine; a compressor may, through its intercoolers): a heat duty
+# contradicts their claim (R5.1).
+_NO_HEAT_FAMILIES = frozenset({'pump', 'valve', 'turbine'})
+# R8.3: families whose units may PRODUCE electricity (a turbine or expander,
+# a boiler-turbogenerator or CHP, and a boiler or combustor, labels a paper
+# may give a CHP unit): power a unit produces contradicts every other claim
+# tested (_physics_contradiction).
+_POWER_PRODUCING_FAMILIES = frozenset({'turbine', 'boiler',
+                                       'boiler_turbogenerator', 'combustor'})
 # Exact core classes that accept an optional reaction set (biosteam
 # stage.py / distillation.py: MESHDistillation and MultiStageEquilibrium take
 # stage_reactions, StageEquilibrium and PhasePartition a reaction): they can
@@ -2204,10 +2214,21 @@ _OPTIONAL_CHEMISTRY_CLASSES = frozenset({
     'PhasePartition'})
 # Species a combustion can produce (thermosteam's combustion reactions give
 # CO2, H2O, SO2, N2, HCl, HF, Br2, I2 and P4O10; boilers also bind SO2 with
-# lime and reject ash).
+# lime and reject ash). R8.4: thermosteam writes each species' combustion
+# as its own reaction, and the reaction of an oxygen-rich or oxidised
+# species releases O2 ('NitricOxide -> 0.5 O2 + 0.5 N2', 'CaSO4 -> O2 +
+# SO2 + 40.1 Ash'), which the set's other reactions consume; with the
+# 'elemental' handling of chemicals.combustion its non-combustible atoms
+# leave in their elemental state (_elemental_product).
 _COMBUSTION_PRODUCTS = ('CO2', 'H2O', 'Water', 'SO2', 'N2', 'NO', 'NO2',
                         'N2O', 'HCl', 'HF', 'Br2', 'I2', 'P4O10', 'Ash',
-                        'CaSO4', 'Gypsum')
+                        'CaSO4', 'Gypsum', 'O2', 'Oxygen')
+# Elements a combustion reaction turns into combustion products (the
+# combustible elements of chemicals.combustion); any other element leaves
+# a combustion in its elemental state.
+_COMBUSTIBLE_ELEMENTS = frozenset({'C', 'H', 'N', 'O', 'S', 'Br', 'I', 'Cl',
+                                   'F', 'P'})
+_ELEMENT_KEY_RE = re.compile(r'f:([A-Z][a-z]?)\d+(?:\.\d+)?')
 # R6.1(c): classes whose own code converts species (verified in the
 # biosteam and Bioindustrial-Park sources), as (species it may produce,
 # species it may consume -- None: any), each named by chemical id or plain
@@ -2709,7 +2730,7 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
     # and a (reaction) kettle -- a 'Kettle reboiler' stays an exchanger.
     # A trickling or (an)aerobic filter and a biofilter are biofilm
     # reactors, longer than the splitter's 'filter' at the same head, so
-    # they win it. A 'Polishing filter' stays a filter (fix2): in general
+    # they win it. A 'Polishing filter' stays a filter (R8.2): in general
     # usage it is a fine, cartridge or tertiary media filter; the
     # biological one (biosteam.wastewater's PolishingFilter, a reactor in
     # _CLASS_TABLE) declares its reactions, so R8.4 holds it to reactor
@@ -2732,7 +2753,7 @@ _EQUIPMENT_KEYWORDS = tuple((family, re.compile(pattern)) for family, pattern in
     # (activated) carbon, guard and simulated-moving-bed (SMB) columns and
     # beds; reverse osmosis (RO, a whole token) and electrodialysis
     # separate too; a divider, tee or manifold only divides a stream (a
-    # pure-splitter word, _PURE_SPLITTER_WORD_RE). fix2: 'Sludge handling'
+    # pure-splitter word, _PURE_SPLITTER_WORD_RE). R8.2: 'Sludge handling'
     # names BioSTEAM's SludgeHandling, a splitter (sludge and water out),
     # longer than the solids-handling 'handling' at the same head.
     ('splitter', r'splitter|\bsplit\w*|centrifuge|filter|\bpress\b|screen|'
@@ -3001,7 +3022,7 @@ def _port_limits(class_name, family, core, label=None):
     """(max inlets, max outlets) a class / family claim allows (R4.8; None
     on a side: unlimited): an exactly named core class's _PORT_LIMITS entry,
     else, for a claim without a class, the convention of the exact classes
-    its `label` names (_label_port_limits, fix2), else its family's
+    its `label` names (_label_port_limits, R8.3), else its family's
     _FAMILY_PORT_LIMITS convention, else (None, None)."""
     if core and class_name in _PORT_LIMITS:
         return _PORT_LIMITS[class_name]
@@ -3012,18 +3033,19 @@ def _port_limits(class_name, family, core, label=None):
     return _FAMILY_PORT_LIMITS.get(family, (None, None))
 
 
-# fix2 (G2 / G3): the port conventions of a label-only claim that names
-# exact classes sharing one. BioSTEAM's conveyors, mills, feeders,
-# shredders and pelletizers (ConveyingBelt, HammerMill, ScrewFeeder,
-# Shredder, PelletMill, BagassePelletMill) take one inlet and one outlet;
-# every pure splitter class (Splitter, PhaseSplitter, MockSplitter) one
-# inlet; the cost-only facilities (CIPpackage, FireWaterTank,
-# AirDistributionPackage, WastewaterSystemCost) one of each. (A 'Sludge
-# handling' label names BioSTEAM's SludgeHandling, a splitter: see the
-# splitter keywords.)
-_SOLIDS_LABEL_PORTS = (1, 1)
-_PURE_SPLITTER_LABEL_PORTS = (1, None)
-_COST_ONLY_LABEL_PORTS = (1, 1)
+# R8.3: the port conventions of a label-only claim that names exact classes
+# sharing one. BioSTEAM's conveyors, mills, feeders, shredders and
+# pelletizers (ConveyingBelt, HammerMill, ScrewFeeder, Shredder, PelletMill,
+# BagassePelletMill) and its cost-only facilities (CIPpackage,
+# FireWaterTank, AirDistributionPackage, WastewaterSystemCost) deliver one
+# outlet. Their inlets are not capped: a mill fed fresh chips and screen
+# oversize, or a conveyor carrying two solid feeds, merges material, which
+# the claim allows (and physics bounds, _physics_contradiction). A pure
+# splitter label caps neither side: one fed by several streams (an FSplit)
+# is held to dividing their mixture (_unmixed). (A 'Sludge handling' label
+# names BioSTEAM's SludgeHandling, a splitter: see the splitter keywords.)
+_SOLIDS_LABEL_PORTS = (None, 1)
+_COST_ONLY_LABEL_PORTS = (None, 1)
 
 
 def _facility_label_kind(text):
@@ -3039,26 +3061,28 @@ def _facility_label_kind(text):
 
 
 def _label_port_limits(family, label):
-    """fix2 (G2 / G3): (max inlets, max outlets) of a `family` claim made
-    without a class by `label` (a unit_type or a named abstract class),
-    when the label names exact classes whose port conventions it then
-    inherits, else None: a 'Junction' / 'Scaler' label that exact class's
-    _PORT_LIMITS (R8.3, N8); a pure-splitter label (_pure_splitter_label)
-    one inlet; a solids-handling label (a conveyor, mill, grinder, feeder,
-    shredder, pelletizer, grain handling) one inlet and one outlet; a facility label its kind's class (_facility_label_kind: a
-    'Cooling tower' the CoolingTower's, a cost-only 'Plant air' or 'CIP
-    package' one of each). One inlet split into two outlets of different
-    composition is a separation none of these claims can make."""
+    """R8.3: (max inlets, max outlets) of a `family` claim made without a
+    class by `label` (a unit_type or a named abstract class), when the
+    label names exact classes whose port conventions it then inherits,
+    else None: a 'Junction' / 'Scaler' label that exact class's
+    _PORT_LIMITS (N8); a solids-handling label (a conveyor, mill, grinder,
+    feeder, shredder, pelletizer, grain handling) one outlet; a facility
+    label its kind's class (_facility_label_kind: a 'Cooling tower' the
+    CoolingTower's, a cost-only 'Plant air' or 'CIP package' one outlet);
+    a heat-exchanger-network label the HeatExchangerNetwork's (no material
+    ports). One inlet split into two outlets of different composition is
+    a separation none of these claims can make. A pure-splitter label
+    (_pure_splitter_label) takes any number of ports: its physics decide
+    (_unmixed)."""
     if not _nonempty_str(label):
         return None
     if family == 'junction':
         exact = _junction_label_class(label)
         return _PORT_LIMITS[exact] if exact else None
-    if family == 'splitter':
-        return _PURE_SPLITTER_LABEL_PORTS if _pure_splitter_label(label) \
-            else None
     if family == 'solids_handling':
         return _SOLIDS_LABEL_PORTS
+    if family == 'heat_exchanger_network':
+        return _PORT_LIMITS['HeatExchangerNetwork']
     if family == 'facility':
         kind = _facility_label_kind(label)
         if kind == 'cost_only':
@@ -3112,6 +3136,10 @@ MOCK_SPLITTER_CLASSES = frozenset({'MockSplitter', 'FakeSplitter'})
 # decanter, chromatography, ...) may draw power and drop pressure.
 _PURE_SPLITTER_WORD_RE = re.compile(
     r'splitters?|split\w*|dividers?|tees?|manifolds?')
+# R8.3: a splitter qualified by 'component' (SuperPro Designer's Component
+# Splitter, often fed several streams) sends each component its specified
+# split: a separator label, not a pure splitter.
+_COMPONENT_SPLITTER_RE = re.compile(r'\bcomponents? ?(?:splitters?|split\w*)')
 # Head nouns of a label-only separator regenerated by a temperature swing
 # (sorption, absorption and regeneration heads): an adsorber (TSA / PSA),
 # an ion, cation or anion exchanger, a resin, carbon or guard bed,
@@ -3153,7 +3181,10 @@ def _recorded_duty(sc, position):
     utility_consumption_results / utility_production_results entry; its
     agent's group decides the kind: power_utilities -> 'power',
     heat_utilities or an undeclared agent (kind unknown) -> 'heat',
-    other_utilities (material flows, not duties) -> ignored."""
+    other_utilities (material flows, not duties) -> ignored. R8.3: a
+    power entry the unit PRODUCES (a positive production result, as the
+    exporter files a turbine's or generator's output, or a negative
+    consumption) is reported under 'power_out' too."""
     utilities = _as_dict(sc.doc.get('utilities'))
     groups = {}
     for group in ('heat_utilities', 'power_utilities', 'other_utilities'):
@@ -3165,10 +3196,14 @@ def _recorded_duty(sc, position):
     for key in _UTILITY_RESULT_KEYS:
         for agent_id, value in _as_dict(unit.get(key)).items():
             group = groups.get(agent_id)
-            if group == 'other_utilities' or not _num(value):
+            number = _num(value)
+            if group == 'other_utilities' or not number:
                 continue
             kind = 'power' if group == 'power_utilities' else 'heat'
             found.setdefault(kind, f'{key}.{agent_id}')
+            if kind == 'power' and (number > 0) == (
+                    key == 'utility_production_results'):
+                found.setdefault('power_out', f'{key}.{agent_id}')
     return found
 
 
@@ -3198,7 +3233,12 @@ def _physics_contradictions(sc, position):
     ({species: identity keys} produced, {...} consumed) pair of every
     converted species (appearing and vanishing ones included), which a
     built-in chemistry signature is matched against; 'mass' -- the total
-    mass balance is evaluable and does not close (_mass_balance).
+    mass balance is evaluable and does not close (_mass_balance). R8.3:
+    'rise_above_atm' -- a 'rise' whose highest outlet ends above 1 atm
+    (beyond GUARD_P_RTOL); 'power_out' -- power the unit produces
+    (_recorded_duty); 'separation' -- its outlets separate its feed
+    (_separation); 'unmixed' -- fed by two or more streams, an outlet does
+    not carry their mixture (_unmixed).
     _physics_contradiction decides which kinds contradict which claim."""
     uid = sc.units[position].get('id')
     if not _nonempty_str(uid):
@@ -3206,7 +3246,8 @@ def _physics_contradictions(sc, position):
     ins, outs = ([sc.streams[i] for i in index.get(uid, [])
                   if not _is_empty_stream(sc.streams[i])]
                  for index in (sc.unit_inlets, sc.unit_outlets))
-    found = {kind: f'records a non-zero {kind} duty ({where})'
+    found = {kind: (f'produces power ({where})' if kind == 'power_out'
+                    else f'records a non-zero {kind} duty ({where})')
              for kind, where in _recorded_duty(sc, position).items()}
     if not sc.unit_reacts[position]:
         change = _species_change(sc, uid)
@@ -3237,6 +3278,9 @@ def _physics_contradictions(sc, position):
     separated = _separation(ins, outs)
     if separated:
         found['separation'] = separated
+    unmixed = _unmixed(ins, outs)
+    if unmixed:
+        found['unmixed'] = unmixed
     if _dicts(sc.units[position].get('reactions')):
         # Not a reason: the unit declares reactions of its own (a non-empty
         # list of reaction objects, as _declared_chemistry counts them).
@@ -3256,6 +3300,11 @@ def _physics_contradictions(sc, position):
                          f'highest inlet {name} {top:.6g}')
             if part == 'P':
                 found['rise'] = mixer[-1]
+                if max(outlet) > _ATM * (1.0 + GUARD_P_RTOL):
+                    # R8.3: a rise beyond the 1 atm a built-in pump
+                    # returns its outlets to.
+                    found['rise_above_atm'] = (
+                        f'{mixer[-1]}, and above 1 atm')
         # R8.3: the looser band of a label-only claim (LABEL_T_ABS).
         if part == 'T' and max(outlet) > top + LABEL_T_ABS:
             found['hot'] = (f'outlet temperature {max(outlet):.6g} more '
@@ -3298,7 +3347,7 @@ def _same_composition(a, b):
 
 
 def _separation(ins, outs):
-    """fix2 (G2 / G3): why the non-empty ports `ins` / `outs` show a
+    """R8.3: why the non-empty ports `ins` / `outs` show a
     separation -- two or more outlets, one of whose composition matches
     neither any inlet's nor the inlets' mixed composition
     (_same_composition) -- or None (fewer than two outlets, or species
@@ -3326,6 +3375,40 @@ def _separation(ins, outs):
         return ('an outlet composition differs from every inlet\'s and '
                 'from the inlets mixed (a separation)')
     return None
+
+
+def _unmixed(ins, outs):
+    """R8.3: why the non-empty ports `ins` / `outs` of a unit fed by two or
+    more streams show something other than one mixture divided -- an
+    outlet whose composition differs from the inlets' mixed composition
+    (_same_composition), unless every outlet is a single phase and no two
+    share it (the mixture split by phase) -- or None (fewer than two
+    inlets, no outlet, or species flows or phases not computable: a
+    deleted value never creates the evidence). A multi-feed pure splitter
+    (an FSplit: its feeds mixed, then divided) passes the mixture to every
+    outlet."""
+    if len(ins) < 2 or not outs:
+        return None
+    computed = _basis_flows(list(ins) + list(outs))
+    if computed is None:
+        return None
+    _basis, flows = computed
+    mixed = {}
+    for flow in flows[:len(ins)]:
+        for name, value in flow.items():
+            mixed[name] = mixed.get(name, 0.0) + value
+    mixed = _fractions(mixed)
+    if mixed is None:
+        return None
+    if all(out is not None and _same_composition(out, mixed)
+           for out in (_fractions(f) for f in flows[len(ins):])):
+        return None
+    phases = [_phase_set(stream) for stream in outs]
+    if (all(p is not None and len(p) == 1 for p in phases)
+            and len(set().union(*phases)) == len(phases)):
+        return None
+    return ('an outlet composition differs from the mixture of its '
+            f'{len(ins)} inlets (not one mixture divided)')
 
 
 def _species_keys(name, formula=None):
@@ -3399,8 +3482,10 @@ def _builtin_contradiction(class_name, family, physics):
     allowed = [None if names is None else
                frozenset().union(*(_species_keys(n) for n in names))
                for names in signature]
+    combustion = signature[0] is _COMBUSTION_PRODUCTS
     bad = [f'{n} produced' for n, keys in produced.items()
-           if not keys & allowed[0]]
+           if not keys & allowed[0]
+           and not (combustion and _elemental_product(keys))]
     if allowed[1] is not None:
         bad += [f'{n} consumed' for n, keys in consumed.items()
                 if not keys & allowed[1]]
@@ -3410,6 +3495,19 @@ def _builtin_contradiction(class_name, family, physics):
             else f'a {family} claim')
     return (f"implausible for {what}: {', '.join(bad[:3])} beyond its "
             f"built-in chemistry without declared reactions")
+
+
+def _elemental_product(keys):
+    """R8.4: True when a species' identity keys (_species_keys) include the
+    formula of one element that combustion leaves elemental ('Na', 'Ca',
+    'Si': not a _COMBUSTIBLE_ELEMENTS element), as the 'elemental'
+    handling of chemicals.combustion writes a decomposition's leftover
+    atoms."""
+    for key in keys:
+        match = _ELEMENT_KEY_RE.fullmatch(key)
+        if match and match.group(1) not in _COMBUSTIBLE_ELEMENTS:
+            return True
+    return False
 
 
 def _physics_contradiction(class_name, family, physics, core=None,
@@ -3432,10 +3530,13 @@ def _physics_contradiction(class_name, family, physics, core=None,
     (a centrifuge, filter, press, membrane, ... label, or a key-set
     inference: `label` None) by a heat duty (a power duty is allowed),
     converted species, a pressure rise ('rise': a pressure drop is
-    allowed) or an outlet T outside the inlets' band widened by
-    LABEL_T_ABS ('hot', 'cold'); a mixer claim without a class by the
-    same except power and 'cold' (a mixer may cool); a solids-handling
-    claim without a class by the same as the mixer's.
+    allowed; with a power duty only a rise above 1 atm,
+    'rise_above_atm'), power it produces ('power_out') or an outlet T
+    outside the inlets' band widened by LABEL_T_ABS ('hot', 'cold'); a
+    mixer claim without a class by the same except power drawn and 'cold'
+    (a mixer may cool); a solids-handling claim without a class by the
+    same as the mixer's. A pure-splitter label fed by several streams also
+    by the mixer bounds, 'cold' and 'unmixed'.
 
     R6.1(a) / R7.1: every other claim that cannot host chemistry
     (_chemistry_claim 'none': an exact core class without built-in
@@ -3447,10 +3548,16 @@ def _physics_contradiction(class_name, family, physics, core=None,
     pure-splitter T / P bounds, the Junction by a total mass balance that
     does not close ('mass'), and the junctions that conserve nothing
     species by species (_NONCONSERVING_JUNCTIONS, and any other label-only
-    junction claim) only by species appearing / vanishing. R6.1(c): a
+    junction claim) only by species appearing / vanishing, every junction
+    claim but a MockSplitter or diagram-only one (_mock_claim) by a
+    'separation', and a label-only process exchanger by a 'separation'.
+    R5.1: a pump, valve or turbine claim also by a heat duty
+    (_NO_HEAT_FAMILIES); each of these claims but a turbine's also by
+    power it produces ('power_out', _POWER_PRODUCING_FAMILIES). R6.1(c): a
     _BUILTIN_CHEMISTRY class, or a combustor / boiler / facility / dryer
     claim without an exact class's code (_FAMILY_CHEMISTRY), by a
-    conversion outside its signature (_builtin_contradiction). A HOSTING
+    conversion outside its signature (_builtin_contradiction), a facility
+    or dryer claim also by power it produces. A HOSTING
     claim (tank, column, extractor, R7.1) is never contradicted by
     converted species. `core` (default: on the curated core list)
     and `confidence` (default 1) qualify an exact class claim. Other claims
@@ -3462,8 +3569,10 @@ def _physics_contradiction(class_name, family, physics, core=None,
                                  1.0 if confidence is None else confidence)
     converted = ('species', 'conversion')
     if family == 'mixer' and class_name is None:
-        # R8.3: a label-only mixer may draw power (an agitated blend tank).
-        kinds, what = ('heat',) + converted + ('rise', 'hot'), 'a mixer'
+        # R8.3: a label-only mixer may draw power (an agitated blend tank),
+        # not produce it.
+        kinds = ('heat', 'power_out') + converted + ('rise', 'hot')
+        what = 'a mixer'
     elif family == 'mixer':
         kinds = (('heat',) if class_name in _COSTED_CLASSES
                  else ('heat', 'power')) + converted + ('mixer',)
@@ -3472,52 +3581,80 @@ def _physics_contradiction(class_name, family, physics, core=None,
         kinds, what = ('heat', 'power', 'species'), 'a mock splitter'
     elif (class_name in PURE_SPLITTER_CLASSES if class_name
           else family == 'splitter' and _pure_splitter_label(label)):
-        kinds = ('heat', 'power') + converted + ('splitter',)
+        # R8.3: a pure splitter fed by one stream is held to that inlet's
+        # T and P ('splitter'). A label-only one fed by several streams
+        # (an FSplit: an exact class takes one inlet) mixes them and
+        # divides the mixture: its outlets stay within the inlets' bounds
+        # ('mixer', 'cold') and carry the mixture ('unmixed').
+        # (A one-inlet deviation, 'splitter', already implies the bounds.)
+        kinds = (('heat', 'power') + converted + ('splitter',)
+                 + (('mixer', 'cold', 'unmixed') if class_name is None
+                    and not physics.get('splitter') else ()))
         what = 'a pure splitter'
     elif family == 'splitter' and class_name is None:
         # R8.3: any other label-only separator may draw power and drop
         # pressure; a heat duty, an outlet outside the inlets' temperature
-        # band, or a pressure rise without a power duty (the work of a
-        # built-in pump, as BioSTEAM's sludge-handling units and reverse
-        # osmosis raise their outlets to 1 atm) contradicts it. A sorption
+        # band, a pressure rise without a power duty, or with one a rise
+        # above 1 atm (the work of a built-in pump, as BioSTEAM's
+        # sludge-handling units and reverse osmosis raise their outlets to
+        # 1 atm, 'rise_above_atm'), or power it produces ('power_out': a
+        # turbine's) contradicts it. A sorption
         # or regeneration head (_sorption_label: a molecular sieve, an
         # adsorber, an ion exchanger, an absorber) may take a heat duty
         # too: its temperature swing is its duty, and with a heat duty
         # recorded its outlets may leave the inlets' temperature band (an
         # AmineAbsorption sets its outlets to 40 C). Deleting that duty
         # restores the band test, so it can only add a contradiction.
-        # fix2 (#7): so may a separator that declares reactions of its own
+        # R8.4: so may a separator that declares reactions of its own
         # ('declares': a biological polishing filter's chilled water) --
-        # held to reactor rules (R8.4), its heat duty is a reactor's.
+        # held to reactor rules, its heat duty is a reactor's.
         sorption = _sorption_label(label) or bool(physics.get('declares'))
         kinds = ((() if sorption else ('heat',)) + converted
                  + (() if sorption and physics.get('heat') else ('hot', 'cold'))
-                 + (() if physics.get('power') else ('rise',)))
+                 + (('rise_above_atm',) if physics.get('power')
+                    else ('rise',)) + ('power_out',))
         what = 'a separator'
     elif family == 'solids_handling' and class_name is None:
         # R8.3 (N8): a label-only conveyor, mill or screw may draw power
-        # and heat its solids a little, not take a heat duty.
-        kinds = converted + ('heat', 'rise', 'hot')
+        # and heat its solids a little, not take a heat duty or produce
+        # power.
+        kinds = converted + ('heat', 'power_out', 'rise', 'hot')
         what = 'a solids-handling unit'
     elif family == 'junction' and chemistry == 'none':
         # R8.3 (N8): a 'Junction' / 'Scaler' label is held to that exact
-        # class's bounds.
+        # class's bounds. A junction separates nothing, except a
+        # MockSplitter or diagram-only claim (_mock_claim), whose outlets
+        # are set elsewhere: it is held to a duty and species appearing
+        # or vanishing only, as the exact MockSplitter is.
         exact = class_name or _junction_label_class(label)
         conserving = (exact is not None
                       and exact not in _NONCONSERVING_JUNCTIONS)
         kinds = (('heat', 'power') + (converted if conserving else ('species',))
                  + (('splitter',) if exact in _T_P_JUNCTIONS else ())
                  + (('mass',) if exact == 'Junction' else ())
-                 + ('separation',))  # fix2: a junction separates nothing
+                 + (() if _mock_claim(class_name, label) else ('separation',)))
         what = 'a junction'
     elif family == 'hx_process' and class_name is None:
-        # fix2 (G2 / G3): a process-process exchanger claim without a class
-        # passes each stream through; its outlets cannot separate.
-        kinds, what = converted + ('separation',), 'a process heat exchanger'
+        # R8.3: a process-process exchanger claim without a class passes
+        # each stream through; its outlets cannot separate.
+        kinds = converted + ('separation', 'power_out')
+        what = 'a process heat exchanger'
+    elif family in _NO_HEAT_FAMILIES and chemistry == 'none':
+        # R5.1: BioSTEAM's pumps, valves and turbines exchange no heat
+        # with an agent (a compressor may: its intercoolers).
+        kinds = ('heat',) + converted + (
+            () if family in _POWER_PRODUCING_FAMILIES else ('power_out',))
+        what = f'a {family}'
     elif chemistry == 'none':
-        kinds, what = converted, 'a unit that hosts no chemistry'
+        kinds = converted + (() if family in _POWER_PRODUCING_FAMILIES
+                             else ('power_out',))
+        what = 'a unit that hosts no chemistry'
     elif chemistry == 'builtin':
-        return _builtin_contradiction(class_name, family, physics)
+        why = _builtin_contradiction(class_name, family, physics)
+        if (why is None and physics.get('power_out')
+                and family not in _POWER_PRODUCING_FAMILIES):
+            why = f"implausible for a {family} claim: {physics['power_out']}"
+        return why
     else:
         return None
     reasons = [physics[kind] for kind in kinds if physics.get(kind)]
@@ -3559,10 +3696,14 @@ def _pure_splitter_label(text):
     whose head noun is a pure-splitter word (_PURE_SPLITTER_WORD_RE:
     'Splitter', 'Stream split', 'Divider', 'Tee', 'Manifold') -- a claim
     that the unit only divides a stream; False for every other splitter
-    label ('Centrifuge', 'Filter press', 'Membrane', 'Settling tank')."""
+    label ('Centrifuge', 'Filter press', 'Membrane', 'Settling tank') and
+    for a component splitter (_COMPONENT_SPLITTER_RE: 'Component
+    splitter', which separates)."""
     family, head = _label_head(text)
     return (family == 'splitter' and head is not None
-            and _PURE_SPLITTER_WORD_RE.fullmatch(head) is not None)
+            and _PURE_SPLITTER_WORD_RE.fullmatch(head) is not None
+            and not any(_COMPONENT_SPLITTER_RE.search(variant)
+                        for variant in _normalized_texts(text)))
 
 
 def _sorption_label(text):
@@ -3600,6 +3741,25 @@ def _junction_label_class(text):
         if any(pattern.search(v) for v in variants):
             return name
     return None
+
+
+# R8.3 (N8): the classes whose outlets are set elsewhere -- BioSTEAM's
+# MockSplitter (FakeSplitter) and diagram-only units, never simulated.
+_MOCK_CLASSES = MOCK_SPLITTER_CLASSES | frozenset({
+    'DiagramOnlyUnit', 'DiagramOnlyStreamUnit', 'DiagramOnlySystemUnit'})
+
+
+def _mock_claim(class_name, label):
+    """R8.3 (N8): True when a junction claim names a MockSplitter or a
+    diagram-only unit exactly -- its class, or, without a class, a `label`
+    spelling that class's name (_MOCK_CLASSES: 'MockSplitter') -- whose
+    outlets, set elsewhere, may differ from each other as corpus S301's
+    vent and liquid do. Any other mock, diagram-only or mass-balance label
+    ('Mock', 'Diagram only') names no class whose code is known: a
+    separation still contradicts it."""
+    if class_name is not None:
+        return class_name in _MOCK_CLASSES
+    return isinstance(label, str) and label.strip() in _MOCK_CLASSES
 
 
 def _generic_exchanger(text):
@@ -5211,7 +5371,7 @@ class _ScoringContext:
         self.hidden_hosts = None
         self.reactor_candidates = {}
         self.unit_families = None
-        self.heat_need = None  # fix2: _heat_need cache
+        self.heat_need = None  # _heat_need cache
         self.unit_reacts = [any(self.well_formed(r)
                                 for r in _dicts(u.get('reactions')))
                             for u in self.units]
@@ -7037,7 +7197,7 @@ def _facility_kind(sc, position):
 
 def _facility_population(sc):
     """Positions of the CMP-UOP-06 population (R2.5): facility-family units
-    (FACILITY_FAMILIES) except cost-only facilities. fix2: a unit whose
+    (FACILITY_FAMILIES) except cost-only facilities. R2.5: a unit whose
     unit_type names a facility stays in it when its ports or streams
     contradict that claim (family unknown; it then scores 0,
     _facility_unit_score): the label is schema-required, so the facility
@@ -7158,7 +7318,7 @@ def _score_uop_06(sc):  # CMP-UOP-06
     for position in _facility_population(sc):
         score, gaps = _facility_unit_score(sc, position)
         if _reactor_candidate(sc, position):
-            # fix2 (G1): a facility claim on a unit that declares reactions
+            # R8.4: a facility claim on a unit that declares reactions
             # its facility chemistry does not account for
             # (_declared_chemistry: a 'Cooling tower' declaring a
             # fermentation) states no facility the flowsheet can have: it
@@ -7210,16 +7370,58 @@ def _species_throughputs(basis, flows_in, flows_out, molar_masses):
     the mass throughput) count only while the molar basis was stated.
     When a molar mass does not resolve, 0 for every species: only the
     stricter CLOSURE_RTOL-of-own-flow rule applies, so deleting a molar
-    mass can only add evidence."""
+    mass can only add evidence (_species_change_test first looks for a
+    mass footing on the same ports)."""
     names = set(flows_in) | set(flows_out)
     if basis == 'mass':
         return dict.fromkeys(names, sum(flows_in.values()))
     mws = {name: _as_dict(molar_masses).get(name) for name in names}
-    if not all(isinstance(mw, (int, float)) and not isinstance(mw, bool)
-               and mw > 0.0 for mw in mws.values()):
+    if not all(_positive_mw(mw) for mw in mws.values()):
         return dict.fromkeys(names, 0.0)
     total = sum(flow * mws[name] for name, flow in flows_in.items())
     return {name: total / mws[name] for name in names}
+
+
+def _species_change_test(sc, basis, flows_in, flows_out, ins, outs):
+    """R8.6: the test `changed(name)` -> True when species `name` changes
+    (_species_changed) between species flows `flows_in` / `flows_out` on
+    `basis`, summed over the streams `ins` / `outs` (the ports compared,
+    or the flowsheet boundary). Its throughput share has one MASS footing
+    (_species_throughputs); on the molar basis with a molar mass that
+    does not resolve, the same ports' MASS species flows give that footing
+    when every one of them states them: the change is then judged on the
+    mass basis against the mass inlet total (a table stating both bases
+    lists a chemical by name only). Only without any footing does the
+    stricter CLOSURE_RTOL-of-own-flow rule apply alone. Deleting a molar
+    mass therefore leaves the verdict on the mass footing, and deleting
+    mass data only moves it to the stricter rule: either can only add
+    evidence."""
+    names = set(flows_in) | set(flows_out)
+    if basis == 'molar' and not all(
+            _positive_mw(_as_dict(sc.molar_masses).get(n)) for n in names):
+        mass = [_species_flows(stream, 'mass')
+                for stream in list(ins) + list(outs)]
+        if all(flow is not None for flow in mass):
+            m_in, m_out = ({}, {})
+            for k, flow in enumerate(mass):
+                side = m_in if k < len(ins) else m_out
+                for name, value in flow.items():
+                    side[name] = side.get(name, 0.0) + value
+            total = sum(m_in.values())
+            return lambda name: _species_changed(
+                m_in.get(name, 0.0), m_out.get(name, 0.0), total)
+    throughput = _species_throughputs(basis, flows_in, flows_out,
+                                      sc.molar_masses)
+    return lambda name: _species_changed(
+        flows_in.get(name, 0.0), flows_out.get(name, 0.0),
+        throughput.get(name, 0.0))
+
+
+def _positive_mw(value):
+    """True when `value` is a usable molar mass: a positive number (not a
+    bool)."""
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and value > 0.0)
 
 
 def _species_change(sc, unit_id):
@@ -7240,14 +7442,13 @@ def _species_change(sc, unit_id):
     if found is None:
         return None
     basis, flows_in, flows_out = found
-    throughput = _species_throughputs(basis, flows_in, flows_out,
-                                      sc.molar_masses)
-    appear = [n for n, v in flows_out.items()
-              if flows_in.get(n, 0.0) <= ZERO_FLOW
-              and _species_changed(0.0, v, throughput[n])]
-    vanish = [n for n, v in flows_in.items()
-              if flows_out.get(n, 0.0) <= ZERO_FLOW
-              and _species_changed(v, 0.0, throughput[n])]
+    changed = _species_change_test(
+        sc, basis, flows_in, flows_out, [sc.streams[i] for i in ins],
+        [sc.streams[i] for i in outs])
+    appear = [n for n in flows_out
+              if flows_in.get(n, 0.0) <= ZERO_FLOW and changed(n)]
+    vanish = [n for n in flows_in
+              if flows_out.get(n, 0.0) <= ZERO_FLOW and changed(n)]
     return ([f'{n} appears' for n in sorted(appear)]
             + [f'{n} vanishes' for n in sorted(vanish)])
 
@@ -7263,18 +7464,20 @@ def _species_conversion(sc, unit_id):
     when the connected streams' species flows are not computable."""
     if not isinstance(unit_id, str):
         return [], []
-    if not sc.unit_inlets.get(unit_id) or not sc.unit_outlets.get(unit_id):
+    ins, outs = sc.unit_inlets.get(unit_id), sc.unit_outlets.get(unit_id)
+    if not ins or not outs:
         return [], []
     found = _side_species(sc, unit_id)
     if found is None:
         return None
     basis, flows_in, flows_out = found
-    throughput = _species_throughputs(basis, flows_in, flows_out,
-                                      sc.molar_masses)
+    changed = _species_change_test(
+        sc, basis, flows_in, flows_out, [sc.streams[i] for i in ins],
+        [sc.streams[i] for i in outs])
     produced, consumed = [], []
     for name in sorted(set(flows_in) | set(flows_out)):
         a, b = flows_in.get(name, 0.0), flows_out.get(name, 0.0)
-        if _species_changed(a, b, throughput[name]):
+        if changed(name):
             (produced if b > a else consumed).append(name)
     return produced, consumed
 
@@ -7438,8 +7641,9 @@ def _flowsheet_evidence(sc):
         sides.append(acc)
     flows_in, flows_out = sides
     # R8.6: the boundary inlet total, on one mass footing.
-    throughput = _species_throughputs(basis, flows_in, flows_out,
-                                      sc.molar_masses)
+    changed = _species_change_test(
+        sc, basis, flows_in, flows_out, [sc.streams[i] for i in ins],
+        [sc.streams[i] for i in outs])
     declared = set()
     for _i, _j, reaction in sc.reactions:
         if sc.well_formed(reaction):
@@ -7448,7 +7652,7 @@ def _flowsheet_evidence(sc):
     unexplained = []
     for name in sorted(set(flows_in) | set(flows_out)):
         a, b = flows_in.get(name, 0.0), flows_out.get(name, 0.0)
-        if _species_changed(a, b, throughput[name]) and name not in declared:
+        if changed(name) and name not in declared:
             unexplained.append(f"{name} {'produced' if b > a else 'consumed'}")
     if unexplained:
         return False, (f"{', '.join(unexplained[:3])} across the flowsheet "
@@ -7618,8 +7822,9 @@ def _reaction_confirmed(sc, position, reaction):
             side = flows_in if k < len(ins) else flows_out
             for name, value in species.items():
                 side[name] = side.get(name, 0.0) + value
-        throughput = _species_throughputs(basis, flows_in, flows_out,
-                                          sc.molar_masses)
+        changed = _species_change_test(
+            sc, basis, flows_in, flows_out, [sc.streams[i] for i in ins],
+            [sc.streams[i] for i in outs])
         for coeffs in sources:
             for scaled in _basis_coefficients(coeffs, basis,
                                               sc.molar_masses):
@@ -7629,9 +7834,7 @@ def _reaction_confirmed(sc, position, reaction):
                 change = {name: flows_out.get(name, 0.0)
                           - flows_in.get(name, 0.0)
                           for name in set(flows_in) | set(flows_out)
-                          if scaled.get(name) or _species_changed(
-                              flows_in.get(name, 0.0),
-                              flows_out.get(name, 0.0), throughput[name])}
+                          if scaled.get(name) or changed(name)}
                 if _proportional_change(change, scaled):
                     return True
     return False
@@ -8401,12 +8604,25 @@ def _needs_family(families, needing):
 def _utility_need(sc):
     """True when the flowsheet needs utility agents (R1.9): a unit in a
     utility-using family or of unknown family (R4.13), a heat need
-    (_heat_need), any unit utility result, or any agent CMP-UTIL-01/02
-    count (_counted_agents: a heat agent only where heat is needed or the
-    agent is used)."""
+    (_heat_need), a unit's result naming an agent no utilities group
+    declares (_undeclared_refs), or any agent CMP-UTIL-01/02 count
+    (_counted_agents: every power and other agent, a heat agent only where
+    heat is needed). A declared heat agent a unit's results name creates
+    no need of its own: that need follows from claims, never from the
+    deletable result."""
     return (_needs_family(_unit_families(sc), UTILITY_USING_FAMILIES)
-            or _heat_need(sc) or bool(_utility_refs(sc))
+            or _heat_need(sc) or bool(_undeclared_refs(sc))
             or bool(_counted_agents(sc)))
+
+
+def _undeclared_refs(sc):
+    """[(agent id, unit label)] of the agents units' utility results name
+    (_utility_refs) that no utilities group declares, in reference
+    order."""
+    declared = {agent.get('id') for _g, agent, _l in sc.agents
+                if isinstance(agent.get('id'), str)}
+    return [(agent_id, unit_label) for agent_id, unit_label
+            in _utility_refs(sc).items() if agent_id not in declared]
 
 
 # Exact separator classes BioSTEAM regenerates by a temperature swing: they
@@ -8414,6 +8630,13 @@ def _utility_need(sc):
 # add_heat_utility, AdsorptionColumnTSA's regeneration), so they need heat
 # agents although their family (splitter) does not.
 REGENERATING_CLASSES = frozenset({'MolecularSieve', 'AdsorptionColumnTSA'})
+# Facility kinds that serve a heat agent to the rest of the plant: BioSTEAM's
+# CoolingTower, ChilledWaterPackage and RefrigerationPackage size the agent
+# they regenerate from its temperature and temperature limit, so they need
+# heat agents although their family (facility) does not. (Boilers and
+# boiler-turbogenerators raise steam: their families need heat agents.)
+HEAT_SERVING_FACILITY_KINDS = frozenset({'CoolingTower', 'ChilledWaterPackage',
+                                         'RefrigerationPackage'})
 
 
 def _regenerating_separator(sc, position):
@@ -8422,9 +8645,9 @@ def _regenerating_separator(sc, position):
     REGENERATING_CLASSES class, or a splitter-family claim without a class
     whose unit_type names a sorption or regeneration head (_sorption_label:
     a molecular sieve, adsorber, ion exchanger, absorber or scrubber). It
-    carries the heat need as a heat-exchanging family does (fix2): the
-    need rests on its claim, never on the duty it records, so deleting
-    that duty (or the heat agents) never sheds it."""
+    carries the heat need as a heat-exchanging family does: the need rests
+    on its claim, never on the duty it records, so deleting that duty (or
+    the heat agents) never sheds it."""
     name, family, _confidence = sc.unit_classes[position]
     if name is not None:
         return name in REGENERATING_CLASSES
@@ -8432,45 +8655,59 @@ def _regenerating_separator(sc, position):
         sc.units[position].get('unit_type'))
 
 
+def _heat_serving_facility(sc, position):
+    """True when unit `position` makes a facility claim that serves a heat
+    agent (_facility_kind in HEAT_SERVING_FACILITY_KINDS: a cooling tower,
+    a chilled-water or refrigeration package) or whose kind is unknown (it
+    may be one, R4.13). Its claim needs heat agents, whatever duty it
+    records."""
+    if sc.unit_classes[position][1] != 'facility':
+        return False
+    kind = _facility_kind(sc, position)
+    return kind is None or kind in HEAT_SERVING_FACILITY_KINDS
+
+
 def _heat_family_need(sc):
     """True when a unit's claim needs heat-utility agents: a unit in a
     heat-exchanging family, of unknown family (R4.13) or held to reactor
-    rules (_unit_families), or a regenerating separator
-    (_regenerating_separator)."""
+    rules (_unit_families), a regenerating separator
+    (_regenerating_separator), or a heat-serving facility
+    (_heat_serving_facility)."""
     return (_needs_family(_unit_families(sc), HEAT_UTILITY_FAMILIES)
             or any(_regenerating_separator(sc, p)
+                   or _heat_serving_facility(sc, p)
                    for p in range(len(sc.units))))
 
 
 def _heat_need(sc):
-    """True when the flowsheet needs heat-utility agents, by need
-    (fix2): a unit's claim needs them (_heat_family_need), or a unit
-    records a heat duty (_recorded_duty: a non-zero result for a declared
-    heat agent or for an undeclared one, whose kind is unknown) -- so
-    deleting the heat_utilities list under a unit's recorded steam keeps
-    the need. A declared heat agent no unit uses creates no need:
-    deleting its list must not turn CMP-UTIL-03 / CMP-UTIL-05 not
-    applicable (raising the score of a document that declares a spare
-    agent). Cached per context."""
+    """True when the flowsheet needs heat-utility agents: exactly when a
+    unit's claim needs them (_heat_family_need). The need follows from
+    claims alone, never from data a document may omit: neither a heat
+    duty a unit records (deleting the duty a label-only storage tank, an
+    extractor ruled out as a host or a pump records must not turn
+    CMP-UTIL-03 / CMP-UTIL-05 not applicable) nor a declared heat agent
+    (deleting a spare agent's list must not either). A claim that can
+    take no heat duty is contradicted by one instead (_physics_contradiction:
+    a mixer, a pure splitter, a mechanical separator, a solids handler, a
+    junction, a pump, valve or turbine), and its unknown family carries
+    the need. Cached per context."""
     if sc.heat_need is None:
-        sc.heat_need = (_heat_family_need(sc)
-                        or any((physics or {}).get('heat')
-                               for physics in sc.unit_physics))
+        sc.heat_need = _heat_family_need(sc)
     return sc.heat_need
 
 
 def _counted_agents(sc):
     """The declared agents CMP-UTIL-01/02 score ([(group, agent, label)],
-    in sc.agents order): every power and other agent, and a heat agent
-    when some unit needs heat (_heat_need) or references it. A heat agent
-    no unit needs or uses is no information a rebuild reads (fix2):
-    counting it could only lower the score (R6.4), so deleting its list
-    would raise it."""
+    in sc.agents order): every power and other agent, and every heat agent
+    when some unit needs heat (_heat_need). A heat agent no unit's claim
+    needs is no information a rebuild of that claim reads: counting it
+    could only lower the score (R6.4), so deleting its list would raise it,
+    and counting it only while a unit's result names it would let deleting
+    that result raise it."""
     if _heat_need(sc):
         return list(sc.agents)
-    refs = _utility_refs(sc)
     return [(group, agent, label) for group, agent, label in sc.agents
-            if group != 'heat_utilities' or _agent_referenced(agent, refs)]
+            if group != 'heat_utilities']
 
 
 _NO_UTILITY_NEED = 'no unit needs utilities and no agent is declared or referenced'
@@ -8536,29 +8773,39 @@ def _missing_agent_kinds(sc):
 
 def _need_reason(sc, needing, why):
     """Why a claim-driven agent need of the `needing` families holds, as
-    the tail of a CMP-UTIL-01..03 locator (`why`: e.g. 'exchange heat'):
-    units whose claimed family needs it; else units of unknown family
-    (R4.13); else (#8) the units that may host a reaction
-    (_reactor_candidate: a hosting claim not ruled out, R7.1, or reactions
-    they declare, R8.4) and so carry a reactor's need -- named, since no
-    unit of theirs claims to exchange heat; else the regenerating
-    separators (_regenerating_separator)."""
+    the tail of a CMP-UTIL-01..03 message or locator (`why`: e.g.
+    'exchange heat'): units whose claimed family needs it; else units of
+    unknown family (R4.13); else the units that may host a reaction
+    (_reactor_candidate: a hosting tank claim not ruled out, R7.1, or
+    reactions they declare, R8.4; or an extractor or column hosting claim
+    not ruled out, _unit_families) and so carry a reactor's need -- named,
+    since no unit of theirs claims to exchange heat; else the regenerating
+    separators (_regenerating_separator); else the heat-serving facilities
+    (_heat_serving_facility)."""
     claimed = {family for _n, family, _c in sc.unit_classes}
     if claimed & needing:
         return f'units {why}'
     if None in claimed:
         return f'units of unknown family (R4.13) may {why}'
     hosts = [sc.unit_labels[p] for p in range(len(sc.units))
-             if _reactor_candidate(sc, p)]
+             if _reactor_candidate(sc, p)
+             or (_hosting_claim(sc, p) and not _ruled_out(sc, p))]
     if hosts and needing & REACTOR_FAMILIES:
         return (f"{', '.join(hosts[:3])} may host a reaction (a hosting "
                 f"claim not ruled out, R7.1, or reactions declared, R8.4), "
                 f"so a reactor's need applies")
-    sieves = [sc.unit_labels[p] for p in range(len(sc.units))
-              if _regenerating_separator(sc, p)]
-    if sieves:
-        return (f"{', '.join(sieves[:3])} regenerate by a temperature "
-                f"swing")
+    if needing & HEAT_UTILITY_FAMILIES:
+        sieves = [sc.unit_labels[p] for p in range(len(sc.units))
+                  if _regenerating_separator(sc, p)]
+        if sieves:
+            return (f"{', '.join(sieves[:3])} regenerate by a temperature "
+                    f"swing")
+        served = [sc.unit_labels[p] for p in range(len(sc.units))
+                  if _heat_serving_facility(sc, p)]
+        if served:
+            return (f"{', '.join(served[:3])} serve a heat agent (a cooling "
+                    f"tower, chilled-water or refrigeration package, or a "
+                    f"facility of unknown kind)")
     return f'units {why}'
 
 
@@ -8747,11 +8994,10 @@ def _score_util_03(sc):  # CMP-UTIL-03
     heat = [(agent, label) for group, agent, label in sc.agents
             if group == 'heat_utilities']
     if not heat:
-        return (0.0, 'heat-exchanging units but no heat-utility agent declared',
-                ['utilities.heat_utilities: none declared, although '
-                 + (_need_reason(sc, HEAT_UTILITY_FAMILIES, 'exchange heat')
-                    if _heat_family_need(sc) else
-                    'a unit records a heat duty')])
+        reason = _need_reason(sc, HEAT_UTILITY_FAMILIES, 'exchange heat')
+        return (0.0, f'no heat-utility agent declared, although {reason}',
+                [f'utilities.heat_utilities: none declared, although '
+                 f'{reason}'])
     roles = _agent_roles(sc)
     refs = _utility_refs(sc)
     scored, missing = [], []  # [(score, referenced)] (R6.4, _agent_mean)

@@ -3495,8 +3495,8 @@ def with_agents(heat=(), power=(), other=(), consumption=None,
                 heat_user=False):
     """label_mixer_doc with the given agents (and U1's consumption
     results); `heat_user` adds a portless exact HXutility 'HX1', so the
-    flowsheet needs heat agents (fix2: a heat agent no unit needs or uses
-    is not counted)."""
+    flowsheet needs heat agents (a heat agent no unit's claim needs is not
+    counted)."""
     doc = label_mixer_doc()
     doc["utilities"] = {"heat_utilities": list(heat),
                         "power_utilities": list(power),
@@ -3540,7 +3540,7 @@ class TestUtilityCriteria(unittest.TestCase):
     def test_utility_and_heat_need(self):
         """_utility_need / _heat_need (R1.9): a lone Mixer, nothing declared
         -> neither; a Pump -> utility need only; an HXutility -> both; a
-        declared heat agent no unit needs or uses -> neither (fix2), beside
+        declared heat agent no unit needs or uses -> neither, beside
         an HXutility -> both; a unit utility result -> utility need.
         R4.13: a unit of unknown family (valid_doc's one-inlet 'Mixer'
         label, R4.14) -> both."""
@@ -7512,7 +7512,7 @@ class TestRevision5(unittest.TestCase):
         differs, and 'hot' (R8.3: more than LABEL_T_ABS above); R1 (no
         reaction) -> 'species'
         (CO2 and Ethanol appear; Glucose only drops); F1 -> 'splitter' P
-        differs and (fix2) 'separation' (its vapor and liquid outlets
+        differs and (R8.3) 'separation' (its vapor and liquid outlets
         differ in composition), but no 'mixer' entry (an outlet may be
         colder / at a lower P). A well-formed reaction on R1 removes 'species'; a unit
         without an id -> {}; deleting s1's temperature (P1's outlet, H1's
@@ -7520,8 +7520,13 @@ class TestRevision5(unittest.TestCase):
         creates one)."""
         sc = ctx(r5_doc())
         physics = dict(zip((u["id"] for u in sc.units), sc.unit_physics))
-        self.assertEqual(set(physics["P1"]), {"mixer", "splitter", "rise"})
+        # R8.3: P1's rise ends above 1 atm ('rise_above_atm', the rise a
+        # built-in pump's power does not excuse).
+        self.assertEqual(set(physics["P1"]), {"mixer", "splitter", "rise",
+                                              "rise_above_atm"})
         self.assertEqual(physics["P1"]["rise"], physics["P1"]["mixer"])
+        self.assertTrue(physics["P1"]["rise_above_atm"].endswith(
+            "above 1 atm"))
         self.assertIn("outlet temperature 353.15 more than 5 K above the "
                       "hottest inlet temperature 298.25", physics["H1"]["hot"])
         self.assertIn("outlet pressure 300000 above the highest inlet "
@@ -7551,8 +7556,9 @@ class TestRevision5(unittest.TestCase):
         kW) and, R8.3, for a label-only mixer claim; a
         PURE_SPLITTER_CLASSES class, or a label-only splitter family claim
         whose label is a pure-splitter word ('Splitter'), by 'heat',
-        'power', 'species' or 'splitter'; a splitter-family class that is
-        not pure (SolidsCentrifuge), and any other family, never; a
+        'power', 'species' or 'splitter'; a pump, valve or turbine claim
+        by 'heat'; a splitter-family class that is not pure
+        (SolidsCentrifuge), and any other family (a compressor), never; a
         MOCK_SPLITTER_CLASSES class not by 'splitter' (T / P) evidence; no
         evidence -> None. _ports_plausible joins it with the port
         contradiction."""
@@ -7580,7 +7586,14 @@ class TestRevision5(unittest.TestCase):
             self.assertIsNone(C._physics_contradiction(name, "junction", split))
         self.assertIsNone(C._physics_contradiction(
             "SolidsCentrifuge", "splitter", split))
-        self.assertIsNone(C._physics_contradiction("Pump", "pump", heat))
+        # A pump, valve or turbine exchanges no heat with an agent
+        # (_NO_HEAT_FAMILIES); a compressor may (its intercoolers).
+        self.assertIn("implausible for a pump",
+                      C._physics_contradiction("Pump", "pump", heat))
+        self.assertIn("implausible for a valve",
+                      C._physics_contradiction(None, "valve", heat))
+        self.assertIsNone(C._physics_contradiction(None, "compressor", heat))
+        self.assertIsNone(C._physics_contradiction("Pump", "pump", power))
         self.assertIsNone(C._physics_contradiction("Mixer", "mixer", None))
         self.assertFalse(C._ports_plausible("Mixer", "mixer", True, (1, 1),
                                             heat))
@@ -8675,8 +8688,11 @@ class TestRevision6(unittest.TestCase):
         mass = {"mass": "mass balance does not close (in 1, out 2)"}
         heat = {"heat": "records a non-zero heat duty (steam)"}
         for physics in (species, conversion):
-            self.assertIn("implausible for a unit that hosts no chemistry",
+            self.assertIn("implausible for a pump",
                           C._physics_contradiction("Pump", "pump", physics))
+            self.assertIn("implausible for a unit that hosts no chemistry",
+                          C._physics_contradiction(
+                              "IsentropicCompressor", "compressor", physics))
             self.assertIsNotNone(C._physics_contradiction(
                 "HPPump", "pump", physics, False, 0.75))
             self.assertIsNotNone(C._physics_contradiction(
@@ -11303,8 +11319,10 @@ class TestRevision8A(unittest.TestCase):
             self.assertTrue(C._pure_splitter_label(label), label)
         for label in ("Decanter centrifuge", "Filter press", "Membrane",
                       "RO unit", "Molecular sieve", "Settling tank",
-                      "Splitter tank", "Mixer", None):
+                      "Splitter tank", "Mixer", "Component splitter",
+                      "ComponentSplitter", "Component splitting", None):
             self.assertFalse(C._pure_splitter_label(label), label)
+        self.assertTrue(C._COMPONENT_SPLITTER_RE.search("componentsplitter"))
         self.assertEqual(C._junction_label_class("Stream junction"),
                          "Junction")
         self.assertEqual(C._junction_label_class("Flow scaler"), "Scaler")
@@ -11520,7 +11538,7 @@ class TestRevision8A(unittest.TestCase):
         self.assertEqual((tank[0], reactor[0]), (1.0, C.DERIVED_CREDIT))
         credit, locator = C._side_credit(sc, 2, "outs")
         self.assertEqual(credit, reactor[0])
-        # fix2 (#8): the locator says why the reactor convention applies.
+        # The locator says why the reactor convention applies.
         self.assertEqual(locator, reactor[1] + "; held to a reactor's port "
                          "convention, as it may host a reaction (reactions "
                          "it declares, R8.4)")
@@ -11646,7 +11664,7 @@ def r8_hda_doc(basis="mass"):
     product; liquid) -> T1 'Crude benzene storage tank' -> D1 'Benzene
     column' (benzene product; the recycle) -- every balance closing, its
     stream table on `basis` (_r8_basis_stream) with the molar masses
-    declared. Round 8 (B5): the molar twin scored 0.094 below the mass
+    declared. Before R8.5 the molar twin scored 0.094 below the mass
     one, its total mass never evaluable."""
     recycle = 100.0 / 3
     units = [
@@ -13209,7 +13227,7 @@ class TestRevision8Fixes(unittest.TestCase):
                             reference.representable_score + 1e-12)
 
     def test_facility_label_capped(self):
-        """CMP-UOP-06 (fix2, G1): a 'Cooling tower' label on the fermenter
+        """CMP-UOP-06 (R8.4): a 'Cooling tower' label on the fermenter
         declaring its reaction, stating the declared agent it would
         regenerate (full facility credit on its own), scores 0: declared
         chemistry outside a facility's signature states no facility, so
@@ -13249,7 +13267,7 @@ class TestRevision8Fixes(unittest.TestCase):
         """A trickling or (an)aerobic filter and a biofilter are biofilm
         reactors, their head winning over the splitter's 'filter'; a
         filter press or a rotary vacuum filter stays a splitter, and so
-        (fix2, #7) does a polishing filter -- a fine, cartridge or
+        (R8.2) does a polishing filter -- a fine, cartridge or
         tertiary media filter in general usage."""
         for label in ("Biofilter", "Bio filter", "Trickling filter",
                       "Aerobic filter", "Anaerobic filter"):
@@ -13274,11 +13292,11 @@ class TestRevision8Fixes(unittest.TestCase):
                 "BiogasUpgrading": HIGH_RATE_URL,
                 "BeltThickener": SLUDGE_URL}
         path = ("units", 0, "design_simulation_method")
-        # fix2 (#7): a PolishingFilter (a reactor class) labelled 'Polishing
+        # R8.2: a PolishingFilter (a reactor class) labelled 'Polishing
         # filter' (a filter in general usage) declares a family its label
         # does not -- an inconsistent-document exclusion; one declaring its
         # reactions keeps a reactor's needs through them (R8.4), pinned in
-        # TestRevision8Fix2.test_polishing_filter_class_deletion.
+        # TestRevision8Claims.test_polishing_filter_class_deletion.
         names = sorted((set(C._CLASS_TABLE) | set(C._UNLISTED_CORE_PARAMS))
                        - {"PolishingFilter"})
         with name_lookup(set()):
@@ -13502,11 +13520,14 @@ class TestTrackedText(unittest.TestCase):
         """The scorer module, its catalogue, its docs page and its Tier 1 /
         Tier 5 tests state each rule with its rationale (citing the
         revision item, e.g. R2.13), never the implementation round that
-        introduced or reverted it: no numbered review round and no mention
-        of the review agent (the pattern below cannot match its own
-        source)."""
-        pattern = re.compile(r"fix\s+round|round-\d|\bverifier\b",
-                             re.IGNORECASE)
+        introduced or reverted it: no numbered review round or numbered
+        fix (in any spelling the pattern lists), no parenthesised review item
+        id (a G-number or a hash-number) and no mention of the review
+        agent (the pattern below cannot match its own source)."""
+        pattern = re.compile(
+            r"fix\s+round|round-\d|\bround\s\d|\bfix\d\b|"
+            r"verification\s+round|\(G\d|\(#\d+|\bverifier\b",
+            re.IGNORECASE)
         here = Path(__file__).resolve()
         paths = (here, here.parents[1] / "tier5" /
                  "test_completeness_corpus.py", C.CRITERIA_PATH, DOCS_PAGE,
@@ -13520,9 +13541,9 @@ class TestTrackedText(unittest.TestCase):
                     found.append(f"{path.name}:{number}: {line.strip()}")
         self.assertEqual(found, [])
 
-# ---- Revision 8, verification round 2 (fix2) ------------------------------
+# ---- Revision 8: heat need by claim, label port conventions -------------
 
-# Agents of the fix2 documents (their quantities' units declared by
+# Agents of the r8f2_* documents (their quantities' units declared by
 # _f2_units).
 _F2_GRID = {"id": "grid", "electrical_energy_price": 0.0782,
             "quantity_units_for_utility_results": "kW"}
@@ -13538,7 +13559,7 @@ _F2_LPS = {"id": "low_pressure_steam", "temperature": 412.0,
            "quantity_units_for_utility_results": "kJ/hr",
            "composition": [{"phase": "g", "component_name": "Water",
                             "mol_fraction": 1.0}]}
-# Units of every quantity the fix2 documents state.
+# Units of every quantity the r8f2_* documents state.
 F2_UNITS = R8F_UNITS + ("kW", "kJ/hr", "USD/kWhr", "USD/kmol")
 
 
@@ -13553,7 +13574,7 @@ def _f2_units(doc):
     qug["regeneration_price"] = {"aliases": ["regeneration_price"],
                                  "quantity_units": "USD/kmol"}
     return doc
-# Every label family a relabel lens should try (fix2, #5): reactor, tank,
+# Every label family a no-gain relabel test tries: reactor, tank,
 # mixer, pure-splitter, separator, solids-handling, facility (cost-only
 # included), exchanger (generic and process), junction and unknown words.
 F2_LABELS = R8_RELABELS + (
@@ -13566,7 +13587,7 @@ F2_LABELS = R8_RELABELS + (
     "Plant air", "CIP package", "Fire water", "Heat exchanger", "HX",
     "Feed/effluent heat exchanger", "Heater", "Evaporator", "Dryer",
     "Flash drum", "Scaler", "Mock", "Mass balance", "Tee", "Manifold",
-    "Stream split", "Extraction column", "Unit")
+    "Stream split", "Component splitter", "Extraction column", "Unit")
 
 
 def r8f2_centrifuge_doc(label, split=True, spare=(), duty=None):
@@ -13631,8 +13652,8 @@ def r8f2_tank_pump_doc(spare=(), bare=False):
 
 def r8f2_fermenter_doc(label, specs=None):
     """r8_sole_heat_doc with R1 recording a cooling-water duty (500) and
-    10 kW of grid power on declared agents (fix2, G1: the lens's
-    fermenter consumes a declared cooling-water agent)."""
+    10 kW of grid power on declared agents (R8.4: a fermenter consuming a
+    declared cooling-water agent)."""
     doc = r8_sole_heat_doc(label, specs or {"tau": 36.0})
     doc["units"][0]["utility_consumption_results"] = {
         "cooling_water": 500.0, "grid": 10.0}
@@ -13654,13 +13675,13 @@ def _no_gain(test, make, honest, labels):
                                  reference.representable_score + 1e-12)
 
 
-class TestRevision8Fix2(unittest.TestCase):
-    """Revision 8, verification round 2: heat need by need (spare heat
+class TestRevision8Claims(unittest.TestCase):
+    """Revision 8: heat need by need (spare heat
     agents), the facility score of a unit declaring foreign chemistry,
     label port conventions and separation evidence, polishing filters,
     and the hosting-need locators."""
 
-    # ---- heat need by need (F1 / #9) ---------------------------------------
+    # ---- heat need by need -------------------------------------------------
 
     def test_spare_heat_agent_creates_no_need(self):
         """_heat_need / _counted_agents / _utility_need: a centrifuge
@@ -13700,7 +13721,7 @@ class TestRevision8Fix2(unittest.TestCase):
         """Strict deletion sweeps (no criterion rises, none turns not
         applicable): the centrifuge beside a spare, incomplete steam agent,
         and a storage tank and pump (the tank ruled out by its identical
-        streams) beside a spare cooling-water agent (#9)."""
+        streams) beside a spare cooling-water agent."""
         incomplete = {k: v for k, v in _F2_LPS.items()
                       if k != "regeneration_price"}
         docs = [r8f2_centrifuge_doc("Decanter centrifuge", spare=[incomplete]),
@@ -13745,10 +13766,10 @@ class TestRevision8Fix2(unittest.TestCase):
                 doc, skip=frozenset(), exclude=_reaction_list)
         self.assertEqual(raised, [])
 
-    # ---- facility claims on declared chemistry (G1) ------------------------
+    # ---- facility claims on declared chemistry (R8.4) ----------------------
 
     def test_declared_fermenter_facility_relabels_never_pay_off(self):
-        """No-gain relabels (G1, #5b): r8_sole_heat_doc's fermenter, now
+        """No-gain relabels (R8.4): r8_sole_heat_doc's fermenter, now
         consuming a declared cooling-water agent and grid power, scores no
         higher as any F2_LABELS label -- the facility labels ('Cooling
         tower', 'Chilled water package', ...) included, which score 0 in
@@ -13763,7 +13784,7 @@ class TestRevision8Fix2(unittest.TestCase):
             self.assertEqual(score, 0.0)
 
     def test_contradicted_facility_label_stays_in_population(self):
-        """_facility_population / _facility_unit_score (fix2): a 'Cooling
+        """_facility_population / _facility_unit_score (R2.5): a 'Cooling
         tower' label whose claim the unit's streams contradict (species
         converting across it without a well-formed reaction: the
         fermentation's equation deleted) stays in CMP-UOP-06, scoring 0;
@@ -13779,28 +13800,34 @@ class TestRevision8Fix2(unittest.TestCase):
         self.assertNotIn(0, C._facility_population(
             ctx(r8f2_centrifuge_doc("Plant air"))))
 
-    # ---- label port conventions and separation (G2 / G3) -------------------
+    # ---- label port conventions and separation (R8.3) ---------------------
 
     def test_label_port_limits(self):
         """_label_port_limits / _facility_label_kind: 'Junction' / 'Scaler'
-        take their exact classes' (1, 1); a pure-splitter label (1, None);
-        every solids-handling label (1, 1); a cost-only facility label
-        (1, 1), a 'Cooling tower' the CoolingTower's (3, 3); any other
-        label (a centrifuge, a mixer, a 'Duplicator') none. 'Sludge
-        handling' names a separator; _port_limits passes the label on."""
+        take their exact classes' (1, 1); a pure-splitter label no cap
+        (R8.3: a multi-feed FSplit is held to dividing its feeds' mixture,
+        _unmixed); every solids-handling label and a cost-only facility
+        label one outlet and any number of inlets (a mill fed fresh chips
+        and screen oversize merges material); a 'Cooling tower' the
+        CoolingTower's (3, 3); a heat-exchanger-network label the
+        HeatExchangerNetwork's (0, 0); any other label (a centrifuge, a
+        mixer, a 'Duplicator') none. 'Sludge handling' names a separator;
+        _port_limits passes the label on."""
         for family, label, limits in (
                 ("junction", "Junction", (1, 1)),
                 ("junction", "Scaler", (1, 1)),
                 ("junction", "Duplicator", None),
-                ("splitter", "Splitter", (1, None)),
-                ("splitter", "Tee", (1, None)),
+                ("splitter", "Splitter", None),
+                ("splitter", "Tee", None),
                 ("splitter", "Decanter centrifuge", None),
-                ("solids_handling", "Screw conveyor", (1, 1)),
-                ("solids_handling", "Hammer mill", (1, 1)),
-                ("solids_handling", "Grain handling", (1, 1)),
-                ("facility", "Plant air", (1, 1)),
-                ("facility", "CIP package", (1, 1)),
+                ("solids_handling", "Screw conveyor", (None, 1)),
+                ("solids_handling", "Hammer mill", (None, 1)),
+                ("solids_handling", "Grain handling", (None, 1)),
+                ("facility", "Plant air", (None, 1)),
+                ("facility", "CIP package", (None, 1)),
                 ("facility", "Cooling tower", (3, 3)),
+                ("heat_exchanger_network", "Heat exchanger network", (0, 0)),
+                ("heat_exchanger_network", "HXN", (0, 0)),
                 ("mixer", "Mixer", None),
                 ("splitter", None, None)):
             with self.subTest(label=label):
@@ -13815,6 +13842,16 @@ class TestRevision8Fix2(unittest.TestCase):
         self.assertEqual(C._port_contradiction(
             None, "solids_handling", False, (1, 2), "Screw conveyor"),
             "2 non-empty outlet(s), at most 1 allowed")
+        for label in ("Hammer mill", "Screw conveyor", "Feeder"):
+            self.assertIsNone(C._port_contradiction(
+                None, "solids_handling", False, (3, 1), label), label)
+        self.assertIsNone(C._port_contradiction(
+            None, "splitter", False, (2, 3), "Splitter"))
+        self.assertIsNone(C._port_contradiction(
+            None, "facility", False, (2, 1), "CIP package"))
+        self.assertEqual(C._port_contradiction(
+            None, "heat_exchanger_network", False, (1, 1), "HXN"),
+            "1 non-empty inlet(s), at most 0 allowed")
 
     def test_separation_evidence(self):
         """_separation / _same_composition / _fractions: the centrifuge's
@@ -13844,7 +13881,7 @@ class TestRevision8Fix2(unittest.TestCase):
             None, "splitter", physics, label="Decanter centrifuge"))
 
     def test_centrifuge_relabels_never_pay_off(self):
-        """No-gain relabels (G2, #5a/c) with a power-drawing separator as
+        """No-gain relabels (R8.3) with a power-drawing separator as
         the HONEST label: the centrifuge (with and without its split)
         scores no higher as any F2_LABELS label -- solids-handling,
         cost-only facility, generic exchanger, junction and pure-splitter
@@ -13858,7 +13895,7 @@ class TestRevision8Fix2(unittest.TestCase):
                         label, split), honest, F2_LABELS)
 
     def test_extraction_relabels_never_pay_off(self):
-        """No-gain relabels (G3): the two-inlet extraction, with and
+        """No-gain relabels (R8.3): the two-inlet extraction, with and
         without N_stages / feed_stages, scores no higher as a 'Junction',
         'Scaler', 'Duplicator', 'Mock', 'Mass balance', generic 'Heat
         exchanger' / 'HX' or pure-splitter label than as an 'Extraction
@@ -13872,10 +13909,10 @@ class TestRevision8Fix2(unittest.TestCase):
                 _no_gain(self, lambda label: r8f2_extraction_doc(label, specs),
                          "Extraction column", labels)
 
-    # ---- polishing filters (#7) --------------------------------------------
+    # ---- polishing filters (R8.2) ------------------------------------------
 
     def test_polishing_filter_is_a_filter(self):
-        """#7: an honest separator labelled 'Polishing filter' or 'Final
+        """R8.2: an honest separator labelled 'Polishing filter' or 'Final
         polishing filter' scores exactly as 'Filter' and 'Cartridge
         filter' (a filter, never charged a reactor's needs); a unit
         declaring reactions under that label may take a heat duty (it is
@@ -13897,7 +13934,7 @@ class TestRevision8Fix2(unittest.TestCase):
                       "Molecular sieve"))
 
     def test_polishing_filter_class_deletion(self):
-        """#7: an exact PolishingFilter labelled 'Polishing filter' that
+        """R8.2: an exact PolishingFilter labelled 'Polishing filter' that
         declares its reactions keeps a reactor's needs through them when
         its design_simulation_method is deleted (R8.4): the score does
         not rise."""
@@ -13910,10 +13947,10 @@ class TestRevision8Fix2(unittest.TestCase):
         self.assertLessEqual(after[0], before[0] + 1e-12)
         self.assertLessEqual(after[1], before[1] + 1e-12)
 
-    # ---- hosting-need locators (#8) ----------------------------------------
+    # ---- hosting-need locators (R7.1) --------------------------------------
 
     def test_hosting_need_locators(self):
-        """#8: on an honest sparse pump-and-tank sheet (streams stating only
+        """R7.1: on an honest sparse pump-and-tank sheet (streams stating only
         flows, grid power declared) the storage tank may host a reaction,
         so the heat need and port convention it carries name it: the
         missing heat agent of CMP-UTIL-01..03 reads 'units[T1] may host a
@@ -13938,6 +13975,548 @@ class TestRevision8Fix2(unittest.TestCase):
                             "held to a reactor's port convention" in m
                             for m in missing), missing)
 
+
+# ---- Revision 8: needs by claim, multi-feed claims, mass footing ---------
+
+
+def _r8h_stream(sid, source, sink, kg, T=305.0, P=101325.0, price=None,
+                phase="l"):
+    """_r8f_stream at pressure `P` with its one phase tagged `phase`."""
+    stream_ = _r8f_stream(sid, source, sink, kg, T, price)
+    sp = stream_["stream_properties"]
+    sp["pressure"] = P
+    sp["phases"] = {phase: sp["phases"].pop("l")}
+    return stream_
+
+
+def _r8h_cw(complete=False):
+    """_F2_CW, without its heat-transfer efficiency and temperature limit
+    unless `complete`."""
+    agent = dict(_F2_CW)
+    if not complete:
+        agent.pop("heat_transfer_efficiency")
+        agent.pop("temperature_limit")
+    return agent
+
+
+def r8h_cooled_tank_doc(label="Storage tank", complete=False, duty=True):
+    """r8f2_tank_pump_doc with T1 `label` cooling its contents from 300 to
+    297 K on a declared cooling-water agent (_r8h_cw), recording that duty
+    when `duty` -- its species unchanged, so its hosting claim is ruled
+    out."""
+    doc = r8f2_tank_pump_doc(spare=(_r8h_cw(complete),))
+    doc["units"][0]["unit_type"] = label
+    if duty:
+        doc["units"][0]["utility_production_results"] = {
+            "cooling_water": -1.25e5}
+    for stream_ in doc["streams"]:
+        if stream_["source_unit_id"] in ("T1", "P1"):
+            stream_["stream_properties"]["temperature"] = 297.0
+    return doc
+
+
+def r8h_cooling_tower_doc(label="Cooling tower", exact=True, duty=True):
+    """r8f2_tank_pump_doc (its tank ruled out, needing no heat) beside CT1
+    `label` bound to the declared, incomplete cooling-water agent it
+    serves (an exact CoolingTower when `exact`), recording that duty when
+    `duty` and 0.5 kW of grid power."""
+    doc = r8f2_tank_pump_doc(spare=(_r8h_cw(),))
+    unit = {"id": "CT1", "unit_type": label,
+            "design_input_specs": {"agent": "cooling_water"},
+            "utility_consumption_results": {"grid": 0.5}}
+    if duty:
+        unit["utility_consumption_results"]["cooling_water"] = 3.0e5
+    if exact:
+        unit["design_simulation_method"] = f"CoolingTower on {BST_URL}"
+    doc["units"].append(unit)
+    return doc
+
+
+def r8h_heater_doc(label, cool=False, specs=None):
+    """feed -> H1 `label` (stating `specs`) heating it from 300 to 350 K on
+    declared low-pressure steam (or, `cool`, cooling it to 290 K on
+    declared cooling water) -> product, the agent incomplete (no
+    efficiency, no temperature limit)."""
+    feed = {"Glucose": 100.0, "Water": 9000.0}
+    agent = dict(_F2_CW if cool else _F2_LPS)
+    agent.pop("heat_transfer_efficiency")
+    agent.pop("temperature_limit", None)
+    unit = {"id": "H1", "unit_type": label,
+            "design_input_specs": dict(specs or {}),
+            "utility_consumption_results": {agent["id"]: 2.0e6}}
+    streams = [_r8f_stream("feed", "None", "H1", feed, 300.0, 0.05),
+               _r8f_stream("product", "H1", "None", feed,
+                           290.0 if cool else 350.0, 0.1)]
+    doc = _r8f_doc([unit], streams, ("Glucose", "Water"))
+    doc["utilities"] = {"heat_utilities": [agent]}
+    return _f2_units(doc)
+
+
+def r8h_gas_doc(label, P_in=101325.0, P_out=106391.0, T_out=308.0,
+                duty=None):
+    """feed (CO2 900, water 10 kg/h, gas, 305 K, `P_in`) -> K1 `label` ->
+    product (`T_out`, `P_out`), K1 recording `duty` (default: 20 kW of
+    declared grid power drawn -- a blower)."""
+    gas = {"CO2": 900.0, "Water": 10.0}
+    unit = {"id": "K1", "unit_type": label, "design_input_specs": {}}
+    unit.update(duty or {"utility_consumption_results": {"grid": 20.0}})
+    streams = [_r8h_stream("feed", "None", "K1", gas, 305.0, P_in, 0.0, "g"),
+               _r8h_stream("product", "K1", "None", gas, T_out, P_out, 0.1,
+                           "g")]
+    doc = _r8f_doc([unit], streams, ("CO2", "Water"))
+    doc["utilities"] = {"power_utilities": [dict(_F2_GRID)]}
+    return _f2_units(doc)
+
+
+def r8h_turbine_doc(label):
+    """r8h_gas_doc expanding the gas from 3 to 1.5 bar (305 -> 301 K) and
+    PRODUCING 10 kW of declared grid power (a turbine)."""
+    return r8h_gas_doc(label, 3.0e5, 1.5e5, 301.0, {
+        "utility_production_results": {"grid": 10.0}})
+
+
+def r8h_mill_doc(label="Hammer mill"):
+    """Fresh chips ('feed') and screen oversize ('oversize', a second
+    feed) -> HM1 `label` (5 kW of grid power) -> product, the product
+    carrying the two feeds' mixture: a closed-circuit mill merging two
+    solid feeds."""
+    units = [{"id": "HM1", "unit_type": label, "design_input_specs": {},
+              "utility_consumption_results": {"grid": 5.0}}]
+    streams = [_r8f_stream("feed", "None", "HM1",
+                           {"Glucose": 500.0, "Water": 50.0}, 298.0, 0.1),
+               _r8f_stream("oversize", "None", "HM1",
+                           {"Glucose": 100.0, "Water": 10.0}, 298.0, 0.0),
+               _r8f_stream("product", "HM1", "None",
+                           {"Glucose": 600.0, "Water": 60.0}, 298.0, 0.2)]
+    doc = _r8f_doc(units, streams, ("Glucose", "Water"))
+    doc["utilities"] = {"power_utilities": [dict(_F2_GRID)]}
+    return _f2_units(doc)
+
+
+def r8h_fsplit_doc(label="Splitter", outlets="mixed"):
+    """'feed' (water 900, glucose 100) and 'water' (water 100) -> S1
+    `label` -> product + purge: with `outlets` 'mixed' both carry the
+    feeds' mixture 60 / 40 (an FSplit); 'separated' the glucose leaves
+    mostly in the purge; 'phases' the water leaves as vapour in the
+    product and everything else as liquid in the purge."""
+    product, purge = {
+        "mixed": ({"Water": 600.0, "Glucose": 60.0},
+                  {"Water": 400.0, "Glucose": 40.0}),
+        "separated": ({"Water": 640.0, "Glucose": 20.0},
+                      {"Water": 360.0, "Glucose": 80.0}),
+        "phases": ({"Water": 300.0},
+                   {"Water": 700.0, "Glucose": 100.0})}[outlets]
+    units = [{"id": "S1", "unit_type": label,
+              "design_input_specs": {"split": 0.6}}]
+    streams = [_r8h_stream("feed", "None", "S1",
+                           {"Water": 900.0, "Glucose": 100.0}, 300.0,
+                           price=0.1),
+               _r8h_stream("water", "None", "S1", {"Water": 100.0}, 300.0,
+                           price=0.0),
+               _r8h_stream("product", "S1", "None", product, 300.0,
+                           price=0.2,
+                           phase="g" if outlets == "phases" else "l"),
+               _r8h_stream("purge", "S1", "None", purge, 300.0, price=0.0)]
+    return _r8f_doc(units, streams, ("Water", "Glucose"))
+
+
+def r8h_both_bases_round_doc(rounding, kcl_molar_mass=True):
+    """r8_round_doc(rounding) stating the molar basis too: every phase's
+    total_molar_flow and mol fractions (to 4 decimals, the largest species
+    taking the remainder) from its stated -- rounded -- mass data; KCl
+    declared by name only (no molar mass) unless `kcl_molar_mass`."""
+    doc = r8_round_doc(rounding)
+    for stream_ in doc["streams"]:
+        phase = stream_["stream_properties"]["phases"]["l"]
+        mass = phase["total_mass_flow"]
+        kmol = {e["component_name"]: mass * e["mass_fraction"]
+                / R8_ROUND_MW[e["component_name"]]
+                for e in phase["composition"]}
+        moles = sum(kmol.values())
+        fractions = {n: round(k / moles, 4) for n, k in kmol.items()}
+        big = max(fractions, key=fractions.get)
+        fractions[big] += 1.0 - sum(fractions.values())
+        phase["total_molar_flow"] = moles
+        stream_["stream_properties"]["total_molar_flow"] = moles
+        for entry in phase["composition"]:
+            entry["mol_fraction"] = fractions[entry["component_name"]]
+    if not kcl_molar_mass:
+        for chemical in doc["chemicals"]:
+            if chemical["id"] == "KCl":
+                del chemical["molar_mass"]
+    doc["quantity_units_global"]["molar_flow"] = {
+        "aliases": ["total_molar_flow"], "quantity_units": "kmol/hr"}
+    return doc
+
+
+# BioSTEAM's per-species combustion set as a BoilerTurbogenerator declares
+# it: each species burns on its own reaction; an oxidised species releases
+# the O2 the others consume, and the 'elemental' handling of
+# chemicals.combustion leaves a non-combustible element (K) elemental.
+_R8H_COMBUSTION = [
+    {"index": 0, "equation": "Glucose + 6 O2 -> 6 CO2 + 6 Water"},
+    {"index": 1, "equation": "NitricOxide -> 0.5 O2 + 0.5 N2"},
+    {"index": 2, "equation": "CaSO4 -> O2 + SO2 + 40.1 Ash"},
+    {"index": 3, "equation": "NaOH -> 0.5 H2O + 0.25 O2 + 23 Ash"},
+    {"index": 4, "equation": "KOH -> K + 0.5 H2O + 0.25 O2"}]
+
+
+def _family_labels(*families):
+    """The F2_LABELS labels whose keyword family is one of `families`."""
+    return tuple(label for label in F2_LABELS
+                 if C._keyword_family(label) in families)
+
+
+class TestRevision8Closure(unittest.TestCase):
+    """Revision 8 closure: the heat need follows claims only, multi-feed
+    solids handlers and pure splitters keep their claims, species changes
+    keep a mass footing when a molar mass does not resolve, a combustion
+    set's decomposition products stay combustion, and power a unit
+    produces (or a rise beyond 1 atm) contradicts a separator, mixer or
+    solids label."""
+
+    # ---- heat need by claim ------------------------------------------------
+
+    def test_recorded_duty_creates_no_heat_need(self):
+        """_heat_need follows claims only: a label-only 'Storage tank',
+        'Holding tank' or 'Surge tank' cooling its contents on a declared
+        cooling-water agent (ruled out as a host by its streams) carries
+        no heat need, its agent complete or not -- CMP-UTIL-03 /
+        CMP-UTIL-05 not applicable, the agent not counted by CMP-UTIL-01 /
+        02 (_counted_agents), no utility need of its own
+        (_undeclared_refs is empty) -- so deleting the recorded duty
+        changes no criterion; the strict sweep raises nothing."""
+        for label in ("Storage tank", "Holding tank", "Surge tank"):
+            for complete in (False, True):
+                doc = r8h_cooled_tank_doc(label, complete)
+                sc = ctx(doc)
+                with self.subTest(label=label, complete=complete):
+                    self.assertIn("heat", sc.unit_physics[0])
+                    self.assertFalse(C._reactor_candidate(sc, 0))
+                    self.assertFalse(C._heat_need(sc))
+                    self.assertFalse(C._heat_family_need(sc))
+                    self.assertEqual(C._undeclared_refs(sc), [])
+                    self.assertEqual(
+                        [g for g, _a, _l in C._counted_agents(sc)],
+                        ["power_utilities"])
+                    with name_lookup(set()), unit_registry(F2_UNITS):
+                        before = criterion_results(doc)
+                        after = criterion_results(deleted(
+                            doc, ("units", 0, "utility_production_results",
+                                  "cooling_water")))
+                    for cid in ("CMP-UTIL-03", "CMP-UTIL-05"):
+                        self.assertEqual(before[cid].status,
+                                         "not_applicable")
+                    for cid, result in before.items():
+                        self.assertEqual(
+                            (result.status, result.score),
+                            (after[cid].status, after[cid].score), cid)
+        with name_lookup(set()), unit_registry(F2_UNITS):
+            raised, _lowered, n = deletion_violations(
+                r8h_cooled_tank_doc(), skip=frozenset(),
+                exclude=_reaction_list)
+        self.assertGreater(n, 30)
+        self.assertEqual(raised, [])
+
+    def test_heat_serving_facility_carries_heat_need(self):
+        """_heat_serving_facility / _heat_family_need: an exact
+        CoolingTower, a label-only 'Cooling tower' or 'Chilled water
+        package' serves a heat agent, so its claim carries the heat need
+        whatever duty it records (deleting the duty keeps CMP-UTIL-03 /
+        CMP-UTIL-05 scored); a process-water center or a cost-only 'CIP
+        package' does not. With the agents deleted, CMP-UTIL-03 names the
+        facility as the reason (_need_reason). The strict sweeps, with and
+        without the duty, raise nothing."""
+        for label, exact in (("Cooling tower", True), ("Cooling tower", False),
+                             ("Chilled water package", False)):
+            doc = r8h_cooling_tower_doc(label, exact)
+            sc = ctx(doc)
+            with self.subTest(label=label, exact=exact):
+                self.assertEqual(sc.unit_classes[2][1], "facility")
+                self.assertTrue(C._heat_serving_facility(sc, 2))
+                self.assertTrue(C._heat_need(sc))
+                bare = r8h_cooling_tower_doc(label, exact, duty=False)
+                self.assertTrue(C._heat_need(ctx(bare)))
+                with name_lookup(set()), unit_registry(F2_UNITS):
+                    after = criterion_results(bare)
+                for cid in ("CMP-UTIL-03", "CMP-UTIL-05"):
+                    self.assertEqual(after[cid].status, "scored")
+        for label in ("Process water center", "CIP package"):
+            sc = ctx(r8h_cooling_tower_doc(label, exact=False))
+            self.assertFalse(C._heat_serving_facility(sc, 2), label)
+            self.assertFalse(C._heat_need(sc), label)
+        doc = deleted(r8h_cooling_tower_doc(), ("utilities", "heat_utilities"))
+        score, message, missing = C._score_util_03(ctx(doc))
+        reason = ("units[CT1] serve a heat agent (a cooling tower, "
+                  "chilled-water or refrigeration package, or a facility "
+                  "of unknown kind)")
+        self.assertEqual(score, 0.0)
+        self.assertEqual(message, "no heat-utility agent declared, although "
+                         + reason)
+        self.assertEqual(missing, ["utilities.heat_utilities: none "
+                                   "declared, although " + reason])
+        for duty in (True, False):
+            with name_lookup(set()), unit_registry(F2_UNITS):
+                raised, _lowered, _n = deletion_violations(
+                    r8h_cooling_tower_doc(duty=duty), skip=frozenset(),
+                    exclude=_reaction_list)
+            self.assertEqual(raised, [], duty)
+
+    def test_util_03_message_names_the_need(self):
+        """CMP-UTIL-03 without a heat agent says why one is needed: on an
+        honest bare pump-and-tank sheet the tank may host a reaction (a
+        hosting claim not ruled out, R7.1), never 'heat-exchanging units'."""
+        sc = ctx(r8f2_tank_pump_doc(bare=True))
+        score, message, _missing = C._score_util_03(sc)
+        self.assertEqual(score, 0.0)
+        self.assertEqual(message, (
+            "no heat-utility agent declared, although units[T1] may host a "
+            "reaction (a hosting claim not ruled out, R7.1, or reactions "
+            "declared, R8.4), so a reactor's need applies"))
+
+    def test_heat_duty_relabels_never_pay_off(self):
+        """No-gain relabels on r8h_heater_doc, heating on steam or cooling
+        on cooling water with an incomplete agent, stating no or all
+        specifications: no F2_LABELS label nor a compressor, blower or
+        turbine scores above 'Heater' (a pump, valve or turbine claim is
+        contradicted by the heat duty, _NO_HEAT_FAMILIES; a tank's hosting
+        claim is ruled out, and its own needs outweigh the heat need it
+        sheds)."""
+        labels = F2_LABELS + ("Compressor", "Blower", "Turbine", "Expander")
+        with name_lookup(set()), unit_registry(F2_UNITS):
+            for cool in (False, True):
+                for specs in ({}, {"T": 290.0 if cool else 350.0}):
+                    _no_gain(self, lambda label: r8h_heater_doc(
+                        label, cool, specs), "Heater", labels)
+
+    # ---- multi-feed solids handlers and pure splitters --------------------
+
+    def test_multi_feed_solids_handlers_keep_their_claim(self):
+        """R8.3: a solids-handling or cost-only facility label caps its
+        outlets, not its inlets -- a hammer mill, grinder, screw conveyor
+        or feeder fed fresh chips and screen oversize keeps the
+        solids-handling family (no port or physics contradiction); a
+        centrifuge relabelled with those words stays contradicted (two
+        outlets). The strict sweep over the mill raises nothing (deleting
+        a feed's endpoint used to restore a claim its ports had
+        contradicted)."""
+        for label in ("Hammer mill", "Grinder", "Screw conveyor", "Feeder"):
+            sc = ctx(r8h_mill_doc(label))
+            with self.subTest(label=label):
+                self.assertEqual(sc.unit_ports[0], (2, 1))
+                self.assertEqual(sc.unit_classes[0][1], "solids_handling")
+                self.assertEqual(C._port_notes(sc, 0), [])
+        for label in ("Screw conveyor", "CIP package"):
+            sc = ctx(r8f2_centrifuge_doc(label))
+            self.assertIsNone(sc.unit_classes[0][1], label)
+        with name_lookup(set()), unit_registry(F2_UNITS):
+            raised, _lowered, n = deletion_violations(
+                r8h_mill_doc(), skip=frozenset(), exclude=_reaction_list)
+        self.assertGreater(n, 30)
+        self.assertEqual(raised, [])
+
+    def test_multi_feed_pure_splitter(self):
+        """R8.3 / _unmixed: a pure-splitter label ('Splitter', 'Stream
+        splitter', 'Flow divider', 'Tee', 'Manifold') fed by two streams
+        keeps the splitter family when both outlets carry the feeds'
+        mixture (an FSplit), and when the mixture leaves split by phase (a
+        vapour and a liquid outlet); its claim is contradicted
+        ('unmixed') when an outlet separates the mixture. A 'Component
+        splitter' (SuperPro Designer's, a separator) keeps the splitter
+        family in every case. _unmixed needs two inlets and computable
+        species flows. The strict sweeps over the FSplit and the separating
+        component splitter raise nothing."""
+        for label in ("Splitter", "Stream splitter", "Flow divider", "Tee",
+                      "Manifold", "Component splitter"):
+            for outlets, family in (("mixed", "splitter"),
+                                    ("phases", "splitter"),
+                                    ("separated", None)):
+                if label == "Component splitter":
+                    family = "splitter"
+                sc = ctx(r8h_fsplit_doc(label, outlets))
+                with self.subTest(label=label, outlets=outlets):
+                    self.assertEqual(sc.unit_ports[0], (2, 2))
+                    self.assertEqual(sc.unit_classes[0][1], family)
+        sc = ctx(r8h_fsplit_doc(outlets="separated"))
+        self.assertIn("not one mixture divided", sc.unit_physics[0]["unmixed"])
+        streams = sc.streams
+        self.assertIsNone(C._unmixed(streams[:1], streams[2:]))
+        self.assertIsNone(C._unmixed(streams[:2], []))
+        self.assertIsNotNone(C._unmixed(streams[:2], streams[2:]))
+        bare = deleted(r8h_fsplit_doc(outlets="separated"),
+                       ("streams", 3, "stream_properties", "phases"))
+        self.assertIsNone(C._unmixed(*[
+            [s for s in bare["streams"] if s[end] == "S1"]
+            for end in ("sink_unit_id", "source_unit_id")]))
+        for doc in (r8h_fsplit_doc(),
+                    r8h_fsplit_doc("Component splitter", "separated")):
+            with name_lookup(set()), unit_registry(F2_UNITS):
+                raised, _lowered, _n = deletion_violations(
+                    doc, skip=frozenset(), exclude=_reaction_list)
+            self.assertEqual(raised, [])
+
+    def test_mock_claim(self):
+        """_mock_claim (N8): an exact MockSplitter or diagram-only class, or
+        a label spelling one ('MockSplitter'), is held to a duty and
+        species appearing only -- its outlets may differ; a 'Mock',
+        'Mock splitter' or 'Diagram only' label names no class whose code
+        is known, so a separation still contradicts it."""
+        self.assertTrue(C._mock_claim("MockSplitter", None))
+        self.assertTrue(C._mock_claim("DiagramOnlyUnit", "Anything"))
+        self.assertTrue(C._mock_claim(None, "MockSplitter"))
+        for label in ("Mock", "Mock splitter", "Diagram only", "Junction",
+                      None):
+            self.assertFalse(C._mock_claim(None, label), label)
+        separation = {"separation": "an outlet composition differs"}
+        self.assertIsNone(C._physics_contradiction(
+            None, "junction", separation, label="MockSplitter"))
+        self.assertIsNotNone(C._physics_contradiction(
+            None, "junction", separation, label="Mock"))
+
+    # ---- species changes on a mass footing --------------------------------
+
+    def test_name_only_chemical_keeps_mass_footing(self):
+        """R8.6 / _species_change_test: a rounded table stating both bases
+        (wt% to 2 decimals, or integer kg/h, with mol fractions to 4
+        decimals) that lists KCl by name only is compared on the molar
+        basis, where KCl's molar mass does not resolve -- the change is
+        then judged on the same ports' mass flows against the mass inlet
+        total, so the trace KCl moving 5 % / 33 % of its own flow across
+        M1 is no conversion: 'Mixer' stands, T1 is ruled out per unit,
+        the flowsheet evidence holds, and the scores equal those of the
+        table declaring KCl's molar mass except where that molar mass
+        itself is scored. Deleting the mass data moves the verdict to the
+        stricter own-flow rule (evidence only added), and the strict sweep
+        raises nothing."""
+        for rounding in ("wt", "int"):
+            doc = r8h_both_bases_round_doc(rounding, kcl_molar_mass=False)
+            sc = ctx(doc)
+            with self.subTest(rounding=rounding):
+                self.assertEqual(C._side_species(sc, "M1")[0], "molar")
+                self.assertNotIn("KCl", sc.molar_masses)
+                self.assertEqual(C._species_change(sc, "M1"), [])
+                self.assertEqual(C._species_conversion(sc, "M1"), ([], []))
+                self.assertEqual(sc.unit_classes[0][1], "mixer")
+                self.assertTrue(C._no_conversion(sc, 1))
+                self.assertEqual(C._flowsheet_explained(sc), (True, ""))
+                basis, flows_in, flows_out = C._side_species(sc, "M1")
+                changed = C._species_change_test(
+                    sc, basis, flows_in, flows_out,
+                    [sc.streams[i] for i in sc.unit_inlets["M1"]],
+                    [sc.streams[i] for i in sc.unit_outlets["M1"]])
+                self.assertFalse(changed("KCl"))
+                strict = C._species_throughputs(basis, flows_in, flows_out,
+                                                sc.molar_masses)
+                self.assertEqual(set(strict.values()), {0.0})
+                self.assertTrue(C._species_changed(
+                    flows_in["KCl"], flows_out["KCl"], strict["KCl"]))
+                named = r8h_both_bases_round_doc(rounding)
+                with name_lookup(set()), unit_registry(R8B_UNITS):
+                    a = criterion_results(doc)
+                    b = criterion_results(named)
+                for cid in ("CMP-UOP-01", "CMP-UOP-02", "CMP-RXN-01",
+                            "CMP-UOP-04", "CMP-TOP-02"):
+                    self.assertEqual((a[cid].status, a[cid].score),
+                                     (b[cid].status, b[cid].score), cid)
+        self.assertTrue(C._positive_mw(74.55))
+        for value in (0.0, -1.0, True, None, "74.55"):
+            self.assertFalse(C._positive_mw(value), value)
+        doc = r8h_both_bases_round_doc("wt", kcl_molar_mass=False)
+        masses = deleted(doc, ("streams", 2, "stream_properties", "phases",
+                               "l", "composition", 2, "mass_fraction"))
+        self.assertIn("KCl", sum(C._species_conversion(ctx(masses), "M1"),
+                                 []))
+        with name_lookup(set()), unit_registry(R8B_UNITS):
+            raised, _lowered, n = deletion_violations(doc, skip=frozenset())
+        self.assertGreater(n, 60)
+        self.assertEqual(raised, [])
+
+    # ---- combustion sets ---------------------------------------------------
+
+    def test_combustion_set_is_combustion(self):
+        """R8.4 / _elemental_product: a label-only boiler, boiler-
+        turbogenerator, furnace or dryer declaring BioSTEAM's per-species
+        combustion set -- O2 released by the decomposition of NO, CaSO4 or
+        NaOH, K left elemental -- declares chemistry its family accounts
+        for (_declared_chemistry False: not a reactor candidate, so no
+        reactor rules in CMP-UOP-02 and its CMP-UOP-06 facility rules
+        stand). A set producing ethanol, or a combustible element (C, H2),
+        is not combustion."""
+        for label in ("Boiler turbogenerator", "Boiler", "Furnace", "Dryer"):
+            doc = r6_doc(label)
+            doc["units"][2]["reactions"] = copy.deepcopy(_R8H_COMBUSTION)
+            del doc["streams"][3]["stream_properties"]["phases"]
+            sc = ctx(doc)
+            with self.subTest(label=label):
+                self.assertFalse(C._declared_chemistry(sc, 2))
+                self.assertFalse(C._reactor_candidate(sc, 2))
+                self.assertIsNone(C._chemistry_rules(sc, 2))
+        for extra in ("Glucose -> 2 Ethanol + 2 CO2", "Methane -> C + 2 H2"):
+            doc = r6_doc("Boiler turbogenerator")
+            doc["units"][2]["reactions"] = copy.deepcopy(_R8H_COMBUSTION) + [
+                {"index": 5, "equation": extra}]
+            del doc["streams"][3]["stream_properties"]["phases"]
+            self.assertTrue(C._declared_chemistry(ctx(doc), 2), extra)
+        keys = C._species_keys
+        self.assertTrue(C._elemental_product(keys("K")))
+        self.assertTrue(C._elemental_product(keys("Sodium", "Na")))
+        for name in ("C", "H2", "O2", "Glucose", "KCl"):
+            self.assertFalse(C._elemental_product(keys(name)), name)
+
+    # ---- power a unit produces, and rises beyond 1 atm --------------------
+
+    def test_power_producing_and_rise_contradictions(self):
+        """R8.3: _recorded_duty reports power a unit produces ('power_out':
+        a positive production result or a negative consumption);
+        _physics_contradictions reports a pressure rise ending above 1 atm
+        ('rise_above_atm'). A separator label drawing power is allowed a
+        rise to 1 atm (a built-in pump), not beyond; power produced
+        contradicts a separator, mixer or solids label, a pump, valve or
+        exchanger, and a facility or dryer claim -- not a turbine, boiler,
+        boiler-turbogenerator or combustor."""
+        sc = ctx(r8h_turbine_doc("Turbine"))
+        self.assertIn("power_out", sc.unit_physics[0])
+        self.assertIn("produces power", sc.unit_physics[0]["power_out"])
+        doc = r8h_gas_doc("Blower", duty={
+            "utility_consumption_results": {"grid": -10.0}})
+        self.assertIn("power_out", ctx(doc).unit_physics[0])
+        blower = ctx(r8h_gas_doc("Blower")).unit_physics[0]
+        self.assertNotIn("power_out", blower)
+        self.assertIn("rise_above_atm", blower)
+        to_atm = ctx(r8h_gas_doc("Blower", 2.0e4, 101325.0, 305.0))
+        self.assertIn("rise", to_atm.unit_physics[0])
+        self.assertNotIn("rise_above_atm", to_atm.unit_physics[0])
+        for label in ("Centrifuge", "Membrane", "Reverse osmosis"):
+            self.assertIsNone(C._physics_contradiction(
+                None, "splitter", to_atm.unit_physics[0], label=label))
+            self.assertIn("above 1 atm", C._physics_contradiction(
+                None, "splitter", blower, label=label))
+        produced = {"power_out": "produces power (x)"}
+        for family, label in (("splitter", "Centrifuge"), ("mixer", "Mixer"),
+                              ("solids_handling", "Conveyor"),
+                              ("pump", "Pump"), ("valve", "Valve"),
+                              ("hx_process", "Heat exchanger"),
+                              ("facility", "CIP package"), ("dryer", "Dryer")):
+            self.assertIn("produces power", C._physics_contradiction(
+                None, family, produced, label=label), family)
+        for family in ("turbine", "boiler", "boiler_turbogenerator",
+                       "combustor"):
+            self.assertIsNone(C._physics_contradiction(
+                None, family, produced), family)
+
+    def test_power_unit_relabels_never_pay_off(self):
+        """No-gain relabels (R8.3): a blower or compressor (one inlet, one
+        outlet, 20 kW drawn, a 5 % rise above 1 atm, 3 K warmer)
+        relabelled with any separator, mixer or solids-handling word of
+        F2_LABELS scores no higher than its honest label; a turbine
+        producing 10 kW scores no higher than 'Turbine' under any
+        F2_LABELS label."""
+        separators = _family_labels("splitter", "mixer", "solids_handling")
+        self.assertGreater(len(separators), 20)
+        with name_lookup(set()), unit_registry(F2_UNITS):
+            for honest in ("Blower", "Compressor"):
+                _no_gain(self, r8h_gas_doc, honest, separators)
+            _no_gain(self, r8h_turbine_doc, "Turbine", F2_LABELS)
 
 
 if __name__ == "__main__":
