@@ -28,6 +28,11 @@ def _R(check_id, severity, status):
     return V.CheckResult(check_id, severity, status, "", "<root>")
 
 
+# Metadata satisfying every extracted-from-* tag's required_metadata (v0.2.2).
+_EXTRACTION_FIELDS = {"literature_type": "journal_article",
+                      "image_type": "process_flow_diagram"}
+
+
 class TestSchemaGateAndRunAllChecks(unittest.TestCase):
     """_schema_gate/_run_all_checks: the in-memory core factored out of
     validate_flowsheet_against_SFF (Step 3). Both take an in-memory doc/schema
@@ -141,10 +146,57 @@ class TestEarnedTags(unittest.TestCase):
                    _R("UNIT-10", "warning", "pass"),
                    _R("STR-14", "warning", "pass"),
                    _R("UNIT-02", "error", "skip")]  # outside subset -> irrelevant
-        v = self._verdict(results)
+        v = self._verdict(results, {"metadata": dict(_EXTRACTION_FIELDS)})
         self.assertTrue(v["extracted-from-prose"]["earned"])
         self.assertTrue(v["extracted-from-image"]["earned"])
         self.assertTrue(v["extracted-from-table"]["earned"])
+
+    def test_extracted_tags_require_their_source_type_field(self):
+        """An otherwise-clean file without literature_type / image_type does not
+        earn the extracted-from-* tags, and `blocking` names the missing field --
+        so a tag is never reported earned on a file that could not then declare
+        it schema-validly (the schema requires the field beside the tag)."""
+        results = [_R("SCHEMA", "error", "pass"),
+                   _R("UNIT-10", "warning", "pass"),
+                   _R("STR-14", "warning", "pass")]
+        v = self._verdict(results, {"metadata": {}})
+        for tag, field in (("extracted-from-prose", "metadata.literature_type"),
+                           ("extracted-from-table", "metadata.literature_type"),
+                           ("extracted-from-image", "metadata.image_type")):
+            with self.subTest(tag=tag):
+                self.assertFalse(v[tag]["earned"])
+                self.assertEqual(v[tag]["blocking"], [field])
+
+    def test_each_extracted_tag_needs_only_its_own_field(self):
+        """literature_type alone earns prose + table but not image; image_type
+        alone earns image only."""
+        results = [_R("SCHEMA", "error", "pass"),
+                   _R("UNIT-10", "warning", "pass"),
+                   _R("STR-14", "warning", "pass")]
+        lit = self._verdict(results, {"metadata": {"literature_type": "patent"}})
+        self.assertTrue(lit["extracted-from-prose"]["earned"])
+        self.assertTrue(lit["extracted-from-table"]["earned"])
+        self.assertFalse(lit["extracted-from-image"]["earned"])
+        img = self._verdict(results, {"metadata": {"image_type": "other"}})
+        self.assertTrue(img["extracted-from-image"]["earned"])
+        self.assertFalse(img["extracted-from-prose"]["earned"])
+
+    def test_empty_or_null_source_type_does_not_satisfy(self):
+        """"" or null for the field counts as missing."""
+        results = [_R("SCHEMA", "error", "pass"),
+                   _R("UNIT-10", "warning", "pass"),
+                   _R("STR-14", "warning", "pass")]
+        for value in ("", None):
+            with self.subTest(value=value):
+                v = self._verdict(results, {"metadata": {"literature_type": value}})
+                self.assertEqual(v["extracted-from-prose"]["blocking"],
+                                 ["metadata.literature_type"])
+
+    def test_required_metadata_does_not_affect_exported_from_simulator(self):
+        """exported-from-simulator declares no required_metadata."""
+        results = [_R("SCHEMA", "error", "pass"), _R("UNIT-10", "warning", "pass")]
+        v = self._verdict(results, {"metadata": {}})
+        self.assertTrue(v["exported-from-simulator"]["earned"])
 
     def test_extracted_tags_denied_when_unit10_fails(self):
         results = [_R("SCHEMA", "error", "pass"),
@@ -187,7 +239,8 @@ class TestTagGate(unittest.TestCase):
         self.assertEqual((r.check_id, r.status), ("TAG-01", "skip"))
 
     def test_passes_when_declared_tag_is_earned(self):
-        doc = {"metadata": {"tags": ["extracted-from-prose"]}}
+        doc = {"metadata": {"tags": ["extracted-from-prose"],
+                            "literature_type": "journal_article"}}
         results = [_R("SCHEMA", "error", "pass"),
                    _R("UNIT-10", "warning", "pass"),
                    _R("STR-14", "warning", "pass")]
@@ -201,6 +254,17 @@ class TestTagGate(unittest.TestCase):
                    _R("STR-14", "warning", "pass")]
         r = self._gate(doc, results)
         self.assertEqual((r.severity, r.status), ("error", "fail"))
+
+    def test_fails_naming_missing_source_type_field(self):
+        """A declared extracted-from-prose tag without literature_type -> TAG-01
+        error fail whose message names the missing field."""
+        doc = {"metadata": {"tags": ["extracted-from-prose"]}}
+        results = [_R("SCHEMA", "error", "pass"),
+                   _R("UNIT-10", "warning", "pass"),
+                   _R("STR-14", "warning", "pass")]
+        r = self._gate(doc, results)
+        self.assertEqual((r.severity, r.status), ("error", "fail"))
+        self.assertIn("metadata.literature_type", r.message)
 
     def test_fails_when_reproducible_precondition_unmet(self):
         doc = {"metadata": {"tags": ["reproducible"]}}

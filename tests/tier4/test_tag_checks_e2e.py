@@ -34,12 +34,15 @@
 # what `_tag_gate` would see once the schema supported the field. That future
 # state is now the present, so the workaround is gone.
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests._docs import valid_doc
 from tests._gating import skip_if_disabled
 from tests._stub_eviction import RealBiosteamTestCase
-from tests.tier4._run import validate_doc
+from tests.tier4._run import SCHEMA_PATH, V, validate_doc
 
 
 class TestTAG01(RealBiosteamTestCase):
@@ -114,3 +117,46 @@ class TestTAG01(RealBiosteamTestCase):
         self.assertIn("reproducible", r.message)
         self.assertIn("no reproducibility recipe", r.message)
         self.assertFalse(is_valid)
+
+
+class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
+    """evaluate_sff_tags end-to-end (v0.2.2): an extracted-from-* tag is reported
+    earned only when its extraction source-type field is present, so a producer
+    that stamps whatever evaluate_sff_tags reports earned always writes a
+    schema-valid file (the schema requires the field beside the tag)."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def _evaluate(self, doc):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "doc.json"
+            p.write_text(json.dumps(doc), encoding="utf-8")
+            return V.evaluate_sff_tags(str(p), str(SCHEMA_PATH))
+
+    def test_not_earned_without_field(self):
+        """valid_doc() (units + streams identified, no source type) -> no
+        extracted-from-* tag earned; blocking names the missing field."""
+        out = self._evaluate(valid_doc())
+        self.assertFalse(out["extracted-from-prose"]["earned"])
+        self.assertEqual(out["extracted-from-prose"]["blocking"],
+                         ["metadata.literature_type"])
+        self.assertFalse(out["extracted-from-image"]["earned"])
+        self.assertEqual(out["extracted-from-image"]["blocking"],
+                         ["metadata.image_type"])
+
+    def test_earned_then_declarable(self):
+        """With literature_type set, extracted-from-prose is earned, and
+        declaring it yields a valid file with TAG-01 passing."""
+        doc = valid_doc()
+        doc["metadata"]["literature_type"] = "patent"
+        out = self._evaluate(doc)
+        self.assertTrue(out["extracted-from-prose"]["earned"])
+        self.assertTrue(out["extracted-from-table"]["earned"])
+        self.assertFalse(out["extracted-from-image"]["earned"])
+        doc["metadata"]["tags"] = ["extracted-from-prose"]
+        is_valid, by_id = validate_doc(doc)
+        self.assertEqual(by_id["TAG-01"][0].status, "pass")
+        self.assertTrue(is_valid)

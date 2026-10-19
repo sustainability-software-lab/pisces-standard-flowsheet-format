@@ -1443,9 +1443,10 @@ def _run_all_checks(doc, schema):
 #%% Tags (sff_checks.md section 8)
 
 # The committed tag registry: THE single source of truth for tag names, check
-# subsets, and tolerated-skip policies (sff_checks.md section 8). The schema's
-# metadata.tags enum mirrors the tag names; tests/tier1/test_tag_registry.py
-# pins the sync.
+# subsets, tolerated-skip policies, and required metadata fields (sff_checks.md
+# section 8). The schema's metadata.tags enum mirrors the tag names and its
+# tag -> field if/then rules mirror required_metadata;
+# tests/tier1/test_tag_registry.py pins both syncs.
 _TAGS_YAML = Path(__file__).resolve().parents[1] / 'tags' / 'tags.yaml'
 
 # Condition names a tolerated_skips entry in tags.yaml may reference. The
@@ -1502,9 +1503,10 @@ def _load_tag_registry():
     dict
         ``{tag_name: entry}`` in YAML declaration order (the canonical tag
         order). A ``static`` entry holds ``subset`` (``None`` for the
-        "all checks that ran" sentinel, else a frozenset of check ids) and
-        ``tolerated_skips`` (``{check_id: condition_name}``, possibly empty);
-        a ``harness`` entry holds only ``class``.
+        "all checks that ran" sentinel, else a frozenset of check ids),
+        ``tolerated_skips`` (``{check_id: condition_name}``, possibly empty),
+        and ``required_metadata`` (a tuple of metadata field names, possibly
+        empty); a ``harness`` entry holds only ``class``.
 
     Raises
     ------
@@ -1546,7 +1548,8 @@ def _load_tag_registry():
         if not isinstance(entry, dict):
             raise ValueError(
                 f'{_TAGS_YAML}: tag {tag!r}: entry must be a mapping')
-        unknown = set(entry) - {'class', 'subset', 'tolerated_skips'}
+        unknown = set(entry) - {'class', 'subset', 'tolerated_skips',
+                                'required_metadata'}
         if unknown:
             raise ValueError(
                 f'{_TAGS_YAML}: tag {tag!r}: unknown key(s) {sorted(unknown)}')
@@ -1556,11 +1559,12 @@ def _load_tag_registry():
                 f'{_TAGS_YAML}: tag {tag!r}: "class" must be one of '
                 f'{_TAG_CLASSES}, got {cls!r}')
         if cls == 'harness':
-            if 'subset' in entry or 'tolerated_skips' in entry:
+            if ('subset' in entry or 'tolerated_skips' in entry
+                    or 'required_metadata' in entry):
                 raise ValueError(
                     f'{_TAGS_YAML}: tag {tag!r}: a harness tag may not '
-                    f'declare "subset" or "tolerated_skips" (its earning '
-                    f'rule is code)')
+                    f'declare "subset", "tolerated_skips", or '
+                    f'"required_metadata" (its earning rule is code)')
             registry[tag] = {'class': cls}
             continue
         subset = entry.get('subset')
@@ -1585,8 +1589,15 @@ def _load_tag_registry():
                     f'{_TAGS_YAML}: tag {tag!r}: tolerated_skips'
                     f'[{check_id!r}] names unknown condition {cond!r}; '
                     f'known: {sorted(_TOLERATED_SKIP_CONDITIONS)}')
+        required = entry.get('required_metadata') or []
+        if (not isinstance(required, list)
+                or not all(isinstance(f, str) and f for f in required)):
+            raise ValueError(
+                f'{_TAGS_YAML}: tag {tag!r}: "required_metadata" must be a '
+                f'list of metadata field names, got {required!r}')
         registry[tag] = {'class': cls, 'subset': subset,
-                         'tolerated_skips': dict(tolerated)}
+                         'tolerated_skips': dict(tolerated),
+                         'required_metadata': tuple(required)}
     _TAG_REGISTRY_CACHE = registry
     return registry
 
@@ -1645,8 +1656,11 @@ def _earned_tags(ctx, results):
 
     `blocking` is uniformly a ``list[str]`` across all registered tags: for the
     static-subset tags it holds the failing/untolerated-skip checks' `check_id`
-    strings; for `reproducible` it holds the precondition-problem reason
-    strings (unchanged)."""
+    strings, followed by ``metadata.<field>`` for each of the tag's
+    ``required_metadata`` fields that is absent or not a non-empty string (so a
+    tag is never reported earned on a file that could not declare it
+    schema-validly; TAG-01); for `reproducible` it holds the
+    precondition-problem reason strings (unchanged)."""
     declared = set(ctx.metadata.get('tags') or [])
     conformant = _conformant(results)
     verdict = {}
@@ -1664,6 +1678,10 @@ def _earned_tags(ctx, results):
                 blocking.append(r.check_id)
             elif r.status == 'skip' and not _skip_tolerated(tag, r.check_id, ctx):
                 blocking.append(r.check_id)
+        for field in entry['required_metadata']:  # TAG-01 (schema-mirrored)
+            value = ctx.metadata.get(field)
+            if not (isinstance(value, str) and value):
+                blocking.append(f'metadata.{field}')
         verdict[tag] = {'earned': conformant and not blocking,
                         'declared': tag in declared, 'blocking': blocking}
     precondition = _reproducible_precondition(ctx, results)
@@ -1769,7 +1787,9 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
         ``{tag: {"earned": bool | None, "declared": bool, "blocking": list[str]}}``
         for each of the five tags. ``blocking`` is uniformly a list of strings:
         failing/untolerated-skip check IDs for the four static-subset tags,
-        and precondition/diff reason strings for ``reproducible``.
+        plus ``metadata.<field>`` for each missing required metadata field
+        (e.g. ``metadata.literature_type`` for ``extracted-from-prose``), and
+        precondition/diff reason strings for ``reproducible``.
     """
     if schema_file is None:
         schema_file = _SCHEMA_FILE

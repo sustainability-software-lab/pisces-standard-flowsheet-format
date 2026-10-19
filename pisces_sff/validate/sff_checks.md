@@ -707,17 +707,22 @@ A file earns static tag `T` iff all of: (1) **conformance** — schema-valid and
 `error`-severity *fail* among the checks other than TAG-01 (TAG-01 is excluded to avoid
 circularity); (2) **subset warning-clean** — no check in `T`'s subset produced a
 `warning`-severity *fail*; (3) **subset skip-clean** — no check in `T`'s subset produced a
-*skip*, except skips tolerated by `T`'s policy below. `info` findings and `pass` are always acceptable.
+*skip*, except skips tolerated by `T`'s policy below; (4) **required metadata present** —
+every field in `T`'s required-metadata list is a non-empty string in `metadata` (from
+v0.2.2; a missing field is reported in `blocking` as `metadata.<field>`). Condition (4)
+mirrors the schema's tag → field `if`/`then` rules (see TAG-01), so a tag is never reported
+earned on a file that could not then declare it schema-validly. `info` findings and `pass`
+are always acceptable.
 
-| Tag | Subset | Tolerated skips |
-| --- | --- | --- |
-| `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. |
-| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) |
-| `extracted-from-image` | `{UNIT-10, STR-14}` | none |
-| `extracted-from-table` | `{UNIT-10, STR-14}` | none |
+| Tag | Subset | Tolerated skips | Required metadata |
+| --- | --- | --- | --- |
+| `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. | none |
+| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) | `literature_type` |
+| `extracted-from-image` | `{UNIT-10, STR-14}` | none | `image_type` |
+| `extracted-from-table` | `{UNIT-10, STR-14}` | none | `literature_type` |
 
-The machine-readable home of this table — the tag names, classes, subsets, and
-tolerated-skip policies the validator executes — is the committed registry
+The machine-readable home of this table — the tag names, classes, subsets,
+tolerated-skip policies, and required-metadata lists the validator executes — is the committed registry
 `pisces_sff/tags/tags.yaml`; the named skip conditions (`always`,
 `all_streams_empty`, `no_reactions`) are implemented as predicates in the
 validator, which rejects an unknown condition name at load time.
@@ -759,7 +764,9 @@ absolute floor near zero.
   `literature_type` when `tags` contains `extracted-from-prose` or `extracted-from-table`,
   and `image_type` when `tags` contains `extracted-from-image` (the extraction source must
   be named when the tag claims one). A missing field fails the schema gate, which in turn
-  denies every tag via the static rule's conformance condition.
+  denies every tag via the static rule's conformance condition. The static earning rule's
+  condition (4) applies the same field requirement to *undeclared* tags, so
+  `evaluate_sff_tags` agrees with the schema.
 
 ---
 

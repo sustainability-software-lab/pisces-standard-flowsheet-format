@@ -35,8 +35,13 @@ finding — fast, and requiring no simulation.
 From schema v0.2.2, declaring `extracted-from-prose` or `extracted-from-table`
 also requires `metadata.literature_type`, and declaring `extracted-from-image`
 requires `metadata.image_type`. The schema enforces these, so a file that
-declares the tag without the field fails the schema gate.
-The tag names, subsets, and tolerated-skip policies live in one committed
+declares the tag without the field fails the schema gate. The earning rule
+applies the same requirement: `evaluate_sff_tags` reports an `extracted-from-*`
+tag earned only when its field is present, and otherwise lists it in
+`blocking` (e.g. `metadata.literature_type`). This way a tag reported as
+earned can always be declared. The required fields live in the registry
+under each tag's `required_metadata`.
+The tag names, subsets, tolerated-skip policies, and required metadata fields live in one committed
 registry file, `pisces_sff/tags/tags.yaml`, which the validator reads at
 evaluation time.
 
