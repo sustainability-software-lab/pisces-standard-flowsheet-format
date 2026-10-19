@@ -231,6 +231,16 @@ _R5_STRIPPED_KEYS = (
     "utility_production_results")
 
 
+def _db_version_unresolved():
+    """SF_BST_01 chemicals whose CMP-THM-02 tier depends on the installed
+    `chemicals` database version: TriOlein resolves by name in chemicals
+    1.5.2 but not in 1.2.0 (the version the M_BST_01 recipe pins, which CI
+    installs), where it falls to the formula-only tier (0.25, not 0.75) and
+    CMP-THM-05 lists it. The real-database review cases below adjust their
+    expectations by this set rather than assume one database version."""
+    return {"TriOlein"} if C._database_record("TriOlein") is None else set()
+
+
 class TestCompletenessCorpus(RealBiosteamTestCase):
     @classmethod
     def setUpClass(cls):
@@ -300,13 +310,17 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
         reaches only the unresolved tier: (1 + 2 * 0.5 + 15 * 0.75) / 18 =
         0.736. CMP-THM-05 stays scored 0 with both listed in every case;
         Cellulose and Starch given their real but unlisted CAS numbers
-        (9004-34-6, 9005-25-8) are still exempt by their built-in names."""
+        (9004-34-6, 9005-25-8) are still exempt by their built-in names.
+        Each chemical in _db_version_unresolved() (TriOlein under chemicals
+        1.2.0) also falls below the name tier: it costs CMP-THM-02 0.5 / 18
+        and adds one CMP-THM-05 listing in every case."""
         if C._chemicals_search() is None:
             self.skipTest("chemicals package not importable")
         pseudo = {"SolubleProtein", "InsolubleProtein"}
+        extra = _db_version_unresolved()
         below = {c["id"] for c in self.corn["chemicals"]
                  if C._thm_02_credit(c, c["id"])[0] < C.NAME_RESOLVED_CREDIT}
-        self.assertEqual(below, pseudo)
+        self.assertEqual(below, pseudo | extra)
 
         def gamed(ids):
             doc = copy.deepcopy(self.corn)
@@ -316,17 +330,19 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
             sc = C._ScoringContext(doc)
             return C._score_thm_02(sc)[0], C._score_thm_05(sc)
 
-        base = 12.75 / 18
+        shift = 0.5 * len(extra)
+        base = (12.75 - shift) / 18
+        unresolved = (13.25 - shift) / 18
         for rid, expected in (("C", base), ("InChI=1S/x", base),
-                              ("98765-43-6", 13.25 / 18),
-                              ("ABCDEFGHIJKLMN-OPQRSTUVWX-Y", 13.25 / 18)):
+                              ("98765-43-6", unresolved),
+                              ("ABCDEFGHIJKLMN-OPQRSTUVWX-Y", unresolved)):
             thm02, (thm05, _m, missing) = gamed(dict.fromkeys(pseudo, rid))
             with self.subTest(registry_id=rid):
                 self.assertAlmostEqual(thm02, expected)
-                self.assertEqual((thm05, len(missing)), (0.0, 2))
+                self.assertEqual((thm05, len(missing)), (0.0, 2 + len(extra)))
         _thm02, (thm05, _m, missing) = gamed({"Cellulose": "9004-34-6",
                                                "Starch": "9005-25-8"})
-        self.assertEqual((thm05, len(missing)), (0.0, 2))
+        self.assertEqual((thm05, len(missing)), (0.0, 2 + len(extra)))
         self.assertFalse(any(m.startswith("chemicals[Cellulose]") for m in missing))
 
     def test_revision_4_part_a_on_the_corn_file(self):
@@ -355,10 +371,12 @@ class TestCompletenessCorpus(RealBiosteamTestCase):
                 self.assertEqual(C._name_record(cid).name, builtin)
                 self.assertEqual(C._name_tier(chems[cid], cid), "verified")
         thm05 = by_id["CMP-THM-05"]
+        # Plus any chemical the installed database does not resolve by name
+        # (TriOlein under chemicals 1.2.0 -- see _db_version_unresolved).
+        listed = {"InsolubleProtein", "SolubleProtein"} | _db_version_unresolved()
         self.assertEqual((thm05.score, sorted(m.split("]")[0] for m in
                                               thm05.missing)),
-                         (0.0, ["chemicals[InsolubleProtein",
-                                "chemicals[SolubleProtein"]))
+                         (0.0, sorted(f"chemicals[{cid}" for cid in listed)))
         thm04 = by_id["CMP-THM-04"]
         self.assertTrue(thm04.representable)
         self.assertAlmostEqual(thm04.score, (14 + 5 * 0.75 + 3 * 0.5) / 22)
