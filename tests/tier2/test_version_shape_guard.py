@@ -578,10 +578,10 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
 
     def test_0_2_2_is_shape_identical_to_0_2_1_except_version(self):
         """v0.2.2 only widens what the schema accepts (open units/utilities,
-        null/"None" simulator and microorganisms) and adds literature_type /
-        image_type, required only beside the extracted-from-* tags the exporter
-        never stamps -- so its export equals the v0.2.1 export apart from
-        metadata.sff_version."""
+        "not_reported"/"not_applicable" simulator and microorganisms) and adds
+        literature_type / image_type, required only beside the extracted-from-*
+        tags the exporter never stamps -- so its export equals the v0.2.1
+        export apart from metadata.sff_version."""
         a = copy.deepcopy(self.doc_201)
         b = copy.deepcopy(self.doc_202)
         a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"

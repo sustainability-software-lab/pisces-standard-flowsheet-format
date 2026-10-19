@@ -24,9 +24,11 @@ v0.2.2 adds four things for flowsheets extracted from literature rather than
 exported from a simulator:
 
 - `process_simulator` (still required) and `microorganisms` (still optional)
-  also accept `null` or the exact string `"None"`, stating explicitly that no
-  simulator / microbial host is reported or applicable -- e.g., a flowsheet
-  taken from a patent, or an abiotic process.
+  also accept one of two exact strings stating explicitly why no simulator /
+  microbial host is given: `"not_reported"` (the source does not name one) or
+  `"not_applicable"` (there is none -- e.g., a flowsheet taken from a patent
+  that was never simulated, or an abiotic process). `null` and `"None"` are
+  **not** accepted: absence must say which of the two it is.
 - `literature_type` (`journal_article`, `patent`, `thesis`,
   `technical_report`, `conference_paper`, `book`, `other`) is **required** when
   `tags` contains `extracted-from-prose` or `extracted-from-table`.

@@ -1457,7 +1457,7 @@ def export_biosteam_flowsheet_sff_0_2_2(sys, filepath, tea=None,
     v0.2.2 changes only what the schema accepts, not what the exporter
     emits: units and heat/other utility entries accept additional properties;
     ``metadata.process_simulator`` and ``metadata.microorganisms`` accept
-    ``null`` or ``"None"``; the new ``metadata.literature_type`` /
+    ``"not_reported"`` or ``"not_applicable"``; the new ``metadata.literature_type`` /
     ``metadata.image_type`` / ``metadata.extraction_method`` fields are
     required alongside the ``extracted-from-*`` tags, which this exporter never
     stamps; and a phase's ``total_molar_flow`` is optional only in files

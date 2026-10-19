@@ -10,8 +10,9 @@
 # per-topic files. Covers sff_checks.md MET-01 (semver), MET-05 (TEA_currency
 # non-empty), MET-06 (sha256 digest pattern), the 0.0.8 TEA_currency
 # required-ness, the 0.0.6 metadata.reproducibility block, and the v0.0.5
-# metadata.microorganisms shape (+ its v0.2.2 null/"None" form), the v0.2.2
-# process_simulator null/"None" form, and the v0.2.2 literature_type /
+# metadata.microorganisms shape (+ its v0.2.2 "not_reported"/"not_applicable"
+# form), the v0.2.2 process_simulator "not_reported"/"not_applicable" form,
+# and the v0.2.2 literature_type /
 # image_type / extraction_method fields required beside the extracted-from-*
 # tags (TAG-01's schema part). Import-light: validates synthetic fragments
 # against the real committed schema via jsonschema, never importing pisces_sff.
@@ -379,12 +380,13 @@ class TestMicroorganismsSchemaShape(unittest.TestCase):
         # Was `type: "string"` before v0.0.5; the populated form is an array.
         self.assertEqual(self.subschema["type"], "array")
 
-    def test_null_and_none_branches_present(self):
-        """microorganisms is an anyOf of the list, null, and the string "None"
-        (v0.2.2) -- an explicit "no host reported / not applicable"."""
+    def test_absence_sentinel_branch_present(self):
+        """microorganisms is an anyOf of the list and the enum
+        ["not_reported", "not_applicable"] (v0.2.2) -- an explicit, typed
+        statement of why no host is given. No null or "None" branch."""
         branches = microorganisms_subschema(self.schema)["anyOf"]
-        self.assertIn({"type": "null"}, branches)
-        self.assertIn({"const": "None"}, branches)
+        self.assertEqual(len(branches), 2)
+        self.assertIn({"enum": ["not_reported", "not_applicable"]}, branches)
 
     def test_items_require_a_name(self):
         """Each microorganisms item is an object requiring `name`, with `label` optional."""
@@ -472,26 +474,35 @@ class TestMicroorganismsValidation(unittest.TestCase):
         # name has minLength: 1, so an empty string is not a valid host name.
         self.assertInvalid([{"name": ""}])
 
-    def test_null_validates(self):
-        """null → validates (v0.2.2: no host reported or applicable)."""
-        self.assertValid(None)
+    def test_not_reported_validates(self):
+        """"not_reported" → validates (v0.2.2: the source names no host)."""
+        self.assertValid("not_reported")
 
-    def test_none_string_validates(self):
-        """The string "None" → validates (v0.2.2: no host reported or applicable)."""
-        self.assertValid("None")
+    def test_not_applicable_validates(self):
+        """"not_applicable" → validates (v0.2.2: the process uses no host)."""
+        self.assertValid("not_applicable")
 
-    def test_other_none_spellings_are_rejected(self):
-        """Only the exact string "None" is accepted -- "none", "N/A", "" are not."""
-        # Pinning one spelling keeps the explicit-absence marker machine-readable.
-        for value in ("none", "N/A", ""):
+    def test_null_and_none_are_rejected(self):
+        """null and "None" → rejected: absence must say whether the host is
+        unreported or inapplicable, which a bare null/"None" cannot."""
+        for value in (None, "None"):
+            with self.subTest(value=value):
+                self.assertInvalid(value)
+
+    def test_other_absence_spellings_are_rejected(self):
+        """Only the two exact sentinels are accepted -- "none", "N/A", "",
+        "Not reported", "not-applicable" are not."""
+        # Pinning exact spellings keeps the explicit-absence marker machine-readable.
+        for value in ("none", "N/A", "", "Not reported", "not-applicable"):
             with self.subTest(value=value):
                 self.assertInvalid(value)
 
 
 class TestProcessSimulatorSchema(unittest.TestCase):
-    """metadata.process_simulator: an object, null, or "None" (v0.2.2), and
-    still required. null / "None" let flowsheets extracted from literature
-    (e.g., patents) state that no simulator is reported or applicable."""
+    """metadata.process_simulator: an object, "not_reported" or
+    "not_applicable" (v0.2.2), and still required. The two sentinels let
+    flowsheets extracted from literature (e.g., patents) state why no
+    simulator is given; null and "None" are rejected."""
 
     @classmethod
     def setUpClass(cls):
@@ -513,15 +524,22 @@ class TestProcessSimulatorSchema(unittest.TestCase):
         doc = self._doc({"name": "BioSTEAM", "version": "2.46.1"})
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
-    def test_null_accepted(self):
-        """null → accepted."""
-        doc = self._doc(None)
+    def test_not_reported_accepted(self):
+        """"not_reported" → accepted."""
+        doc = self._doc("not_reported")
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
-    def test_none_string_accepted(self):
-        """The string "None" → accepted."""
-        doc = self._doc("None")
+    def test_not_applicable_accepted(self):
+        """"not_applicable" → accepted."""
+        doc = self._doc("not_applicable")
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_null_and_none_rejected(self):
+        """null and "None" → rejected (state "not_reported" or
+        "not_applicable" instead)."""
+        for value in (None, "None"):
+            with self.subTest(value=value):
+                self.assertFalse(self.v.is_valid(self._doc(value)))
 
     def test_other_string_rejected(self):
         """A bare simulator-name string ("BioSTEAM") → rejected; name it via the object."""
@@ -533,7 +551,8 @@ class TestProcessSimulatorSchema(unittest.TestCase):
 
     def test_key_still_required(self):
         """Omitting process_simulator entirely → rejected (the key stays required;
-        absence must be stated explicitly with null or "None")."""
+        absence must be stated explicitly with "not_reported" or
+        "not_applicable")."""
         self.assertFalse(self.v.is_valid(self._doc()))
 
 

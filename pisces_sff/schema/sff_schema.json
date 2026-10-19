@@ -140,7 +140,7 @@
           }
         },
         "microorganisms": {
-          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Modeled as a list rather than a single string so that co-cultures, sequential bioconversion systems, and other multi-organism processes can each be represented as a distinct, machine-readable entry instead of being packed into one delimited string. From v0.2.2 on, null or the string 'None' may be given instead of a list, stating explicitly that no microbial host is reported or applicable (e.g., an abiotic process, or a flowsheet extracted from literature that names none).",
+          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Modeled as a list rather than a single string so that co-cultures, sequential bioconversion systems, and other multi-organism processes can each be represented as a distinct, machine-readable entry instead of being packed into one delimited string. From v0.2.2 on, one of the strings 'not_reported' (the source names no microbial host, e.g., a flowsheet extracted from literature that does not state one) or 'not_applicable' (the process uses no microbial host, e.g., an abiotic process) may be given instead of a list, stating that absence explicitly. null and 'None' are not accepted.",
           "anyOf": [
             {
               "type": "array",
@@ -161,8 +161,7 @@
               },
               "minItems": 1
             },
-            { "type": "null" },
-            { "const": "None" }
+            { "enum": ["not_reported", "not_applicable"] }
           ]
         },
         "process_title": {
@@ -170,7 +169,7 @@
           "description": "A descriptive title for the process."
         },
         "process_simulator": {
-          "description": "The process simulator in which this flowsheet was originally modeled. From v0.2.2 on, null or the string 'None' may be given instead of an object, stating explicitly that no simulator is reported or applicable (e.g., a flowsheet extracted from a patent). The key itself remains required.",
+          "description": "The process simulator in which this flowsheet was originally modeled. From v0.2.2 on, one of the strings 'not_reported' (the source names no simulator, e.g., a paper that does not state the tool used) or 'not_applicable' (the flowsheet was never simulated, e.g., one extracted from a patent) may be given instead of an object, stating that absence explicitly. null and 'None' are not accepted. The key itself remains required.",
           "anyOf": [
             {
               "type": "object",
@@ -189,8 +188,7 @@
               "version"
               ]
             },
-            { "type": "null" },
-            { "const": "None" }
+            { "enum": ["not_reported", "not_applicable"] }
           ]
         },
         "flowsheet_designers": {
