@@ -747,12 +747,19 @@ absolute floor near zero.
 - **Rationale:** a stamped tag is a promise downstream consumers rely on; a false claim must
   make the file non-conforming.
 - **Scope:** `metadata.tags` ↔ computed earned tags (+ the reproducibility recipe for the
-  `reproducible` precondition).
+  `reproducible` precondition; + `metadata.literature_type` / `metadata.image_type` for the
+  `extracted-from-*` tags).
 - **Severity:** `error`.
 - **Skipped when:** `metadata.tags` absent or empty.
 - **Enforcement:** validator, computed as a post-pass aggregate (like XREF-01): not in
   `_CHECKS`; evaluated inside `validate_flowsheet_against_SFF` from the results of the checks
-  that already ran plus the tag policies. Never runs the harness.
+  that already ran plus the tag policies. Never runs the harness. Schema part
+  (required-addition, conditional): `metadata` `if`/`then` rules require
+  `reproducibility.comparison_rtol` when `tags` contains `reproducible`; and, from v0.2.2,
+  `literature_type` when `tags` contains `extracted-from-prose` or `extracted-from-table`,
+  and `image_type` when `tags` contains `extracted-from-image` (the extraction source must
+  be named when the tag claims one). A missing field fails the schema gate, which in turn
+  denies every tag via the static rule's conformance condition.
 
 ---
 
@@ -806,5 +813,5 @@ absolute floor near zero.
 | QU-03 | aliases globally unambiguous | error | validator |
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
-| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`) |
+| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`, `literature_type`, `image_type`) |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |

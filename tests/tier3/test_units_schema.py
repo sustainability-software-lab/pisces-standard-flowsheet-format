@@ -190,5 +190,33 @@ class TestUNIT09PurchaseCostCorrelations(unittest.TestCase):
             self._doc(dict(self._POWER_LAW, bogus=1))))
 
 
+class TestUnitAdditionalProperties(unittest.TestCase):
+    """From v0.2.2 a unit accepts producer-defined keys beyond the declared ones
+    (formerly additionalProperties: false), so non-simulator producers can carry
+    extra unit detail without a schema change. The nested
+    purchase_cost_correlations entries stay closed (UNIT-09 above)."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def test_extra_key_accepted(self):
+        """An undeclared key of any type on a unit → accepted."""
+        for value in ("from Figure 3", 2, ["a", "b"], {"page": 7}):
+            with self.subTest(value=value):
+                doc = minimal_doc()
+                doc["units"][0]["source_note"] = value
+                self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_required_fields_still_enforced(self):
+        """Opening the unit to extra keys does not relax its required fields."""
+        doc = minimal_doc()
+        doc["units"] = [{"id": "U1", "source_note": "x"}]  # no unit_type
+        self.assertFalse(self.v.is_valid(doc))
+
+
 if __name__ == "__main__":
     unittest.main()

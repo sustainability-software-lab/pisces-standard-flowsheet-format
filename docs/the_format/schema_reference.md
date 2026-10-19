@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.2.1.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.2.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
@@ -20,11 +20,35 @@ type beyond those defined below, not only string-valued ones. This is a
 backwards-compatible loosening -- every file valid under an earlier version
 remains valid -- and does not change any field the reference exporter emits.
 
+v0.2.2 adds three things for flowsheets extracted from literature rather than
+exported from a simulator:
+
+- `process_simulator` (still required) and `microorganisms` (still optional)
+  also accept `null` or the exact string `"None"`, stating explicitly that no
+  simulator / microbial host is reported or applicable -- e.g., a flowsheet
+  taken from a patent, or an abiotic process.
+- `literature_type` (`journal_article`, `patent`, `thesis`,
+  `technical_report`, `conference_paper`, `book`, `other`) is **required** when
+  `tags` contains `extracted-from-prose` or `extracted-from-table`.
+- `image_type` (`process_flow_diagram`, `block_flow_diagram`,
+  `piping_and_instrumentation_diagram`, `other`) is **required** when `tags`
+  contains `extracted-from-image`.
+
+The two conditional requirements are the schema half of `TAG-01` (like
+`reproducibility.comparison_rtol` beside `reproducible`): a file declaring an
+`extracted-from-*` tag written before v0.2.2 must add the matching field to
+validate. The reference exporter never stamps those tags, so its output is
+unchanged.
+
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/metadata
 ```
 
 ## `units`
 The unit operations (graph nodes).
+
+From v0.2.2 on, a unit accepts additional, producer-defined properties
+beyond those defined below (previously `additionalProperties: false`). The
+nested `purchase_cost_correlations` entries remain closed.
 
 From v0.1.4 on, the reference exporter fills `design_input_specs` from a
 per-unit-type registry (`pisces_sff/export/design_specs/biosteam.yaml`): each unit
@@ -101,6 +125,11 @@ The shared chemical registry.
 
 ## `utilities`
 The shared utility registry.
+
+From v0.2.2 on, `heat_utilities` and `other_utilities` entries accept
+additional, producer-defined properties beyond those defined below
+(previously `additionalProperties: false`); `power_utilities` entries already
+accepted additional numeric properties.
 
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/utilities
 ```

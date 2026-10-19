@@ -61,6 +61,7 @@ class TestTAG01(RealBiosteamTestCase):
         schema-declared property (schema v0.1.3)."""
         doc = valid_doc()
         doc["metadata"]["tags"] = ["extracted-from-prose"]
+        doc["metadata"]["literature_type"] = "journal_article"  # required beside the tag (v0.2.2)
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "pass"))
@@ -76,6 +77,8 @@ class TestTAG01(RealBiosteamTestCase):
         doc = valid_doc()
         doc["units"] = []
         doc["metadata"]["tags"] = ["extracted-from-prose"]
+        # Keep the doc schema-valid so the denial is UNIT-10's, not the schema's.
+        doc["metadata"]["literature_type"] = "journal_article"
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "fail"))

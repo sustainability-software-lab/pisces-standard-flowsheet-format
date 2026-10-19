@@ -32,6 +32,10 @@ Four tags are **static**: `exported-from-simulator`, `extracted-from-prose`,
 `extracted-from-image`, and `extracted-from-table`. A file earns a static tag by passing a
 tag-specific subset of the catalogue's checks with no `warning`-severity
 finding — fast, and requiring no simulation.
+From schema v0.2.2, declaring `extracted-from-prose` or `extracted-from-table`
+also requires `metadata.literature_type`, and declaring `extracted-from-image`
+requires `metadata.image_type`. The schema enforces these, so a file that
+declares the tag without the field fails the schema gate.
 The tag names, subsets, and tolerated-skip policies live in one committed
 registry file, `pisces_sff/tags/tags.yaml`, which the validator reads at
 evaluation time.

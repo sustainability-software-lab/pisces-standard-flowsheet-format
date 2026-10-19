@@ -10,7 +10,10 @@
 # per-topic files. Covers sff_checks.md MET-01 (semver), MET-05 (TEA_currency
 # non-empty), MET-06 (sha256 digest pattern), the 0.0.8 TEA_currency
 # required-ness, the 0.0.6 metadata.reproducibility block, and the v0.0.5
-# metadata.microorganisms shape. Import-light: validates synthetic fragments
+# metadata.microorganisms shape (+ its v0.2.2 null/"None" form), the v0.2.2
+# process_simulator null/"None" form, and the v0.2.2 literature_type /
+# image_type fields required beside the extracted-from-* tags (TAG-01's schema
+# part). Import-light: validates synthetic fragments
 # against the real committed schema via jsonschema, never importing pisces_sff.
 #
 # Originally split across test_schema_constraints_v0_0_12.py (MET-01/05/06),
@@ -64,6 +67,13 @@ def minimal_doc():
 def microorganisms_subschema(schema):
     # metadata.properties.microorganisms is the definition we are pinning.
     return schema["properties"]["metadata"]["properties"]["microorganisms"]
+
+
+def microorganisms_list_branch(schema):
+    # From v0.2.2 microorganisms is an anyOf of the host list, null, and the
+    # string "None"; the list branch carries the structural shape pinned below.
+    branches = microorganisms_subschema(schema)["anyOf"]
+    return next(b for b in branches if b.get("type") == "array")
 
 
 def reproducibility_subschema(schema):
@@ -362,12 +372,19 @@ class TestMicroorganismsSchemaShape(unittest.TestCase):
 
     def setUp(self):
         self.schema = load_schema()
-        self.subschema = microorganisms_subschema(self.schema)
+        self.subschema = microorganisms_list_branch(self.schema)
 
     def test_field_is_an_array(self):
-        """microorganisms subschema is type array (not the old scalar string)."""
-        # Was `type: "string"` before this change; must now be `array`.
+        """microorganisms' list branch is type array (not the old scalar string)."""
+        # Was `type: "string"` before v0.0.5; the populated form is an array.
         self.assertEqual(self.subschema["type"], "array")
+
+    def test_null_and_none_branches_present(self):
+        """microorganisms is an anyOf of the list, null, and the string "None"
+        (v0.2.2) -- an explicit "no host reported / not applicable"."""
+        branches = microorganisms_subschema(self.schema)["anyOf"]
+        self.assertIn({"type": "null"}, branches)
+        self.assertIn({"const": "None"}, branches)
 
     def test_items_require_a_name(self):
         """Each microorganisms item is an object requiring `name`, with `label` optional."""
@@ -455,6 +472,143 @@ class TestMicroorganismsValidation(unittest.TestCase):
         # name has minLength: 1, so an empty string is not a valid host name.
         self.assertInvalid([{"name": ""}])
 
+    def test_null_validates(self):
+        """null → validates (v0.2.2: no host reported or applicable)."""
+        self.assertValid(None)
+
+    def test_none_string_validates(self):
+        """The string "None" → validates (v0.2.2: no host reported or applicable)."""
+        self.assertValid("None")
+
+    def test_other_none_spellings_are_rejected(self):
+        """Only the exact string "None" is accepted -- "none", "N/A", "" are not."""
+        # Pinning one spelling keeps the explicit-absence marker machine-readable.
+        for value in ("none", "N/A", ""):
+            with self.subTest(value=value):
+                self.assertInvalid(value)
+
+
+class TestProcessSimulatorSchema(unittest.TestCase):
+    """metadata.process_simulator: an object, null, or "None" (v0.2.2), and
+    still required. null / "None" let flowsheets extracted from literature
+    (e.g., patents) state that no simulator is reported or applicable."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, value="__absent__"):
+        doc = minimal_doc()
+        if value == "__absent__":
+            del doc["metadata"]["process_simulator"]
+        else:
+            doc["metadata"]["process_simulator"] = value
+        return doc
+
+    def test_object_accepted(self):
+        """A {name, version} object → accepted."""
+        doc = self._doc({"name": "BioSTEAM", "version": "2.46.1"})
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_null_accepted(self):
+        """null → accepted."""
+        doc = self._doc(None)
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_none_string_accepted(self):
+        """The string "None" → accepted."""
+        doc = self._doc("None")
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_other_string_rejected(self):
+        """A bare simulator-name string ("BioSTEAM") → rejected; name it via the object."""
+        self.assertFalse(self.v.is_valid(self._doc("BioSTEAM")))
+
+    def test_object_missing_version_rejected(self):
+        """The object form still requires both name and version."""
+        self.assertFalse(self.v.is_valid(self._doc({"name": "BioSTEAM"})))
+
+    def test_key_still_required(self):
+        """Omitting process_simulator entirely → rejected (the key stays required;
+        absence must be stated explicitly with null or "None")."""
+        self.assertFalse(self.v.is_valid(self._doc()))
+
+
+class TestExtractionSourceTypeSchema(unittest.TestCase):
+    """metadata.literature_type / metadata.image_type (v0.2.2, TAG-01 schema
+    part): required beside the extracted-from-* tags they describe, enum-valued,
+    and otherwise optional."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, tags=None, **fields):
+        doc = minimal_doc()
+        if tags is not None:
+            doc["metadata"]["tags"] = tags
+        doc["metadata"].update(fields)
+        return doc
+
+    def assertAccepted(self, doc):
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_prose_and_table_tags_require_literature_type(self):
+        """extracted-from-prose / -table without literature_type → rejected."""
+        for tag in ("extracted-from-prose", "extracted-from-table"):
+            with self.subTest(tag=tag):
+                self.assertFalse(self.v.is_valid(self._doc([tag])))
+
+    def test_prose_and_table_tags_with_literature_type_accepted(self):
+        """extracted-from-prose / -table with a literature_type → accepted."""
+        for tag in ("extracted-from-prose", "extracted-from-table"):
+            with self.subTest(tag=tag):
+                self.assertAccepted(self._doc([tag], literature_type="patent"))
+
+    def test_image_tag_requires_image_type(self):
+        """extracted-from-image without image_type → rejected."""
+        self.assertFalse(self.v.is_valid(self._doc(["extracted-from-image"])))
+
+    def test_image_tag_with_image_type_accepted(self):
+        """extracted-from-image with an image_type → accepted; literature_type is
+        not required by the image tag alone."""
+        self.assertAccepted(self._doc(["extracted-from-image"],
+                                      image_type="process_flow_diagram"))
+
+    def test_image_type_does_not_satisfy_prose_tag(self):
+        """Prose + image tags need both fields; image_type alone is not enough."""
+        tags = ["extracted-from-prose", "extracted-from-image"]
+        self.assertFalse(self.v.is_valid(
+            self._doc(tags, image_type="block_flow_diagram")))
+        self.assertAccepted(self._doc(tags, image_type="block_flow_diagram",
+                                      literature_type="journal_article"))
+
+    def test_unknown_values_rejected(self):
+        """Values outside the enums → rejected."""
+        self.assertFalse(self.v.is_valid(self._doc(literature_type="blog_post")))
+        self.assertFalse(self.v.is_valid(self._doc(image_type="photograph")))
+
+    def test_every_enum_value_accepted(self):
+        """Every declared enum value validates (including the 'other' escape hatch)."""
+        props = load_schema()["properties"]["metadata"]["properties"]
+        for field in ("literature_type", "image_type"):
+            for value in props[field]["enum"]:
+                with self.subTest(field=field, value=value):
+                    self.assertAccepted(self._doc(**{field: value}))
+            self.assertIn("other", props[field]["enum"])
+
+    def test_optional_without_extraction_tags(self):
+        """No extracted-from-* tag → neither field required; exported-from-simulator
+        does not require them."""
+        self.assertAccepted(self._doc())
+        self.assertAccepted(self._doc(["exported-from-simulator"]))
+
 
 class TestTagsSchema(unittest.TestCase):
     @classmethod
@@ -480,6 +634,7 @@ class TestTagsSchema(unittest.TestCase):
         extracted from spreadsheets or similar tabular data) is a valid enum
         value."""
         doc = self._with_tags(["extracted-from-table"])
+        doc["metadata"]["literature_type"] = "technical_report"  # required beside it from v0.2.2
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
     def test_unknown_tag_rejected(self):

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -141,45 +141,57 @@
           }
         },
         "microorganisms": {
-          "type": "array",
-          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Modeled as a list rather than a single string so that co-cultures, sequential bioconversion systems, and other multi-organism processes can each be represented as a distinct, machine-readable entry instead of being packed into one delimited string.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "Name of the microbial host (e.g., a species or engineered-strain name).",
-                "minLength": 1
+          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Modeled as a list rather than a single string so that co-cultures, sequential bioconversion systems, and other multi-organism processes can each be represented as a distinct, machine-readable entry instead of being packed into one delimited string. From v0.2.2 on, null or the string 'None' may be given instead of a list, stating explicitly that no microbial host is reported or applicable (e.g., an abiotic process, or a flowsheet extracted from literature that names none).",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Name of the microbial host (e.g., a species or engineered-strain name).",
+                    "minLength": 1
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Optional display label or qualifier for the microbial host (e.g., 'co-culture host', 'primary producer')."
+                  }
+                },
+                "required": ["name"]
               },
-              "label": {
-                "type": "string",
-                "description": "Optional display label or qualifier for the microbial host (e.g., 'co-culture host', 'primary producer')."
-              }
+              "minItems": 1
             },
-            "required": ["name"]
-          },
-          "minItems": 1
+            { "type": "null" },
+            { "const": "None" }
+          ]
         },
         "process_title": {
           "type": "string",
           "description": "A descriptive title for the process."
         },
         "process_simulator": {
-          "type": "object",
-          "description": "The process simulator in which this flowsheet was originally modeled.",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "Name of the process simulator."
+          "description": "The process simulator in which this flowsheet was originally modeled. From v0.2.2 on, null or the string 'None' may be given instead of an object, stating explicitly that no simulator is reported or applicable (e.g., a flowsheet extracted from a patent). The key itself remains required.",
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Name of the process simulator."
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Version number of the process simulator."
+                }
+              },
+              "required": [
+              "name",
+              "version"
+              ]
             },
-            "version": {
-              "type": "string",
-              "description": "Version number of the process simulator."
-            }
-          },
-          "required": [
-          "name",
-          "version"
+            { "type": "null" },
+            { "const": "None" }
           ]
         },
         "flowsheet_designers": {
@@ -304,6 +316,16 @@
             "enum": ["exported-from-simulator", "extracted-from-prose", "extracted-from-image", "extracted-from-table", "reproducible"]
           },
           "uniqueItems": true
+        },
+        "literature_type": {
+          "type": "string",
+          "enum": ["journal_article", "patent", "thesis", "technical_report", "conference_paper", "book", "other"],
+          "description": "Type of literature source this flowsheet was extracted from. Added in v0.2.2; required when metadata.tags contains 'extracted-from-prose' or 'extracted-from-table' (sff_checks.md TAG-01, schema part)."
+        },
+        "image_type": {
+          "type": "string",
+          "enum": ["process_flow_diagram", "block_flow_diagram", "piping_and_instrumentation_diagram", "other"],
+          "description": "Type of image this flowsheet was extracted from. Added in v0.2.2; required when metadata.tags contains 'extracted-from-image' (sff_checks.md TAG-01, schema part)."
         }
       },
       "required": [
@@ -325,7 +347,23 @@
         "properties": {
           "reproducibility": { "required": ["comparison_rtol"] }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["tags"],
+            "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-table"] } } }
+          },
+          "then": { "required": ["literature_type"] }
+        },
+        {
+          "if": {
+            "required": ["tags"],
+            "properties": { "tags": { "contains": { "const": "extracted-from-image" } } }
+          },
+          "then": { "required": ["image_type"] }
+        }
+      ]
     },
     "units": {
       "description": "An array of all unit operations, representing the nodes of the process graph.",
@@ -532,7 +570,7 @@
           "id",
           "unit_type"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       }
     },
     "streams": {
@@ -759,7 +797,7 @@
                   "composition",
                   "quantity_units_for_utility_results"
                 ],
-                "additionalProperties": false
+                "additionalProperties": true
               }
             },
             "power_utilities": {
@@ -853,7 +891,7 @@
                   "composition",
                   "quantity_units_for_utility_results"
                 ],
-                "additionalProperties": false
+                "additionalProperties": true
               }
             }
     }
