@@ -91,5 +91,42 @@ class TestUTIL05TempPressure(unittest.TestCase):
         self.assertFalse(self.v.is_valid(doc))
 
 
+class TestUtilityAdditionalProperties(unittest.TestCase):
+    """From v0.2.2 heat_utilities and other_utilities entries accept
+    producer-defined keys beyond the declared ones (formerly
+    additionalProperties: false), so non-simulator producers can carry extra
+    utility detail without a schema change."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _entry(self, **extra):
+        return dict({"id": "lps", "temperature": 500.0, "pressure": 101325.0,
+                     "composition": [], "quantity_units_for_utility_results": "kJ/hr"},
+                    **extra)
+
+    def test_extra_key_accepted_on_heat_and_other_utilities(self):
+        """An undeclared key of any type on a heat or other utility entry → accepted."""
+        for group in ("heat_utilities", "other_utilities"):
+            for value in ("saturated", 3.5, {"source": "Table 2"}):
+                with self.subTest(group=group, value=value):
+                    doc = minimal_doc()
+                    doc["utilities"][group] = [self._entry(note=value)]
+                    self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_declared_constraints_still_apply(self):
+        """Opening the entry to extra keys does not relax the declared ones:
+        a missing required field is still rejected."""
+        doc = minimal_doc()
+        entry = self._entry(note="x")
+        del entry["quantity_units_for_utility_results"]
+        doc["utilities"]["heat_utilities"] = [entry]
+        self.assertFalse(self.v.is_valid(doc))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.2.1",
+  "version": "0.2.4",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -32,7 +32,7 @@
         },
         "total_molar_flow": {
           "type": "number",
-          "description": "Total molar flow rate of this phase. Quantity units: quantity_units_global 'molar_flow' (default 'kmol/hr')."
+          "description": "Total molar flow rate of this phase. Quantity units: quantity_units_global 'molar_flow' (default 'kmol/hr'). Required unless metadata.tags contains an 'extracted-from-*' tag (optional for extracted flowsheets from v0.2.2; enforced by the root-level if/else)."
         },
         "total_volumetric_flow": {
           "type": "number",
@@ -69,7 +69,6 @@
         }
       },
       "required": [
-        "total_molar_flow",
         "composition"
       ]
     }
@@ -141,45 +140,55 @@
           }
         },
         "microorganisms": {
-          "type": "array",
-          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Modeled as a list rather than a single string so that co-cultures, sequential bioconversion systems, and other multi-organism processes can each be represented as a distinct, machine-readable entry instead of being packed into one delimited string.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "Name of the microbial host (e.g., a species or engineered-strain name).",
-                "minLength": 1
+          "description": "Microbial hosts used in this flowsheet for conversions, if applicable. Modeled as a list rather than a single string so that co-cultures, sequential bioconversion systems, and other multi-organism processes can each be represented as a distinct, machine-readable entry instead of being packed into one delimited string. From v0.2.2 on, one of the strings 'not_reported' (the source names no microbial host, e.g., a flowsheet extracted from literature that does not state one) or 'not_applicable' (the process uses no microbial host, e.g., an abiotic process) may be given instead of a list, stating that absence explicitly. null and 'None' are not accepted.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Name of the microbial host (e.g., a species or engineered-strain name).",
+                    "minLength": 1
+                  },
+                  "label": {
+                    "type": "string",
+                    "description": "Optional display label or qualifier for the microbial host (e.g., 'co-culture host', 'primary producer')."
+                  }
+                },
+                "required": ["name"]
               },
-              "label": {
-                "type": "string",
-                "description": "Optional display label or qualifier for the microbial host (e.g., 'co-culture host', 'primary producer')."
-              }
+              "minItems": 1
             },
-            "required": ["name"]
-          },
-          "minItems": 1
+            { "enum": ["not_reported", "not_applicable"] }
+          ]
         },
         "process_title": {
           "type": "string",
           "description": "A descriptive title for the process."
         },
         "process_simulator": {
-          "type": "object",
-          "description": "The process simulator in which this flowsheet was originally modeled.",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "Name of the process simulator."
+          "description": "The process simulator in which this flowsheet was originally modeled. From v0.2.2 on, one of the strings 'not_reported' (the source names no simulator, e.g., a paper that does not state the tool used) or 'not_applicable' (the flowsheet was never simulated, e.g., one extracted from a patent) may be given instead of an object, stating that absence explicitly. null and 'None' are not accepted. The key itself remains required.",
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Name of the process simulator."
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Version number of the process simulator."
+                }
+              },
+              "required": [
+              "name",
+              "version"
+              ]
             },
-            "version": {
-              "type": "string",
-              "description": "Version number of the process simulator."
-            }
-          },
-          "required": [
-          "name",
-          "version"
+            { "enum": ["not_reported", "not_applicable"] }
           ]
         },
         "flowsheet_designers": {
@@ -304,6 +313,19 @@
             "enum": ["exported-from-simulator", "extracted-from-prose", "extracted-from-image", "extracted-from-table", "reproducible"]
           },
           "uniqueItems": true
+        },
+        "prose_type": {
+          "type": "string",
+          "enum": ["journal_article", "patent", "thesis", "technical_report", "conference_paper", "book", "other"],
+          "description": "Type of literature source this flowsheet was extracted from. Added in v0.2.2 as literature_type; renamed prose_type in v0.2.4 for consistency with image_type and the extracted-from-prose tag. Required when metadata.tags contains 'extracted-from-prose' or 'extracted-from-table' (sff_checks.md TAG-01, schema part)."
+        },
+        "image_type": {
+          "type": "string",
+          "enum": ["process_flow_diagram", "block_flow_diagram", "piping_and_instrumentation_diagram", "other"],
+          "description": "Type of image this flowsheet was extracted from. Added in v0.2.2; required when metadata.tags contains 'extracted-from-image' (sff_checks.md TAG-01, schema part)."
+        },
+        "extraction_method": {
+          "description": "How this flowsheet was extracted from its source (e.g., the extraction pipeline, model, or manual procedure used). Any JSON type is allowed, so a producer may record a plain string or a structured object. Added in v0.2.2; required when metadata.tags contains any 'extracted-from-*' tag (sff_checks.md TAG-01, schema part)."
         }
       },
       "required": [
@@ -325,7 +347,30 @@
         "properties": {
           "reproducibility": { "required": ["comparison_rtol"] }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["tags"],
+            "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-table"] } } }
+          },
+          "then": { "required": ["prose_type"] }
+        },
+        {
+          "if": {
+            "required": ["tags"],
+            "properties": { "tags": { "contains": { "const": "extracted-from-image" } } }
+          },
+          "then": { "required": ["image_type"] }
+        },
+        {
+          "if": {
+            "required": ["tags"],
+            "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-image", "extracted-from-table"] } } }
+          },
+          "then": { "required": ["extraction_method"] }
+        }
+      ]
     },
     "units": {
       "description": "An array of all unit operations, representing the nodes of the process graph.",
@@ -532,7 +577,7 @@
           "id",
           "unit_type"
         ],
-        "additionalProperties": false
+        "additionalProperties": true
       }
     },
     "streams": {
@@ -636,9 +681,9 @@
             "type": "string",
             "description": "A unique identifier for this chemical, used to reference this chemical in the 'composition' property of stream objects and in the 'reactions' property of unit objects."
           },
-          "included_in_thermo": {
+          "included_in_thermo_equilibria": {
             "type": "boolean",
-            "description": "Whether or not this chemical is included when simulating thermodynamic equilibria. If 'true', 'registry_ID' must be provided. If 'false', 'molar_mass' must be provided."
+            "description": "Whether or not this chemical is included when simulating thermodynamic equilibria. If 'true', 'registry_id' must be provided. If 'false', 'molar_mass' must be provided. Renamed from 'included_in_thermo' in v0.2.3. Required unless metadata.tags contains an 'extracted-from-*' tag (optional for extracted flowsheets from v0.2.3; enforced by the root-level if/else)."
           },
           "registry_id": {
             "type": "string",
@@ -658,22 +703,21 @@
           }
         },
         "required": [
-          "id",
-          "included_in_thermo"
+          "id"
         ],
         "additionalProperties": true,
         "allOf": [
           {
             "if": {
-              "properties": { "included_in_thermo": { "const": true } },
-              "required": ["included_in_thermo"]
+              "properties": { "included_in_thermo_equilibria": { "const": true } },
+              "required": ["included_in_thermo_equilibria"]
             },
             "then": { "required": ["registry_id"] }
           },
           {
             "if": {
-              "properties": { "included_in_thermo": { "const": false } },
-              "required": ["included_in_thermo"]
+              "properties": { "included_in_thermo_equilibria": { "const": false } },
+              "required": ["included_in_thermo_equilibria"]
             },
             "then": { "required": ["molar_mass"] }
           }
@@ -759,7 +803,7 @@
                   "composition",
                   "quantity_units_for_utility_results"
                 ],
-                "additionalProperties": false
+                "additionalProperties": true
               }
             },
             "power_utilities": {
@@ -853,7 +897,7 @@
                   "composition",
                   "quantity_units_for_utility_results"
                 ],
-                "additionalProperties": false
+                "additionalProperties": true
               }
             }
     }
@@ -864,5 +908,34 @@
     "units",
     "streams",
     "utilities"
-  ]
+  ],
+  "if": {
+    "required": ["metadata"],
+    "properties": {
+      "metadata": {
+        "required": ["tags"],
+        "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-image", "extracted-from-table"] } } }
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "streams": {
+        "items": {
+          "properties": {
+            "stream_properties": {
+              "properties": {
+                "phases": {
+                  "additionalProperties": { "required": ["total_molar_flow"] }
+                }
+              }
+            }
+          }
+        }
+      },
+      "chemicals": {
+        "items": { "required": ["included_in_thermo_equilibria"] }
+      }
+    }
+  }
 }

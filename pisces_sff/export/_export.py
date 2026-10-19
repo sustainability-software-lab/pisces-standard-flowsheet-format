@@ -195,6 +195,21 @@ _CHEMICAL_REGISTRY_UNION_SINCE = (0, 1, 3)
 #: legacy fixed-tuple probe so their historical output stays byte-stable.
 _DESIGN_SPEC_REGISTRY_SINCE = (0, 1, 4)
 
+#: First schema version whose ``chemicals[]`` entries name the VLE flag
+#: ``included_in_thermo_equilibria`` (renamed from ``included_in_thermo``).
+#: Gated so older exporters keep emitting the legacy key byte-stably; the key
+#: stays in the same position either way.
+_THERMO_EQUILIBRIA_KEY_SINCE = (0, 2, 3)
+
+
+def thermo_flag_key(sff_version):
+    """The ``chemicals[]`` VLE-flag key written at `sff_version`:
+    ``included_in_thermo_equilibria`` from :data:`_THERMO_EQUILIBRIA_KEY_SINCE`
+    on, the legacy ``included_in_thermo`` before."""
+    if version_tuple(sff_version) >= _THERMO_EQUILIBRIA_KEY_SINCE:
+        return "included_in_thermo_equilibria"
+    return "included_in_thermo"
+
 #: Absolute molar-flow threshold (kmol/hr) below which a stream or phase is
 #: serialized as EMPTY -- empty composition -- mirroring the validator's
 #: ZERO_FLOW (sff_checks.md "Default tolerances", STR-13). A converged
@@ -479,15 +494,18 @@ def _build_sff_dict(sys, tea=None,
     repr_stream = all_streams[0]
     chems = repr_stream.chemicals
     vle_chems = repr_stream.vle_chemicals
+    flag_key = thermo_flag_key(sff_version)
     for i, c in zip(range(len(chems)), chems):
-        chemicals.append(get_chemical_entry(c, i, c in vle_chems, stoichiometry))
+        chemicals.append(get_chemical_entry(c, i, c in vle_chems, stoichiometry,
+                                            flag_key=flag_key))
     # 0.1.3+: complete the registry with every chemical from any OTHER chemicals
     # set the document references (multi-thermo systems), appended after the
     # representative stream's set so the single-thermo output is byte-identical.
     if version_tuple(sff_version) >= _CHEMICAL_REGISTRY_UNION_SINCE:
         chemicals.extend(get_additional_chemical_entries(
             chems, all_streams, list(u),
-            list(all_hu_agents) + list(all_ou_agents), stoichiometry))
+            list(all_hu_agents) + list(all_ou_agents), stoichiometry,
+            flag_key=flag_key))
         
     ## ----- Utilities ----- ##
     # Deterministic ordering policy: utility agents form a registry, so the
@@ -1442,6 +1460,194 @@ def export_biosteam_flowsheet_sff_0_2_1(sys, filepath, tea=None,
     _write_sff_json(flowsheet_to_export, filepath)
 
 
+def export_biosteam_flowsheet_sff_0_2_2(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.2', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.2.
+
+    v0.2.2 changes only what the schema accepts, not what the exporter
+    emits: units and heat/other utility entries accept additional properties;
+    ``metadata.process_simulator`` and ``metadata.microorganisms`` accept
+    ``"not_reported"`` or ``"not_applicable"``; the new ``metadata.literature_type`` /
+    ``metadata.image_type`` / ``metadata.extraction_method`` fields are
+    required alongside the ``extracted-from-*`` tags, which this exporter never
+    stamps; and a phase's ``total_molar_flow`` is optional only in files
+    carrying such a tag (this exporter always writes it). This export is
+    therefore byte-identical to the 0.2.1 export apart from
+    ``metadata.sff_version``. All version-gated behavior active at 0.2.1
+    (including conditional ``exported-from-simulator`` stamping) remains so
+    here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_2_3(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.3', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.3.
+
+    v0.2.3 renames one emitted key and relaxes one requirement: each
+    ``chemicals[]`` entry's VLE flag is written as
+    ``included_in_thermo_equilibria`` (formerly ``included_in_thermo``; same
+    value and key position, gated on ``_THERMO_EQUILIBRIA_KEY_SINCE``), and
+    the schema makes that flag optional in files carrying an
+    ``extracted-from-*`` tag, which this exporter never stamps (it always
+    writes the flag). This export is therefore identical to the 0.2.2 export
+    apart from ``metadata.sff_version`` and the renamed chemical key. All
+    version-gated behavior active at 0.2.2 (including conditional
+    ``exported-from-simulator`` stamping) remains so here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
+def export_biosteam_flowsheet_sff_0_2_4(sys, filepath, tea=None,
+                                        stoichiometry="dict", # must be one of (None, "vector", "dict")
+                                        microorganisms=None, # optional list of microbial hosts
+                                        source_doi=None, # optional; authored descriptive metadata
+                                        process_title=None, # optional; authored
+                                        flowsheet_designers=None, # optional; authored
+                                        reproducibility=None, # optional recipe block; see pisces_sff.export._runner
+                                        sff_version='0.2.4', # must match this function's name suffix
+                                        ):
+    """
+    Export a simulated BioSTEAM system against SFF schema v0.2.4.
+
+    v0.2.4 renames ``metadata.literature_type`` to ``metadata.prose_type``
+    (same enum, still required beside ``extracted-from-prose`` /
+    ``extracted-from-table``), a field this exporter never writes. This export
+    is therefore byte-identical to the 0.2.3 export apart from
+    ``metadata.sff_version``. All version-gated behavior active at 0.2.3
+    (including conditional ``exported-from-simulator`` stamping and the
+    ``included_in_thermo_equilibria`` key) remains so here.
+
+    Parameters
+    ----------
+    sys : biosteam.System
+        A simulated system to export.
+    filepath : str
+        Path to write the SFF JSON file to.
+    tea : biosteam.TEA, optional
+        TEA object to read cost assumptions from. Defaults to ``sys.TEA``.
+    stoichiometry : str, optional
+        One of ``None``, ``'vector'``, or ``'dict'``.
+    microorganisms : list, optional
+        Microbial hosts; each entry is a string or a dict with a ``'name'`` key.
+    source_doi : str, optional
+        DOI of the source publication. Emitted only when truthy.
+    process_title : str, optional
+        Descriptive title for the process. Emitted only when truthy.
+    flowsheet_designers : str, optional
+        Name(s) of the flowsheet's authors. Emitted only when truthy.
+    reproducibility : dict, optional
+        Recipe block written to ``metadata['reproducibility']``. Built by
+        :func:`pisces_sff.export._runner.build_reproducibility`. Omitted when falsy.
+    sff_version : str, optional
+        Version recorded as ``metadata['sff_version']``.
+    """
+    flowsheet_to_export = _build_sff_dict(
+        sys, tea=tea, stoichiometry=stoichiometry,
+        microorganisms=microorganisms,
+        source_doi=source_doi, process_title=process_title,
+        flowsheet_designers=flowsheet_designers,
+        sff_version=sff_version,
+    )
+    if reproducibility:
+        flowsheet_to_export['metadata']['reproducibility'] = reproducibility
+    # Stamp AFTER attaching the recipe: exported-from-simulator earning requires a
+    # digest-valid reproducibility block (MET-07 must not skip).
+    if version_tuple(sff_version) >= _TAGS_SINCE:
+        _stamp_static_tags(flowsheet_to_export)
+    _write_sff_json(flowsheet_to_export, filepath)
+
+
 #%% Helper functions
 
 def _max_carbon_boundary_feed(all_sys_feeds):
@@ -1749,7 +1955,8 @@ def _cost_correlation_entry(item_id, item, f_bm, lifetimes):
     return entry
 
 
-def get_chemical_entry(chemical, index, is_vle, stoichiometry):
+def get_chemical_entry(chemical, index, is_vle, stoichiometry,
+                       flag_key="included_in_thermo"):
     """Build one SFF ``chemicals[]`` entry from a thermosteam ``Chemical``.
 
     Parameters
@@ -1762,21 +1969,25 @@ def get_chemical_entry(chemical, index, is_vle, stoichiometry):
         references it -- see CHEM-04).
     is_vle : bool
         Whether the chemical participates in vapor-liquid equilibrium (is in the
-        stream's ``vle_chemicals``); recorded as ``included_in_thermo``.
+        stream's ``vle_chemicals``); recorded under `flag_key`.
     stoichiometry : str or None
         Reaction-stoichiometry mode; when truthy, ``index`` is emitted.
+    flag_key : str, optional
+        Key the VLE flag is written under: the legacy ``included_in_thermo``
+        (default) or, from v0.2.3, ``included_in_thermo_equilibria`` -- see
+        :func:`thermo_flag_key`.
 
     Returns
     -------
     dict
-        A ``chemicals[]`` entry. Key order (``id``, ``included_in_thermo``,
+        A ``chemicals[]`` entry. Key order (``id``, `flag_key`,
         ``index``?, ``formula``?, ``registry_id``?, ``molar_mass``) is preserved
         for byte-stable output.
 
     Raises
     ------
     SFFExportError
-        If the chemical is VLE (``included_in_thermo`` true) but exposes no CAS.
+        If the chemical is VLE (`flag_key` true) but exposes no CAS.
         The schema requires ``registry_id`` for such chemicals, so a missing CAS
         would otherwise emit ``registry_id: null`` and produce a document that
         fails validation. Fail loudly here, naming the chemical, rather than
@@ -1784,7 +1995,7 @@ def get_chemical_entry(chemical, index, is_vle, stoichiometry):
     """
     c = chemical
     entry = {"id": c.ID}
-    entry["included_in_thermo"] = is_vle
+    entry[flag_key] = is_vle
     if stoichiometry:
         entry["index"] = index
     if c.formula is not None:
@@ -1931,7 +2142,8 @@ def get_reaction_objects(unit):
 
 
 def get_additional_chemical_entries(base_chemicals, streams, units, agents,
-                                    stoichiometry):
+                                    stoichiometry,
+                                    flag_key="included_in_thermo"):
     """
     Build ``chemicals[]`` entries for every chemical referenced by the document
     that is NOT in `base_chemicals` (the representative stream's set).
@@ -1951,7 +2163,7 @@ def get_additional_chemical_entries(base_chemicals, streams, units, agents,
     streams, units, agents : iterable
         Objects whose ``.chemicals`` (or, for units, reactions' ``.chemicals``)
         sets are unioned in.
-    stoichiometry : str or None
+    stoichiometry, flag_key : optional
         Forwarded to :func:`get_chemical_entry`.
 
     Returns
@@ -1983,7 +2195,8 @@ def get_additional_chemical_entries(base_chemicals, streams, units, agents,
                 continue
             registered.add(c.ID)
             entries.append(get_chemical_entry(c, index, i in vle_index,
-                                              stoichiometry))
+                                              stoichiometry,
+                                              flag_key=flag_key))
             index += 1
     return entries
 

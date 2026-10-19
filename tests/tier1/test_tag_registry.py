@@ -7,9 +7,10 @@
 # for license details.
 #
 # Tier 1: the tag registry (pisces_sff/tags/tags.yaml) -- the single source of
-# truth for tag names, check subsets, and tolerated-skip policies (sff_checks.md
-# section 8). Pins: the committed registry's content, the loader's fail-fast
-# shape validation, and sync with the schema's metadata.tags enum. Import-light.
+# truth for tag names, check subsets, tolerated-skip policies, and required
+# metadata fields (sff_checks.md section 8). Pins: the committed registry's
+# content, the loader's fail-fast shape validation, and sync with the schema's
+# metadata.tags enum and its tag -> required-field if/then rules. Import-light.
 
 import json
 import tempfile
@@ -33,6 +34,12 @@ EXPECTED_EFS_TOLERATED = {
     "STR-10": "all_streams_empty",
     "UNIT-04": "no_reactions", "UNIT-05": "no_reactions",
     "UNIT-06": "no_reactions",
+}
+EXPECTED_REQUIRED_METADATA = {
+    "exported-from-simulator": (),
+    "extracted-from-prose": ("prose_type", "extraction_method"),
+    "extracted-from-image": ("image_type", "extraction_method"),
+    "extracted-from-table": ("prose_type", "extraction_method"),
 }
 
 
@@ -83,6 +90,15 @@ class TestCommittedRegistry(unittest.TestCase):
                              frozenset({"UNIT-10", "STR-14"}))
             self.assertEqual(reg[tag]["tolerated_skips"], {})
 
+    def test_required_metadata_table(self):
+        """Each static tag's required_metadata matches the section 8 table
+        (v0.2.2: extracted-from-* tags need their extraction source type and
+        extraction method)."""
+        reg = V._load_tag_registry()
+        got = {tag: e["required_metadata"] for tag, e in reg.items()
+               if e["class"] == "static"}
+        self.assertEqual(got, EXPECTED_REQUIRED_METADATA)
+
     def test_reproducible_is_harness_with_no_subset(self):
         self.assertEqual(V._load_tag_registry()["reproducible"],
                          {"class": "harness"})
@@ -107,7 +123,36 @@ class TestLoaderShapeValidation(_RegistryPatchCase):
             "    subset: [UNIT-10]\n")
         self.assertEqual(reg, {"t": {"class": "static",
                                      "subset": frozenset({"UNIT-10"}),
-                                     "tolerated_skips": {}}})
+                                     "tolerated_skips": {},
+                                     "required_metadata": ()}})
+
+    def test_required_metadata_loads_as_tuple(self):
+        reg = self._load_from(
+            "tags:\n"
+            "  t:\n"
+            "    class: static\n"
+            "    subset: [UNIT-10]\n"
+            "    required_metadata: [prose_type]\n")
+        self.assertEqual(reg["t"]["required_metadata"], ("prose_type",))
+
+    def test_required_metadata_must_be_list_of_names(self):
+        for bad in ("prose_type", "[1]", '[""]'):
+            with self.subTest(bad=bad), \
+                    self.assertRaisesRegex(ValueError, "required_metadata"):
+                self._load_from(
+                    "tags:\n"
+                    "  t:\n"
+                    "    class: static\n"
+                    "    subset: [UNIT-10]\n"
+                    f"    required_metadata: {bad}\n")
+
+    def test_harness_tag_with_required_metadata_rejected(self):
+        with self.assertRaisesRegex(ValueError, "harness"):
+            self._load_from(
+                "tags:\n"
+                "  t:\n"
+                "    class: harness\n"
+                "    required_metadata: [prose_type]\n")
 
     def test_subset_all_maps_to_none_sentinel(self):
         reg = self._load_from(
@@ -243,6 +288,21 @@ class TestSchemaEnumSync(unittest.TestCase):
                  ["const"])
         self.assertEqual(const, "reproducible")
         self.assertIn(const, V._tag_names())
+
+    def test_schema_required_fields_mirror_registry(self):
+        """The schema's metadata allOf if/then rules (tag present -> field
+        required) state exactly the registry's required_metadata, so a tag the
+        validator reports earned can always be declared schema-validly."""
+        from_schema = {}
+        for rule in self.metadata.get("allOf", []):
+            contains = rule["if"]["properties"]["tags"]["contains"]
+            tags = contains["enum"] if "enum" in contains else [contains["const"]]
+            for tag in tags:
+                from_schema.setdefault(tag, set()).update(rule["then"]["required"])
+        from_registry = {tag: set(e["required_metadata"])
+                         for tag, e in V._load_tag_registry().items()
+                         if e.get("required_metadata")}
+        self.assertEqual(from_schema, from_registry)
 
 
 if __name__ == "__main__":

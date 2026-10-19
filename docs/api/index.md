@@ -19,6 +19,11 @@ signatures and docstrings without a simulation.
    evaluate_sff_tags
    verify_reproducible
    CheckResult
+   score_flowsheet_completeness
+   load_completeness_criteria
+   format_completeness_report
+   CompletenessReport
+   CriterionResult
    read_schema_version
    load_model_registry
    load_design_spec_registry

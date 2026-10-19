@@ -40,7 +40,7 @@ class TestCHEM01(RealBiosteamTestCase):
         doc = valid_doc()
         doc["chemicals"].append({
             "id": "Ethanol", "index": 1, "formula": "C2H6O",
-            "molar_mass": 46.07, "included_in_thermo": False})
+            "molar_mass": 46.07, "included_in_thermo_equilibria": False})
         is_valid, by_id = validate_doc(doc)
         r = by_id["CHEM-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "fail"))
@@ -122,7 +122,7 @@ class TestCHEM04(RealBiosteamTestCase):
         False."""
         doc = valid_doc()
         doc["chemicals"].append({
-            "id": "Water", "included_in_thermo": False, "molar_mass": 18.02})
+            "id": "Water", "included_in_thermo_equilibria": False, "molar_mass": 18.02})
         doc["units"][0]["reactions"] = [{"stoichiometry": [-1, 1]}]
         is_valid, by_id = validate_doc(doc)
         r = by_id["CHEM-04"][0]
@@ -151,7 +151,7 @@ class TestCHEM05(RealBiosteamTestCase):
         flips is_valid)."""
         doc = valid_doc()
         doc["chemicals"].append({
-            "id": "Water", "included_in_thermo": False, "molar_mass": 18.02})
+            "id": "Water", "included_in_thermo_equilibria": False, "molar_mass": 18.02})
         is_valid, by_id = validate_doc(doc)
         r = by_id["CHEM-05"][0]
         self.assertEqual((r.severity, r.status), ("info", "fail"))

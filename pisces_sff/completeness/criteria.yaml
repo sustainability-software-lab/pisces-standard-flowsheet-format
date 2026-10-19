@@ -1,0 +1,1920 @@
+# Completeness criteria registry (pisces_sff/completeness/_completeness.py).
+#
+# Each criterion scores one kind of information BioSTEAM needs to rebuild an
+# SFF flowsheet as a simulable, costable biosteam.System, judged from the SFF
+# data alone. Single source of truth for criterion ids, category, title,
+# weight (points; normalized when aggregating), criticality, the SFF version
+# from which the information is representable, the rationale, and the SFF
+# paths the criterion reads. Every id maps to exactly one scoring function in
+# _completeness._CRITERIA, in the same order (pinned by a Tier 1 sync test).
+#
+# criticality:
+#   essential     -- needed to simulate at all
+#   costing       -- needed to cost the equipment and run TEA
+#   supplementary -- raises fidelity or enables verification
+#   integrity     -- derived from the validator's verdict on the file
+# representable_since:
+#   "X.Y.Z" -- first SFF version with a field that can state it ("0.0.0" =
+#              every version); a file older than this is not penalized in
+#              the representable score
+#   null    -- no SFF version can state it (a schema gap); it may still earn
+#              derived credit (DERIVED_CREDIT) when other fields imply it
+#
+# The exclusions list records information BioSTEAM uses that is deliberately
+# NOT scored: `not_capturable` items cannot practically live in static JSON;
+# `derived` items are recomputed from information other criteria already score;
+# `out_of_scope` items serve purposes beyond rebuilding, simulating, costing and
+# TEA of one design point; `undetectable_need` items would matter, but nothing
+# in an SFF file tells whether a given flowsheet needs them, so no population
+# can be defined by need.
+#
+# Applicability is by NEED, never by data: a criterion's population (and when
+# it is not applicable) follows from structure -- units and their families,
+# streams, referenced chemicals, reactive units -- and absent data within the
+# population scores 0, so deleting a value from a consistent document does not
+# raise the score. Favorable treatment (full or derived credit, exclusion
+# from a population) follows the same rule: it may rest on data only when
+# deleting that data leaves the unit or stream in the population with no
+# more credit than before (a core class at confidence 1 stays in CMP-COST-04
+# and scores 1; an empty feed stays in CMP-FEED-01 and scores 1). Pinned by
+# deletion-monotonicity tests on a synthetic document (Tier 1) and on the
+# corpus (Tier 5). The guarantee covers deleting FIELDS (a value, or a whole
+# object or list held under a key) from an internally consistent document.
+# It does not cover five things:
+#   - Deleting whole list elements -- a unit, a stream, a reaction -- which
+#     removes structure the populations are defined on (removing an
+#     incomplete reaction declared on a non-reactor unit, for instance, can
+#     raise CMP-RXN-02). Deleting a unit's whole `reactions` list counts as
+#     deleting its reactions, each of which is a list element; every other
+#     list held under a key is a field.
+#   - Deleting an entry of a reaction's `stoichiometry` object (one
+#     participant and its coefficient). It states a different reaction, as
+#     removing a list element does; the array form of `stoichiometry`
+#     already holds its coefficients as list elements. No rule rewarding a
+#     mass closure can stay monotone under it: dropping a participant whose
+#     term held the balance off, or whose term left the closure untestable
+#     (no molar mass or formula, or an undeclared chemical), can make the
+#     reaction close (CMP-RXN-02 0.5 -> 1) and its basis derivable
+#     (CMP-RXN-04), raising the overall and representable scores. Deleting
+#     the whole `stoichiometry` object, or the equation, stays covered.
+#   - Deleting a whole phase of a stream that is not stated empty. The
+#     schema describes stream_properties.phases as the phases present in
+#     the stream, so a phase key's absence asserts that the phase is
+#     absent: removing one changes what the document claims (a different
+#     set of phases), as removing a list element does. The remaining phase
+#     can become the stream's only one, whose amount is then the stream's
+#     (CMP-FEED-01), whose species flows become computable (confirming a
+#     reaction, CMP-RXN-02, CMP-UOP-04) and whose unit may become
+#     single-phase (CMP-RXN-04). Deleting a stated-empty phase, or any
+#     field inside a phase, stays covered.
+#   - Deletions on an internally inconsistent document, one whose parts
+#     contradict each other: included_in_thermo_equilibria flags the
+#     stream data contradict (CMP-THM-04); a unit claim that the unit's own ports,
+#     streams or duties contradict -- a 'Mixer' heating its feed, a
+#     'Splitter' drawing power, a 'Centrifuge' taking steam, species
+#     converting across a 'Membrane' or 'Pelletizer' label, a 'Screw
+#     conveyor', 'Junction' or 'Heat exchanger' label on a unit whose two
+#     outlets separate its feed, a 'Splitter' label fed by two streams
+#     whose outlets do not carry their mixture, a separator label raising
+#     its outlets above 1 atm, a separator, mixer or solids label on a unit
+#     that produces power, a 'Pump' or 'Valve' taking steam (a separator
+#     label drawing power or dropping pressure is not one, nor a sorption
+#     or regeneration separator -- a molecular sieve, adsorber, ion
+#     exchanger, absorber or scrubber -- or a separator declaring reactions
+#     taking a heat duty, nor a mill or conveyor merging two feeds) -- where
+#     deleting the data that shows the contradiction restores the claim
+#     and sheds the needs its unknown family carried (CMP-UOP-01); a
+#     reaction that does not conserve mass with the document's own molar
+#     masses, which contradicts its chemicals (CMP-RXN-02); a chemical or
+#     unit id referenced but not declared, which fails the validator's
+#     referential integrity (CMP-INT-02) and scores 0 where it is counted,
+#     so deleting the reference can raise CMP-THM-01..03 or CMP-UOP-01/02;
+#     a utility agent a unit's results reference but no utilities group
+#     declares (the validator's UNIT-02, failing XREF-01 and CMP-INT-02):
+#     its duty is of unknown kind, a heat duty that contradicts a
+#     separator or mixer label, so deleting that unit's results can raise
+#     the score (deleting utilities.power_utilities under an honest
+#     centrifuge's power duty makes such a document, and lowers the
+#     score);
+#     a unit whose stated mass balance fails although every reaction it
+#     declares conserves mass, its class accounts for no mass implicitly
+#     and no stream lacking an endpoint can be its missing port
+#     (CMP-UOP-04); a unit_type whose family disagrees with the family the
+#     unit's specification keys unambiguously imply, which CMP-UOP-01
+#     scores at half credit under the label's family, where deleting the
+#     label lets the key-set family stand at 0.75 with its own needs; a
+#     unit_type whose family, or facility kind, disagrees with that of the
+#     class its design_simulation_method names, where deleting the class
+#     leaves the label's family and its needs (an exact PolishingFilter, a
+#     reactor, labelled 'Polishing filter', a filter in general usage; one
+#     declaring its reactions keeps a reactor's needs through them; an
+#     exact CoolingTower, which needs heat agents, labelled 'Plant air', a
+#     cost-only facility, which does not); a
+#     chemical whose declared molar mass or formula contradicts the record
+#     its name or registry id resolves to, where deleting both restores
+#     that tier (CMP-THM-02) and can exempt the chemical from
+#     CMP-THM-05; a quantity stated in a unit the scorer knows only for
+#     another dimension (a temperature in kg/hr, R8.16), which scores as
+#     invalid, where deleting that unit or its alias lets the number be
+#     read in BioSTEAM's internal unit. Scoring
+#     still credits a reaction that does not conserve mass 0.5 in
+#     CMP-RXN-02, since it may be the model's own reaction exported
+#     faithfully: the credit judges what a re-import would reproduce, the
+#     guarantee needs a document whose parts agree.
+#   - Deletions on a document the validator's schema gate rejects
+#     (CMP-INT-01 0): deleting the field the schema rejects, or the
+#     optional object holding it, makes the document conform and raises
+#     CMP-INT-01 and the overall and representable scores. The guarantee
+#     is stated for conforming documents.
+#
+# INVALID == MISSING (Revision 2): a value earns credit only if it is
+# plausible for its role, judged by one shared set of predicates --
+# temperatures in (0, 1e4) K, pressures > 0, flows >= 0, fractions in
+# [0, 1] summing to 1, per-parameter design-spec ranges, well-formed
+# registry ids, recognised thermosteam model class names, well-formed
+# reactions, numeric costs and results -- and an implausible value scores
+# exactly like an absent one (pinned by a Tier 1 junk-versus-absence test).
+# Units, streams, chemicals and utility agents sharing an id are collapsed
+# to the first occurrence, so repetition inflates nothing. A derivation from
+# stream data needs the unit's mass balance (and, for a physical unit, every
+# species' balance) to close within 1 %; species flows are compared on the
+# molar basis when every port states mol data, else on the mass basis when
+# every port states mass data (per-phase flows with mol or mass fractions).
+# A stream's total mass is its total_mass_flow, else the sum over its
+# phases of a stated mass flow or of a molar flow times the mean molar
+# mass of the phase's composition (every molar mass resolved: declared,
+# else from the formula), so a molar-basis stream table closes its mass
+# balances like its mass-basis twin. A species' flow counts as changed
+# across a unit (or the flowsheet) only when the change exceeds both 1 %
+# of the species' own flow and 0.1 % of the inlet MASS total (the
+# flowsheet's boundary inlet total; molar flows are weighed with the
+# resolved molar masses, so a table stating both bases reaches the same
+# verdict on either, and deleting one basis changes nothing; when a
+# molar mass does not resolve, the same ports' mass flows, where every
+# port states them, are compared against the inlet mass total instead,
+# and only without that footing does the 1 % rule apply alone): a printed
+# table rounding each stream on its own (wt% to 2 decimals, integer
+# kg/h) stays below that, while material conversion exceeds both. A
+# molar-basis table whose chemicals carry no molar mass or formula (the
+# name alone resolving to a record) gets neither its total mass nor the
+# 0.1 % share: a name-resolved molar mass is unverified, so it earns
+# credit in CMP-THM-03 but never serves as evidence here, and such a
+# table scores below its mass-basis twin (a recorded limitation).
+# A stream endpoint that is not stated (a missing source_unit_id or
+# sink_unit_id key, null or blank) is dangling, never the boundary: such a
+# stream may be a missing port of any unit whose balance cannot rule it
+# out, so none of those units' balances counts as closed. A conditional
+# requirement is waived
+# only when the data affirmatively show its condition false, and a waived
+# requirement counts as met: the requirements a unit is scored on are fixed
+# by its family and class, never shrunk by data. Stream and
+# utility-agent temperatures, pressures and flows are first converted to
+# BioSTEAM's internal units (K, Pa, kg/hr, kmol/hr, m3/hr) from their stated
+# quantity units (quantity_units_global, or a legacy inline pair) by a small
+# built-in table, so a file in degC or bar scores like one in K and Pa; a
+# unit string the table does not know suspends the plausibility bounds (a
+# flow must still be >= 0) and the consistency guards for that quantity,
+# while one the table knows only for another dimension (a temperature in
+# kg/hr) makes the quantity invalid (R8.16), which CMP-INT-04 names.
+# A design_input_specs key with a physical dimension that a
+# quantity_units_global entry lists among its aliases (T, P, tau, ...) is
+# converted the same way; any other specification is read in
+# BioSTEAM-native units.
+
+categories:
+  thermo: Thermodynamic basis (chemicals and property package)
+  topology: Flowsheet topology
+  feeds: Feeds and boundary streams
+  unit_ops: Unit operations
+  reactions: Reactions
+  costing: Equipment costing
+  utilities: Utility agents
+  system: System and TEA settings
+  integrity: Integrity (validator-derived)
+
+criteria:
+
+  # ------------------------------------------------------------------ thermo
+  - id: CMP-THM-01
+    category: thermo
+    title: Chemical registry covers every referenced chemical
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].id
+      - streams[].stream_properties.phases.*.composition[].component_name
+      - streams[].stream_properties.composition[].component_name
+      - utilities.*[].composition[].component_name
+      - units[].reactions[].reactant
+      - units[].reactions[].equation
+      - units[].reactions[].stoichiometry
+    rationale: >-
+      BioSTEAM compiles one Chemicals object before any stream or reaction can
+      exist: every component a stream, utility agent or reaction mentions must
+      be defined there, or constructing the Stream, UtilityAgent or Reaction
+      fails with an undefined-chemical error. A referenced but undeclared
+      component therefore blocks the rebuild outright, which makes coverage of
+      the chemical registry the first gate of any re-import.
+
+  - id: CMP-THM-02
+    category: thermo
+    title: Chemicals resolvable against a property database
+    weight: 5
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].registry_id
+      - chemicals[].id
+      - chemicals[].formula
+    rationale: >-
+      thermosteam builds a pure-component model (vapor pressure, heat capacity,
+      heat of vaporization, molar volume, viscosity, ...) by looking the
+      chemical up in the chemicals/thermo databases. Each chemical scores the
+      best of the tiers it reaches, so deleting one datum only removes an
+      option. A registry id -- a CAS number with a correct check digit, an
+      InChI whose formula layer parses, an InChIKey or SMILES -- that the
+      chemicals database RESOLVES (looked up as that kind of identifier:
+      "InChIKey=" and "SMILES=" prefixes, so "C" means methane, not carbon)
+      to a record whose molar mass (within 2 %) or formula agrees with the
+      chemical's, when the chemical states one, identifies the species and
+      brings the database's correlations with it (credit 1). A well-formed
+      id the database cannot resolve -- a real number it does not list, such
+      as cellulose's CAS, or an invented one with a valid check digit -- or
+      any id while the database is unavailable, brings nothing checkable and
+      earns 0.5. A malformed id ("x", "InChI=1S/x"), one whose database
+      record or InChI formula layer contradicts the chemical's molar mass or
+      formula, counts as no id. A registry id the database resolves to
+      another species than the chemical's id names by name (Ethanol with
+      water's CAS 7732-18-5, Glucose with the SMILES "CCO"), when the
+      chemical states no molar mass or formula to settle which is right,
+      earns only 0.5 (unverified) and is flagged as a conflict. The chemical
+      id is also looked up by name
+      exactly as thermosteam's Chemical(ID) looks it up: its search of the
+      chemicals identifier database (a CAS number as such; otherwise the id
+      with "_" read as a space and CamelCase split into words -- AceticAcid
+      as "acetic acid", CalciumDihydroxide as "calcium dihydroxide" -- then
+      the id itself, as names, the first database file claiming a name
+      keeping it; last the id as a formula), then thermosteam's built-in
+      bioprocess pseudo-components (Cellulose, Starch, Fiber, Yeast, Ash,
+      Protein, Xylan, ... -- the names its database does not know, with the
+      molar mass, formula and locked phase thermosteam gives them). A name
+      so resolved identifies the chemical when the record's molar mass (or
+      formula) matches the chemical's declared or formula-derived one within
+      1 % (verified, 0.75), probably identifies it when the chemical states
+      neither (unverified, 0.5), and misidentifies it on a mismatch (the
+      name tier is then withheld: "HP" resolves to hematoporphyrin, not
+      3-hydroxypropionic acid; "Lignin" to the database's C81H92O28 record,
+      not a C8H8O3 monomer). An id that is itself a molecular formula with two or more carbon
+      atoms (C2H6O: ethanol or dimethyl ether) earns no name credit, being
+      isomer-ambiguous; a formula id with at most one carbon atom (CO2, O2,
+      CH4, NH3, H2SO4, P4O10, CaO) names one compound and earns name credit
+      like any other name. The lookup is lazy and cached, always runs the
+      scorer's own import-light replica of that search (so a file scores
+      the same whether or not thermosteam is loaded in the process), and is
+      unavailable when the chemicals
+      package cannot be imported. A formula alone -- a parseable formula
+      field, or a formula-like id -- narrows the search but does not identify
+      an isomer (C2H6O is ethanol or dimethyl ether), so it earns 0.25.
+      Without any of these, every property must be supplied by hand. The
+      population is every declared chemical plus every referenced but
+      undeclared id (which scores 0); a flowsheet with streams or units but
+      no chemicals at all scores 0. When any chemical is referenced (by a
+      stream or agent composition or a reaction), the score is the mean over
+      the referenced chemicals plus every unreferenced one that lowers it --
+      the lowest mean over any set between the referenced chemicals and all
+      of them, never above the lesser of the referenced and the overall
+      means -- so unreferenced chemicals can lower the score but never raise
+      it: padding a sparse file with well-identified chemicals it never uses
+      earns nothing, and a chemical losing its last reference never lifts
+      the score. With nothing referenced it is the lowest single chemical's
+      score (a plain mean would let deleting the last reference raise it).
+
+  - id: CMP-THM-03
+    category: thermo
+    title: Molar mass available for every chemical
+    weight: 2
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].molar_mass
+      - chemicals[].formula
+      - chemicals[].registry_id
+      - chemicals[].id
+    rationale: >-
+      Molar mass converts every flow between the mass and molar bases that
+      BioSTEAM uses internally, closes stoichiometric mass balances, and sizes
+      equipment costed on kg/hr. Each chemical scores the best of: a stated
+      molar mass, or one derived from a parseable formula (1); a registry id
+      the chemicals database resolves without contradiction or conflict (as
+      in CMP-THM-02) to a record with a molar mass, which thermosteam then
+      supplies (1); an id that resolves by name to one of thermosteam's
+      built-in pseudo-components, or to a database record the chemical's own
+      data verify (0.75); an id that resolves by name to a database record
+      nothing stated verifies (0.5, as in CMP-THM-02: the molar mass is
+      probably right, but the name may denote another species -- "HP" is
+      hematoporphyrin). Pseudo-components such as SolubleProtein have no
+      database entry, so their molecular weight must be stated explicitly or
+      implied by a formula. Scored over declared plus
+      referenced-but-undeclared chemicals (the latter score 0), aggregated
+      as CMP-THM-02 is: unreferenced chemicals can lower the score, never
+      raise it.
+
+  - id: CMP-THM-04
+    category: thermo
+    title: Phase behaviour of each chemical
+    weight: 2
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - chemicals[].included_in_thermo_equilibria
+      - streams[].stream_properties.phases
+      - streams[].stream_properties.composition[].phase
+    rationale: >-
+      BioSTEAM distinguishes chemicals that partition between phases from
+      chemicals locked in one state (Chemical.at_state, phase_ref, default
+      phase): cellulose, ash or cell mass are fixed solids, and a flash or
+      column that treated them as volatile would fail for want of a vapor
+      pressure or partition them wrongly. The base field
+      chemicals[].included_in_thermo_equilibria (included_in_thermo before
+      v0.2.3) says whether a chemical takes part in
+      phase equilibrium, but not which phase a locked one is locked in.
+      Each chemical scores the best of: its flag, when the stream phases do
+      not contradict it -- true (it partitions), 1; false (locked) and shown
+      in exactly one phase, which names the locked phase, 1; false and never
+      shown in a stream, 0.5 -- where a flag the streams contradict (false
+      but shown in two or more phases, true but only ever as a solid) counts
+      as absent; the stream phases alone, two or more (it partitions) or
+      only ever solid (it is locked), 0.75 (derived); or the locked phase of
+      the thermosteam built-in pseudo-component its id resolves to (see
+      CMP-THM-02), 0.75 (derived). The reference exporter currently
+      mispopulates the flag (true only for the members of one
+      representative stream's vapor-liquid equilibrium set, so ethanol or
+      CO2 seen as vapor and as liquid are exported false), and such
+      contradicted flags earn nothing beyond the stream evidence. Scored
+      over declared plus referenced-but-undeclared chemicals (the latter
+      score 0).
+
+  - id: CMP-THM-05
+    category: thermo
+    title: Property data for chemicals outside the database
+    weight: 4
+    criticality: essential
+    representable_since: null
+    sff_paths:
+      - chemicals[].registry_id
+      - chemicals[].id
+    rationale: >-
+      A chemical that cannot be resolved from a database must be created with
+      hand-supplied property models: molar volume, heat capacity, reference
+      enthalpy and entropy, heat of formation (for heats of reaction and
+      combustion), and vapor pressure, boiling point and heat of vaporization
+      when it is volatile, plus a lower heating value for combustibles burned
+      in a boiler. Thermosteam refuses to compile a chemical set with missing
+      required properties -- for every member, so a declared but
+      unreferenced chemical counts too -- and no SFF field can carry these
+      models. The criterion looks at every declared and every referenced id
+      and applies to each one thermosteam cannot resolve -- neither by a
+      registry id the chemicals database finds without contradiction nor by
+      a verified or unverified name, looked up as Chemical(ID) looks it up
+      (see CMP-THM-02: the database, then thermosteam's built-in
+      pseudo-components such as Cellulose, Starch, Fiber, Yeast and Ash,
+      which come with their property models; a mismatching or
+      isomer-ambiguous name does not count; an undeclared id is judged by
+      its name alone) -- and then scores 0. A well-formed but unresolvable
+      registry id exempts nothing (an invented CAS number, or cellulose's
+      real one, brings no property data), and with the database unavailable
+      only a built-in is exempt.
+      Such a custom chemical also lacks what
+      phase-equilibrium models need beyond pure-component data -- UNIFAC or
+      Dortmund group assignments for activity-coefficient packages and any
+      binary interaction parameters -- which no SFF field carries either;
+      this criterion stands for that gap too. Weighted heavily because one
+      such chemical blocks the whole rebuild.
+
+  - id: CMP-THM-06
+    category: thermo
+    title: Thermodynamic property package stated
+    weight: 3
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].thermo_property_package.mixture
+      - units[].thermo_property_package.gamma
+      - units[].thermo_property_package.phi
+      - units[].thermo_property_package.PCF
+    rationale: >-
+      The Thermo object pairs the chemicals with a mixture model, activity
+      coefficients (ideal or Dortmund-modified UNIFAC, ...), fugacity
+      coefficients and Poynting correction factors. These decide every
+      vapor-liquid and liquid-liquid split, so the same flowsheet under a
+      different package produces different flash, column and evaporator
+      results. A descriptor counts only when its leading identifier is a
+      thermosteam model class of its role (IdealMixture or an EOS mixture;
+      an activity-coefficient class such as DortmundActivityCoefficients; a
+      fugacity-coefficient class; a Poynting-correction class, either
+      spelling), since only those rebuild the package; "x" or a bare "NRTL"
+      count as absent. An IdealMixture takes one setting of its own,
+      include_excess_energies (whether excess enthalpy and entropy are
+      added: about 8 % of a gas mixture's enthalpy at 30 bar), so a mixture
+      descriptor naming IdealMixture counts fully only when it also states
+      that flag, as the exporter writes it
+      ('IdealMixture(include_excess_energies=False)'); without it the class
+      is known but the model is not, for half the descriptor's credit. No
+      other mixture class takes the flag. Each unit counts once.
+
+  - id: CMP-THM-07
+    category: thermo
+    title: Chemical-set identity in multi-thermo flowsheets
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].thermo_property_package.id
+    rationale: >-
+      When areas of a flowsheet run under different Thermo objects (a
+      subsystem with a reduced chemical set, or a different activity model),
+      the importer must know which chemical set each unit binds so streams
+      crossing the boundary can be converted. The property-package id names
+      that set. Applies whenever the flowsheet has units (whether it is
+      multi-thermo is itself data a deletion could remove): per unit, 1 when
+      its package states an id (a non-blank string); derived credit when
+      every unit states a full, valid package (mixture, gamma, phi and PCF
+      each naming a thermosteam model class, as for CMP-THM-06) and all of
+      them are identical, which is single-thermo evidence implying one
+      chemical set; else 0. Each unit counts once.
+
+  # ---------------------------------------------------------------- topology
+  - id: CMP-TOP-01
+    category: topology
+    title: Stream endpoints resolve and every unit is connected
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].source_unit_id
+      - streams[].sink_unit_id
+      - units[].id
+    rationale: >-
+      Units are wired through their ins and outs, and System.from_units builds
+      the flowsheet graph from that wiring. A stream endpoint naming no unit
+      (and not the system boundary) cannot be wired, and a unit attached to no
+      stream is never reached by the simulation, so both leave the rebuilt
+      system different from the original. Only the explicit sentinel "None"
+      states the boundary: an endpoint that is not stated (a missing key,
+      null or blank) is dangling and does not resolve.
+
+  - id: CMP-TOP-02
+    category: topology
+    title: Port order of multi-stream inlets and outlets
+    weight: 4
+    criticality: essential
+    representable_since: null
+    sff_paths:
+      - streams[].source_unit_id
+      - streams[].sink_unit_id
+    rationale: >-
+      BioSTEAM units address ports by position, and position carries meaning:
+      outs[0] of a Flash or BinaryDistillation is the vapor or distillate and
+      outs[1] the liquid or bottoms; a Splitter's split fractions apply to
+      outs[0]; a JetCooker expects the slurry in ins[0] and steam in ins[1].
+      SFF records which unit a stream connects to but not the port index, so a
+      unit side with several streams cannot be wired unambiguously.
+      Order-free sides (mixer and tank inlets) earn full credit -- for a
+      mixer or tank family its ports do not contradict (CMP-UOP-01: a
+      'Mixer' with two material-carrying outlets is no mixer). A side on
+      which at most one stream carries material (stated-empty streams are
+      placeholders, like unexported ports) earns full credit on a
+      single-port side (pumps, valves, heat exchangers, ...) and derived
+      credit elsewhere (unexported or empty ports may exist) -- but both
+      rest on the stream count, so only while the unit's TOTAL mass balance
+      closes, which alone shows no material-carrying port is missing
+      whether or not its species flows are computable, and no dangling
+      stream (an endpoint not stated) could be a missing port of it that
+      the balance cannot rule out (detaching a stream never earns credit).
+      Sides with several material-carrying streams earn derived
+      credit only when the order follows from the data (a flash's vapor and
+      liquid outlets, a splitter with explicit split fractions) and the
+      unit's balances close. A claim held to reactor rules (see
+      CMP-UOP-02: one declaring reactions of its own, or a tank that may
+      host hidden chemistry) takes the lower of its own family's port
+      convention and a reactor's: it may be that reactor, so a 'Holding
+      tank' label cannot trade a fermenter's port needs for a tank's
+      order-free inlets. A unit without an id, whose ports no stream can
+      name, scores 0, and so do both sides of every unit id a stream
+      endpoint references but no unit declares. Each unit counts once.
+
+  # ------------------------------------------------------------------- feeds
+  - id: CMP-FEED-01
+    category: feeds
+    title: Feed streams fully stated
+    weight: 10
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].stream_properties.temperature
+      - streams[].stream_properties.pressure
+      - streams[].stream_properties.total_mass_flow
+      - streams[].stream_properties.total_molar_flow
+      - streams[].stream_properties.total_volumetric_flow
+      - streams[].stream_properties.phases
+      - streams[].stream_properties.composition
+    rationale: >-
+      In BioSTEAM's sequential-modular solve the feeds are the degrees of
+      freedom: every feed's temperature, pressure, flow rate and composition
+      must be set before System.simulate, and every other stream is computed
+      from them; this is the heaviest single criterion. Each part counts only
+      when plausible: a temperature in (0, 1e4) K, a pressure above zero, a
+      flow of at least zero, and a composition whose every entry names its
+      component and whose mol (or mass) fractions lie in [0, 1] and sum to 1
+      within 1e-3 per phase. A composition earns full credit only when its
+      phases are stated -- given per phase (stream_properties.phases, each
+      phase with a molar or a mass flow of its own -- or, for a
+      single-phase stream (every other phase stated empty), the stream
+      total -- and mol or mass fractions), or a legacy flat list
+      tagging every entry with a phase -- and 0.75 when a
+      legacy flat list leaves an entry untagged, since BioSTEAM would then
+      assume the feed liquid. A flowsheet with no feed defines no problem
+      and scores 0. Feeds weigh equally and every feed counts: one whose state
+      says it is empty (total flow numerically zero, an unused placeholder
+      port) scores 1, since its zero flow states all such a port needs --
+      but only when some feed states a non-zero flow and the feed fills a
+      free fixed inlet of the unit it enters: that unit's class is known
+      exactly (confidence 1) and fixes its inlet count (BioSTEAM then
+      creates every inlet, used or not), at most that count less the
+      unit's inlets that are not stated empty are credited, and the unit's
+      total mass balance must close (no material-carrying port missing).
+      A variable-inlet class such as Mixer, a family or label claim, and a
+      unit whose free fixed inlets are used up hold no placeholder. Every
+      other stated zero counts as a missing flow with no composition
+      exemption: with no non-zero feed nothing sets the problem's scale,
+      and zero-flow feeds padding a unit state nothing it could not already
+      hold (so writing zeros earns nothing). The message reports how many
+      feeds are empty and how many of those earn the placeholder credit;
+      where a unit's empties exceed its free ports, those that would score
+      lowest as missing-flow feeds are credited. A stream with both endpoints at the boundary
+      counts as a feed. A dangling stream (an endpoint not stated: a
+      missing key, null or blank -- never the boundary) may be a feed, so
+      it stays in the population but scores 0 and anchors nothing: losing
+      a feed's endpoint never drops it, and detaching an internal stream
+      never adds a credited feed. A feed whose
+      flow is unknown scores its stated parts (temperature, pressure,
+      composition); a feed stating no mass or molar total but a non-zero
+      volumetric flow, with a valid temperature, pressure and a composition
+      that fixes its density, earns 0.75 (derived) for the flow part, since
+      BioSTEAM derives the totals from them -- the best of the tiers counts
+      (a stated zero total never earns it, so zero-flow padding stays
+      worthless); for a single-phase stream that volume flow is then also
+      the amount of its phase when that states no flow of its own, so its
+      stated composition earns its full part. Of a stream of several
+      phases that may carry material, each needs a flow of its own: the
+      stream's amount without the phase split fixes no phase's amount (a
+      stated-empty phase needs neither a flow nor a composition, so
+      deleting one never raises the part; deleting a whole phase that is
+      not stated empty asserts a different set of phases, so it is outside
+      the deletion guarantee, as deleting a list element is). (Leaving
+      empty feeds out, or weighting by mass-flow share, let deleting a flow
+      raise the score.)
+
+  - id: CMP-FEED-02
+    category: feeds
+    title: Boundary stream prices
+    weight: 3
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].price
+      - streams[].sink_unit_id
+      - streams[].source_unit_id
+    rationale: >-
+      Stream.price on feeds and products drives the material cost and sales
+      revenue of the TEA, and therefore every minimum selling price or NPV.
+      Every boundary stream counts (one with both endpoints at the boundary
+      too): an empty one (total flow numerically zero) needs no price and
+      scores 1 when it fills a free fixed port of its unit -- as in
+      CMP-FEED-01, on the inlet side for a feed and the outlet side for a
+      product, the unit's class known exactly with that port count fixed and
+      its total mass balance closing; every other one, empty or not, needs
+      a price. A dangling stream (an
+      endpoint not stated: a missing key, null or blank -- never the
+      boundary) may be a boundary stream, so it counts too but scores 0,
+      even when empty or priced: losing an endpoint never drops an unpriced
+      stream nor turns a priced internal stream into a credited product. An
+      explicit zero is a valid statement, except on a feed that is a unit's
+      utility-port material, which BioSTEAM prices itself when the stream's
+      price is 0 (from bst.stream_utility_prices, or a class default) in a
+      way SFF cannot state, so it earns half credit: natural gas (at least
+      50 mol% CH4) into a combustor, dryer, boiler or boiler-turbogenerator;
+      lime or boiler chemicals into a boiler or boiler-turbogenerator;
+      water-dominated makeup water into a process-water center (or a
+      facility of unknown kind). The port material is identified by the
+      feed's mol fractions (from mol data, else from mass fractions and the
+      chemicals' molar masses); a feed whose composition is unknown may be one and
+      is treated as one, so deleting a composition never raises the score.
+      A zero price on a feed into a unit no unit entry declares, or into a
+      unit of unknown family, also earns half credit: that unit may have a
+      utility port BioSTEAM prices itself, so the zero does not
+      affirmatively state a free feed (and deleting a unit's id or its
+      class never raises the score). The same holds for an outlet utility
+      port: a boiler's or boiler-turbogenerator's ash disposal, which
+      BioSTEAM prices from bst.stream_utility_prices['Ash disposal'] when
+      the product's price is 0, earns half credit at a zero price when its
+      composition is at least 50 mol% ash or unknown; a product of a
+      facility of unknown kind, of a unit of unknown family, or of a unit
+      no unit entry declares may be one and is treated alike (a CHP prices
+      neither its inlets nor its outlets). Air, flue gas and every other
+      zero-priced feed or product are scored like any stated price.
+
+  # ---------------------------------------------------------------- unit ops
+  - id: CMP-UOP-01
+    category: unit_ops
+    title: Unit class identity
+    weight: 8
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_simulation_method
+      - units[].unit_type
+    rationale: >-
+      Re-importing a unit means instantiating a class (Flash, HXutility, a
+      biorefinery-specific subclass, ...) because the class carries the mass
+      and energy balance, design and costing methods. Exporters state it as
+      "<Class> on <source URL>" in design_simulation_method, the only field
+      that names a class: unit_type is free text that yields a family by
+      keywords only, even when it spells a class name ('Separator',
+      'Evaporator'), since extracted files and exporters alike use class
+      names as labels. Keywords are read from the head noun -- the rightmost
+      equipment word ('Wastewater pump' is a pump, 'Extraction column' an
+      extractor, 'Heat pump' an exchanger, 'CHP unit' a
+      boiler-turbogenerator, 'Feed/effluent heat exchanger' a
+      process-process exchanger); a reaction, flash or settling word makes
+      a tank, vessel or drum head a reactor, flash or separator only when
+      it directly modifies it ('Fermentation tank', 'Reaction vessel',
+      'Continuous stirred tank', 'Flash drum', 'Decanter tank'), never
+      across a service qualifier or what the vessel holds, nor as a
+      product noun ('Fermenter feed tank', 'Hydrolysate storage tank' and
+      'Hydrolysate tank' stay tanks, which may host chemistry); a service
+      word (wastewater, boiler, process / chilled / cooling water, CIP,
+      fire water) decides only when the head is generic (system,
+      treatment, package, unit, ...) or absent. Full credit needs a
+      concrete class: one on the scorer's static list of concrete BioSTEAM
+      unit classes (enumerated from the biosteam source, facilities and the
+      hensmith HeatExchangerNetwork included), or a custom (biorefinery)
+      class whose source URL lies in the repository the flowsheet model
+      package names and pins to a commit or version -- only then is its code
+      located at a fixed revision; any other custom class (unpinned, a URL
+      elsewhere, such as a tank_factory class credited to biosteam's
+      tank.py, or no URL) earns 0.75. A biosteam URL alone proves nothing: a
+      class the URL attributes to biosteam that is neither on the core list
+      nor a known custom class, and an abstract class (Unit, Tank,
+      Compressor, Distillation, HX, ... -- declared isabstract in biosteam
+      and never instantiated), identify at most a family: the unit resolves
+      as if no class were named. Without a named class, a stated family (a
+      unit_type keyword, or the named abstract class's family) takes
+      precedence: it earns 0.75 when every design-spec registry class that
+      holds the unit's specification keys belongs to that family or to one
+      of its legitimate rule-set variants (a MESH column's keys under a
+      'Distillation column' label, a batch or aerated bioreactor's under
+      'Fermenter': see CMP-UOP-02), else half credit; with no stated
+      family, such an unambiguous key-set family earns 0.75. The key set never swaps a stated family, and an inferred
+      class stays a family: only family-level rules apply to it. A class
+      or family claim contradicted by the unit's ports -- more
+      material-carrying (not stated-empty) inlets or outlets than the class
+      can have (a static table of every core class's port counts from the
+      biosteam source, most permissive over its history since 2022), or
+      than its family's convention allows (a mixer has one outlet; a pump,
+      valve or utility exchanger one inlet and one outlet; a label that
+      names exact classes sharing a convention inherits it: a 'Junction'
+      or 'Scaler' label one inlet and one outlet, a conveyor, mill, feeder
+      or other solids-handling label one outlet and any number of inlets
+      (a mill fed fresh chips and screen oversize, a conveyor carrying two
+      solid feeds, merges material) -- a 'Sludge handling' label names
+      BioSTEAM's SludgeHandling, a separator -- a facility label its
+      kind's class, a cost-only 'Plant air', 'CIP package' or 'Fire water'
+      one outlet, and a heat-exchanger-network label no material port; a
+      pure-splitter label takes any number of ports, its physics deciding
+      below), or a mixer
+      family claimed without an exact class (a 'Mixer' label) on fewer
+      than two inlets that are not stated empty (a one-inlet 'mixer' mixes
+      nothing and would hide a reactor or an exchanger) -- counts as
+      unstated; a bare 'heat exchanger' with two inlets and outlets is a
+      process-process exchanger. So does a claim that removes needs but
+      that the unit's streams or duties contradict: a mixer class claim
+      whose outlet is more than 1 K hotter than its hottest inlet or more
+      than 1 % above its highest inlet pressure (upper bounds only: a
+      mixer may cool and mixes at the lowest inlet pressure), and a
+      pure-splitter claim (Splitter, PhaseSplitter, MockSplitter /
+      FakeSplitter, or a label whose head noun is splitter, split,
+      divider, tee or manifold, a 'Component splitter' excepted: it
+      separates) whose outlet differs from its inlet by
+      more than 1 K or 1 % (a pure-splitter label fed by several streams,
+      an FSplit, mixes them and divides the mixture: it is implausible
+      when an outlet's composition differs from their mixture -- unless
+      the mixture leaves split by phase, one phase per outlet -- or an
+      outlet is more than 1 K or 1 % above the hottest inlet or highest
+      inlet pressure, or more than 5 K below the coldest inlet), either
+      one across which a species appears or
+      vanishes (flows computable, no well-formed reaction declared) or
+      that records a non-zero heat or power duty (an adiabatic Mixer draws
+      nothing; the @cost-decorated Mixer subclasses may draw agitator
+      power). A claim without a class names equipment that may do work,
+      so it is judged by what no such unit does: any other separator
+      label (centrifuge, filter, press, screen, sieve, membrane, settler,
+      chromatography, ...) or splitter key-set inference may draw power
+      and drop pressure, and is implausible with a heat duty (except under
+      a sorption or regeneration head -- a molecular sieve, adsorber, ion
+      exchanger, absorber or scrubber, whose temperature swing is its
+      duty, and whose outlets may then leave the band below; and on a
+      separator declaring reactions of its own, held to reactor rules
+      through them, as a biological polishing filter takes chilled
+      water), an outlet
+      more than 5 K outside its inlets' temperature range, a pressure rise
+      of more than 1 % without a power duty, or with one to more than 1
+      atm (a built-in pump's work: the sludge-handling units and reverse
+      osmosis of biosteam.wastewater raise their outlets to 1 atm; a
+      blower's or compressor's is no separator's), power it produces (a
+      turbine's), or converted species; a mixer, conveyor, mill or other
+      solids-handling label may draw power and is implausible with a heat
+      duty, power it produces, a pressure rise of more than 1 %, an outlet
+      more than 5 K hotter than its hottest inlet, or converted species; a
+      'Junction' or 'Scaler' label is held to that exact class's bounds;
+      and a junction or process heat exchanger claim without a class is
+      implausible when its outlets separate (a claim naming the
+      MockSplitter or a diagram-only class exactly excepted: its outlets
+      are set elsewhere) (two or
+      more outlets, one of whose compositions matches neither an inlet's
+      nor the inlets' mix: some species' fraction differs by more than
+      both 1 % of itself and 0.001) -- a bare 'Heat exchanger' label on
+      one inlet split into two outlets of different composition is no
+      exchanger. Streams
+      stated empty are ignored and a bound is tested only on stated values,
+      so deleting data never creates a contradiction; relabelling a pump,
+      heater or fermenter as a mixer thus leaves its family unknown instead
+      of shedding its needs. Every other claim that cannot host chemistry
+      is tested the same way: an exact core class without built-in
+      chemistry, an unpinned biorefinery class of the scorer's curated
+      table (its source read), and a pump, valve, compressor, turbine,
+      exchanger, flash, splitter, junction, evaporator, crystallizer,
+      conveyor or mill, or steam-injection heater claim without an exact
+      class's code are implausible when species convert across them without a
+      well-formed reaction -- a species appears or vanishes or, where the
+      unit's total mass closes (else a missing port could explain it), any
+      species' flow changes by more than 1 % of itself and 0.1 % of the
+      unit's inlet total (below that, a rounded table's noise); a pump,
+      valve or turbine claim also when it records a heat duty (none of
+      BioSTEAM's exchanges heat with an agent; a compressor may, through
+      its intercoolers); each of them but a turbine, and a facility or
+      dryer claim, also when it produces power (only a turbine, a
+      boiler-turbogenerator, and a boiler or combustor -- labels a paper
+      may give a CHP unit -- produce electricity); a Junction
+      or Scaler also
+      when it records a duty or changes T or P, a Junction when its mass
+      balance does not close (over the streams whose endpoints name it: a
+      stream whose endpoint is not stated is not counted as its missing
+      port there, a known limitation). Classes whose own code converts species
+      (verified in the biosteam and Bioindustrial-Park sources: DrumDryer
+      burning natural gas, ThermalOxidizer, Boiler, BoilerTurbogenerator and
+      CHP burning their feeds, AmineAbsorption consuming its MEA and make-up
+      water, ProcessWaterCenter keeping only water, the biorefineries'
+      AmmoniaAdditionTank neutralizing ammonium hydroxide with sulfuric
+      acid), and combustor, boiler, facility or dryer claims without a
+      class's code (a dryer at most burns its fuel), are implausible only
+      for a conversion that chemistry cannot make (a drum dryer produces no
+      ethanol; a combustion may release O2, as thermosteam's per-species
+      combustion reactions of oxidised species do, and leave a
+      non-combustible element elemental); a custom class located in the pinned model package is
+      exempt, since its code may carry any chemistry. A tank, distillation
+      or MESH-type column or extractor claim without an exact class's code
+      can host chemistry, so its streams never contradict it: it keeps its
+      family, and CMP-RXN-01 covers the conversion it may hide. A unit
+      whose family stays unknown carries
+      every family-dependent need (reactions, heat and power agents,
+      utility results, costing) except facility bindings and settings
+      (CMP-UOP-06), which only a known facility kind names: deleting the
+      class of a facility whose unit_type names no facility moves
+      CMP-UOP-06 to not applicable, while this criterion and the unknown
+      family's other needs lower the overall and representable scores
+      (unit_type itself is schema-required, so deleting it drops
+      CMP-INT-01). A unit id that stream endpoints reference
+      but no unit declares scores 0. Every per-unit average in this
+      scorer is unweighted -- each unit counts once: a weight read from
+      unit_type or design_simulation_method would move when either is
+      deleted, raising criteria whose per-unit score does not depend on
+      them; major equipment keeps its emphasis through its richer
+      requirement sets.
+
+  - id: CMP-UOP-02
+    category: unit_ops
+    title: Essential operating specifications
+    weight: 8
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_input_specs
+      - streams[].stream_properties
+      - units[].design_results
+      - quantity_units_global
+      - chemicals[].index
+    rationale: >-
+      Each unit class needs a minimal set of specifications before it can
+      run: an HXutility an outlet temperature or duty (plus a vapor fraction
+      when a non-rigorous exchanger changes phase); a Flash two of T, P, V, Q,
+      y and x; a Pump an outlet pressure (and dP_design when it raises no
+      pressure); a BinaryDistillation its keys, pressure, recoveries or
+      purities and reflux factor; a MESH column its stages, feed stages,
+      reflux and boilup; a reactor its temperature, residence time and
+      working volume, and a stirred-tank reactor whose constructor takes it
+      its batch flag (required too when the reactor's class is unknown); a
+      batch bioreactor also its reactor count or volume; a splitter its
+      split fractions and the moisture content of its retained solids (a
+      SolidsSeparator's moisture_content; biosteam.wastewater's
+      sludge_moisture); a drum dryer its split fractions, dried-solids
+      moisture content and drying temperature; a thermal oxidizer its fuel
+      duty per kg of feed (duty_per_kg). A core class whose constructor takes
+      other degrees of freedom than its family's is held to those instead,
+      checked against its constructor: biosteam.wastewater's ReverseOsmosis
+      its water recovery (derivable from full port states; the high-rate
+      variant fixes it, so it needs nothing), BiogasUpgrading its upgraded
+      ratio and CH4 loss, the sludge-handling classes (BeltThickener, the
+      high-rate SludgeCentrifuge) their sludge moisture and soluble
+      chemicals (both derivable from full port states), a WWTpump its pump
+      type, AnMBR and PolishingFilter their yields and conversions besides
+      their temperature and reactor type or loading rate, and a RefluxDrum
+      its holdup time. Such a class-knowledge requirement
+      is waived only for a class known exactly (confidence 1) that
+      affirmatively takes none of its parameters (a plain Splitter,
+      MolecularSieve or liquids centrifuge has no moisture_content), and a
+      waived requirement counts as met (see below); a
+      class inferred from specification keys gets its family's rules only,
+      and so does a unit_type that merely spells a class name ('Separator'):
+      only design_simulation_method identifies a class exactly.
+      Boilers, boiler-turbogenerators, heat-exchanger
+      networks and other facilities are scored by CMP-UOP-06 instead.
+      Constructor arguments with defaults (V_wf, a tank's tau, theta_O2,
+      feed stages, the wastewater units' loading rates, ...) must be stated:
+      only a class-level attribute that is not a constructor argument (an
+      NREL batch bioreactor's cleaning time tau_0) earns derived credit as a
+      class default, and only for a concrete class identified at confidence
+      1 whose design-spec registry entry confirms it is no constructor
+      argument. Explicit specifications earn
+      full credit only with a value plausible for the parameter (a
+      temperature in (0, 1e4) K, a positive pressure or residence time, a
+      working-volume fraction or efficiency in (0, 1], split fractions in
+      [0, 1], a column's key recoveries Lr and Hr and its y_top and x_bot
+      strictly inside (0, 1), a distillation column's reflux factor k above
+      1, two light/heavy keys, a boolean flag, else any non-empty value); a
+      blank or out-of-range value counts as unstated. Specification values
+      are read in the units the file declares: a key listed among a
+      quantity_units_global entry's aliases (T under a degC temperature
+      entry, P under a bar pressure entry) takes that entry's unit, so a
+      file in degC and bar scores exactly like the same file in K and Pa
+      (gauge units such as psig, barg or kPag read 1 atm above their
+      absolute twins, except for a pressure difference such as dP_design);
+      any other key is read in BioSTEAM's native units, and a unit string
+      the scorer does not know suspends the bounds and the stream
+      consistency check for that value. A split vector counts only when it
+      maps onto chemicals: a list needs one entry per chemical carrying an
+      index, with those indices exactly 0..n-1 (BioSTEAM orders a split by
+      its chemicals), and an object only declared chemical ids as keys. A
+      specification recoverable from stream states, design results or a
+      class default earns derived credit, and one read from stream data
+      only when the unit's mass balance -- and, for a physical unit, every
+      species' balance, on the molar basis or else the mass basis --
+      closes within 1 %, no dangling stream (an endpoint not stated) could
+      be a missing port the balance cannot rule out, and, for a
+      physical-only unit without declared reactions, no species appears or
+      vanishes across it (nor can the check be ruled out by uncomputable
+      species flows); an
+      explicit T or P that
+      contradicts the unit's outlet streams earns nothing (when that key
+      states no quantity unit, the missing locator suggests declaring a
+      quantity_units_global alias for it, the usual cause). A conditional
+      requirement (the vapor fraction on a phase change, phase0/phase1 of a
+      process exchanger, dP_design) is waived only when the data show its
+      condition false (both phase sets known and equal, a pressure rise of
+      at least 1 Pa, over a unit whose balances close so no port is
+      missing); when the data cannot tell, it applies. A waived requirement
+      stays in the unit's mean and counts as met: the evidence that it is
+      irrelevant is itself the information (unchanged phases fix the phase
+      outcome as a stated vapor fraction would), so a unit is always scored
+      on the requirements its family and class need, and deleting the
+      waiving evidence can only lower its score. A family claim that names
+      no class (a unit_type label, an abstract class, a key-set inference)
+      is scored by the best of its legitimate rule-set variants: a column
+      by the binary-distillation or the MESH-column rules, a reactor or
+      bioreactor by the stirred-tank, batch-bioreactor or aerated-
+      bioreactor rules -- the maximum of scores that deletion can only
+      lower, so a 'Beer column' stating a MESH column's stages, feed
+      stages, reflux, boilup and pressure scores like a 'MESH column', and
+      a 'Fermenter' stating an NREL batch bioreactor's T, tau and reactor
+      count is not asked for a working-volume fraction or batch flag. A
+      named class, exact or not, keeps its own rules. A tank claim without
+      an exact class's code that may host hidden chemistry (not ruled out:
+      its own species balances do not close or are not computable, and
+      the flowsheet-level evidence of CMP-RXN-01 is absent) scores the
+      lower of that and the best reactor variant: it must be specified as
+      the reactor it may be too, so relabelling a fermenter as a holding
+      tank cannot pay off (it also keeps the reactor's port convention in
+      CMP-TOP-02 and the reactor's heat need in CMP-UTIL-01..05).
+      Declared chemistry is never ruled out: a claim
+      without a class of any family but a reactor's -- and such a tank
+      claim -- that declares reactions of its own is held to the lower of
+      its rules and the best reactor variant whatever the evidence says
+      (the flowsheet-level evidence rules out only undeclared chemistry),
+      so a fermenter declaring its reactions sheds none of its needs as a
+      'Reaction tank', 'Holding tank', 'Mixer' or 'Conveyor'; a combustor,
+      boiler, facility or dryer label is exempt only when every reaction it
+      declares is well-formed and makes nothing its own combustion cannot
+      (BioSTEAM's per-species combustion set, whose decomposition
+      reactions release O2 -- 'NitricOxide -> 0.5 O2 + 0.5 N2', 'CaSO4 ->
+      O2 + SO2 + 40.1 Ash' -- is combustion: an honest boiler-
+      turbogenerator keeps its facility rules).
+      Columns and extractors declaring no reaction are never held to
+      reactor rules (a reactive column is still specified as a column),
+      though one not ruled out carries a reactor's heat need (CMP-UTIL-03:
+      an 'Extractor' exchanges no heat of its own), and every other label
+      declaring none cannot host chemistry at all (see CMP-UOP-01). A
+      separator class with rules of its own (AmineAbsorption's
+      CO2_recovery, a liquids centrifuge's partition coefficients, an
+      adsorption column's isotherm, BiogasUpgrading's ratio and loss)
+      scores at least the derived credit a generic splitter earns with the
+      split fractions its full port states give, as the class-less
+      separator reading does: whatever a separator computes its outlets
+      from, a splitter with those fractions reproduces them. The floor
+      applies to every such class, including those without a split
+      parameter of their own, so deleting design_simulation_method (which
+      leaves a separator label or key set, or no family at all) never
+      raises the unit's score.
+      Units of unknown
+      family, and unit ids that stream endpoints reference but no unit
+      declares, score zero because nothing tells the importer what to
+      specify. Each unit counts once. Two known relabel limitations
+      remain. A label naming a unit that is never simulated ('Mock heater',
+      'Diagram only', 'Mass balance') is a junction claim with no rules
+      here, held only to a recorded duty, species appearing or vanishing
+      and (unless it names the MockSplitter or a diagram-only class
+      exactly) a separation: a heater or pump whose duty is not recorded
+      sheds its needs under such a label and can score above its honest
+      label (by about 0.005 overall on a four-unit sheet whose heater or
+      pump is so relabelled). And an extraction stating neither N_stages nor feed_stages
+      carries more needs than several consistent separator, sieve, flash,
+      dryer or facility labels ask for, so those labels can score above its
+      honest 'Extraction column'; stating the two keys removes every such
+      gain.
+
+  - id: CMP-UOP-03
+    category: unit_ops
+    title: Full design-specification coverage
+    weight: 3
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_input_specs
+    rationale: >-
+      Beyond the essential specifications, a unit's remaining initialization
+      parameters (materials of construction, vessel type, heat-transfer
+      coefficient, number of shells, working-volume fraction, tray spacing,
+      ...) change its design and purchase cost. Left unstated, BioSTEAM
+      silently applies its own defaults, which may differ from the original
+      model. A unit whose class is known exactly (named by
+      design_simulation_method and identified at confidence 1; a class name
+      in unit_type does not count) is measured against the design-spec
+      registry entry of its class, else
+      of its nearest registry ancestor (a corn storage tank against
+      StorageTank); unstated alternatives of an essential requirement already
+      met (V and H for an HXutility given T, or a facility's other_agents
+      given its agent) are excused. A parameter counts as stated only with a
+      plausible value (as for CMP-UOP-02); a facility's bindings count as in
+      CMP-UOP-06 (declared ids; the explicit empty values BioSTEAM gives a
+      meaning). A core BioSTEAM class known exactly that no registry entry
+      covers -- the facilities, the biosteam.wastewater units, CHP, the
+      Evaporator, the RefluxDrum, ... -- is measured against its
+      constructor parameters, a static table the scorer carries (generated
+      from the biosteam source the way the registry is): the exporter
+      writes an empty object for such a class, so its parameters are a gap
+      in the file, not in the scorer's vocabulary. Algorithm knobs (a
+      heat-exchanger network's Qmin, force_ideal_thermo, avoid_recycle) are
+      constructor arguments with defaults like any other and count. A class
+      whose constructor takes no parameter (a CIP package, an air
+      distribution package, the high-rate ReverseOsmosis, which fixes its
+      water recovery) and the meta classes (Module, FacilityModule,
+      GroupedUnit, Skipped, FakeSplitter) are left out: they have nothing to
+      state. Same-named classes in different biosteam modules
+      (ReverseOsmosis, SludgeCentrifuge) are told apart by the source path
+      design_simulation_method's URL names; a URL naming neither carries
+      every variant's parameters. An exact custom class that no registry
+      entry covers scores 0 (the file states none of its parameters -- the
+      exporter writes an empty object for it). Every
+      other unit -- class inferred from its specification keys, family only,
+      or unknown -- scores 0 because its parameter universe is unknown.
+      Each unit counts once.
+
+  - id: CMP-UOP-04
+    category: unit_ops
+    title: Computed stream states stated
+    weight: 3
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - streams[].stream_properties
+    rationale: >-
+      Internal and product stream states are simulation outputs rather than
+      inputs, but they seed tear streams so recycle loops converge from a good
+      initial guess, give a re-simulated flowsheet verification targets, and
+      are the base from which missing unit specifications can be derived.
+      Each state part counts only when plausible, as for CMP-FEED-01 (a
+      stream stating a zero total flow needs no composition; a stream
+      stating no mass or molar total earns 0.75 for its flow part from a
+      non-zero volumetric flow with a valid temperature, pressure and
+      composition, unless the consistency guard leaves that composition
+      unverified; for a single-phase stream that volume flow is then also
+      the amount of its phase when that states no flow of its own, so its
+      composition counts as stated). Consistency
+      guard: a physical-only unit (mixer, exchanger, pump, valve, compressor,
+      turbine, flash, column, evaporator, steam mixer, tank, or a splitter
+      -- or a unit of unknown family -- not identified as a custom class)
+      that declares no reactions cannot
+      create or destroy species; when one appears or vanishes across it
+      (compared on the molar basis when every connected stream states mol
+      data, else on the mass basis), its outlets' compositions do not count
+      as stated ('inconsistent'), nor do they when its species flows cannot
+      be computed on either basis for every connected stream ('unverified';
+      the message tells the two apart; a known limitation: one connected
+      stream stating only a volumetric flow leaves the unit unverified,
+      since that stream's missing mass or molar amounts are not solved
+      from the unit's balance), nor when a stream whose endpoint is
+      not stated may be a missing port the unit's mass closure cannot rule
+      out ('unverified'). The outlets of a unit id that streams reference
+      but no unit declares are 'unverified' too, and their flows follow the
+      mass-balance guard below, so deleting a unit's id or a port's
+      endpoint never lifts a guard. Mass-balance guard:
+      when every inlet and outlet of a unit states its mass flow (or a
+      molar amount whose molar masses resolve) and the
+      totals disagree by more than 1 %, its outlets' flows do not count as
+      stated (nothing tells which stated flow is wrong; a stated-zero flow
+      then earns no composition exemption either) -- except for families
+      whose chemistry the class fixes (combustors, dryers, boilers,
+      facilities, equilibrium reactors), whose classes may account mass
+      implicitly (BioSTEAM's DrumDryer emits the combustion products of its
+      natural gas without drawing the oxygen from any inlet) -- and for a
+      unit declaring a well-formed reaction that does not conserve mass as
+      written, or whose closure cannot be tested (see CMP-RXN-02): such a
+      reaction may create or destroy mass, so the imbalance may be the
+      faithful export of the model. The exemption reads the declared
+      chemistry, never the stream data the balance is checked on. Nor does
+      the guard fire while a stream whose endpoint is not stated may be a
+      missing port that accounts for the gap: one whose sink is not stated
+      may be a missing inlet, one whose source is not stated a missing
+      outlet, on the side the balance lacks, unless it is stated to carry
+      no mass -- an incomplete document's balance fails as soon as a port
+      loses the endpoint attaching it. So the guard fires only where the
+      stated balance fails, every reaction the unit declares conserves
+      mass and no port can be missing -- an inconsistency -- and deleting
+      stream data, an endpoint, a molar mass or a chemical id never lifts
+      it from a consistent document; a conserving reaction whose streams
+      are merely off stays guarded. A stream
+      whose source_unit_id is not stated (only the "None" sentinel affirms
+      the boundary) may be internal, so it stays in the population and
+      scores 0: its state is no unit's outlet state; a unit's outlet whose
+      sink_unit_id is not stated stays in as that unit's outlet.
+
+  - id: CMP-UOP-05
+    category: unit_ops
+    title: Units of design specifications
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.7"
+    sff_paths:
+      - units[].design_input_specs
+      - quantity_units_global
+    rationale: >-
+      design_input_specs values are bare numbers. Their unit is stated when
+      the specification key is listed among the aliases of a
+      quantity_units_global entry (0.0.7 and later) whose unit the scorer's
+      built-in table recognises for the key's dimension -- temperature (T),
+      temperature difference (dT, T_min_app), pressure (P, dP_design), heat
+      duty (Q, H, Duty), time (tau, tau_0, a reflux drum's holdup_time),
+      volume (V_max, and V in batch
+      bioreactors and crystallizers) or energy per mass (duty_per_kg);
+      otherwise it can only be read in the units the class's own conventions
+      imply (hours, Pa and kJ/hr for the corresponding BioSTEAM class), and
+      that convention is available only when the class is identified at
+      confidence 1. Dimensionless keys (split and other fractions,
+      efficiencies, flags, LHK, N_stages, ratios) need no unit. A unit
+      scores 1 when every essential requirement that applies to it
+      (CMP-UOP-02, or CMP-UOP-06 for a facility, whose bindings count as
+      CMP-UOP-06 counts them: declared ids, or the explicit empty list or
+      null BioSTEAM gives a meaning) is met by explicit keys
+      that are dimensionless or unit-stated; else derived credit for an
+      exactly known class, else 0 (so a key stated without a unit scores
+      what its absence does, and deleting one never raises the score). A
+      waived requirement counts as met, as in CMP-UOP-02, so a unit none of
+      whose requirements applies needs no unit. As in CMP-UOP-02, a family
+      claim naming no class is measured against its best legitimate
+      rule-set variant, and a tank that may host hidden chemistry, or a
+      claim held to reactor rules for the reactions it declares (a
+      facility's settings included), against the lower of that and the
+      best reactor variant. Applies to
+      every unit that needs operating specifications or facility settings
+      (the CMP-UOP-02 and CMP-UOP-06 populations).
+
+  - id: CMP-UOP-06
+    category: unit_ops
+    title: Facility bindings and settings
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_input_specs
+      - units[].utility_consumption_results
+      - units[].utility_production_results
+    rationale: >-
+      BioSTEAM facilities act on the whole plant through bindings and
+      settings their constructors take with defaults, which a rebuild must
+      restate: a BoilerTurbogenerator its boiler and turbogenerator
+      efficiencies, whether it satisfies the system's electricity demand,
+      its fuel source, the steam agent(s) it raises, its boiler efficiency
+      basis and its side steam; a plain Boiler its boiler efficiency, fuel
+      source, agent, efficiency basis and side steam; a ProcessWaterCenter
+      the process-water and makeup-water streams it balances; a
+      HeatExchangerNetwork its minimum approach temperature T_min_app and
+      the units it integrates; a CoolingTower, ChilledWaterPackage or
+      RefrigerationPackage the agent it regenerates (and a
+      RefrigerationPackage its efficiency); biosteam.wastewater's combined
+      heat and power unit (CHP) its combined efficiency eff. The efficiency
+      basis ('LHV' or 'HHV', anything else is invalid) picks the fuel
+      heating value the boiler efficiency applies to: the HHV basis gives
+      1.28 times the electricity and 1.145 times the installed cost of the
+      LHV basis on wet bagasse. The free-form design_input_specs object can
+      state them in every SFF version. A value counts only when plausible
+      (efficiencies in (0, 1], a boolean flag, a positive T_min_app);
+      stream- and unit-id lists only when every id is a declared stream or
+      unit, and only when non-empty unless BioSTEAM gives the explicit
+      empty value a meaning: a ProcessWaterCenter's stream lists as [] (no
+      such streams, as the corn model's makeup_water_streams=() states) or
+      null (discovered at simulation), a boiler's side_steam as null (none;
+      otherwise a declared stream id), a HeatExchangerNetwork's units as
+      null or [] (every unit of the system); every other binding counts
+      only when non-empty, so an empty placeholder binds nothing. An agent
+      counts only when it names a declared heat agent. The served agent is
+      derivable (derived credit) when the facility's utility results name a
+      declared heat agent. Population: every unit of a facility family
+      (boilers, boiler-turbogenerators, heat-exchanger networks, other
+      facilities) except cost-only facilities (CIP, fire water, air
+      distribution, wastewater cost lumps); a facility whose kind is unknown
+      scores 0. A facility label on a unit that declares reactions its
+      facility kind does not account for (a 'Cooling tower' declaring a
+      fermentation, held to reactor rules in CMP-UOP-02) scores 0 here:
+      such chemistry states no facility, so the facility need the label
+      adds can never lift the mean. A unit whose unit_type names a facility
+      stays in the population, scoring 0, when its ports or streams
+      contradict that claim (the label is schema-required, so the need it
+      states never leaves with the data that shows the contradiction). A known limitation: a facility claim of one kind
+      relabelled as another (a boiler-turbogenerator stating only its
+      agent, labelled 'Cooling tower') is held to the other kind's
+      requirements, which its results do not contradict. These
+      requirements are scored here, not in CMP-UOP-02, so nothing is
+      counted twice. Each unit counts once.
+
+  # --------------------------------------------------------------- reactions
+  - id: CMP-RXN-01
+    category: reactions
+    title: Reactive units carry their reactions
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].reactions
+    rationale: >-
+      BioSTEAM reactors apply Reaction, ParallelReaction or SeriesReaction
+      objects in their mass balance, so a reactor cannot be reproduced
+      without its reaction set. The population is defined by need alone: the
+      units of a reactor family (continuous reactors, batch, aerated and
+      gas-fed bioreactors, and units whose type names a neutralizer,
+      hydrotreater, hydrocracker, gasifier, reformer, converter, calciner,
+      autoclave, CSTR, kettle, pyrolysis, hydrolysis, ammonia-addition,
+      (over)liming, conditioning, acidification, (trans)esterification or
+      mashing step or a biofilm reactor -- a trickling or (an)aerobic
+      filter, a biofilter; a 'Polishing filter' is a filter, and BioSTEAM's
+      biological PolishingFilter declares its reactions, so it is held to
+      reactor rules through them -- or a vessel a reaction word
+      directly modifies --
+      'Overliming tank', 'Mash tank', 'Reaction vessel'); every claim held
+      to reactor rules for the reactions it declares (see CMP-UOP-02: it
+      could be that reactor, as its unknown family would be once its label
+      is deleted); every unit whose
+      family is unknown (no class, no keyword family, or a claim its ports
+      or stream physics contradict -- see CMP-UOP-01: a 'mixer', 'heater',
+      'Junction' or exact StorageTank across which species convert is one:
+      it could be a reactor, and only affirmative evidence waives a need);
+      and ONE flowsheet-level pseudo-member standing for the claims that
+      can host chemistry without an exact class's code -- a tank,
+      distillation or MESH-type column, or extractor named by unit_type,
+      an abstract class, a key-set inference or an unpinned custom class
+      the scorer's curated table does not know, and the core classes
+      taking an optional reaction set (MESHDistillation,
+      MultiStageEquilibrium, StageEquilibrium, PhasePartition). Such a
+      unit never enters on its own, whether conversion across it is
+      evident or merely unverifiable (so moving between the two changes
+      nothing); the pseudo-member ('unexplained conversion possible among
+      <units>', scoring 0) is present when some of them declare no
+      well-formed reaction and are not ruled out one by one (total mass
+      closing -- a molar-basis stream's mass taken from its molar amounts
+      and the molar masses -- and every species' flow computable and none
+      changing by more than 1 % of itself and 0.1 % of the unit's inlet
+      total), and the flowsheet-level evidence is absent: every feed's and
+      product's species flows and total mass computable, the overall mass
+      balance closing within 1 %, no stream without a stated endpoint, and
+      every species produced or consumed across the flowsheet (beyond 1 %
+      of itself and 0.1 % of the boundary inlet total) taking part in a
+      declared well-formed reaction somewhere. Deleting data only removes evidence,
+      so the pseudo-member can only appear. A known limitation: one feed
+      or product stating only a volumetric flow (which carries no mass)
+      withholds that evidence although the rest of the flowsheet shows it
+      -- its mass is not solved from the overall balance -- and the
+      pseudo-member's locator names that stream. Other claims cannot host
+      chemistry: conversion across them makes the family unknown instead
+      (see CMP-UOP-01).
+      Each must declare at least one well-formed reaction: an equation or
+      stoichiometry naming at least one consumed and one produced species
+      ([{}] or an equation "x" counts as none). A reaction that does not
+      conserve mass as written ('Glucose -> 5 Ethanol') still counts as
+      declared -- its definition is discounted in CMP-RXN-02 -- so what a
+      unit declares depends only on the species its reactions name, which
+      deleting a field can only shrink. Species appearing in a unit's
+      outlets do not by themselves make a unit reactive (a population read
+      from data let deleting that data shrink it), and declared reactions
+      only as above -- deleting a field of a reaction keeps its object;
+      species
+      appearing across a physical-only unit (or one of unknown family) is
+      a consistency guard on CMP-UOP-04 and on derivations. Families whose
+      chemistry the class itself fixes (combustors, boilers,
+      boiler-turbogenerators, facilities, Gibbs reactors, dryers burning
+      their fuel) are not in the population, nor are exact core or curated
+      classes whose code hosts no chemistry. Each unit counts once.
+
+  - id: CMP-RXN-02
+    category: reactions
+    title: Reaction definitions complete
+    weight: 4
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].reactions[].equation
+      - units[].reactions[].stoichiometry
+      - units[].reactions[].reactant
+      - units[].reactions[].conversion
+    rationale: >-
+      A thermosteam Reaction is defined by its stoichiometry, the reactant on
+      which conversion is based, and the fractional conversion X (0 to 1).
+      Missing any one of the three leaves the extent of reaction undefined.
+      Per reaction: 0 unless it is well-formed (see CMP-RXN-01: it names a
+      consumed and a produced species) -- a conversion attached to no
+      parseable stoichiometry earns nothing -- else the mean of
+      {well-formed, the reactant is one of its consumed species, a numeric
+      conversion in [0, 1]}. The well-formed part is 1 on affirmative
+      evidence only: the reaction, with every participant's molar mass
+      known, conserves mass on a mol basis (|sum(nu*MW)|) or a wt basis
+      (|sum(nu)|) within 1 % of its reactant side (an identity, whose
+      coefficients cancel, creates no mass), or its unit carries exactly
+      that one reaction and the unit's own species-flow changes (outlets
+      minus inlets, molar or mass basis, every port computable, no stream
+      without a stated endpoint) are proportional to its coefficients
+      within 2 % -- as written, or, with every participant's molar mass
+      known, read on the other basis (nu x MW against mass flows, nu / MW
+      against molar flows), a species outside the reaction changing by no
+      more than 1 % of itself or 0.1 % of the inlet total counting as
+      unchanged. A reaction that does not conserve mass as written
+      ('Glucose -> 5 Ethanol') is not discarded: a faithful re-import would
+      reproduce it, but it cannot be told apart from a transcription
+      error, so the part earns 0.5 with the note "reaction does not
+      conserve mass as written"; so does one whose closure cannot be
+      tested (a participant without a molar mass or formula, or naming an
+      undeclared chemical), noted as such -- credit is waived only on
+      affirmative evidence, and a closure that cannot be verified counts
+      as one that is missing. Deleting stream data, a molar mass or a
+      chemical id can only remove that evidence.
+      The 1 % sits in an empty band of the corpus: its 6587 testable
+      reactions close within 0.025 % or miss by more than 1.5 % (364,
+      atom-imbalanced as written -- an omitted O2, H2O, H2 or nitrogen
+      source). Scored per
+      unit (each counting once) over its reactions, for the reactive units of
+      CMP-RXN-01 -- one without reactions scores 0, as does its
+      flowsheet-level pseudo-member for hidden chemistry -- plus every
+      other unit that declares reactions (a boiler's combustion set, a
+      tank's neutralization, ...). Deleting an entry of a reaction's
+      stoichiometry object (a participant and its coefficient) states a
+      different reaction, as deleting a list element does (the array form
+      holds its coefficients as list elements), and is outside the
+      monotonicity guarantee: dropping a participant whose term held the
+      balance off, or whose term left the closure untestable (no molar
+      mass or formula, or an undeclared chemical), can make the reaction
+      close (0.5 -> 1; its basis then becomes derivable in CMP-RXN-04 too,
+      so the overall and representable scores can rise), as any rule
+      rewarding the closure allows. A reaction that does not conserve mass
+      with the document's own molar masses contradicts its chemicals, so a
+      document carrying one is internally inconsistent and deletions on it
+      are outside the guarantee as well; it still earns 0.5 here, since it
+      may be the model's own reaction exported faithfully. Deleting whole
+      reactions (list
+      elements; deleting a unit's whole reactions list deletes its
+      elements), or a whole phase of a stream that is not stated empty
+      (which asserts a different set of phases, and can make a product's
+      species flows computable and so confirm its unit's reaction), is
+      outside the monotonicity guarantee too.
+
+  - id: CMP-RXN-03
+    category: reactions
+    title: Series or parallel reaction structure
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].reactions[].index
+    rationale: >-
+      The same list of reactions yields different outlets as a
+      ParallelReaction (every conversion based on the inlet) or a
+      SeriesReaction (each based on the previous result). Scored per unit
+      over the CMP-RXN-02 population: with two
+      or more reactions, an index on every reaction is the minimal signal of
+      their order (1, else 0); a single reaction has no order to state (1);
+      a reactive unit without a well-formed reaction, and the CMP-RXN-01
+      pseudo-member for hidden chemistry, score 0, since the reaction set
+      and so its order are unknown.
+
+  - id: CMP-RXN-04
+    category: reactions
+    title: Reaction basis and reacting phase
+    weight: 2
+    criticality: essential
+    representable_since: null
+    sff_paths:
+      - units[].reactions[].stoichiometry
+      - units[].reactions[].equation
+      - chemicals[].molar_mass
+      - chemicals[].formula
+      - streams[].stream_properties.phases
+    rationale: >-
+      Reactions may be defined on a molar or mass basis (mass basis is common
+      for biomass pseudo-components) and restricted to a phase; both change
+      the computed outlet. No SFF field states either, so each reaction of
+      the CMP-RXN-02 population (a reactive unit without reactions and the
+      CMP-RXN-01 pseudo-member for hidden chemistry score 0, a reaction
+      that is not well-formed scores 0, and one conserving mass on neither
+      basis, see CMP-RXN-02, never has a derivable basis) earns only
+      derived credit, half for each part: the basis when the reaction's
+      closure (see CMP-RXN-02: |sum(nu*MW)| on a mol basis, |sum(nu)| on a
+      wt basis, relative to its reactant side, every molar mass
+      resolvable) holds within 1 % on exactly one basis -- that one, so a
+      3-significant-figure equation has its basis -- or holds on both and
+      within 1e-3 on one of them (on both, as for an isomerisation, the
+      basis is immaterial; on neither, it stays ambiguous); the phase
+      when the equation tags every species with a phase or every stream of
+      the unit is single-phase -- a phase stating neither a flow nor a
+      composition leaves its stream's phases unknown -- and no stream
+      without a stated endpoint may be a missing port of it. Each unit
+      counts once. Deleting an entry of a reaction's stoichiometry object,
+      which states a different reaction (see CMP-RXN-02), can make the
+      basis derivable -- dropping a participant whose term held the
+      balance off or whose molar mass is unknown; deleting a whole phase
+      that is not stated empty can make a stream single-phase. Both are
+      outside the monotonicity guarantee.
+
+  # ----------------------------------------------------------------- costing
+  - id: CMP-COST-01
+    category: costing
+    title: Purchase costs recorded
+    weight: 3
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].purchase_costs
+    rationale: >-
+      A unit's purchase costs per cost item are the verification target for a
+      re-costed flowsheet and the only cost information for procedurally
+      costed units. Scored over the costed units -- every unit except the
+      cost-free ones (mixers, Splitter-type splitters, junctions), which
+      only a class named by design_simulation_method, known exactly and
+      not contradicted by the unit's ports or stream physics makes (a
+      'Mixer' or 'Separator' unit_type, or a family inferred from
+      specification keys, is no evidence a unit carries no cost, nor is a
+      'Mixer' whose outlet is hotter than its inlets) -- each
+      needing a purchase_costs object holding at least one numeric cost of at
+      least zero ({"a": null} records nothing). Each unit counts once.
+
+  - id: CMP-COST-02
+    category: costing
+    title: Installed costs cover every purchase-cost item
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].installed_costs
+      - units[].purchase_costs
+    rationale: >-
+      Installed cost is purchase cost times the bare-module factors (design,
+      pressure and material factors included), and the TEA's fixed capital
+      investment is built on installed equipment cost. Each cost item of a
+      costed unit (every item named by its purchase costs, installed costs or
+      correlations) needs its installed cost, a number of at least zero; a
+      costed unit with no items scores 0. Each unit counts once.
+
+  - id: CMP-COST-03
+    category: costing
+    title: Design results stated with quantity units
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].design_results
+      - units[].quantity_units_for_design_results
+    rationale: >-
+      Design results (area, volume, power, flow) are the sizes cost
+      correlations are evaluated at. Without their units a size cannot be
+      compared with a correlation's reference size, so each numeric result
+      needs a unit: a non-blank string, or exactly the empty string, the
+      schema's documented marker of a dimensionless result. Per costed unit:
+      no numeric result (absent, empty, or only non-numeric values such as
+      {"a": "b"}) 0, some numeric result without a unit 0.5, else 1.
+      Each unit counts once.
+
+  - id: CMP-COST-04
+    category: costing
+    title: Purchase-cost correlations
+    weight: 2
+    criticality: costing
+    representable_since: "0.1.2"
+    sff_paths:
+      - units[].purchase_cost_correlations
+    rationale: >-
+      BioSTEAM's @cost decorator records a power-law correlation per cost item
+      (basis, reference size and cost, exponent, reference cost index,
+      installation factor, power rate). With it a consumer can re-cost the
+      equipment at a different size or cost year; a custom_function entry only
+      records that a procedural cost model exists, so it earns half credit.
+      Scored per costed unit: a core BioSTEAM class identified at confidence
+      1 scores 1, because BioSTEAM re-derives its cost from its class and
+      design results; any other costed unit scores the mean credit over its
+      cost items (every item named by its purchase costs, installed costs or
+      correlations, so deleting one entry never drops an item), and 0 when it
+      has none. Each unit counts once.
+
+  - id: CMP-COST-05
+    category: costing
+    title: Cost-index basis (target CEPCI)
+    weight: 2
+    criticality: costing
+    representable_since: null
+    sff_paths:
+      - units[].purchase_cost_correlations
+      - units[].purchase_costs
+      - units[].design_results
+    rationale: >-
+      BioSTEAM scales every correlation by the ratio of the target plant cost
+      index (bst.CE) to the correlation's reference index, so the index the
+      costs were evaluated at is needed to reproduce or escalate them. SFF has
+      no field for it, but it can be back-derived from any power-law item that
+      states its purchase cost, sizing basis and correlation constants, which
+      earns derived credit. Applicable whenever the flowsheet has costed
+      units.
+
+  - id: CMP-COST-06
+    category: costing
+    title: Parallel counts (Unit.parallel, CostItem.N)
+    weight: 1
+    criticality: costing
+    representable_since: null
+    sff_paths:
+      - units[].design_results
+    rationale: >-
+      A unit may run as several identical parallel copies (Unit.parallel) and
+      a cost item may be split across N identical pieces of equipment
+      (CostItem.N); both change the cost through economies of scale. SFF
+      states neither. Per costed unit, derived credit when a design result
+      states a count ('Number of reactors', ...) with a numeric value, or
+      when a power-law correlation states a positive size_upper_bound and
+      its basis has a numeric design result S (BioSTEAM then buys N =
+      ceil(S / size_upper_bound) pieces), or when the unit is a core
+      BioSTEAM class known exactly: rebuilt from its class, its own design
+      re-sizes the equipment (every CostItem.N of an @cost-decorated class
+      is recomputed from its size bounds; a procedurally costed class such
+      as a Pump or HXutility has no @cost items) and Unit.parallel keeps
+      its class default, the same class-default credit
+      CMP-COST-07 gives a lifetime (a parallel count the original model set
+      by hand is not recovered in either case). Else 0. Each unit counts
+      once.
+
+  - id: CMP-COST-07
+    category: costing
+    title: Equipment lifetimes
+    weight: 1
+    criticality: costing
+    representable_since: null
+    sff_paths:
+      - units[].purchase_cost_correlations.*.lifetime
+    rationale: >-
+      BioSTEAM replaces equipment whose lifetime is shorter than the plant's
+      (Unit.equipment_lifetime, or a per-item lifetime set with @cost), and
+      the TEA charges the replacement purchases, so lifetimes change the
+      capital schedule. SFF has no unit-level field; only a correlation item
+      can carry one. Per costed unit: 1 when it has cost items (named by its
+      purchase costs, installed costs or correlations) and every one has a
+      correlation stating a lifetime; derived credit for a core BioSTEAM
+      class identified at confidence 1 (its class-default lifetime applies,
+      which the importer gets by instantiating the class); else 0. The
+      message counts both. Each unit counts once.
+
+  # --------------------------------------------------------------- utilities
+  - id: CMP-UTIL-01
+    category: utilities
+    title: Utility agents declared and specified
+    weight: 2
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - utilities.heat_utilities[]
+      - utilities.power_utilities[]
+      - utilities.other_utilities[]
+      - units[].utility_consumption_results
+      - units[].utility_production_results
+    rationale: >-
+      Heat utilities are satisfied by utility agents (cooling water, steam at
+      several pressures, refrigerants) that BioSTEAM selects by temperature and
+      that are defined by temperature, pressure and composition. A duty cannot
+      be assigned to an agent that is not declared, and an agent without its
+      state cannot be instantiated. Each part of a heat or other agent's
+      state counts only when plausible, by the same predicates as a stream's
+      (a temperature in (0, 1e4) K and a positive pressure, after conversion
+      to internal units; a composition whose entries name their components
+      and whose fractions lie in [0, 1] and sum to 1). A heat agent is
+      scored over four parts: also its phase, stated when every composition
+      entry carries the same phase, l or g -- BioSTEAM's utility agent is a
+      one-phase stream (liquid cooling water, vapor steam) whose heat duty
+      per kg depends on it. Applicable when a unit is in a
+      utility-using family (heat exchange, electricity or fuel: reactors,
+      columns, heaters, pumps, compressors, agitated tanks, conveyors,
+      mixer-settlers, boilers, dryers, ...), the flowsheet needs heat
+      agents (CMP-UTIL-03), a unit's results name an agent no utilities
+      group declares, or an agent counted here is declared: every power
+      and other agent, and every heat agent when the flowsheet needs heat
+      agents -- a heat agent no unit's claim needs (a spare one, or one a
+      storage tank's recorded jacket duty names) is nothing a rebuild of
+      those claims reads, and counting it would let deleting its list, or
+      the result naming it, raise the score. With that need and no agent
+      at all it scores 0. Need is also judged per kind: when a unit exchanges heat
+      (a heat-exchanging family) but no heat-utility agent is declared, a
+      missing "heat agent" entry scores 0 beside the declared and referenced
+      agents (the entry names the units behind the need: a unit that may
+      host a reaction -- a hosting claim not ruled out, or reactions it
+      declares -- carries a reactor's, a regenerating separator its own,
+      and a cooling tower, chilled-water or refrigeration package the
+      agent it serves); likewise a missing "power utility" entry when a unit draws or
+      delivers electricity (pumps, compressors, turbines, solids handling,
+      boiler-turbogenerators) but no power utility is declared -- a declared
+      power utility does not stand in for steam. A unit of unknown family
+      could be any of these, so it needs utilities of both kinds. Agents no
+      unit's utility results reference can lower the score but never raise
+      it: the score is the lowest mean over the sets holding every
+      referenced entry (the referenced agents plus the referenced-but-
+      undeclared and missing-kind entries) and any of the unreferenced
+      agents, as CMP-THM-02 treats unreferenced chemicals -- so padding a
+      file with fully specified standard agents changes nothing. With no
+      agent referenced at all the same rule gives the lowest single agent
+      score, so deleting a unit's last utility result never raises it.
+
+  - id: CMP-UTIL-02
+    category: utilities
+    title: Utility prices
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - utilities.heat_utilities[].regeneration_price
+      - utilities.heat_utilities[].heat_transfer_price
+      - utilities.power_utilities[].electrical_energy_price
+      - utilities.other_utilities[].price
+    rationale: >-
+      Heat agents are priced per mole regenerated or per unit of heat
+      transferred, electricity per kWh, and other utilities per unit flow;
+      together they make up the utility share of the variable operating cost
+      in the TEA. A price counts only when finite, and a heat agent's
+      regeneration or heat-transfer price only when also at least zero. A
+      zero price on an other-utility agent that is a fuel (its id names
+      natural gas or a fuel, or its composition is at least 50 mol% CH4) --
+      or may be one, its composition not being plausibly stated -- earns half
+      credit: BioSTEAM then prices the fuel from bst.stream_prices, which SFF
+      cannot state (as CMP-FEED-02 treats utility-port feeds). Same
+      applicability as CMP-UTIL-01; scored over the agents it counts plus
+      referenced but undeclared ones and the missing heat-agent or
+      power-utility kinds of CMP-UTIL-01 (all of which score 0), and
+      aggregated as CMP-UTIL-01 is: agents no unit references can lower
+      the score, never raise it.
+
+  - id: CMP-UTIL-03
+    category: utilities
+    title: Heat-agent efficiency and temperature limit
+    weight: 2
+    criticality: costing
+    representable_since: "0.0.0"
+    sff_paths:
+      - utilities.heat_utilities[].heat_transfer_efficiency
+      - utilities.heat_utilities[].temperature_limit
+      - utilities.heat_utilities[].composition[]
+      - units[].utility_consumption_results
+      - units[].utility_production_results
+    rationale: >-
+      The heat-transfer efficiency and the temperature limit set how much
+      agent a duty consumes: a sensible-heat agent may only warm up (or cool
+      down) to its limit, so liquid water-based agents (cooling or chilled
+      water, brine) and liquid heating agents require one. A phase-change
+      agent delivers latent heat and needs none: a condensing heating agent
+      (all vapor, such as steam) or an evaporating refrigerant (all liquid,
+      used for cooling, and affirmatively not water-based: every
+      composition entry names its species with a valid fraction, and the
+      species other than water make up at least half; water merely left
+      out of the composition is no evidence). Heating or cooling is read off
+      the sign of the duties units record for the agent (positive heating,
+      negative cooling; agent-regenerating facilities ignored), and the
+      exemption needs that affirmative evidence: a vapor agent no unit
+      records a positive (heating) duty for still needs its limit. Half
+      credit each for efficiency (in (0, 1]) and limit (a plausible
+      temperature). Applicable by need: when a unit exchanges heat with a
+      utility agent (or is of unknown family, so may; or may be a reactor:
+      a claim declaring reactions of its own, or a tank, column or
+      extractor that may host hidden chemistry, see CMP-UOP-02), a
+      separator regenerated by a temperature swing is present (an exact
+      MolecularSieve or AdsorptionColumnTSA, whose regeneration steam and
+      cooling BioSTEAM always adds, or a molecular sieve, adsorber, ion
+      exchanger, absorber or scrubber label), or a facility serving a heat
+      agent is present (a cooling tower, chilled-water or refrigeration
+      package, which sizes the agent it regenerates from its temperature
+      and limit, or a facility of unknown kind). The need follows claims
+      alone, never data a document may omit: neither a declared heat agent
+      no unit's claim needs nor a heat duty recorded on a claim that needs
+      none (a jacketed storage tank ruled out as a host, an extractor, a
+      cooling tower's own duty) creates it, so deleting that list or duty
+      never turns this criterion and CMP-UTIL-05 not applicable; a claim
+      that can take no heat duty (a mixer, a pure splitter, a mechanical
+      separator, a solids handler, a junction, a pump, valve or turbine) is
+      contradicted by one instead, and its unknown family carries the
+      need. With that need and no heat agent it scores 0, its message
+      naming why a heat agent is needed (units exchanging heat, a unit
+      that may host a reaction, a regenerating separator or a facility
+      serving an agent). Aggregated over the
+      declared heat agents as CMP-UTIL-01 is: agents no unit references can
+      lower the score, never raise it.
+
+  - id: CMP-UTIL-04
+    category: utilities
+    title: Utility results per unit
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.0"
+    sff_paths:
+      - units[].utility_consumption_results
+      - units[].utility_production_results
+    rationale: >-
+      Per-unit utility consumption and production let a re-simulated
+      flowsheet be checked against the original heat and power demands and
+      show how utilities are allocated between units. Half credit per
+      results object present; entries without a numeric value count as
+      absent. A unit that always draws a utility (pump, utility heat
+      exchanger, compressor, distillation column, evaporator, flash; or a
+      unit of unknown family, which may be one) scores
+      0 when neither object holds a numeric entry, unless the data show it
+      draws nothing: every connected stream states a zero flow (an idle
+      unit), or a flash's specs state it adiabatic (Q = 0).
+      Each unit counts once.
+
+  - id: CMP-UTIL-05
+    category: utilities
+    title: Agent selection parameters
+    weight: 1
+    criticality: costing
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      BioSTEAM picks the heat agent for each duty from the declared agents
+      using the minimum approach temperature (the global HeatUtility.dT and
+      any per-agent dT) and whether an agent is a fuel (isfuel); a different
+      approach temperature selects a different steam pressure or refrigerant
+      and changes the utility cost. No SFF field states them, so a flowsheet
+      that needs heat agents scores 0.
+
+  # ------------------------------------------------------------------ system
+  - id: CMP-SYS-01
+    category: system
+    title: Annual operating hours
+    weight: 3
+    criticality: costing
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      The TEA's operating days (or hours) per year convert hourly flows into
+      annual costs and revenues. No SFF field states them.
+
+  - id: CMP-SYS-02
+    category: system
+    title: TEA parameter set
+    weight: 5
+    criticality: costing
+    representable_since: null
+    sff_paths:
+      - metadata.TEA_currency
+      - metadata.TEA_year
+      - metadata.products[].stream_id
+    rationale: >-
+      A BioSTEAM TEA needs fourteen groups of assumptions: the currency; the
+      dollar (cost) year every price and cost is expressed in; the target
+      product whose selling price the TEA solves for; the plant's start year
+      and duration; the internal rate of return; income tax; the
+      depreciation schedule; the construction schedule; the startup period
+      and fractions; working capital; the fixed-operating-cost model; the
+      capital-cost model (a Lang factor or DPI/TDC/FCI factors, with the OSBL
+      units and TEA class it is applied to); financing; and the price book
+      (bst.stream_prices, which also prices zero-priced utility ports). SFF
+      can state three: TEA_currency, TEA_year -- the cost year, per the
+      schema, not the plant's start year -- and the target products
+      (metadata.products, non-empty, every stream_id a declared boundary
+      outlet), so at most three of fourteen are available. A currency
+      counts only as a three-capital-letter code (USD, EUR), and a year
+      only as an integer in [1900, 2100]: "x", "dollars", 99999 or 1.5
+      state nothing a TEA can use.
+
+  - id: CMP-SYS-03
+    category: system
+    title: Convergence settings
+    weight: 1
+    criticality: supplementary
+    representable_since: null
+    sff_paths: []
+    rationale: >-
+      The recycle-convergence method (Wegstein, Aitken, fixed-point, ...),
+      the molar and temperature tolerances and the iteration limit decide
+      whether, and to what, a recycle-heavy flowsheet converges. No SFF field
+      states them.
+
+  - id: CMP-SYS-04
+    category: system
+    title: Simulator and model provenance
+    weight: 1
+    criticality: supplementary
+    representable_since: "0.0.6"
+    sff_paths:
+      - metadata.process_simulator.name
+      - metadata.process_simulator.version
+      - metadata.reproducibility.simulator_package
+      - metadata.reproducibility.flowsheet_model_package
+    rationale: >-
+      Unit models and defaults change between BioSTEAM releases, so the
+      simulator name and version, and ideally the exact commits or versions of
+      the simulator and flowsheet-model packages, identify which behaviour the
+      recorded numbers came from. Representable in full from 0.0.6, when the
+      reproducibility block added pinned packages.
+
+  # --------------------------------------------------------------- integrity
+  - id: CMP-INT-01
+    category: integrity
+    title: Schema conformance
+    weight: 2
+    criticality: integrity
+    representable_since: "0.0.0"
+    sff_paths: []
+    rationale: >-
+      A file that fails the JSON Schema may have any field above in an
+      unexpected shape, so no reader can rely on the information it appears
+      to carry.
+
+  - id: CMP-INT-02
+    category: integrity
+    title: Cross-references resolve
+    weight: 2
+    criticality: integrity
+    representable_since: "0.0.0"
+    sff_paths: []
+    rationale: >-
+      The validator's XREF-01 aggregate fails when any referential check fails
+      (a stream to an unknown unit, a component missing from the chemicals, a
+      utility result naming no agent); information behind a dangling
+      reference cannot be used. Not applicable to a document with neither
+      units nor streams.
+
+  - id: CMP-INT-04
+    category: integrity
+    title: Quantity units declared
+    weight: 3
+    criticality: essential
+    representable_since: "0.0.0"
+    sff_paths:
+      - quantity_units_global
+    rationale: >-
+      Without units every number is ambiguous (K or degC, kg/hr or kmol/hr),
+      and a re-import must convert each value into BioSTEAM's internal units.
+      Current-shape files declare units once in quantity_units_global, and
+      a unit is only useful if it parses: the score is 1 when the
+      validator's QU-01 (every quantity field has a quantity_units_global
+      alias) and QU-02 (every quantity-unit string is parseable) both pass,
+      0.5 when exactly one does (a QU-02 result that is missing earns
+      nothing), and 0 otherwise. The criterion follows the validator's
+      verdict both ways. Where QU-02 is stricter than the scorer's own unit
+      reader it is a validator gap: QU-02 rejects the gauge and explicitly
+      absolute pressure spellings (psig, psia, barg, ...) that the scorer
+      converts to score the values, and this criterion still withholds the
+      QU-02 half. Where QU-02 is more lenient, a unit that parses but that
+      the scorer knows only for another dimension (a temperature in kg/hr)
+      keeps the QU-02 half here; the message names each such field, and
+      its quantities score as invalid wherever they are read. QU-02 parses
+      with thermosteam's unit registry (the SFF unit system); where
+      thermosteam cannot be imported every non-empty unit string fails
+      QU-02, so a
+      current-shape file scores at most 0.5 here in that environment.
+      Legacy files carry units inline on each
+      quantity, so there the score is
+      the fraction of quantities carrying units, where a bare numeric design
+      result (no inline units at all) counts as a quantity without units.
+      Not applicable to a document with neither units nor streams.
+
+exclusions:
+  - id: EXC-01
+    kind: not_capturable
+    title: Process specifications
+    rationale: >-
+      Specifications attached with add_specification and system-level bounded
+      specifications (adjust a flow until a titer or purity is met) are
+      arbitrary Python closures. Only the converged design-point values they
+      produced are capturable in static JSON.
+  - id: EXC-02
+    kind: not_capturable
+    title: Custom unit-class behaviour
+    rationale: >-
+      Biorefinery-specific subclasses override _run, _design and _cost with
+      arbitrary code. SFF captures them by reference (class name and source
+      URL in design_simulation_method) and through the embedded
+      reproducibility recipe, not declaratively.
+  - id: EXC-03
+    kind: not_capturable
+    title: Kinetic rate laws and property callables
+    rationale: >-
+      Kinetic reactor models and user-defined property functions (callables of
+      temperature and pressure) are code, not data, and cannot be represented
+      in static JSON.
+  - id: EXC-04
+    kind: out_of_scope
+    title: AgileSystem multi-mode operation
+    rationale: >-
+      A BioSTEAM AgileSystem runs one flowsheet through several operation
+      modes (seasonal feedstocks, campaigns), each a separate steady state
+      with its own parameters and operating hours, and costs the equipment
+      for the most demanding mode. An SFF file records one design point, so
+      multi-mode operation is out of scope; each mode can be exported as its
+      own flowsheet.
+  - id: EXC-05
+    kind: out_of_scope
+    title: LCA characterization factors
+    rationale: >-
+      Characterization factors (for example global-warming potential per kg
+      of each feed, product and utility) drive BioSTEAM's life-cycle
+      assessment, not the rebuild, simulation, costing or TEA this score
+      measures, so they are out of scope.
+  - id: EXC-06
+    kind: undetectable_need
+    title: Property overrides on database chemicals
+    rationale: >-
+      A model may override database properties of a chemical the database
+      does resolve (Hf, Cn, V, LHV, or copy_models_from another chemical);
+      re-importing it by registry id or name then silently rebuilds it with
+      the database values, changing heats of reaction, boiler duties and
+      densities. Nothing in an SFF file marks a chemical as overridden, so
+      the need cannot be detected and no population defined; scoring it
+      would need per-chemical property fields in SFF.
+  - id: EXC-07
+    kind: undetectable_need
+    title: Non-default phase-equilibrium parameters for database chemicals
+    rationale: >-
+      Binary interaction parameters, or UNIFAC / Dortmund group assignments
+      that differ from the database's, change activity coefficients and so
+      every VLE / LLE split. For database-resolvable chemicals nothing in
+      the file says whether defaults were replaced, so the need is
+      undetectable. For custom chemicals outside the database the same
+      information is part of the property data CMP-THM-05 already scores.
+  - id: DER-01
+    kind: derived
+    title: Recycle structure and simulation order
+    rationale: >-
+      Recycle loops, tear streams and unit simulation order are recomputed
+      from the topology by System.from_units, so they are scored through
+      CMP-TOP-01 and CMP-TOP-02 rather than separately.
+  - id: DER-02
+    kind: derived
+    title: Facility designation
+    rationale: >-
+      Whether a unit is a facility (boiler-turbogenerator, cooling tower,
+      process-water center, ...) follows from its class, which CMP-UOP-01
+      already scores.
+  - id: DER-03
+    kind: derived
+    title: Joint bare-module factor
+    rationale: >-
+      The combined bare-module factor of a cost item is the ratio of its
+      installed to its purchase cost, both scored by CMP-COST-01 and
+      CMP-COST-02.

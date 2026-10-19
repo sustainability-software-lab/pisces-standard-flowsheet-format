@@ -9,8 +9,10 @@
 # Tier 3: stream-schema tests, regrouped by category from the former Tier 1
 # per-topic files. Covers sff_checks.md STR-11 (pressure > 0), STR-12
 # (total_mass_flow required), the v0.0.9 per-phase stream_properties.phases
-# restructuring, the v0.0.10 optional stream `roles` array, and the v0.0.11
-# optional stream_properties.enthalpy_flow. Import-light: validates synthetic
+# restructuring, the v0.0.10 optional stream `roles` array, the v0.0.11
+# optional stream_properties.enthalpy_flow, and the v0.2.2 relaxation making a
+# phase's total_molar_flow optional in extracted-from-* tagged files.
+# Import-light: validates synthetic
 # fragments against the real committed schema via jsonschema, never importing
 # pisces_sff.
 #
@@ -163,12 +165,12 @@ class TestStreamPhaseDefinition(unittest.TestCase):
     def setUp(self):
         self.phase = load_schema()["definitions"]["stream_phase"]
 
-    def test_requires_molar_flow_and_composition(self):
-        """The stream_phase definition requires exactly composition + total_molar_flow."""
-        self.assertEqual(
-            sorted(self.phase["required"]),
-            ["composition", "total_molar_flow"],
-        )
+    def test_requires_only_composition(self):
+        """From v0.2.2 the stream_phase definition itself requires only
+        composition; total_molar_flow is required by the root-level if/else
+        unless the file carries an extracted-from-* tag (see
+        TestPhaseMolarFlowOptionalForExtracted)."""
+        self.assertEqual(self.phase["required"], ["composition"])
 
     def test_phase_totals_are_numbers(self):
         """Per-phase total mass/molar/volumetric flow fields are number-typed in the stream_phase definition."""
@@ -185,6 +187,68 @@ class TestStreamPhaseDefinition(unittest.TestCase):
             sorted(item["required"]),
             ["component_name", "mol_fraction"],
         )
+
+
+class TestPhaseMolarFlowOptionalForExtracted(unittest.TestCase):
+    """v0.2.2: a phase's total_molar_flow is optional when metadata.tags carries
+    any extracted-from-* tag (literature rarely reports per-phase molar flows),
+    and still required otherwise -- untagged, exported-from-simulator, or
+    reproducible files keep the pre-0.2.2 requirement, so every file valid
+    before remains valid. Stream-level total_molar_flow stays required."""
+
+    EXTRACTED = ("extracted-from-prose", "extracted-from-image",
+                 "extracted-from-table")
+    # Fields the metadata if/then rules require beside each extracted tag.
+    TAG_FIELDS = {"prose_type": "journal_article",
+                  "image_type": "process_flow_diagram",
+                  "extraction_method": "manual"}
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, tags=None):
+        doc = minimal_doc()
+        del doc["streams"][0]["stream_properties"]["phases"]["l"]["total_molar_flow"]
+        if tags is not None:
+            doc["metadata"]["tags"] = list(tags)
+            doc["metadata"].update(self.TAG_FIELDS)
+        return doc
+
+    def test_missing_phase_molar_flow_rejected_without_tags(self):
+        """No tags -> a phase without total_molar_flow is rejected (unchanged)."""
+        self.assertFalse(self.v.is_valid(self._doc()))
+
+    def test_missing_phase_molar_flow_rejected_for_non_extracted_tags(self):
+        """exported-from-simulator alone does not relax the requirement."""
+        self.assertFalse(self.v.is_valid(self._doc(["exported-from-simulator"])))
+
+    def test_missing_phase_molar_flow_accepted_for_each_extracted_tag(self):
+        """Any single extracted-from-* tag relaxes it."""
+        for tag in self.EXTRACTED:
+            with self.subTest(tag=tag):
+                doc = self._doc([tag])
+                self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_mixed_tags_with_an_extracted_tag_accepted(self):
+        """An extracted tag beside another tag still relaxes it."""
+        doc = self._doc(["exported-from-simulator", "extracted-from-table"])
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_phase_molar_flow_still_typed_when_present(self):
+        """Optional is not untyped: a non-number value is still rejected."""
+        doc = self._doc(["extracted-from-prose"])
+        doc["streams"][0]["stream_properties"]["phases"]["l"]["total_molar_flow"] = "1"
+        self.assertFalse(self.v.is_valid(doc))
+
+    def test_stream_level_molar_flow_still_required(self):
+        """Only the per-phase field is relaxed; the stream-level one stays required."""
+        doc = self._doc(["extracted-from-prose"])
+        del doc["streams"][0]["stream_properties"]["total_molar_flow"]
+        self.assertFalse(self.v.is_valid(doc))
 
 
 class TestOldShapeIsRejected(unittest.TestCase):

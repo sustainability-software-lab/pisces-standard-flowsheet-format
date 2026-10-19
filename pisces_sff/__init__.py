@@ -33,6 +33,9 @@ from .export._registry import *
 from .export import _design_specs
 from .export._design_specs import *
 
+from .completeness import _completeness
+from .completeness._completeness import *
+
 
 __all__ = (
      *_version.__all__,
@@ -42,4 +45,5 @@ __all__ = (
      *_validate.__all__,
      *_registry.__all__,
      *_design_specs.__all__,
+     *_completeness.__all__,
     )

@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.2.1.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.4.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
@@ -20,11 +20,48 @@ type beyond those defined below, not only string-valued ones. This is a
 backwards-compatible loosening -- every file valid under an earlier version
 remains valid -- and does not change any field the reference exporter emits.
 
+v0.2.2 adds the following for flowsheets extracted from literature rather than
+exported from a simulator:
+
+- `process_simulator` (still required) and `microorganisms` (still optional)
+  also accept one of two exact strings stating explicitly why no simulator /
+  microbial host is given: `"not_reported"` (the source does not name one) or
+  `"not_applicable"` (there is none -- e.g., a flowsheet taken from a patent
+  that was never simulated, or an abiotic process). `null` and `"None"` are
+  **not** accepted: absence must say which of the two it is.
+- `prose_type` (`journal_article`, `patent`, `thesis`,
+  `technical_report`, `conference_paper`, `book`, `other`) is **required** when
+  `tags` contains `extracted-from-prose` or `extracted-from-table`. (Named
+  `literature_type` in v0.2.2 and v0.2.3; renamed `prose_type` in v0.2.4
+  for consistency with `image_type` and the `extracted-from-prose` tag. A
+  file that still writes `literature_type` beside one of those tags must
+  rename it to validate.)
+- `image_type` (`process_flow_diagram`, `block_flow_diagram`,
+  `piping_and_instrumentation_diagram`, `other`) is **required** when `tags`
+  contains `extracted-from-image`.
+- `extraction_method` (any JSON type -- e.g. a string naming the pipeline or
+  procedure, or a structured object) is **required** when `tags` contains any
+  `extracted-from-*` tag.
+- In files carrying an `extracted-from-*` tag, a stream phase's
+  `total_molar_flow` is optional (see the `streams` section below). v0.2.3
+  extends the same relaxation to a chemical's `included_in_thermo_equilibria`
+  (see the `chemicals` section below).
+
+The three conditional requirements are the schema half of `TAG-01` (like
+`reproducibility.comparison_rtol` beside `reproducible`): a file declaring an
+`extracted-from-*` tag written before v0.2.2 must add the matching field to
+validate. The reference exporter never stamps those tags, so its output is
+unchanged.
+
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/metadata
 ```
 
 ## `units`
 The unit operations (graph nodes).
+
+From v0.2.2 on, a unit accepts additional, producer-defined properties
+beyond those defined below (previously `additionalProperties: false`). The
+nested `purchase_cost_correlations` entries remain closed.
 
 From v0.1.4 on, the reference exporter fills `design_input_specs` from a
 per-unit-type registry (`pisces_sff/export/design_specs/biosteam.yaml`): each unit
@@ -81,9 +118,16 @@ Each entry in the `streams` array:
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `total_mass_flow` | number | | Total mass flow rate of this phase. Quantity units: `quantity_units_global` `mass_flow` (default `kg/hr`). |
-| `total_molar_flow` | number | yes | Total molar flow rate of this phase. Quantity units: `quantity_units_global` `molar_flow` (default `kmol/hr`). |
+| `total_molar_flow` | number | yes, unless extracted | Total molar flow rate of this phase. Quantity units: `quantity_units_global` `molar_flow` (default `kmol/hr`). Optional from v0.2.2 when `metadata.tags` contains an `extracted-from-*` tag; required otherwise. |
 | `total_volumetric_flow` | number | | Total volumetric flow rate of this phase. Quantity units: `quantity_units_global` `volumetric_flow` (default `m3/hr`). |
 | `composition` | array of objects (below) | yes | An array detailing the chemical components present in this phase. All fractions are relative to this phase. |
+
+From v0.2.2 the `stream_phase` definition itself requires only `composition`;
+a root-level `if`/`else` requires each phase's `total_molar_flow` unless
+`metadata.tags` contains `extracted-from-prose`, `extracted-from-image`, or
+`extracted-from-table` (literature sources rarely report per-phase molar
+flows). This is a loosening: every file valid under an earlier version stays
+valid. The stream-level `total_molar_flow` remains required in all files.
 
 Each `composition` entry:
 
@@ -96,11 +140,27 @@ Each `composition` entry:
 ## `chemicals`
 The shared chemical registry.
 
+v0.2.3 renames each chemical's `included_in_thermo` flag to
+`included_in_thermo_equilibria`; its meaning and its `registry_id` (when
+`true`) / `molar_mass` (when `false`) conditions are unchanged. This is a
+breaking change: a file that still writes `included_in_thermo` must rename it
+to validate. The flag is required unless `metadata.tags` contains
+`extracted-from-prose`, `extracted-from-image`, or `extracted-from-table`
+(the same root-level `if`/`else` that relaxes a phase's `total_molar_flow`).
+When an extracted file omits it, neither `registry_id` nor `molar_mass` is
+required. The reference exporter writes the new name from v0.2.3; its earlier
+versioned exporters keep writing `included_in_thermo`.
+
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/chemicals
 ```
 
 ## `utilities`
 The shared utility registry.
+
+From v0.2.2 on, `heat_utilities` and `other_utilities` entries accept
+additional, producer-defined properties beyond those defined below
+(previously `additionalProperties: false`); `power_utilities` entries already
+accepted additional numeric properties.
 
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/utilities
 ```

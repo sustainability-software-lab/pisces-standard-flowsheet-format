@@ -34,12 +34,15 @@
 # what `_tag_gate` would see once the schema supported the field. That future
 # state is now the present, so the workaround is gone.
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests._docs import valid_doc
 from tests._gating import skip_if_disabled
 from tests._stub_eviction import RealBiosteamTestCase
-from tests.tier4._run import validate_doc
+from tests.tier4._run import SCHEMA_PATH, V, validate_doc
 
 
 class TestTAG01(RealBiosteamTestCase):
@@ -61,6 +64,8 @@ class TestTAG01(RealBiosteamTestCase):
         schema-declared property (schema v0.1.3)."""
         doc = valid_doc()
         doc["metadata"]["tags"] = ["extracted-from-prose"]
+        doc["metadata"]["prose_type"] = "journal_article"  # required beside the tag (v0.2.2)
+        doc["metadata"]["extraction_method"] = "manual"  # likewise
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "pass"))
@@ -76,6 +81,9 @@ class TestTAG01(RealBiosteamTestCase):
         doc = valid_doc()
         doc["units"] = []
         doc["metadata"]["tags"] = ["extracted-from-prose"]
+        # Keep the doc schema-valid so the denial is UNIT-10's, not the schema's.
+        doc["metadata"]["prose_type"] = "journal_article"
+        doc["metadata"]["extraction_method"] = "manual"
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
         self.assertEqual((r.severity, r.status), ("error", "fail"))
@@ -111,3 +119,74 @@ class TestTAG01(RealBiosteamTestCase):
         self.assertIn("reproducible", r.message)
         self.assertIn("no reproducibility recipe", r.message)
         self.assertFalse(is_valid)
+
+
+class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
+    """evaluate_sff_tags end-to-end (v0.2.2): an extracted-from-* tag is reported
+    earned only when its extraction source-type field and extraction_method are
+    present, so a producer
+    that stamps whatever evaluate_sff_tags reports earned always writes a
+    schema-valid file (the schema requires the field beside the tag)."""
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(4)
+        super().setUpClass()
+
+    def _evaluate(self, doc):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "doc.json"
+            p.write_text(json.dumps(doc), encoding="utf-8")
+            return V.evaluate_sff_tags(str(p), str(SCHEMA_PATH))
+
+    def test_not_earned_without_field(self):
+        """valid_doc() (units + streams identified, no source type or
+        extraction method) -> no extracted-from-* tag earned; blocking names
+        the missing fields."""
+        out = self._evaluate(valid_doc())
+        self.assertFalse(out["extracted-from-prose"]["earned"])
+        self.assertEqual(out["extracted-from-prose"]["blocking"],
+                         ["metadata.prose_type", "metadata.extraction_method"])
+        self.assertFalse(out["extracted-from-image"]["earned"])
+        self.assertEqual(out["extracted-from-image"]["blocking"],
+                         ["metadata.image_type", "metadata.extraction_method"])
+
+    def test_not_earned_without_extraction_method(self):
+        """The source-type field alone is not enough."""
+        doc = valid_doc()
+        doc["metadata"]["prose_type"] = "patent"
+        out = self._evaluate(doc)
+        self.assertFalse(out["extracted-from-prose"]["earned"])
+        self.assertEqual(out["extracted-from-prose"]["blocking"],
+                         ["metadata.extraction_method"])
+
+    def test_extracted_doc_without_phase_molar_flow_is_valid(self):
+        """v0.2.2: per-phase total_molar_flow is optional beside an
+        extracted-from-* tag; such a file validates end to end, earns the tag,
+        and TAG-01 passes."""
+        doc = valid_doc()
+        for s in doc["streams"]:
+            for phase in s["stream_properties"]["phases"].values():
+                phase.pop("total_molar_flow", None)
+        doc["metadata"]["prose_type"] = "patent"
+        doc["metadata"]["extraction_method"] = {"pipeline": "llm", "version": 1}
+        doc["metadata"]["tags"] = ["extracted-from-prose"]
+        is_valid, by_id = validate_doc(doc)
+        self.assertEqual(by_id["SCHEMA"][0].status, "pass")
+        self.assertEqual(by_id["TAG-01"][0].status, "pass")
+        self.assertTrue(is_valid)
+
+    def test_earned_then_declarable(self):
+        """With prose_type and extraction_method set, extracted-from-prose
+        is earned, and declaring it yields a valid file with TAG-01 passing."""
+        doc = valid_doc()
+        doc["metadata"]["prose_type"] = "patent"
+        doc["metadata"]["extraction_method"] = None  # any value, null included
+        out = self._evaluate(doc)
+        self.assertTrue(out["extracted-from-prose"]["earned"])
+        self.assertTrue(out["extracted-from-table"]["earned"])
+        self.assertFalse(out["extracted-from-image"]["earned"])
+        doc["metadata"]["tags"] = ["extracted-from-prose"]
+        is_valid, by_id = validate_doc(doc)
+        self.assertEqual(by_id["TAG-01"][0].status, "pass")
+        self.assertTrue(is_valid)

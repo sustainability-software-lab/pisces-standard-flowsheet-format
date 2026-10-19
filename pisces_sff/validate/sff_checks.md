@@ -707,17 +707,32 @@ A file earns static tag `T` iff all of: (1) **conformance** — schema-valid and
 `error`-severity *fail* among the checks other than TAG-01 (TAG-01 is excluded to avoid
 circularity); (2) **subset warning-clean** — no check in `T`'s subset produced a
 `warning`-severity *fail*; (3) **subset skip-clean** — no check in `T`'s subset produced a
-*skip*, except skips tolerated by `T`'s policy below. `info` findings and `pass` are always acceptable.
+*skip*, except skips tolerated by `T`'s policy below; (4) **required metadata present** —
+every field in `T`'s required-metadata list is present in `metadata`, with any value (from
+v0.2.2; presence only, exactly as the schema's `required` — each field's type is the
+schema's to check, and a wrongly-typed value already fails condition (1); a missing field
+is reported in `blocking` as `metadata.<field>`). Condition (4)
+mirrors the schema's tag → field `if`/`then` rules (see TAG-01), so a tag is never reported
+earned on a file that could not then declare it schema-validly. `info` findings and `pass`
+are always acceptable.
 
-| Tag | Subset | Tolerated skips |
-| --- | --- | --- |
-| `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. |
-| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) |
-| `extracted-from-image` | `{UNIT-10, STR-14}` | none |
-| `extracted-from-table` | `{UNIT-10, STR-14}` | none |
+| Tag | Subset | Tolerated skips | Required metadata |
+| --- | --- | --- | --- |
+| `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. | none |
+| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) | `prose_type`, `extraction_method` |
+| `extracted-from-image` | `{UNIT-10, STR-14}` | none | `image_type`, `extraction_method` |
+| `extracted-from-table` | `{UNIT-10, STR-14}` | none | `prose_type`, `extraction_method` |
 
-The machine-readable home of this table — the tag names, classes, subsets, and
-tolerated-skip policies the validator executes — is the committed registry
+**Tag-conditional relaxation (schema, v0.2.2 and v0.2.3).** Declaring any
+`extracted-from-*` tag makes each stream phase's `total_molar_flow` (v0.2.2) and each
+chemical's `included_in_thermo_equilibria` (v0.2.3) optional (a root-level `if`/`else`;
+both required in every other file). This is a schema-shape loosening, not a check: the validator never required
+either field (STR-09/STR-10 skip a phase that lacks its molar flow; no check reads the
+chemical flag). When the flag is absent, the schema's `registry_id` / `molar_mass`
+`if`/`then` rules, which key on it, do not apply.
+
+The machine-readable home of this table — the tag names, classes, subsets,
+tolerated-skip policies, and required-metadata lists the validator executes — is the committed registry
 `pisces_sff/tags/tags.yaml`; the named skip conditions (`always`,
 `all_streams_empty`, `no_reactions`) are implemented as predicates in the
 validator, which rejects an unknown condition name at load time.
@@ -747,12 +762,23 @@ absolute floor near zero.
 - **Rationale:** a stamped tag is a promise downstream consumers rely on; a false claim must
   make the file non-conforming.
 - **Scope:** `metadata.tags` ↔ computed earned tags (+ the reproducibility recipe for the
-  `reproducible` precondition).
+  `reproducible` precondition; + `metadata.prose_type` / `metadata.image_type` /
+  `metadata.extraction_method` for the `extracted-from-*` tags).
 - **Severity:** `error`.
 - **Skipped when:** `metadata.tags` absent or empty.
 - **Enforcement:** validator, computed as a post-pass aggregate (like XREF-01): not in
   `_CHECKS`; evaluated inside `validate_flowsheet_against_SFF` from the results of the checks
-  that already ran plus the tag policies. Never runs the harness.
+  that already ran plus the tag policies. Never runs the harness. Schema part
+  (required-addition, conditional): `metadata` `if`/`then` rules require
+  `reproducibility.comparison_rtol` when `tags` contains `reproducible`; and, from v0.2.2,
+  `prose_type` (named `literature_type` before v0.2.4) when `tags` contains
+  `extracted-from-prose` or `extracted-from-table`,
+  `image_type` when `tags` contains `extracted-from-image`, and `extraction_method` (any
+  type) when `tags` contains any `extracted-from-*` tag (the extraction source and method
+  must be named when the tag claims one). A missing field fails the schema gate, which in turn
+  denies every tag via the static rule's conformance condition. The static earning rule's
+  condition (4) applies the same field requirement to *undeclared* tags, so
+  `evaluate_sff_tags` agrees with the schema.
 
 ---
 
@@ -806,5 +832,5 @@ absolute floor near zero.
 | QU-03 | aliases globally unambiguous | error | validator |
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
-| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`) |
+| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`, `prose_type`, `image_type`, `extraction_method`) |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |

@@ -6,6 +6,9 @@ The SFF schema is maintained as a versioned JSON file in the repository.
 
 ## Previous versions
 
+* [v0.2.3](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/63e6ec006cd68f781a9425d4ff99c024226e0a52/pisces_sff/schema/sff_schema.json)
+* [v0.2.2](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/9be03bc647b77418b6077bebccd6076f5a57245e/pisces_sff/schema/sff_schema.json)
+* [v0.2.1](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/a7b7d350926e009889a12ffa33ea4cfabbda0f9a/pisces_sff/schema/sff_schema.json)
 * [v0.2.0](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/08b12bc01a80426caa589389213df949fac1968d/pisces_sff/schema/sff_schema.json)
 * [v0.1.5](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/96150ebaca89000bddc7c6407587a7689a2d5ea9/pisces_sff/schema/sff_schema.json)
 * [v0.1.4](https://github.com/sustainability-software-lab/pisces-standard-flowsheet-format/blob/9c6528a3a2462b46ab2609c1db15ec09dc168e10/pisces_sff/schema/sff_schema.json)
