@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
 # 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, 0.1.2,
-# 0.1.3, 0.1.4, 0.1.5, 0.2.0, 0.2.1, and 0.2.2 and asserts the scalar-shape, results-key,
+# 0.1.3, 0.1.4, 0.1.5, 0.2.0, 0.2.1, 0.2.2, and 0.2.3 and asserts the scalar-shape, results-key,
 # required-metadata, stream-roles, enthalpy-flow, tightened-constraint (0.0.12
 # shape-identical to 0.0.11), milestone-bump (0.1.0 shape-identical to
 # 0.0.12), constraint-loosening (0.1.1 shape-identical to 0.1.0 -- CHEM-02's
@@ -26,7 +26,10 @@
 # opens units/utilities to additional properties, accepts null/"None" for
 # process_simulator and microorganisms, and adds literature_type/image_type
 # required only beside the extracted-from-* tags the exporter never stamps, so
-# the 0.2.2 export is shape-identical to 0.2.1)
+# the 0.2.2 export is shape-identical to 0.2.1), and key-rename (0.2.3 renames
+# chemicals[].included_in_thermo to included_in_thermo_equilibria in place and
+# makes it optional beside the extracted-from-* tags, so the 0.2.3 export is
+# shape-identical to 0.2.2 apart from that key name)
 # differences the schema versions require. This is about exporter version
 # dispatch, not the corn model, so it needs no whole-model simulation --
 # which is why it lives in Tier 2 rather than Tier 3.
@@ -43,6 +46,14 @@
 #            renamed quantity_units_for_utility_results key; omits TEA_currency.
 #   0.0.6 -> inline {"value","units"} scalars, NO registry, and the legacy
 #            units_for_utility_results key; omits TEA_currency.
+#
+# Exports through 0.2.2 name the chemical VLE flag included_in_thermo, which
+# the committed (0.2.3+) schema no longer accepts in place of
+# included_in_thermo_equilibria. Their "validates against the committed
+# schema" tests therefore validate the export with only that key renamed
+# (_validate_legacy), which still proves every other part of their shape is
+# valid; test_0_2_2_unrenamed_export_fails_only_on_the_thermo_flag pins that
+# the unrenamed export is rejected for that key alone.
 #
 # Gated on RUN_TIER2 (default on).
 
@@ -175,9 +186,28 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
             system, str(cls.path_202), sff_version="0.2.2", tea=tea)
         cls.doc_202 = json.loads(cls.path_202.read_text(encoding="utf-8"))
 
+        cls.path_203 = tmp / "small_203.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_203), sff_version="0.2.3", tea=tea)
+        cls.doc_203 = json.loads(cls.path_203.read_text(encoding="utf-8"))
+
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
+
+    def _validate_legacy(self, doc):
+        """Validate a pre-0.2.3 export against the committed schema with its
+        chemicals[].included_in_thermo key renamed to
+        included_in_thermo_equilibria in place (0.2.3 rename); nothing else
+        is changed."""
+        renamed = copy.deepcopy(doc)
+        renamed["chemicals"] = [
+            {("included_in_thermo_equilibria" if k == "included_in_thermo"
+              else k): v for k, v in chem.items()}
+            for chem in renamed.get("chemicals", [])]
+        path = Path(self.tmp.name) / "renamed_legacy.json"
+        path.write_text(json.dumps(renamed), encoding="utf-8")
+        return self.validate(str(path), str(SCHEMA_PATH))
 
     def test_0_0_7_uses_bare_number_scalars(self):
         """v0.0.7 export of a real small System -> stream temperature and price are bare int/float scalars, not inline {value, units}."""
@@ -232,8 +262,8 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertNotIn("phases", sp)
 
     def test_0_0_9_validates_against_committed_schema(self):
-        """v0.0.9 export of the real small System -> validates against the committed (0.0.9-shaped) schema with no errors."""
-        is_valid, errors = self.validate(str(self.path_009), str(SCHEMA_PATH))
+        """v0.0.9 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the committed (0.0.9-shaped) schema with no errors."""
+        is_valid, errors = self._validate_legacy(self.doc_009)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_009["metadata"]["sff_version"], "0.0.9")
 
@@ -265,8 +295,8 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertNotIn("TEA_currency", self.doc_006["metadata"])
 
     def test_0_0_10_validates_against_committed_schema(self):
-        """v0.0.10 export of the real small System -> validates against the committed schema with no errors."""
-        is_valid, errors = self.validate(str(self.path_010), str(SCHEMA_PATH))
+        """v0.0.10 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the committed schema with no errors."""
+        is_valid, errors = self._validate_legacy(self.doc_010)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_010["metadata"]["sff_version"], "0.0.10")
 
@@ -334,8 +364,8 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
             self.assertNotIn("flowsheet_designers", doc["metadata"])
 
     def test_0_0_11_validates_against_committed_schema(self):
-        """v0.0.11 export of the real small System -> validates against the committed schema with no errors."""
-        is_valid, errors = self.validate(str(self.path_011), str(SCHEMA_PATH))
+        """v0.0.11 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the committed schema with no errors."""
+        is_valid, errors = self._validate_legacy(self.doc_011)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_011["metadata"]["sff_version"], "0.0.11")
 
@@ -364,8 +394,8 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                     "enthalpy_flow", stream["stream_properties"])
 
     def test_0_0_12_validates_against_committed_schema(self):
-        """v0.0.12 export of the real small System -> validates against the committed (tightened-constraint) schema with no errors."""
-        is_valid, errors = self.validate(str(self.path_012), str(SCHEMA_PATH))
+        """v0.0.12 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the committed (tightened-constraint) schema with no errors."""
+        is_valid, errors = self._validate_legacy(self.doc_012)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_012["metadata"]["sff_version"], "0.0.12")
 
@@ -379,8 +409,8 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_1_0_validates_against_committed_schema(self):
-        """v0.1.0 export of the real small System -> validates against the committed schema with no errors, and records metadata.sff_version "0.1.0"."""
-        is_valid, errors = self.validate(str(self.path_100), str(SCHEMA_PATH))
+        """v0.1.0 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the committed schema with no errors, and records metadata.sff_version "0.1.0"."""
+        is_valid, errors = self._validate_legacy(self.doc_100)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_100["metadata"]["sff_version"], "0.1.0")
 
@@ -395,8 +425,8 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_1_1_validates_against_committed_schema(self):
-        """v0.1.1 export of the real small System -> validates against the committed schema with no errors, and records metadata.sff_version "0.1.1"."""
-        is_valid, errors = self.validate(str(self.path_101), str(SCHEMA_PATH))
+        """v0.1.1 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the committed schema with no errors, and records metadata.sff_version "0.1.1"."""
+        is_valid, errors = self._validate_legacy(self.doc_101)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_101["metadata"]["sff_version"], "0.1.1")
 
@@ -412,10 +442,10 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_1_2_validates_against_committed_schema(self):
-        """v0.1.2 export of the real small System -> validates against the
+        """v0.1.2 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema with no errors, and records metadata.sff_version
         "0.1.2"."""
-        is_valid, errors = self.validate(str(self.path_102), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_102)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_102["metadata"]["sff_version"], "0.1.2")
 
@@ -450,9 +480,9 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
                 self.assertNotIn("purchase_cost_correlations", unit)
 
     def test_0_1_3_validates_against_committed_schema(self):
-        """v0.1.3 export of the real small System -> validates against the
+        """v0.1.3 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema; records metadata.sff_version "0.1.3"."""
-        is_valid, errors = self.validate(str(self.path_103), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_103)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_103["metadata"]["sff_version"], "0.1.3")
 
@@ -479,9 +509,9 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
             self.assertNotIn("tags", doc["metadata"])
 
     def test_0_1_4_validates_against_committed_schema(self):
-        """v0.1.4 export of the real small System -> validates against the
+        """v0.1.4 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema; records metadata.sff_version "0.1.4"."""
-        is_valid, errors = self.validate(str(self.path_104), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_104)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_104["metadata"]["sff_version"], "0.1.4")
 
@@ -520,9 +550,9 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_1_5_validates_against_committed_schema(self):
-        """v0.1.5 export of the real small System -> validates against the
+        """v0.1.5 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema; records metadata.sff_version "0.1.5"."""
-        is_valid, errors = self.validate(str(self.path_105), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_105)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_105["metadata"]["sff_version"], "0.1.5")
 
@@ -536,9 +566,9 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_2_0_validates_against_committed_schema(self):
-        """v0.2.0 export of the real small System -> validates against the
+        """v0.2.0 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema; records metadata.sff_version "0.2.0"."""
-        is_valid, errors = self.validate(str(self.path_200), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_200)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_200["metadata"]["sff_version"], "0.2.0")
 
@@ -553,9 +583,9 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_2_1_validates_against_committed_schema(self):
-        """v0.2.1 export of the real small System -> validates against the
+        """v0.2.1 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema; records metadata.sff_version "0.2.1"."""
-        is_valid, errors = self.validate(str(self.path_201), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_201)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_201["metadata"]["sff_version"], "0.2.1")
 
@@ -570,9 +600,9 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
 
     def test_0_2_2_validates_against_committed_schema(self):
-        """v0.2.2 export of the real small System -> validates against the
+        """v0.2.2 export of the real small System (VLE flag renamed, see _validate_legacy) -> validates against the
         committed schema; records metadata.sff_version "0.2.2"."""
-        is_valid, errors = self.validate(str(self.path_202), str(SCHEMA_PATH))
+        is_valid, errors = self._validate_legacy(self.doc_202)
         self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
         self.assertEqual(self.doc_202["metadata"]["sff_version"], "0.2.2")
 
@@ -587,6 +617,52 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
         self.assertEqual(a, b)
 
+    def test_0_2_2_unrenamed_export_fails_only_on_the_thermo_flag(self):
+        """v0.2.2 export as written (legacy included_in_thermo key) -> rejected
+        by the committed schema, and every error is the missing
+        included_in_thermo_equilibria on a chemical."""
+        is_valid, errors = self.validate(str(self.path_202), str(SCHEMA_PATH))
+        self.assertFalse(is_valid)
+        self.assertTrue(errors)
+        for e in errors:
+            self.assertIn("included_in_thermo_equilibria", e)
+            self.assertIn("chemicals", e)
+
+    def test_0_2_3_validates_against_committed_schema(self):
+        """v0.2.3 export of the real small System, as written -> validates
+        against the committed schema; records metadata.sff_version "0.2.3"."""
+        is_valid, errors = self.validate(str(self.path_203), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_203["metadata"]["sff_version"], "0.2.3")
+
+    def test_0_2_3_names_the_flag_included_in_thermo_equilibria(self):
+        """v0.2.3 export -> every chemical carries the boolean
+        included_in_thermo_equilibria in the legacy key's position (second,
+        after id) and no included_in_thermo; v0.2.2 still writes the legacy
+        key."""
+        for chem in self.doc_203["chemicals"]:
+            self.assertEqual(list(chem)[:2], ["id", "included_in_thermo_equilibria"])
+            self.assertIsInstance(chem["included_in_thermo_equilibria"], bool)
+            self.assertNotIn("included_in_thermo", chem)
+        for chem in self.doc_202["chemicals"]:
+            self.assertIn("included_in_thermo", chem)
+            self.assertNotIn("included_in_thermo_equilibria", chem)
+
+    def test_0_2_3_is_shape_identical_to_0_2_2_except_version_and_flag_name(self):
+        """v0.2.3 renames the chemical VLE flag and makes it optional only
+        beside the extracted-from-* tags the exporter never stamps -- so its
+        export equals the v0.2.2 export, key order included, apart from
+        metadata.sff_version and that one key name."""
+        a = copy.deepcopy(self.doc_202)
+        b = copy.deepcopy(self.doc_203)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        a["chemicals"] = [
+            {("included_in_thermo_equilibria" if k == "included_in_thermo"
+              else k): v for k, v in chem.items()}
+            for chem in a["chemicals"]]
+        self.assertEqual(a, b)
+        self.assertEqual([list(c) for c in a["chemicals"]],
+                         [list(c) for c in b["chemicals"]])
 
 if __name__ == "__main__":
     unittest.main()

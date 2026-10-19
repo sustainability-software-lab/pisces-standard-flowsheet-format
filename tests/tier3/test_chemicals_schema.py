@@ -16,6 +16,10 @@
 # test_chemicals_checks.py). These tests therefore guard that the schema gate
 # accepts BOTH a zero and a positive molar_mass — the schema no longer rejects a
 # non-positive value.
+#
+# v0.2.3 renames the chemical VLE flag included_in_thermo ->
+# included_in_thermo_equilibria and makes it optional in files whose
+# metadata.tags carries an extracted-from-* tag (TestThermoEquilibriaFlag).
 
 import json
 import unittest
@@ -73,15 +77,98 @@ class TestCHEM02MolarMass(unittest.TestCase):
         rejects a non-positive molar_mass)."""
         doc = minimal_doc()
         doc["chemicals"] = [
-            {"id": "A", "included_in_thermo": False, "molar_mass": 0}]
+            {"id": "A", "included_in_thermo_equilibria": False, "molar_mass": 0}]
         self.assertTrue(self.v.is_valid(doc))
 
     def test_positive_molar_mass_accepted(self):
         """CHEM-02 — a chemical with molar_mass 46.07 (>0) → schema accepts the document."""
         doc = minimal_doc()
         doc["chemicals"] = [
-            {"id": "A", "included_in_thermo": False, "molar_mass": 46.07}]
+            {"id": "A", "included_in_thermo_equilibria": False, "molar_mass": 46.07}]
         self.assertTrue(self.v.is_valid(doc))
+
+
+class TestThermoEquilibriaFlag(unittest.TestCase):
+    """v0.2.3: the chemical VLE flag is named included_in_thermo_equilibria
+    (formerly included_in_thermo). It is required unless metadata.tags carries
+    an extracted-from-* tag -- literature rarely says which chemicals take part
+    in phase equilibrium -- and the registry_id / molar_mass if/then rules
+    still key on it whenever it is present."""
+
+    EXTRACTED = ("extracted-from-prose", "extracted-from-image",
+                 "extracted-from-table")
+    # Fields the metadata if/then rules require beside each extracted tag.
+    TAG_FIELDS = {"literature_type": "journal_article",
+                  "image_type": "process_flow_diagram",
+                  "extraction_method": "manual"}
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, chemical, tags=None):
+        doc = minimal_doc()
+        doc["chemicals"] = [chemical]
+        if tags is not None:
+            doc["metadata"]["tags"] = list(tags)
+            doc["metadata"].update(self.TAG_FIELDS)
+        return doc
+
+    def test_schema_declares_the_new_name_only(self):
+        """The chemicals item declares included_in_thermo_equilibria and no
+        longer declares the legacy included_in_thermo."""
+        props = load_schema()["properties"]["chemicals"]["items"]["properties"]
+        self.assertIn("included_in_thermo_equilibria", props)
+        self.assertNotIn("included_in_thermo", props)
+
+    def test_missing_flag_rejected_without_tags(self):
+        """No tags -> a chemical without the flag is rejected."""
+        self.assertFalse(self.v.is_valid(self._doc({"id": "A", "molar_mass": 1.0})))
+
+    def test_legacy_name_alone_rejected_without_tags(self):
+        """The legacy key does not stand in for the new one."""
+        doc = self._doc({"id": "A", "included_in_thermo": False, "molar_mass": 1.0})
+        self.assertFalse(self.v.is_valid(doc))
+
+    def test_missing_flag_rejected_for_non_extracted_tags(self):
+        """exported-from-simulator alone does not relax the requirement."""
+        doc = self._doc({"id": "A", "molar_mass": 1.0}, ["exported-from-simulator"])
+        self.assertFalse(self.v.is_valid(doc))
+
+    def test_missing_flag_accepted_for_each_extracted_tag(self):
+        """Any single extracted-from-* tag relaxes it; with no flag, neither
+        registry_id nor molar_mass is required."""
+        for tag in self.EXTRACTED:
+            with self.subTest(tag=tag):
+                doc = self._doc({"id": "A"}, [tag])
+                self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_mixed_tags_with_an_extracted_tag_accepted(self):
+        """An extracted tag beside another tag still relaxes it."""
+        doc = self._doc({"id": "A"}, ["exported-from-simulator", "extracted-from-table"])
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_flag_still_typed_when_present(self):
+        """Optional is not untyped: a non-boolean value is still rejected."""
+        doc = self._doc({"id": "A", "included_in_thermo_equilibria": "yes"},
+                        ["extracted-from-prose"])
+        self.assertFalse(self.v.is_valid(doc))
+
+    def test_conditional_requirements_still_apply_when_present(self):
+        """A present flag still triggers its if/then, extracted or not: true
+        needs registry_id, false needs molar_mass."""
+        for tags in (None, ["extracted-from-prose"]):
+            with self.subTest(tags=tags):
+                self.assertFalse(self.v.is_valid(self._doc(
+                    {"id": "A", "included_in_thermo_equilibria": True}, tags)))
+                self.assertFalse(self.v.is_valid(self._doc(
+                    {"id": "A", "included_in_thermo_equilibria": False}, tags)))
+                self.assertTrue(self.v.is_valid(self._doc(
+                    {"id": "A", "included_in_thermo_equilibria": True,
+                     "registry_id": "64-17-5"}, tags)))
 
 
 if __name__ == "__main__":

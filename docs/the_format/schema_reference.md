@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.2.2.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.3.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
@@ -20,7 +20,7 @@ type beyond those defined below, not only string-valued ones. This is a
 backwards-compatible loosening -- every file valid under an earlier version
 remains valid -- and does not change any field the reference exporter emits.
 
-v0.2.2 adds four things for flowsheets extracted from literature rather than
+v0.2.2 adds the following for flowsheets extracted from literature rather than
 exported from a simulator:
 
 - `process_simulator` (still required) and `microorganisms` (still optional)
@@ -38,6 +38,10 @@ exported from a simulator:
 - `extraction_method` (any JSON type -- e.g. a string naming the pipeline or
   procedure, or a structured object) is **required** when `tags` contains any
   `extracted-from-*` tag.
+- In files carrying an `extracted-from-*` tag, a stream phase's
+  `total_molar_flow` is optional (see the `streams` section below). v0.2.3
+  extends the same relaxation to a chemical's `included_in_thermo_equilibria`
+  (see the `chemicals` section below).
 
 The three conditional requirements are the schema half of `TAG-01` (like
 `reproducibility.comparison_rtol` beside `reproducible`): a file declaring an
@@ -131,6 +135,17 @@ Each `composition` entry:
 
 ## `chemicals`
 The shared chemical registry.
+
+v0.2.3 renames each chemical's `included_in_thermo` flag to
+`included_in_thermo_equilibria`; its meaning and its `registry_id` (when
+`true`) / `molar_mass` (when `false`) conditions are unchanged. This is a
+breaking change: a file that still writes `included_in_thermo` must rename it
+to validate. The flag is required unless `metadata.tags` contains
+`extracted-from-prose`, `extracted-from-image`, or `extracted-from-table`
+(the same root-level `if`/`else` that relaxes a phase's `total_molar_flow`).
+When an extracted file omits it, neither `registry_id` nor `molar_mass` is
+required. The reference exporter writes the new name from v0.2.3; its earlier
+versioned exporters keep writing `included_in_thermo`.
 
 ```{jsonschema} ../../pisces_sff/schema/sff_schema.json#/properties/chemicals
 ```

@@ -5795,9 +5795,18 @@ def _score_thm_03(sc):  # CMP-THM-03
             missing)
 
 
-# CMP-THM-04 credit of included_in_thermo: false on a chemical the streams
-# never show, which says it is locked but not in which phase (R4.5).
+# CMP-THM-04 credit of included_in_thermo_equilibria: false on a chemical the
+# streams never show, which says it is locked but not in which phase (R4.5).
 FLAG_UNOBSERVED_CREDIT = 0.5
+
+
+def _thermo_flag(chem):
+    """A chemical's VLE flag: ``included_in_thermo_equilibria`` (v0.2.3+), else
+    the legacy ``included_in_thermo`` key written before v0.2.3, else None."""
+    chem = _as_dict(chem)
+    if 'included_in_thermo_equilibria' in chem:
+        return chem['included_in_thermo_equilibria']
+    return chem.get('included_in_thermo')
 
 
 def _builtin_phase(chem, cid):
@@ -5814,7 +5823,8 @@ def _builtin_phase(chem, cid):
 
 def _thm_04_credit(chem, cid, seen):
     """(credit, note or None) of one declared chemical's phase behaviour:
-    the MAXIMUM over (R4.5) (a) its ``included_in_thermo`` flag -- true (it
+    the MAXIMUM over (R4.5) (a) its ``included_in_thermo_equilibria`` flag
+    (legacy ``included_in_thermo`` before v0.2.3, _thermo_flag) -- true (it
     partitions) and not contradicted by the streams showing it only ever as
     a solid, 1; false (locked) and shown in exactly one phase, 1; false and
     never shown, FLAG_UNOBSERVED_CREDIT (the locked phase is unnamed); a
@@ -5823,17 +5833,18 @@ def _thm_04_credit(chem, cid, seen):
     `seen` alone, two or more (partitions) or only 's' (locked),
     DERIVED_CREDIT; (c) the locked phase of the thermosteam built-in the id
     resolves to (_builtin_phase), DERIVED_CREDIT."""
-    flag = _as_dict(chem).get('included_in_thermo')
+    flag = _thermo_flag(chem)
     contradicted = ((flag is True and seen == {'s'})
                     or (flag is False and len(seen) >= 2))
-    options = [(0.0, 'phase behaviour not stated (included_in_thermo)')]
+    options = [(0.0, 'phase behaviour not stated '
+                '(included_in_thermo_equilibria)')]
     if (flag is True and not contradicted) or (flag is False
                                                and len(seen) == 1):
         options.append((1.0, None))
     elif flag is False and not seen:
-        options.append((FLAG_UNOBSERVED_CREDIT, 'included_in_thermo false '
-                        '(locked), but no stream shows the phase it is locked '
-                        'in'))
+        options.append((FLAG_UNOBSERVED_CREDIT, 'included_in_thermo_equilibria '
+                        'false (locked), but no stream shows the phase it is '
+                        'locked in'))
     if len(seen) >= 2 or seen == {'s'}:
         options.append((DERIVED_CREDIT, 'phase behaviour derived from the '
                         'stream phases only'))
@@ -5843,8 +5854,8 @@ def _thm_04_credit(chem, cid, seen):
                         f"thermosteam built-in's locked phase '{phase}' only"))
     credit, note = max(options, key=lambda option: option[0])
     if note and contradicted:
-        note += (f'; included_in_thermo {str(flag).lower()} contradicts the '
-                 f'stream phases')
+        note += (f'; included_in_thermo_equilibria {str(flag).lower()} '
+                 f'contradicts the stream phases')
     return credit, note
 
 
@@ -5868,7 +5879,8 @@ def _score_thm_04(sc):  # CMP-THM-04
             shown = ','.join(sorted(seen)) or 'none'
             missing.append(f'{label}: {note}; stream phases seen: {shown}')
     return (_mean(scores), f'{full} of {len(scores)} chemical(s) state '
-            f'included_in_thermo consistently with the stream phases; '
+            f'included_in_thermo_equilibria consistently with the stream '
+            f'phases; '
             f'{derived} more derivable (stream phases or a built-in locked '
             f'phase)', missing)
 

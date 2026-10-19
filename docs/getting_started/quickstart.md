@@ -24,5 +24,5 @@ for r in results:
 ```
 
 `SF_BST_01.json` (corn dry-grind ethanol) is the one corpus file in the current shape
-(exported at 0.2.0 via the reproducible-export harness);
+(exported at 0.2.3 via the reproducible-export harness);
 it validates clean (benign `info`/`skip` findings only).

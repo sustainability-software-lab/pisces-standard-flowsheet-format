@@ -68,8 +68,8 @@
 #     single-phase (CMP-RXN-04). Deleting a stated-empty phase, or any
 #     field inside a phase, stays covered.
 #   - Deletions on an internally inconsistent document, one whose parts
-#     contradict each other: included_in_thermo flags the stream data
-#     contradict (CMP-THM-04); a unit claim that the unit's own ports,
+#     contradict each other: included_in_thermo_equilibria flags the
+#     stream data contradict (CMP-THM-04); a unit claim that the unit's own ports,
 #     streams or duties contradict -- a 'Mixer' heating its feed, a
 #     'Splitter' drawing power, a 'Centrifuge' taking steam, species
 #     converting across a 'Membrane' or 'Pelletizer' label, a 'Screw
@@ -327,7 +327,7 @@ criteria:
     criticality: essential
     representable_since: "0.0.0"
     sff_paths:
-      - chemicals[].included_in_thermo
+      - chemicals[].included_in_thermo_equilibria
       - streams[].stream_properties.phases
       - streams[].stream_properties.composition[].phase
     rationale: >-
@@ -336,7 +336,8 @@ criteria:
       phase): cellulose, ash or cell mass are fixed solids, and a flash or
       column that treated them as volatile would fail for want of a vapor
       pressure or partition them wrongly. The base field
-      chemicals[].included_in_thermo says whether a chemical takes part in
+      chemicals[].included_in_thermo_equilibria (included_in_thermo before
+      v0.2.3) says whether a chemical takes part in
       phase equilibrium, but not which phase a locked one is locked in.
       Each chemical scores the best of: its flag, when the stream phases do
       not contradict it -- true (it partitions), 1; false (locked) and shown

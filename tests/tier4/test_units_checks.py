@@ -151,7 +151,7 @@ class TestUNIT05(RealBiosteamTestCase):
 
     def _doc_with_two_chemicals(self):
         doc = valid_doc()
-        doc["chemicals"].append({"id": "Water", "included_in_thermo": False,
+        doc["chemicals"].append({"id": "Water", "included_in_thermo_equilibria": False,
                                  "index": len(doc["chemicals"]), "molar_mass": 18.015})
         return doc
 

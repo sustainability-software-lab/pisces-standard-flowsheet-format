@@ -913,6 +913,29 @@ class TestGetChemicalEntry(unittest.TestCase):
         self.assertEqual(entry["included_in_thermo"], False)
         self.assertEqual(entry["molar_mass"], 1.0)
 
+    def test_flag_key_renames_the_vle_flag_in_place(self):
+        """flag_key="included_in_thermo_equilibria" (v0.2.3+) writes the VLE
+        flag under the new name, in the legacy key's position, and nothing
+        else changes."""
+        c = self._chem("Water", CAS="7732-18-5", formula="H2O", MW=18.015)
+        legacy = _export.get_chemical_entry(c, 0, True, "dict")
+        entry = _export.get_chemical_entry(
+            c, 0, True, "dict", flag_key="included_in_thermo_equilibria")
+        self.assertEqual(list(entry.keys()),
+                         ["id", "included_in_thermo_equilibria", "index",
+                          "formula", "registry_id", "molar_mass"])
+        self.assertEqual(list(entry.values()), list(legacy.values()))
+
+    def test_thermo_flag_key_is_gated_on_0_2_3(self):
+        """thermo_flag_key: the legacy key through 0.2.2, the new key from
+        0.2.3 on (_THERMO_EQUILIBRIA_KEY_SINCE)."""
+        self.assertEqual(_export._THERMO_EQUILIBRIA_KEY_SINCE, (0, 2, 3))
+        for v in ("0.0.6", "0.1.5", "0.2.0", "0.2.1", "0.2.2"):
+            self.assertEqual(_export.thermo_flag_key(v), "included_in_thermo")
+        for v in ("0.2.3", "0.3.0", "1.0.0"):
+            self.assertEqual(_export.thermo_flag_key(v),
+                             "included_in_thermo_equilibria")
+
     def test_falsy_stoichiometry_omits_index(self):
         """index is emitted only when stoichiometry is truthy."""
         c = self._chem("Ash", MW=1.0)

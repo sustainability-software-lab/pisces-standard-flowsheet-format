@@ -350,7 +350,7 @@ class TestCriteriaRegistry(unittest.TestCase):
         quantity_units_global), COST-04 since 0.1.2
         (purchase_cost_correlations), SYS-04 since 0.0.6 (reproducibility
         packages); all others since 0.0.0 -- including CMP-THM-04 (R4.5:
-        chemicals[].included_in_thermo is a base field)."""
+        chemicals[].included_in_thermo_equilibria is a base field)."""
         since = {cid: e["representable_since"]
                  for cid, e in self.registry["criteria"].items()}
         self.assertEqual(since["CMP-THM-04"], "0.0.0")
@@ -2218,7 +2218,7 @@ class TestThermoCriteria(unittest.TestCase):
     def test_thm_04_phase_behaviour(self):
         """_score_thm_04 / _chemical_phases / _thm_04_credit (CMP-THM-04,
         R4.5), each chemical the MAX over its tiers: valid_doc's Ethanol
-        (included_in_thermo false, seen only in 'l': the flag names its
+        (included_in_thermo_equilibria false, seen only in 'l': the flag names its
         locked phase) -> 1; flag deleted -> 0 (one phase proves nothing);
         also seen in 'g' -> the false flag is contradicted (ignored, noted)
         and the stream evidence gives DERIVED_CREDIT, while a true flag
@@ -2231,9 +2231,9 @@ class TestThermoCriteria(unittest.TestCase):
             self.assertEqual(C._chemical_phases(ctx(doc)), {"Ethanol": {"l"}})
             self.assertEqual(run(C._score_thm_04, doc)[0], 1.0)
             unflagged = copy.deepcopy(doc)
-            remove(unflagged, "chemicals/0/included_in_thermo")
+            remove(unflagged, "chemicals/0/included_in_thermo_equilibria")
             self.assertEqual(run(C._score_thm_04, unflagged)[0], 0.0)
-            mutate(unflagged, "chemicals/0/included_in_thermo", "yes")
+            mutate(unflagged, "chemicals/0/included_in_thermo_equilibria", "yes")
             self.assertEqual(run(C._score_thm_04, unflagged)[0], 0.0)
             doc["streams"][1]["stream_properties"]["phases"]["g"] = {
                 "total_molar_flow": 0.5,
@@ -2241,19 +2241,19 @@ class TestThermoCriteria(unittest.TestCase):
                                  "mol_fraction": 1.0}]}
             score, _m, missing = run(C._score_thm_04, doc)
             self.assertEqual(score, C.DERIVED_CREDIT)
-            self.assertIn("included_in_thermo false contradicts", missing[0])
-            mutate(doc, "chemicals/0/included_in_thermo", True)
+            self.assertIn("included_in_thermo_equilibria false contradicts", missing[0])
+            mutate(doc, "chemicals/0/included_in_thermo_equilibria", True)
             self.assertEqual(run(C._score_thm_04, doc)[0], 1.0)
             solid = valid_doc()
             for s in solid["streams"]:
                 s["stream_properties"]["phases"] = {
                     "s": s["stream_properties"]["phases"]["l"]}
             self.assertEqual(run(C._score_thm_04, solid)[0], 1.0)
-            mutate(solid, "chemicals/0/included_in_thermo", True)
+            mutate(solid, "chemicals/0/included_in_thermo_equilibria", True)
             self.assertEqual(run(C._score_thm_04, solid)[0], C.DERIVED_CREDIT)
             unseen = valid_doc()
             unseen["chemicals"].append({"id": "Glycerol", "molar_mass": 92.09,
-                                        "included_in_thermo": False})
+                                        "included_in_thermo_equilibria": False})
             score, _m, missing = run(C._score_thm_04, unseen)
             self.assertEqual(score, (1.0 + C.FLAG_UNOBSERVED_CREDIT) / 2)
             self.assertIn("no stream shows the phase", missing[0])
@@ -4393,7 +4393,7 @@ def rich_doc(single_thermo=False):
         "correlation_type": "custom_function", "lifetime": 10}
 
     chemicals = [{"id": n, "registry_id": cas, "formula": f, "molar_mass": mw,
-                  "included_in_thermo": True}
+                  "included_in_thermo_equilibria": True}
                  for n, cas, f, mw in (("Water", "7732-18-5", "H2O", 18.015),
                                        ("Glucose", "50-99-7", "C6H12O6", 180.156),
                                        ("Ethanol", "64-17-5", "C2H6O", 46.07),
@@ -5724,7 +5724,7 @@ R3_RECORDS = dict({n: KNOWN_RECORDS[n] for n in RICH_NAMES},
                      "124-38-9": KNOWN_RECORDS["CO2"]})
 
 FIBER = {"id": "Fiber", "registry_id": "9004-34-6", "formula": "C6H10O5",
-         "molar_mass": 162.14, "included_in_thermo": True}
+         "molar_mass": 162.14, "included_in_thermo_equilibria": True}
 
 
 def r3_rich_doc(single_thermo=False, convert=True):
@@ -6247,7 +6247,7 @@ THERMOSTEAM_MW = {"AceticAcid": 60.05196, "CarbonMonoxide": 28.0101,
 
 def r4_rich_doc():
     """r3_rich_doc() in internal units, made to exercise the Revision 4
-    tiers while staying CONSISTENT (every included_in_thermo agrees with
+    tiers while staying CONSISTENT (every included_in_thermo_equilibria agrees with
     the stream phases -- all streams are liquid): Glucose flagged false
     (locked, seen only in 'l': the flag names the phase); an unreferenced
     thermosteam built-in 'Cellulose' (false, never shown: 0.5 by its flag,
@@ -6258,12 +6258,12 @@ def r4_rich_doc():
     doc = r3_rich_doc(convert=False)
     for chem in doc["chemicals"]:
         if chem["id"] == "Glucose":
-            chem["included_in_thermo"] = False
+            chem["included_in_thermo_equilibria"] = False
     doc["chemicals"] += [
         {"id": "Cellulose", "formula": "C6H10O5", "molar_mass": 162.14,
-         "included_in_thermo": False},
+         "included_in_thermo_equilibria": False},
         {"id": "Methanol", "registry_id": "67-56-1", "formula": "CH4O",
-         "molar_mass": 32.04, "included_in_thermo": False},
+         "molar_mass": 32.04, "included_in_thermo_equilibria": False},
         {"id": "X1", "formula": "C5H8O2", "molar_mass": 100.12}]
     feed_b = next(s for s in doc["streams"] if s["id"] == "feedB")
     sp = feed_b["stream_properties"]
@@ -6280,7 +6280,7 @@ R4_RECORDS = dict(R3_RECORDS, **{"67-56-1": (32.04186, "CH4O"),
 class TestRevision4PartA(unittest.TestCase):
     """Revision 4 part A: thermosteam's Chemical(ID) name lookup and
     built-in pseudo-components (R4.1), the heat-agent phase (R4.2),
-    included_in_thermo in CMP-THM-04 (R4.5), the feed phase (R4.6),
+    included_in_thermo_equilibria in CMP-THM-04 (R4.5), the feed phase (R4.6),
     unreferenced-chemical padding (R4.7), TEA validity (R4.9) and QU-02 in
     CMP-INT-04 (R4.11), with deletion monotonicity over the new tiers."""
 
@@ -6465,7 +6465,9 @@ class TestRevision4PartA(unittest.TestCase):
         stream phases -> DERIVED_CREDIT from its locked 's', noted; with a
         molar mass contradicting the built-in -> 0; a false flag and no
         streams -> max(0.5, 0.75) = 0.75; a non-built-in 'Mystery' with a
-        false flag -> FLAG_UNOBSERVED_CREDIT; a true flag -> 1."""
+        false flag -> FLAG_UNOBSERVED_CREDIT; a true flag -> 1; the legacy
+        pre-0.2.3 key included_in_thermo is read the same way, and loses to
+        included_in_thermo_equilibria when both are present."""
         with name_lookup():
             credit, note = C._thm_04_credit({"molar_mass": 162.14}, "Cellulose",
                                             set())
@@ -6474,13 +6476,23 @@ class TestRevision4PartA(unittest.TestCase):
             self.assertEqual(C._thm_04_credit({"molar_mass": 180.16},
                                               "Cellulose", set())[0], 0.0)
             self.assertEqual(C._thm_04_credit(
-                {"included_in_thermo": False}, "Cellulose", set())[0],
+                {"included_in_thermo_equilibria": False}, "Cellulose", set())[0],
                 C.DERIVED_CREDIT)
+            self.assertEqual(C._thm_04_credit(
+                {"included_in_thermo_equilibria": False}, "Mystery", set())[0],
+                C.FLAG_UNOBSERVED_CREDIT)
+            self.assertEqual(C._thm_04_credit(
+                {"included_in_thermo_equilibria": True}, "Mystery", set()), (1.0, None))
+            # Pre-0.2.3 files name the flag included_in_thermo: read as a
+            # fallback, and the new key wins when both are present.
+            self.assertEqual(C._thm_04_credit(
+                {"included_in_thermo": True}, "Mystery", set()), (1.0, None))
             self.assertEqual(C._thm_04_credit(
                 {"included_in_thermo": False}, "Mystery", set())[0],
                 C.FLAG_UNOBSERVED_CREDIT)
             self.assertEqual(C._thm_04_credit(
-                {"included_in_thermo": True}, "Mystery", set()), (1.0, None))
+                {"included_in_thermo_equilibria": True,
+                 "included_in_thermo": False}, "Mystery", set()), (1.0, None))
 
     def test_referenced_mean(self):
         """_referenced_mean (R4.7) over [(score, referenced)]: nothing
@@ -6527,7 +6539,7 @@ class TestRevision4PartA(unittest.TestCase):
                     if C._valid_cas(c)) for k in range(12)]
         with name_lookup({c: (30.0 + k, None) for k, c in enumerate(cas)}):
             sparse = valid_doc()
-            for key in ("formula", "molar_mass", "included_in_thermo", "index"):
+            for key in ("formula", "molar_mass", "included_in_thermo_equilibria", "index"):
                 remove(sparse, f"chemicals/0/{key}")
             before = (run(C._score_thm_02, sparse)[0],
                       run(C._score_thm_03, sparse)[0], overall(sparse))
@@ -6592,7 +6604,7 @@ class TestRevision4PartA(unittest.TestCase):
         TEA currency/year, QU-02 among the passing checks -- ids and stream
         endpoints included: deleting any value below the top level raises
         neither the overall score nor any scored criterion; the new fields
-        (every included_in_thermo, feedB's phase tag, each heat agent's
+        (every included_in_thermo_equilibria, feedB's phase tag, each heat agent's
         phase, TEA_currency, TEA_year) are among the paths; more than half
         the deletions lower the score. Replacing any of those new fields by
         '' or ['x'] scores no criterion above its deletion (R2.0)."""
@@ -6601,9 +6613,9 @@ class TestRevision4PartA(unittest.TestCase):
             paths = dict(deletable_paths(doc, skip=frozenset()))
             feed_b = [i for i, s in enumerate(doc["streams"])
                       if s["id"] == "feedB"][0]
-            new_fields = [("chemicals", i, "included_in_thermo")
+            new_fields = [("chemicals", i, "included_in_thermo_equilibria")
                           for i, c in enumerate(doc["chemicals"])
-                          if "included_in_thermo" in c]
+                          if "included_in_thermo_equilibria" in c]
             new_fields += [("streams", feed_b, "stream_properties",
                             "composition", 0, "phase"),
                            ("utilities", "heat_utilities", 0, "composition", 0,
@@ -9274,7 +9286,7 @@ class TestRevision6PartB(unittest.TestCase):
     def test_schema_gap_docs_entries(self):
         """R6.5 / R6.9 docs: the completeness page lists the '<Class> on
         <source URL>' design_simulation_method convention among the schema
-        gaps and notes that included_in_thermo flags contradicted by the
+        gaps and notes that included_in_thermo_equilibria flags contradicted by the
         stream data put a document outside the deletion guarantee."""
         page = DOCS_PAGE.read_text(encoding="utf-8")
         for phrase in ("<Class> on <source URL>",
@@ -12235,9 +12247,9 @@ def r8c_brine_doc(water_fraction=True):
     doc["utilities"]["heat_utilities"] = [brine]
     doc["chemicals"] += [
         {"id": "Water", "index": 1, "formula": "H2O", "molar_mass": 18.015,
-         "included_in_thermo": False},
+         "included_in_thermo_equilibria": False},
         {"id": "NaCl", "index": 2, "formula": "NaCl", "molar_mass": 58.44,
-         "included_in_thermo": False}]
+         "included_in_thermo_equilibria": False}]
     return doc
 
 
@@ -12688,7 +12700,7 @@ class TestRevision8C(unittest.TestCase):
         unit id no unit declares may be one too; a priced outlet -> 1."""
         doc = facility_doc()
         doc["chemicals"].append({"id": "Ash", "molar_mass": 1.0,
-                                 "included_in_thermo": False})
+                                 "included_in_thermo_equilibria": False})
         emis = [s["id"] for s in doc["streams"]].index("emis")
         sc = ctx(doc)
         self.assertIsNone(C._utility_port_product(sc, emis))
@@ -13096,7 +13108,7 @@ def _r8f_doc(units, streams, species):
         "units": units, "streams": streams,
         "chemicals": [{"id": n, "molar_mass": _R8F_MW[n],
                        "formula": _R8F_FORMULA[n],
-                       "included_in_thermo": False} for n in species],
+                       "included_in_thermo_equilibria": False} for n in species],
         "utilities": {}})
     doc["quantity_units_global"]["molar_mass"] = {
         "aliases": ["molar_mass"], "quantity_units": "g/mol"}

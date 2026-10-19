@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "sff_version": "0.2.0",
+        "sff_version": "0.2.3",
         "TEA_currency": "USD",
         "TEA_year": 2018,
         "process_simulator": {
@@ -67,7 +67,7 @@
                 "python_version": "3.9.25",
                 "platform": "Windows-10-10.0.26200-SP0",
                 "env_key": "a996d9af0728c87797660ff093b1b4f795f6924876370c6a482e552839f0f894",
-                "exported_at": "2026-08-27T19:03:20Z",
+                "exported_at": "2026-10-19T19:16:15Z",
                 "package_versions": {
                     "biosteam": "2.46.1",
                     "biorefineries": "2.34.10",
@@ -9150,7 +9150,7 @@
     "chemicals": [
         {
             "id": "Water",
-            "included_in_thermo": true,
+            "included_in_thermo_equilibria": true,
             "index": 0,
             "formula": "H2O",
             "registry_id": "7732-18-5",
@@ -9158,146 +9158,146 @@
         },
         {
             "id": "Ethanol",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 1,
             "formula": "C2H6O",
             "molar_mass": 46.06844
         },
         {
             "id": "Glucose",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 2,
             "formula": "C6H12O6",
             "molar_mass": 180.156
         },
         {
             "id": "H3PO4",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 3,
             "formula": "H3O4P",
             "molar_mass": 97.995182
         },
         {
             "id": "P4O10",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 4,
             "formula": "O10P4",
             "molar_mass": 283.889048
         },
         {
             "id": "CO2",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 5,
             "formula": "CO2",
             "molar_mass": 44.0095
         },
         {
             "id": "Octane",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 6,
             "formula": "C8H18",
             "molar_mass": 114.22852
         },
         {
             "id": "O2",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 7,
             "formula": "O2",
             "molar_mass": 31.9988
         },
         {
             "id": "CH4",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 8,
             "formula": "CH4",
             "molar_mass": 16.04246
         },
         {
             "id": "Ash",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 9,
             "molar_mass": 1.0
         },
         {
             "id": "Yeast",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 10,
             "formula": "CH1.61O0.56",
             "molar_mass": 22.5931474
         },
         {
             "id": "CaO",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 11,
             "formula": "CaO",
             "molar_mass": 56.077400000000004
         },
         {
             "id": "TriOlein",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 12,
             "formula": "C57H104O6",
             "molar_mass": 885.4320600000001
         },
         {
             "id": "Cellulose",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 13,
             "formula": "C6H10O5",
             "molar_mass": 162.1406
         },
         {
             "id": "H2SO4",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 14,
             "formula": "H2O4S",
             "molar_mass": 98.07848
         },
         {
             "id": "N2",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 15,
             "formula": "N2",
             "molar_mass": 28.0134
         },
         {
             "id": "SO2",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 16,
             "formula": "O2S",
             "molar_mass": 64.0638
         },
         {
             "id": "NH3",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 17,
             "formula": "H3N",
             "molar_mass": 17.03052
         },
         {
             "id": "Starch",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 18,
             "formula": "C6H10O5",
             "molar_mass": 162.1406
         },
         {
             "id": "Fiber",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 19,
             "formula": "C6H10O5",
             "molar_mass": 162.1406
         },
         {
             "id": "SolubleProtein",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 20,
             "formula": "C6H10O5",
             "molar_mass": 162.1406
         },
         {
             "id": "InsolubleProtein",
-            "included_in_thermo": false,
+            "included_in_thermo_equilibria": false,
             "index": 21,
             "formula": "C6H10O5",
             "molar_mass": 162.1406

@@ -31,7 +31,7 @@ class TestFormulaMolarMass(RealBiosteamTestCase):
     def test_agreeing_passes(self):
         """CHEM-03 — chemical formula H2O and declared molar_mass 18.01528 (real agreement) -> check status is pass."""
         c = self.V._Context({"chemicals": [
-            {"id": "W", "included_in_thermo": False,
+            {"id": "W", "included_in_thermo_equilibria": False,
              "formula": "H2O", "molar_mass": 18.01528}]})
         self.assertEqual(
             self.V._check_formula_molar_mass_agreement(c)[0].status, "pass")
@@ -39,7 +39,7 @@ class TestFormulaMolarMass(RealBiosteamTestCase):
     def test_disagreeing_is_warning(self):
         """CHEM-03 — chemical formula H2O but declared molar_mass 99.0 (disagrees with the real formula mass) -> warning-severity fail."""
         c = self.V._Context({"chemicals": [
-            {"id": "W", "included_in_thermo": False,
+            {"id": "W", "included_in_thermo_equilibria": False,
              "formula": "H2O", "molar_mass": 99.0}]})
         r = self.V._check_formula_molar_mass_agreement(c)[0]
         self.assertEqual((r.status, r.severity), ("fail", "warning"))
@@ -47,7 +47,7 @@ class TestFormulaMolarMass(RealBiosteamTestCase):
     def test_no_pairs_skips(self):
         """CHEM-03 — chemical with molar_mass but no formula (no formula/molar_mass pair to compare) -> check status is skip."""
         c = self.V._Context({"chemicals": [
-            {"id": "W", "included_in_thermo": False, "molar_mass": 18.0}]})
+            {"id": "W", "included_in_thermo_equilibria": False, "molar_mass": 18.0}]})
         self.assertEqual(
             self.V._check_formula_molar_mass_agreement(c)[0].status, "skip")
 
@@ -104,7 +104,7 @@ class TestMassMolarConsistency(RealBiosteamTestCase):
     def _ctx(self, mass, molar):
         # Single-component water phase: M-bar = 18.01528 g/mol.
         return self.V._Context({
-            "chemicals": [{"id": "W", "included_in_thermo": False,
+            "chemicals": [{"id": "W", "included_in_thermo_equilibria": False,
                            "molar_mass": 18.01528}],
             "streams": [{"id": "s", "stream_properties": {
                 "total_mass_flow": mass, "total_molar_flow": molar,
@@ -127,7 +127,7 @@ class TestMassMolarConsistency(RealBiosteamTestCase):
     def test_unresolvable_molar_mass_skips(self):
         """STR-10 — chemical with no formula/molar_mass to resolve -> check status is skip."""
         c = self.V._Context({
-            "chemicals": [{"id": "X", "included_in_thermo": True}],
+            "chemicals": [{"id": "X", "included_in_thermo_equilibria": True}],
             "streams": [{"id": "s", "stream_properties": {
                 "total_mass_flow": 5.0, "total_molar_flow": 1.0,
                 "phases": {"l": {"total_mass_flow": 5.0, "total_molar_flow": 1.0,
@@ -189,19 +189,19 @@ class TestMolarMass(RealBiosteamTestCase):
     def test_context_prefers_declared_mass(self):
         """_Context.molar_mass("A") with a declared molar_mass and no formula -> returns the declared value (42.0), not a derived one."""
         ctx = self.V._Context({"chemicals": [
-            {"id": "A", "included_in_thermo": False, "molar_mass": 42.0}]})
+            {"id": "A", "included_in_thermo_equilibria": False, "molar_mass": 42.0}]})
         self.assertEqual(ctx.molar_mass("A"), 42.0)
 
     def test_context_falls_back_to_formula(self):
         """_Context.molar_mass("W") with no declared molar_mass but formula "H2O" -> falls back to the real formula-derived mass ~18.01528."""
         ctx = self.V._Context({"chemicals": [
-            {"id": "W", "included_in_thermo": True, "formula": "H2O"}]})
+            {"id": "W", "included_in_thermo_equilibria": True, "formula": "H2O"}]})
         self.assertAlmostEqual(ctx.molar_mass("W"), 18.01528, places=3)
 
     def test_context_none_when_unresolvable(self):
         """_Context.molar_mass("X") with neither declared molar_mass nor formula -> None."""
         ctx = self.V._Context({"chemicals": [
-            {"id": "X", "included_in_thermo": True}]})
+            {"id": "X", "included_in_thermo_equilibria": True}]})
         self.assertIsNone(ctx.molar_mass("X"))
 
 

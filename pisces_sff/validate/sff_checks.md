@@ -723,10 +723,13 @@ are always acceptable.
 | `extracted-from-image` | `{UNIT-10, STR-14}` | none | `image_type`, `extraction_method` |
 | `extracted-from-table` | `{UNIT-10, STR-14}` | none | `literature_type`, `extraction_method` |
 
-**Tag-conditional relaxation (schema, v0.2.2).** Declaring any `extracted-from-*` tag
-makes each stream phase's `total_molar_flow` optional (a root-level `if`/`else`; required
-in every other file). This is a schema-shape loosening, not a check: the validator never
-required the field (STR-09/STR-10 skip a phase that lacks it).
+**Tag-conditional relaxation (schema, v0.2.2 and v0.2.3).** Declaring any
+`extracted-from-*` tag makes each stream phase's `total_molar_flow` (v0.2.2) and each
+chemical's `included_in_thermo_equilibria` (v0.2.3) optional (a root-level `if`/`else`;
+both required in every other file). This is a schema-shape loosening, not a check: the validator never required
+either field (STR-09/STR-10 skip a phase that lacks its molar flow; no check reads the
+chemical flag). When the flag is absent, the schema's `registry_id` / `molar_mass`
+`if`/`then` rules, which key on it, do not apply.
 
 The machine-readable home of this table — the tag names, classes, subsets,
 tolerated-skip policies, and required-metadata lists the validator executes — is the committed registry

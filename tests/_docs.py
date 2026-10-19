@@ -67,11 +67,11 @@ def _base():
             },
         ],
         "chemicals": [
-            # included_in_thermo: False (schema then-branch requires molar_mass,
+            # included_in_thermo_equilibria: False (schema then-branch requires molar_mass,
             # not registry_id) keeps the fixture minimal -- no need for a CAS/
             # SMILES registry id just to satisfy the schema's if/then.
             {"id": "Ethanol", "index": 0, "formula": "C2H6O",
-             "molar_mass": 46.07, "included_in_thermo": False},
+             "molar_mass": 46.07, "included_in_thermo_equilibria": False},
         ],
         "utilities": {"heat_utilities": [], "power_utilities": [],
                       "other_utilities": []},
