@@ -33,12 +33,16 @@ Four tags are **static**: `exported-from-simulator`, `extracted-from-prose`,
 tag-specific subset of the catalogue's checks with no `warning`-severity
 finding — fast, and requiring no simulation.
 From schema v0.2.2, declaring `extracted-from-prose` or `extracted-from-table`
-also requires `metadata.literature_type`, and declaring `extracted-from-image`
-requires `metadata.image_type`. The schema enforces these, so a file that
-declares the tag without the field fails the schema gate. The earning rule
-applies the same requirement: `evaluate_sff_tags` reports an `extracted-from-*`
-tag earned only when its field is present, and otherwise lists it in
-`blocking` (e.g. `metadata.literature_type`). This way a tag reported as
+also requires `metadata.literature_type`, declaring `extracted-from-image`
+requires `metadata.image_type`, and declaring any `extracted-from-*` tag
+requires `metadata.extraction_method` (any JSON type). The schema enforces
+these, so a file that declares the tag without the field fails the schema
+gate. The earning rule applies the same requirement: `evaluate_sff_tags`
+reports an `extracted-from-*` tag earned only when its fields are present, and
+otherwise lists each missing one in `blocking` (e.g.
+`metadata.literature_type`, `metadata.extraction_method`). In return, an
+`extracted-from-*` tag relaxes one requirement: each stream phase's
+`total_molar_flow` becomes optional. This way a tag reported as
 earned can always be declared. The required fields live in the registry
 under each tag's `required_metadata`.
 The tag names, subsets, tolerated-skip policies, and required metadata fields live in one committed

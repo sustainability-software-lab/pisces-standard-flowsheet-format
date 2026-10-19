@@ -708,8 +708,10 @@ A file earns static tag `T` iff all of: (1) **conformance** — schema-valid and
 circularity); (2) **subset warning-clean** — no check in `T`'s subset produced a
 `warning`-severity *fail*; (3) **subset skip-clean** — no check in `T`'s subset produced a
 *skip*, except skips tolerated by `T`'s policy below; (4) **required metadata present** —
-every field in `T`'s required-metadata list is a non-empty string in `metadata` (from
-v0.2.2; a missing field is reported in `blocking` as `metadata.<field>`). Condition (4)
+every field in `T`'s required-metadata list is present in `metadata`, with any value (from
+v0.2.2; presence only, exactly as the schema's `required` — each field's type is the
+schema's to check, and a wrongly-typed value already fails condition (1); a missing field
+is reported in `blocking` as `metadata.<field>`). Condition (4)
 mirrors the schema's tag → field `if`/`then` rules (see TAG-01), so a tag is never reported
 earned on a file that could not then declare it schema-validly. `info` findings and `pass`
 are always acceptable.
@@ -717,9 +719,14 @@ are always acceptable.
 | Tag | Subset | Tolerated skips | Required metadata |
 | --- | --- | --- | --- |
 | `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. | none |
-| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) | `literature_type` |
-| `extracted-from-image` | `{UNIT-10, STR-14}` | none | `image_type` |
-| `extracted-from-table` | `{UNIT-10, STR-14}` | none | `literature_type` |
+| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) | `literature_type`, `extraction_method` |
+| `extracted-from-image` | `{UNIT-10, STR-14}` | none | `image_type`, `extraction_method` |
+| `extracted-from-table` | `{UNIT-10, STR-14}` | none | `literature_type`, `extraction_method` |
+
+**Tag-conditional relaxation (schema, v0.2.2).** Declaring any `extracted-from-*` tag
+makes each stream phase's `total_molar_flow` optional (a root-level `if`/`else`; required
+in every other file). This is a schema-shape loosening, not a check: the validator never
+required the field (STR-09/STR-10 skip a phase that lacks it).
 
 The machine-readable home of this table — the tag names, classes, subsets,
 tolerated-skip policies, and required-metadata lists the validator executes — is the committed registry
@@ -752,8 +759,8 @@ absolute floor near zero.
 - **Rationale:** a stamped tag is a promise downstream consumers rely on; a false claim must
   make the file non-conforming.
 - **Scope:** `metadata.tags` ↔ computed earned tags (+ the reproducibility recipe for the
-  `reproducible` precondition; + `metadata.literature_type` / `metadata.image_type` for the
-  `extracted-from-*` tags).
+  `reproducible` precondition; + `metadata.literature_type` / `metadata.image_type` /
+  `metadata.extraction_method` for the `extracted-from-*` tags).
 - **Severity:** `error`.
 - **Skipped when:** `metadata.tags` absent or empty.
 - **Enforcement:** validator, computed as a post-pass aggregate (like XREF-01): not in
@@ -762,8 +769,9 @@ absolute floor near zero.
   (required-addition, conditional): `metadata` `if`/`then` rules require
   `reproducibility.comparison_rtol` when `tags` contains `reproducible`; and, from v0.2.2,
   `literature_type` when `tags` contains `extracted-from-prose` or `extracted-from-table`,
-  and `image_type` when `tags` contains `extracted-from-image` (the extraction source must
-  be named when the tag claims one). A missing field fails the schema gate, which in turn
+  `image_type` when `tags` contains `extracted-from-image`, and `extraction_method` (any
+  type) when `tags` contains any `extracted-from-*` tag (the extraction source and method
+  must be named when the tag claims one). A missing field fails the schema gate, which in turn
   denies every tag via the static rule's conformance condition. The static earning rule's
   condition (4) applies the same field requirement to *undeclared* tags, so
   `evaluate_sff_tags` agrees with the schema.
@@ -820,5 +828,5 @@ absolute floor near zero.
 | QU-03 | aliases globally unambiguous | error | validator |
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
-| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`, `literature_type`, `image_type`) |
+| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`, `literature_type`, `image_type`, `extraction_method`) |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |

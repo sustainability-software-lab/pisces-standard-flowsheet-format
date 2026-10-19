@@ -32,7 +32,7 @@
         },
         "total_molar_flow": {
           "type": "number",
-          "description": "Total molar flow rate of this phase. Quantity units: quantity_units_global 'molar_flow' (default 'kmol/hr')."
+          "description": "Total molar flow rate of this phase. Quantity units: quantity_units_global 'molar_flow' (default 'kmol/hr'). Required unless metadata.tags contains an 'extracted-from-*' tag (optional for extracted flowsheets from v0.2.2; enforced by the root-level if/else)."
         },
         "total_volumetric_flow": {
           "type": "number",
@@ -69,7 +69,6 @@
         }
       },
       "required": [
-        "total_molar_flow",
         "composition"
       ]
     }
@@ -326,6 +325,9 @@
           "type": "string",
           "enum": ["process_flow_diagram", "block_flow_diagram", "piping_and_instrumentation_diagram", "other"],
           "description": "Type of image this flowsheet was extracted from. Added in v0.2.2; required when metadata.tags contains 'extracted-from-image' (sff_checks.md TAG-01, schema part)."
+        },
+        "extraction_method": {
+          "description": "How this flowsheet was extracted from its source (e.g., the extraction pipeline, model, or manual procedure used). Any JSON type is allowed, so a producer may record a plain string or a structured object. Added in v0.2.2; required when metadata.tags contains any 'extracted-from-*' tag (sff_checks.md TAG-01, schema part)."
         }
       },
       "required": [
@@ -362,6 +364,13 @@
             "properties": { "tags": { "contains": { "const": "extracted-from-image" } } }
           },
           "then": { "required": ["image_type"] }
+        },
+        {
+          "if": {
+            "required": ["tags"],
+            "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-image", "extracted-from-table"] } } }
+          },
+          "then": { "required": ["extraction_method"] }
         }
       ]
     },
@@ -902,5 +911,31 @@
     "units",
     "streams",
     "utilities"
-  ]
+  ],
+  "if": {
+    "required": ["metadata"],
+    "properties": {
+      "metadata": {
+        "required": ["tags"],
+        "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-image", "extracted-from-table"] } } }
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "streams": {
+        "items": {
+          "properties": {
+            "stream_properties": {
+              "properties": {
+                "phases": {
+                  "additionalProperties": { "required": ["total_molar_flow"] }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }

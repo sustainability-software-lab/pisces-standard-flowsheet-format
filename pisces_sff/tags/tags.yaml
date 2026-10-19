@@ -6,8 +6,9 @@
 # condition map (_TOLERATED_SKIP_CONDITIONS); unknown names are rejected at
 # load time. A `harness`-class tag carries no subset/tolerated_skips/
 # required_metadata -- its earning rule is code (verify_reproducible).
-# required_metadata lists metadata fields a static tag needs present (a
-# non-empty string) to be earned; the schema's metadata if/then rules mirror it
+# required_metadata lists metadata fields a static tag needs present (any
+# value; the schema types each field) to be earned; the schema's metadata
+# if/then rules mirror it
 # for declared tags (sync pinned by tests/tier1/test_tag_registry.py).
 tags:
   exported-from-simulator:
@@ -24,14 +25,14 @@ tags:
   extracted-from-prose:
     class: static
     subset: [UNIT-10, STR-14]     # tolerated_skips omitted => none
-    required_metadata: [literature_type]
+    required_metadata: [literature_type, extraction_method]
   extracted-from-image:
     class: static
     subset: [UNIT-10, STR-14]
-    required_metadata: [image_type]
+    required_metadata: [image_type, extraction_method]
   extracted-from-table:
     class: static
     subset: [UNIT-10, STR-14]
-    required_metadata: [literature_type]
+    required_metadata: [literature_type, extraction_method]
   reproducible:
     class: harness

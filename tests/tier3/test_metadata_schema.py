@@ -12,8 +12,8 @@
 # required-ness, the 0.0.6 metadata.reproducibility block, and the v0.0.5
 # metadata.microorganisms shape (+ its v0.2.2 null/"None" form), the v0.2.2
 # process_simulator null/"None" form, and the v0.2.2 literature_type /
-# image_type fields required beside the extracted-from-* tags (TAG-01's schema
-# part). Import-light: validates synthetic fragments
+# image_type / extraction_method fields required beside the extracted-from-*
+# tags (TAG-01's schema part). Import-light: validates synthetic fragments
 # against the real committed schema via jsonschema, never importing pisces_sff.
 #
 # Originally split across test_schema_constraints_v0_0_12.py (MET-01/05/06),
@@ -553,6 +553,10 @@ class TestExtractionSourceTypeSchema(unittest.TestCase):
         doc = minimal_doc()
         if tags is not None:
             doc["metadata"]["tags"] = tags
+            # extraction_method is required beside every extracted tag; this
+            # class pins the source-type fields, TestExtractionMethodSchema
+            # pins extraction_method itself.
+            doc["metadata"]["extraction_method"] = "manual"
         doc["metadata"].update(fields)
         return doc
 
@@ -610,6 +614,60 @@ class TestExtractionSourceTypeSchema(unittest.TestCase):
         self.assertAccepted(self._doc(["exported-from-simulator"]))
 
 
+class TestExtractionMethodSchema(unittest.TestCase):
+    """metadata.extraction_method (v0.2.2, TAG-01 schema part): required beside
+    every extracted-from-* tag, of any JSON type, and otherwise optional."""
+
+    EXTRACTED_FIELDS = {"extracted-from-prose": {"literature_type": "patent"},
+                        "extracted-from-table": {"literature_type": "patent"},
+                        "extracted-from-image": {"image_type": "other"}}
+
+    @classmethod
+    def setUpClass(cls):
+        skip_if_disabled(3)
+
+    def setUp(self):
+        self.v = Draft7Validator(load_schema())
+
+    def _doc(self, tag, **fields):
+        doc = minimal_doc()
+        doc["metadata"]["tags"] = [tag]
+        doc["metadata"].update(self.EXTRACTED_FIELDS[tag])
+        doc["metadata"].update(fields)
+        return doc
+
+    def test_each_extracted_tag_requires_extraction_method(self):
+        """Any extracted-from-* tag without extraction_method -> rejected, even
+        with its source-type field present."""
+        for tag in self.EXTRACTED_FIELDS:
+            with self.subTest(tag=tag):
+                self.assertFalse(self.v.is_valid(self._doc(tag)))
+
+    def test_any_type_accepted(self):
+        """extraction_method accepts every JSON type, null included."""
+        for value in ("LLM pipeline v3", {"model": "x", "version": 2},
+                      ["ocr", "llm"], 3, 1.5, True, None, ""):
+            with self.subTest(value=value):
+                doc = self._doc("extracted-from-prose", extraction_method=value)
+                self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
+
+    def test_declared_without_type(self):
+        """The property carries no "type" keyword (any type by design)."""
+        prop = load_schema()["properties"]["metadata"]["properties"]["extraction_method"]
+        self.assertNotIn("type", prop)
+        self.assertIn("description", prop)
+
+    def test_optional_without_extraction_tags(self):
+        """Not required on untagged or exported-from-simulator files, but
+        allowed there."""
+        doc = minimal_doc()
+        self.assertTrue(self.v.is_valid(doc))
+        doc["metadata"]["tags"] = ["exported-from-simulator"]
+        self.assertTrue(self.v.is_valid(doc))
+        doc["metadata"]["extraction_method"] = "n/a"
+        self.assertTrue(self.v.is_valid(doc))
+
+
 class TestTagsSchema(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -635,6 +693,7 @@ class TestTagsSchema(unittest.TestCase):
         value."""
         doc = self._with_tags(["extracted-from-table"])
         doc["metadata"]["literature_type"] = "technical_report"  # required beside it from v0.2.2
+        doc["metadata"]["extraction_method"] = "manual"  # likewise
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
     def test_unknown_tag_rejected(self):

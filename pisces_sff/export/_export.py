@@ -1457,9 +1457,11 @@ def export_biosteam_flowsheet_sff_0_2_2(sys, filepath, tea=None,
     v0.2.2 changes only what the schema accepts, not what the exporter
     emits: units and heat/other utility entries accept additional properties;
     ``metadata.process_simulator`` and ``metadata.microorganisms`` accept
-    ``null`` or ``"None"``; and the new ``metadata.literature_type`` /
-    ``metadata.image_type`` fields are required alongside the
-    ``extracted-from-*`` tags, which this exporter never stamps. This export is
+    ``null`` or ``"None"``; the new ``metadata.literature_type`` /
+    ``metadata.image_type`` / ``metadata.extraction_method`` fields are
+    required alongside the ``extracted-from-*`` tags, which this exporter never
+    stamps; and a phase's ``total_molar_flow`` is optional only in files
+    carrying such a tag (this exporter always writes it). This export is
     therefore byte-identical to the 0.2.1 export apart from
     ``metadata.sff_version``. All version-gated behavior active at 0.2.1
     (including conditional ``exported-from-simulator`` stamping) remains so

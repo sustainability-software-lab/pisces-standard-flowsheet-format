@@ -20,7 +20,7 @@ type beyond those defined below, not only string-valued ones. This is a
 backwards-compatible loosening -- every file valid under an earlier version
 remains valid -- and does not change any field the reference exporter emits.
 
-v0.2.2 adds three things for flowsheets extracted from literature rather than
+v0.2.2 adds four things for flowsheets extracted from literature rather than
 exported from a simulator:
 
 - `process_simulator` (still required) and `microorganisms` (still optional)
@@ -33,8 +33,11 @@ exported from a simulator:
 - `image_type` (`process_flow_diagram`, `block_flow_diagram`,
   `piping_and_instrumentation_diagram`, `other`) is **required** when `tags`
   contains `extracted-from-image`.
+- `extraction_method` (any JSON type -- e.g. a string naming the pipeline or
+  procedure, or a structured object) is **required** when `tags` contains any
+  `extracted-from-*` tag.
 
-The two conditional requirements are the schema half of `TAG-01` (like
+The three conditional requirements are the schema half of `TAG-01` (like
 `reproducibility.comparison_rtol` beside `reproducible`): a file declaring an
 `extracted-from-*` tag written before v0.2.2 must add the matching field to
 validate. The reference exporter never stamps those tags, so its output is
@@ -105,9 +108,16 @@ Each entry in the `streams` array:
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `total_mass_flow` | number | | Total mass flow rate of this phase. Quantity units: `quantity_units_global` `mass_flow` (default `kg/hr`). |
-| `total_molar_flow` | number | yes | Total molar flow rate of this phase. Quantity units: `quantity_units_global` `molar_flow` (default `kmol/hr`). |
+| `total_molar_flow` | number | yes, unless extracted | Total molar flow rate of this phase. Quantity units: `quantity_units_global` `molar_flow` (default `kmol/hr`). Optional from v0.2.2 when `metadata.tags` contains an `extracted-from-*` tag; required otherwise. |
 | `total_volumetric_flow` | number | | Total volumetric flow rate of this phase. Quantity units: `quantity_units_global` `volumetric_flow` (default `m3/hr`). |
 | `composition` | array of objects (below) | yes | An array detailing the chemical components present in this phase. All fractions are relative to this phase. |
+
+From v0.2.2 the `stream_phase` definition itself requires only `composition`;
+a root-level `if`/`else` requires each phase's `total_molar_flow` unless
+`metadata.tags` contains `extracted-from-prose`, `extracted-from-image`, or
+`extracted-from-table` (literature sources rarely report per-phase molar
+flows). This is a loosening: every file valid under an earlier version stays
+valid. The stream-level `total_molar_flow` remains required in all files.
 
 Each `composition` entry:
 

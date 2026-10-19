@@ -1657,9 +1657,11 @@ def _earned_tags(ctx, results):
     `blocking` is uniformly a ``list[str]`` across all registered tags: for the
     static-subset tags it holds the failing/untolerated-skip checks' `check_id`
     strings, followed by ``metadata.<field>`` for each of the tag's
-    ``required_metadata`` fields that is absent or not a non-empty string (so a
-    tag is never reported earned on a file that could not declare it
-    schema-validly; TAG-01); for `reproducible` it holds the
+    ``required_metadata`` fields absent from metadata (presence only, exactly
+    mirroring the schema's ``required``; each field's type is the schema's
+    job, enforced through the conformance condition), so a tag is never
+    reported earned on a file that could not declare it schema-validly;
+    TAG-01); for `reproducible` it holds the
     precondition-problem reason strings (unchanged)."""
     declared = set(ctx.metadata.get('tags') or [])
     conformant = _conformant(results)
@@ -1679,8 +1681,7 @@ def _earned_tags(ctx, results):
             elif r.status == 'skip' and not _skip_tolerated(tag, r.check_id, ctx):
                 blocking.append(r.check_id)
         for field in entry['required_metadata']:  # TAG-01 (schema-mirrored)
-            value = ctx.metadata.get(field)
-            if not (isinstance(value, str) and value):
+            if field not in ctx.metadata:
                 blocking.append(f'metadata.{field}')
         verdict[tag] = {'earned': conformant and not blocking,
                         'declared': tag in declared, 'blocking': blocking}

@@ -37,9 +37,9 @@ EXPECTED_EFS_TOLERATED = {
 }
 EXPECTED_REQUIRED_METADATA = {
     "exported-from-simulator": (),
-    "extracted-from-prose": ("literature_type",),
-    "extracted-from-image": ("image_type",),
-    "extracted-from-table": ("literature_type",),
+    "extracted-from-prose": ("literature_type", "extraction_method"),
+    "extracted-from-image": ("image_type", "extraction_method"),
+    "extracted-from-table": ("literature_type", "extraction_method"),
 }
 
 
@@ -92,7 +92,8 @@ class TestCommittedRegistry(unittest.TestCase):
 
     def test_required_metadata_table(self):
         """Each static tag's required_metadata matches the section 8 table
-        (v0.2.2: extracted-from-* tags need their extraction source type)."""
+        (v0.2.2: extracted-from-* tags need their extraction source type and
+        extraction method)."""
         reg = V._load_tag_registry()
         got = {tag: e["required_metadata"] for tag, e in reg.items()
                if e["class"] == "static"}
