@@ -12,7 +12,7 @@
 # required-ness, the 0.0.6 metadata.reproducibility block, and the v0.0.5
 # metadata.microorganisms shape (+ its v0.2.2 "not_reported"/"not_applicable"
 # form), the v0.2.2 process_simulator "not_reported"/"not_applicable" form,
-# and the v0.2.2 literature_type /
+# and the v0.2.2 prose_type /
 # image_type / extraction_method fields required beside the extracted-from-*
 # tags (TAG-01's schema part). Import-light: validates synthetic fragments
 # against the real committed schema via jsonschema, never importing pisces_sff.
@@ -557,7 +557,8 @@ class TestProcessSimulatorSchema(unittest.TestCase):
 
 
 class TestExtractionSourceTypeSchema(unittest.TestCase):
-    """metadata.literature_type / metadata.image_type (v0.2.2, TAG-01 schema
+    """metadata.prose_type / metadata.image_type (v0.2.2; prose_type was
+    literature_type until v0.2.4; TAG-01 schema
     part): required beside the extracted-from-* tags they describe, enum-valued,
     and otherwise optional."""
 
@@ -582,24 +583,34 @@ class TestExtractionSourceTypeSchema(unittest.TestCase):
     def assertAccepted(self, doc):
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
-    def test_prose_and_table_tags_require_literature_type(self):
-        """extracted-from-prose / -table without literature_type → rejected."""
+    def test_prose_and_table_tags_require_prose_type(self):
+        """extracted-from-prose / -table without prose_type → rejected."""
         for tag in ("extracted-from-prose", "extracted-from-table"):
             with self.subTest(tag=tag):
                 self.assertFalse(self.v.is_valid(self._doc([tag])))
 
-    def test_prose_and_table_tags_with_literature_type_accepted(self):
-        """extracted-from-prose / -table with a literature_type → accepted."""
+    def test_prose_and_table_tags_with_prose_type_accepted(self):
+        """extracted-from-prose / -table with a prose_type → accepted."""
         for tag in ("extracted-from-prose", "extracted-from-table"):
             with self.subTest(tag=tag):
-                self.assertAccepted(self._doc([tag], literature_type="patent"))
+                self.assertAccepted(self._doc([tag], prose_type="patent"))
+
+    def test_legacy_literature_type_does_not_satisfy_prose_tags(self):
+        """v0.2.4 renamed literature_type to prose_type. metadata is open, so
+        the old key is still accepted as a free field, but it no longer
+        satisfies the requirement: a v0.2.2-style file is rejected rather than
+        silently passing without the renamed field."""
+        for tag in ("extracted-from-prose", "extracted-from-table"):
+            with self.subTest(tag=tag):
+                self.assertFalse(self.v.is_valid(
+                    self._doc([tag], literature_type="patent")))
 
     def test_image_tag_requires_image_type(self):
         """extracted-from-image without image_type → rejected."""
         self.assertFalse(self.v.is_valid(self._doc(["extracted-from-image"])))
 
     def test_image_tag_with_image_type_accepted(self):
-        """extracted-from-image with an image_type → accepted; literature_type is
+        """extracted-from-image with an image_type → accepted; prose_type is
         not required by the image tag alone."""
         self.assertAccepted(self._doc(["extracted-from-image"],
                                       image_type="process_flow_diagram"))
@@ -610,17 +621,17 @@ class TestExtractionSourceTypeSchema(unittest.TestCase):
         self.assertFalse(self.v.is_valid(
             self._doc(tags, image_type="block_flow_diagram")))
         self.assertAccepted(self._doc(tags, image_type="block_flow_diagram",
-                                      literature_type="journal_article"))
+                                      prose_type="journal_article"))
 
     def test_unknown_values_rejected(self):
         """Values outside the enums → rejected."""
-        self.assertFalse(self.v.is_valid(self._doc(literature_type="blog_post")))
+        self.assertFalse(self.v.is_valid(self._doc(prose_type="blog_post")))
         self.assertFalse(self.v.is_valid(self._doc(image_type="photograph")))
 
     def test_every_enum_value_accepted(self):
         """Every declared enum value validates (including the 'other' escape hatch)."""
         props = load_schema()["properties"]["metadata"]["properties"]
-        for field in ("literature_type", "image_type"):
+        for field in ("prose_type", "image_type"):
             for value in props[field]["enum"]:
                 with self.subTest(field=field, value=value):
                     self.assertAccepted(self._doc(**{field: value}))
@@ -637,8 +648,8 @@ class TestExtractionMethodSchema(unittest.TestCase):
     """metadata.extraction_method (v0.2.2, TAG-01 schema part): required beside
     every extracted-from-* tag, of any JSON type, and otherwise optional."""
 
-    EXTRACTED_FIELDS = {"extracted-from-prose": {"literature_type": "patent"},
-                        "extracted-from-table": {"literature_type": "patent"},
+    EXTRACTED_FIELDS = {"extracted-from-prose": {"prose_type": "patent"},
+                        "extracted-from-table": {"prose_type": "patent"},
                         "extracted-from-image": {"image_type": "other"}}
 
     @classmethod
@@ -711,7 +722,7 @@ class TestTagsSchema(unittest.TestCase):
         extracted from spreadsheets or similar tabular data) is a valid enum
         value."""
         doc = self._with_tags(["extracted-from-table"])
-        doc["metadata"]["literature_type"] = "technical_report"  # required beside it from v0.2.2
+        doc["metadata"]["prose_type"] = "technical_report"  # required beside it from v0.2.2
         doc["metadata"]["extraction_method"] = "manual"  # likewise
         self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 

@@ -66,6 +66,7 @@ _EXEMPT = {
     "export_biosteam_flowsheet_sff_0_2_1": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_2_2": "real-only; needs a simulated System, covered in Tier 2/3",
     "export_biosteam_flowsheet_sff_0_2_3": "real-only; needs a simulated System, covered in Tier 2/3",
+    "export_biosteam_flowsheet_sff_0_2_4": "real-only; needs a simulated System, covered in Tier 2/3",
     "_build_sff_dict": "real-only; needs a simulated System (sys.flowsheet/units/streams/feeds/products/TEA), covered in Tier 2/3",
 
     # -- _runner.py: the child process of the full reproducible-export harness.

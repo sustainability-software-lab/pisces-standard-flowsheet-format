@@ -199,7 +199,7 @@ class TestPhaseMolarFlowOptionalForExtracted(unittest.TestCase):
     EXTRACTED = ("extracted-from-prose", "extracted-from-image",
                  "extracted-from-table")
     # Fields the metadata if/then rules require beside each extracted tag.
-    TAG_FIELDS = {"literature_type": "journal_article",
+    TAG_FIELDS = {"prose_type": "journal_article",
                   "image_type": "process_flow_diagram",
                   "extraction_method": "manual"}
 

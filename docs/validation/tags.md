@@ -33,14 +33,14 @@ Four tags are **static**: `exported-from-simulator`, `extracted-from-prose`,
 tag-specific subset of the catalogue's checks with no `warning`-severity
 finding — fast, and requiring no simulation.
 From schema v0.2.2, declaring `extracted-from-prose` or `extracted-from-table`
-also requires `metadata.literature_type`, declaring `extracted-from-image`
+also requires `metadata.prose_type` (named `literature_type` before v0.2.4), declaring `extracted-from-image`
 requires `metadata.image_type`, and declaring any `extracted-from-*` tag
 requires `metadata.extraction_method` (any JSON type). The schema enforces
 these, so a file that declares the tag without the field fails the schema
 gate. The earning rule applies the same requirement: `evaluate_sff_tags`
 reports an `extracted-from-*` tag earned only when its fields are present, and
 otherwise lists each missing one in `blocking` (e.g.
-`metadata.literature_type`, `metadata.extraction_method`). In return, an
+`metadata.prose_type`, `metadata.extraction_method`). In return, an
 `extracted-from-*` tag relaxes two requirements: each stream phase's
 `total_molar_flow` and (from v0.2.3) each chemical's
 `included_in_thermo_equilibria` become optional. This way a tag reported as

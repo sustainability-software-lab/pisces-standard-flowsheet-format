@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Tier 2: exporter version-dispatch guard. Exports one small REAL System at
 # 0.0.6, 0.0.7, 0.0.8, 0.0.9, 0.0.10, 0.0.11, 0.0.12, 0.1.0, 0.1.1, 0.1.2,
-# 0.1.3, 0.1.4, 0.1.5, 0.2.0, 0.2.1, 0.2.2, and 0.2.3 and asserts the scalar-shape, results-key,
+# 0.1.3, 0.1.4, 0.1.5, 0.2.0, 0.2.1, 0.2.2, 0.2.3, and 0.2.4 and asserts the scalar-shape, results-key,
 # required-metadata, stream-roles, enthalpy-flow, tightened-constraint (0.0.12
 # shape-identical to 0.0.11), milestone-bump (0.1.0 shape-identical to
 # 0.0.12), constraint-loosening (0.1.1 shape-identical to 0.1.0 -- CHEM-02's
@@ -29,7 +29,9 @@
 # the 0.2.2 export is shape-identical to 0.2.1), and key-rename (0.2.3 renames
 # chemicals[].included_in_thermo to included_in_thermo_equilibria in place and
 # makes it optional beside the extracted-from-* tags, so the 0.2.3 export is
-# shape-identical to 0.2.2 apart from that key name)
+# shape-identical to 0.2.2 apart from that key name), and field-rename
+# (0.2.4 renames metadata.literature_type to prose_type, a field the
+# exporter never writes, so the 0.2.4 export is shape-identical to 0.2.3)
 # differences the schema versions require. This is about exporter version
 # dispatch, not the corn model, so it needs no whole-model simulation --
 # which is why it lives in Tier 2 rather than Tier 3.
@@ -190,6 +192,11 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         _export.export_biosteam_flowsheet(
             system, str(cls.path_203), sff_version="0.2.3", tea=tea)
         cls.doc_203 = json.loads(cls.path_203.read_text(encoding="utf-8"))
+
+        cls.path_204 = tmp / "small_204.json"
+        _export.export_biosteam_flowsheet(
+            system, str(cls.path_204), sff_version="0.2.4", tea=tea)
+        cls.doc_204 = json.loads(cls.path_204.read_text(encoding="utf-8"))
 
     @classmethod
     def tearDownClass(cls):
@@ -663,6 +670,23 @@ class TestVersionShapeGuard(RealBiosteamTestCase):
         self.assertEqual(a, b)
         self.assertEqual([list(c) for c in a["chemicals"]],
                          [list(c) for c in b["chemicals"]])
+
+    def test_0_2_4_validates_against_committed_schema(self):
+        """v0.2.4 export of the real small System, as written -> validates
+        against the committed schema; records metadata.sff_version "0.2.4"."""
+        is_valid, errors = self.validate(str(self.path_204), str(SCHEMA_PATH))
+        self.assertTrue(is_valid, f"validation errors: {errors[:5]}")
+        self.assertEqual(self.doc_204["metadata"]["sff_version"], "0.2.4")
+
+    def test_0_2_4_is_shape_identical_to_0_2_3_except_version(self):
+        """v0.2.4 only renames metadata.literature_type to prose_type, a field
+        the exporter never writes -- so its export equals the v0.2.3 export,
+        key order included, apart from metadata.sff_version."""
+        a = copy.deepcopy(self.doc_203)
+        b = copy.deepcopy(self.doc_204)
+        a["metadata"]["sff_version"] = b["metadata"]["sff_version"] = "X"
+        self.assertEqual(a, b)
+        self.assertEqual(json.dumps(a), json.dumps(b))
 
 if __name__ == "__main__":
     unittest.main()

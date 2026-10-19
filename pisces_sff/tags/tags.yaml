@@ -25,7 +25,7 @@ tags:
   extracted-from-prose:
     class: static
     subset: [UNIT-10, STR-14]     # tolerated_skips omitted => none
-    required_metadata: [literature_type, extraction_method]
+    required_metadata: [prose_type, extraction_method]
   extracted-from-image:
     class: static
     subset: [UNIT-10, STR-14]
@@ -33,6 +33,6 @@ tags:
   extracted-from-table:
     class: static
     subset: [UNIT-10, STR-14]
-    required_metadata: [literature_type, extraction_method]
+    required_metadata: [prose_type, extraction_method]
   reproducible:
     class: harness

@@ -64,7 +64,7 @@ class TestTAG01(RealBiosteamTestCase):
         schema-declared property (schema v0.1.3)."""
         doc = valid_doc()
         doc["metadata"]["tags"] = ["extracted-from-prose"]
-        doc["metadata"]["literature_type"] = "journal_article"  # required beside the tag (v0.2.2)
+        doc["metadata"]["prose_type"] = "journal_article"  # required beside the tag (v0.2.2)
         doc["metadata"]["extraction_method"] = "manual"  # likewise
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
@@ -82,7 +82,7 @@ class TestTAG01(RealBiosteamTestCase):
         doc["units"] = []
         doc["metadata"]["tags"] = ["extracted-from-prose"]
         # Keep the doc schema-valid so the denial is UNIT-10's, not the schema's.
-        doc["metadata"]["literature_type"] = "journal_article"
+        doc["metadata"]["prose_type"] = "journal_article"
         doc["metadata"]["extraction_method"] = "manual"
         is_valid, by_id = validate_doc(doc)
         r = by_id["TAG-01"][0]
@@ -146,7 +146,7 @@ class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
         out = self._evaluate(valid_doc())
         self.assertFalse(out["extracted-from-prose"]["earned"])
         self.assertEqual(out["extracted-from-prose"]["blocking"],
-                         ["metadata.literature_type", "metadata.extraction_method"])
+                         ["metadata.prose_type", "metadata.extraction_method"])
         self.assertFalse(out["extracted-from-image"]["earned"])
         self.assertEqual(out["extracted-from-image"]["blocking"],
                          ["metadata.image_type", "metadata.extraction_method"])
@@ -154,7 +154,7 @@ class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
     def test_not_earned_without_extraction_method(self):
         """The source-type field alone is not enough."""
         doc = valid_doc()
-        doc["metadata"]["literature_type"] = "patent"
+        doc["metadata"]["prose_type"] = "patent"
         out = self._evaluate(doc)
         self.assertFalse(out["extracted-from-prose"]["earned"])
         self.assertEqual(out["extracted-from-prose"]["blocking"],
@@ -168,7 +168,7 @@ class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
         for s in doc["streams"]:
             for phase in s["stream_properties"]["phases"].values():
                 phase.pop("total_molar_flow", None)
-        doc["metadata"]["literature_type"] = "patent"
+        doc["metadata"]["prose_type"] = "patent"
         doc["metadata"]["extraction_method"] = {"pipeline": "llm", "version": 1}
         doc["metadata"]["tags"] = ["extracted-from-prose"]
         is_valid, by_id = validate_doc(doc)
@@ -177,10 +177,10 @@ class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
         self.assertTrue(is_valid)
 
     def test_earned_then_declarable(self):
-        """With literature_type and extraction_method set, extracted-from-prose
+        """With prose_type and extraction_method set, extracted-from-prose
         is earned, and declaring it yields a valid file with TAG-01 passing."""
         doc = valid_doc()
-        doc["metadata"]["literature_type"] = "patent"
+        doc["metadata"]["prose_type"] = "patent"
         doc["metadata"]["extraction_method"] = None  # any value, null included
         out = self._evaluate(doc)
         self.assertTrue(out["extracted-from-prose"]["earned"])

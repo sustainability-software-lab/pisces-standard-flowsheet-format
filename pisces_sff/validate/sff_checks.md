@@ -719,9 +719,9 @@ are always acceptable.
 | Tag | Subset | Tolerated skips | Required metadata |
 | --- | --- | --- | --- |
 | `exported-from-simulator` | **all** checks | `STR-03`, `STR-13`, `CHEM-04` always; `STR-10` when all streams are empty; `UNIT-04`/`UNIT-05`/`UNIT-06` when the flowsheet has no reactions. Every other skip (incl. MET-07) blocks. | none |
-| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) | `literature_type`, `extraction_method` |
+| `extracted-from-prose` | `{UNIT-10, STR-14}` | none (the subset checks never skip) | `prose_type`, `extraction_method` |
 | `extracted-from-image` | `{UNIT-10, STR-14}` | none | `image_type`, `extraction_method` |
-| `extracted-from-table` | `{UNIT-10, STR-14}` | none | `literature_type`, `extraction_method` |
+| `extracted-from-table` | `{UNIT-10, STR-14}` | none | `prose_type`, `extraction_method` |
 
 **Tag-conditional relaxation (schema, v0.2.2 and v0.2.3).** Declaring any
 `extracted-from-*` tag makes each stream phase's `total_molar_flow` (v0.2.2) and each
@@ -762,7 +762,7 @@ absolute floor near zero.
 - **Rationale:** a stamped tag is a promise downstream consumers rely on; a false claim must
   make the file non-conforming.
 - **Scope:** `metadata.tags` ↔ computed earned tags (+ the reproducibility recipe for the
-  `reproducible` precondition; + `metadata.literature_type` / `metadata.image_type` /
+  `reproducible` precondition; + `metadata.prose_type` / `metadata.image_type` /
   `metadata.extraction_method` for the `extracted-from-*` tags).
 - **Severity:** `error`.
 - **Skipped when:** `metadata.tags` absent or empty.
@@ -771,7 +771,8 @@ absolute floor near zero.
   that already ran plus the tag policies. Never runs the harness. Schema part
   (required-addition, conditional): `metadata` `if`/`then` rules require
   `reproducibility.comparison_rtol` when `tags` contains `reproducible`; and, from v0.2.2,
-  `literature_type` when `tags` contains `extracted-from-prose` or `extracted-from-table`,
+  `prose_type` (named `literature_type` before v0.2.4) when `tags` contains
+  `extracted-from-prose` or `extracted-from-table`,
   `image_type` when `tags` contains `extracted-from-image`, and `extraction_method` (any
   type) when `tags` contains any `extracted-from-*` tag (the extraction source and method
   must be named when the tag claims one). A missing field fails the schema gate, which in turn
@@ -831,5 +832,5 @@ absolute floor near zero.
 | QU-03 | aliases globally unambiguous | error | validator |
 | QU-04 | no unused aliases | info | validator |
 | XREF-01 | referential-integrity gate | error | validator |
-| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`, `literature_type`, `image_type`, `extraction_method`) |
+| TAG-01 | declared tags are earned | error | validator (+ schema for `comparison_rtol`, `prose_type`, `image_type`, `extraction_method`) |
 | GRAPH-01 | boundary in and boundary out exist | warning | validator |

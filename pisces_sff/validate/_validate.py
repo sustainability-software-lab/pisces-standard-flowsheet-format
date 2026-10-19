@@ -1789,7 +1789,7 @@ def evaluate_sff_tags(json_file, schema_file=None, *, run_harness=False,
         for each of the five tags. ``blocking`` is uniformly a list of strings:
         failing/untolerated-skip check IDs for the four static-subset tags,
         plus ``metadata.<field>`` for each missing required metadata field
-        (e.g. ``metadata.literature_type`` for ``extracted-from-prose``), and
+        (e.g. ``metadata.prose_type`` for ``extracted-from-prose``), and
         precondition/diff reason strings for ``reproducible``.
     """
     if schema_file is None:

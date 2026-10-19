@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Standard Flowsheet Format (SFF)",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A standardized, machine-readable representation of a process flowsheet designed for interoperability and data exchange. It represents the process as a directed graph with rich data attached to both nodes (units) and edges (streams).",
   "type": "object",
   "definitions": {
@@ -314,10 +314,10 @@
           },
           "uniqueItems": true
         },
-        "literature_type": {
+        "prose_type": {
           "type": "string",
           "enum": ["journal_article", "patent", "thesis", "technical_report", "conference_paper", "book", "other"],
-          "description": "Type of literature source this flowsheet was extracted from. Added in v0.2.2; required when metadata.tags contains 'extracted-from-prose' or 'extracted-from-table' (sff_checks.md TAG-01, schema part)."
+          "description": "Type of literature source this flowsheet was extracted from. Added in v0.2.2 as literature_type; renamed prose_type in v0.2.4 for consistency with image_type and the extracted-from-prose tag. Required when metadata.tags contains 'extracted-from-prose' or 'extracted-from-table' (sff_checks.md TAG-01, schema part)."
         },
         "image_type": {
           "type": "string",
@@ -354,7 +354,7 @@
             "required": ["tags"],
             "properties": { "tags": { "contains": { "enum": ["extracted-from-prose", "extracted-from-table"] } } }
           },
-          "then": { "required": ["literature_type"] }
+          "then": { "required": ["prose_type"] }
         },
         {
           "if": {

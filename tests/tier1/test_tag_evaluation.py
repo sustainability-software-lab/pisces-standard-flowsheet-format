@@ -29,7 +29,7 @@ def _R(check_id, severity, status):
 
 
 # Metadata satisfying every extracted-from-* tag's required_metadata (v0.2.2).
-_EXTRACTION_FIELDS = {"literature_type": "journal_article",
+_EXTRACTION_FIELDS = {"prose_type": "journal_article",
                       "image_type": "process_flow_diagram",
                       "extraction_method": "manual"}
 
@@ -153,7 +153,7 @@ class TestEarnedTags(unittest.TestCase):
         self.assertTrue(v["extracted-from-table"]["earned"])
 
     def test_extracted_tags_require_their_source_type_field(self):
-        """An otherwise-clean file without literature_type / image_type does not
+        """An otherwise-clean file without prose_type / image_type does not
         earn the extracted-from-* tags, and `blocking` names the missing fields --
         so a tag is never reported earned on a file that could not then declare
         it schema-validly (the schema requires the field beside the tag)."""
@@ -161,8 +161,8 @@ class TestEarnedTags(unittest.TestCase):
                    _R("UNIT-10", "warning", "pass"),
                    _R("STR-14", "warning", "pass")]
         v = self._verdict(results, {"metadata": {"extraction_method": "manual"}})
-        for tag, field in (("extracted-from-prose", "metadata.literature_type"),
-                           ("extracted-from-table", "metadata.literature_type"),
+        for tag, field in (("extracted-from-prose", "metadata.prose_type"),
+                           ("extracted-from-table", "metadata.prose_type"),
                            ("extracted-from-image", "metadata.image_type")):
             with self.subTest(tag=tag):
                 self.assertFalse(v[tag]["earned"])
@@ -174,7 +174,7 @@ class TestEarnedTags(unittest.TestCase):
         results = [_R("SCHEMA", "error", "pass"),
                    _R("UNIT-10", "warning", "pass"),
                    _R("STR-14", "warning", "pass")]
-        v = self._verdict(results, {"metadata": {"literature_type": "patent",
+        v = self._verdict(results, {"metadata": {"prose_type": "patent",
                                                  "image_type": "other"}})
         for tag in ("extracted-from-prose", "extracted-from-table",
                     "extracted-from-image"):
@@ -183,15 +183,15 @@ class TestEarnedTags(unittest.TestCase):
                 self.assertEqual(v[tag]["blocking"], ["metadata.extraction_method"])
         v = self._verdict(results, {"metadata": {}})
         self.assertEqual(v["extracted-from-prose"]["blocking"],
-                         ["metadata.literature_type", "metadata.extraction_method"])
+                         ["metadata.prose_type", "metadata.extraction_method"])
 
     def test_each_extracted_tag_needs_only_its_own_field(self):
-        """literature_type alone earns prose + table but not image; image_type
+        """prose_type alone earns prose + table but not image; image_type
         alone earns image only."""
         results = [_R("SCHEMA", "error", "pass"),
                    _R("UNIT-10", "warning", "pass"),
                    _R("STR-14", "warning", "pass")]
-        lit = self._verdict(results, {"metadata": {"literature_type": "patent",
+        lit = self._verdict(results, {"metadata": {"prose_type": "patent",
                                                    "extraction_method": "manual"}})
         self.assertTrue(lit["extracted-from-prose"]["earned"])
         self.assertTrue(lit["extracted-from-table"]["earned"])
@@ -211,17 +211,17 @@ class TestEarnedTags(unittest.TestCase):
         for value in ("", None, {"pipeline": "llm"}, 0):
             with self.subTest(value=value):
                 v = self._verdict(results, {"metadata": {
-                    "literature_type": "patent", "extraction_method": value}})
+                    "prose_type": "patent", "extraction_method": value}})
                 self.assertTrue(v["extracted-from-prose"]["earned"])
 
     def test_wrong_typed_source_type_denied_via_schema(self):
-        """A present but schema-invalid literature_type (e.g. "") is not caught by
+        """A present but schema-invalid prose_type (e.g. "") is not caught by
         condition (4); the schema gate fails it, and conformance (1) denies
         the tag."""
         results = [_R("SCHEMA", "error", "fail"),
                    _R("UNIT-10", "warning", "pass"),
                    _R("STR-14", "warning", "pass")]
-        v = self._verdict(results, {"metadata": {"literature_type": "",
+        v = self._verdict(results, {"metadata": {"prose_type": "",
                                                  "extraction_method": "manual"}})
         self.assertFalse(v["extracted-from-prose"]["earned"])
         self.assertEqual(v["extracted-from-prose"]["blocking"], [])
@@ -274,7 +274,7 @@ class TestTagGate(unittest.TestCase):
 
     def test_passes_when_declared_tag_is_earned(self):
         doc = {"metadata": {"tags": ["extracted-from-prose"],
-                            "literature_type": "journal_article",
+                            "prose_type": "journal_article",
                             "extraction_method": "manual"}}
         results = [_R("SCHEMA", "error", "pass"),
                    _R("UNIT-10", "warning", "pass"),
@@ -291,7 +291,7 @@ class TestTagGate(unittest.TestCase):
         self.assertEqual((r.severity, r.status), ("error", "fail"))
 
     def test_fails_naming_missing_source_type_field(self):
-        """A declared extracted-from-prose tag without literature_type -> TAG-01
+        """A declared extracted-from-prose tag without prose_type -> TAG-01
         error fail whose message names the missing field."""
         doc = {"metadata": {"tags": ["extracted-from-prose"]}}
         results = [_R("SCHEMA", "error", "pass"),
@@ -299,7 +299,7 @@ class TestTagGate(unittest.TestCase):
                    _R("STR-14", "warning", "pass")]
         r = self._gate(doc, results)
         self.assertEqual((r.severity, r.status), ("error", "fail"))
-        self.assertIn("metadata.literature_type", r.message)
+        self.assertIn("metadata.prose_type", r.message)
 
     def test_fails_when_reproducible_precondition_unmet(self):
         doc = {"metadata": {"tags": ["reproducible"]}}

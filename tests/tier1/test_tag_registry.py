@@ -37,9 +37,9 @@ EXPECTED_EFS_TOLERATED = {
 }
 EXPECTED_REQUIRED_METADATA = {
     "exported-from-simulator": (),
-    "extracted-from-prose": ("literature_type", "extraction_method"),
+    "extracted-from-prose": ("prose_type", "extraction_method"),
     "extracted-from-image": ("image_type", "extraction_method"),
-    "extracted-from-table": ("literature_type", "extraction_method"),
+    "extracted-from-table": ("prose_type", "extraction_method"),
 }
 
 
@@ -132,11 +132,11 @@ class TestLoaderShapeValidation(_RegistryPatchCase):
             "  t:\n"
             "    class: static\n"
             "    subset: [UNIT-10]\n"
-            "    required_metadata: [literature_type]\n")
-        self.assertEqual(reg["t"]["required_metadata"], ("literature_type",))
+            "    required_metadata: [prose_type]\n")
+        self.assertEqual(reg["t"]["required_metadata"], ("prose_type",))
 
     def test_required_metadata_must_be_list_of_names(self):
-        for bad in ("literature_type", "[1]", '[""]'):
+        for bad in ("prose_type", "[1]", '[""]'):
             with self.subTest(bad=bad), \
                     self.assertRaisesRegex(ValueError, "required_metadata"):
                 self._load_from(
@@ -152,7 +152,7 @@ class TestLoaderShapeValidation(_RegistryPatchCase):
                 "tags:\n"
                 "  t:\n"
                 "    class: harness\n"
-                "    required_metadata: [literature_type]\n")
+                "    required_metadata: [prose_type]\n")
 
     def test_subset_all_maps_to_none_sentinel(self):
         reg = self._load_from(

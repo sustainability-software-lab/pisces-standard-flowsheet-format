@@ -8,7 +8,7 @@ described in prose, followed by an auto-generated table rendered directly from
 a single top-level property, those two sections use a hand-written table
 instead (see the note in each).
 
-> **Current version: v0.2.3.** See [Full JSON Schema](full_schema.md) for the
+> **Current version: v0.2.4.** See [Full JSON Schema](full_schema.md) for the
 > current schema file and links to every previous version.
 
 ## `metadata`
@@ -29,9 +29,13 @@ exported from a simulator:
   `"not_applicable"` (there is none -- e.g., a flowsheet taken from a patent
   that was never simulated, or an abiotic process). `null` and `"None"` are
   **not** accepted: absence must say which of the two it is.
-- `literature_type` (`journal_article`, `patent`, `thesis`,
+- `prose_type` (`journal_article`, `patent`, `thesis`,
   `technical_report`, `conference_paper`, `book`, `other`) is **required** when
-  `tags` contains `extracted-from-prose` or `extracted-from-table`.
+  `tags` contains `extracted-from-prose` or `extracted-from-table`. (Named
+  `literature_type` in v0.2.2 and v0.2.3; renamed `prose_type` in v0.2.4
+  for consistency with `image_type` and the `extracted-from-prose` tag. A
+  file that still writes `literature_type` beside one of those tags must
+  rename it to validate.)
 - `image_type` (`process_flow_diagram`, `block_flow_diagram`,
   `piping_and_instrumentation_diagram`, `other`) is **required** when `tags`
   contains `extracted-from-image`.
