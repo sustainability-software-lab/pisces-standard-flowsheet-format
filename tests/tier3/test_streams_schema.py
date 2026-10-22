@@ -132,8 +132,11 @@ class TestStreamPropertiesShape(unittest.TestCase):
                    ["properties"]["stream_properties"])
 
     def test_phases_is_required(self):
-        """stream_properties lists "phases" in its required set."""
-        self.assertIn("phases", self.sp["required"])
+        """"phases" is required by the root-level else (every file without an extracted-from-* tag), not by stream_properties itself."""
+        restored = (load_schema()["else"]["properties"]["streams"]["items"]
+                    ["properties"]["stream_properties"]["required"])
+        self.assertIn("phases", restored)
+        self.assertNotIn("phases", self.sp["required"])
 
     def test_flat_composition_is_removed(self):
         """stream_properties no longer declares a flat top-level "composition" property (it moved under phases)."""
@@ -180,13 +183,15 @@ class TestStreamPhaseDefinition(unittest.TestCase):
                 self.assertEqual(self.phase["properties"][key]["type"], "number")
 
     def test_composition_items_have_no_phase_field(self):
-        """Per-phase composition items drop the "phase" field and require component_name + mol_fraction."""
+        """Per-phase composition items drop the "phase" field; they require component_name plus mol_fraction or mass_fraction, and the root-level else restores mol_fraction for files without an extracted-from-* tag."""
         item = self.phase["properties"]["composition"]["items"]
         self.assertNotIn("phase", item["properties"])
-        self.assertEqual(
-            sorted(item["required"]),
-            ["component_name", "mol_fraction"],
-        )
+        self.assertEqual(item["required"], ["component_name"])
+        self.assertEqual(item["anyOf"], [{"required": ["mol_fraction"]}, {"required": ["mass_fraction"]}])
+        restored = (load_schema()["else"]["properties"]["streams"]["items"]["properties"]
+                    ["stream_properties"]["properties"]["phases"]["additionalProperties"]
+                    ["properties"]["composition"]["items"]["required"])
+        self.assertEqual(restored, ["mol_fraction"])
 
 
 class TestPhaseMolarFlowOptionalForExtracted(unittest.TestCase):
@@ -244,11 +249,14 @@ class TestPhaseMolarFlowOptionalForExtracted(unittest.TestCase):
         doc["streams"][0]["stream_properties"]["phases"]["l"]["total_molar_flow"] = "1"
         self.assertFalse(self.v.is_valid(doc))
 
-    def test_stream_level_molar_flow_still_required(self):
-        """Only the per-phase field is relaxed; the stream-level one stays required."""
-        doc = self._doc(["extracted-from-prose"])
+    def test_stream_level_molar_flow_required_only_without_extracted_tags(self):
+        """The stream-level total_molar_flow stays required in files without an extracted-from-* tag; extracted files may omit it (see tests/tier3/test_extracted_partial_data.py)."""
+        doc = self._doc()
         del doc["streams"][0]["stream_properties"]["total_molar_flow"]
         self.assertFalse(self.v.is_valid(doc))
+        doc = self._doc(["extracted-from-prose"])
+        del doc["streams"][0]["stream_properties"]["total_molar_flow"]
+        self.assertTrue(self.v.is_valid(doc), list(self.v.iter_errors(doc)))
 
 
 class TestOldShapeIsRejected(unittest.TestCase):

@@ -47,6 +47,26 @@ exported from a simulator:
   extends the same relaxation to a chemical's `included_in_thermo_equilibria`
   (see the `chemicals` section below).
 
+Unreleased (proposed with this change): the same tag-conditional pattern for the
+partial data a paper reports. In files carrying an `extracted-from-*` tag:
+
+- `stream_properties` requires none of its fields: a stream may give any subset
+  of `total_mass_flow`, `total_molar_flow`, `temperature`, `pressure` and
+  `phases`. Fields that are present keep their types and bounds.
+- A phase composition entry needs `mol_fraction` **or** `mass_fraction`.
+- A `purchase_cost_correlations` entry needs only `correlation_type`, `basis`
+  and `reference_size` (plus `reference_cost` and `exponent` for `power_law`);
+  `basis_units`, `reference_CE_index`, `installation_factor` and `power_rate`
+  become optional.
+- `heat_utilities` / `other_utilities` entries need only `id` and
+  `quantity_units_for_utility_results`.
+- `TEA_year` may be `"not_reported"` or `"not_applicable"` instead of a number
+  (`TEA_currency`, a string, can already carry the same two strings).
+
+A root-level `else` restores every one of these requirements in all other
+files, so each previously valid file stays valid and the reference exporter's
+output is unaffected.
+
 The three conditional requirements are the schema half of `TAG-01` (like
 `reproducibility.comparison_rtol` beside `reproducible`): a file declaring an
 `extracted-from-*` tag written before v0.2.2 must add the matching field to
@@ -105,13 +125,13 @@ Each entry in the `streams` array:
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `total_mass_flow` | number | yes | Total mass flow rate. Quantity units: `quantity_units_global` `mass_flow` (default `kg/hr`). |
+| `total_mass_flow` | number | yes, unless extracted | Total mass flow rate. Quantity units: `quantity_units_global` `mass_flow` (default `kg/hr`). |
 | `total_volumetric_flow` | number | | Total volumetric flow rate. Quantity units: `quantity_units_global` `volumetric_flow` (default `m3/hr`). |
-| `total_molar_flow` | number | yes | Total molar flow rate. Quantity units: `quantity_units_global` `molar_flow` (default `kmol/hr`). |
-| `temperature` | number, minimum 0 | yes | Temperature. Quantity units: `quantity_units_global` `temperature` (default `K`). |
-| `pressure` | number, exclusiveMinimum 0 | yes | Pressure. Quantity units: `quantity_units_global` `pressure` (default `Pa`). |
+| `total_molar_flow` | number | yes, unless extracted | Total molar flow rate. Quantity units: `quantity_units_global` `molar_flow` (default `kmol/hr`). |
+| `temperature` | number, minimum 0 | yes, unless extracted | Temperature. Quantity units: `quantity_units_global` `temperature` (default `K`). |
+| `pressure` | number, exclusiveMinimum 0 | yes, unless extracted | Pressure. Quantity units: `quantity_units_global` `pressure` (default `Pa`). |
 | `enthalpy_flow` | number | | Total enthalpy flow rate of the stream (relative to the simulator's reference state). Optional; emitted from schema v0.0.11 on. Quantity units: `quantity_units_global` `enthalpy_flow` (default `kJ/hr`). |
-| `phases` | object keyed by phase symbol, minProperties 1; each value is a `stream_phase` (below) | yes | The phases present in this stream, keyed by phase symbol (`l` = liquid, `g` = gas, `s` = solid, ...). Each value details that phase's own total flows and composition. |
+| `phases` | object keyed by phase symbol, minProperties 1; each value is a `stream_phase` (below) | yes, unless extracted | The phases present in this stream, keyed by phase symbol (`l` = liquid, `g` = gas, `s` = solid, ...). Each value details that phase's own total flows and composition. |
 
 `#/definitions/stream_phase` — one phase of a stream: its own total flows and its molar/mass composition, with all fractions taken relative to this phase:
 
@@ -127,14 +147,15 @@ a root-level `if`/`else` requires each phase's `total_molar_flow` unless
 `metadata.tags` contains `extracted-from-prose`, `extracted-from-image`, or
 `extracted-from-table` (literature sources rarely report per-phase molar
 flows). This is a loosening: every file valid under an earlier version stays
-valid. The stream-level `total_molar_flow` remains required in all files.
+valid. Since the change proposed above, the stream-level fields are also
+optional in extracted files (required otherwise).
 
 Each `composition` entry:
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `component_name` | string | yes | Chemical component ID, cross-referencing the `chemicals` array. |
-| `mol_fraction` | number, 0-1 | yes | Mole fraction of this component within this phase. |
+| `mol_fraction` | number, 0-1 | yes, unless extracted | Mole fraction of this component within this phase. In extracted files, `mol_fraction` or `mass_fraction` is required. |
 | `mass_fraction` | number, 0-1 | | Mass fraction of this component within this phase. |
 
 ## `chemicals`

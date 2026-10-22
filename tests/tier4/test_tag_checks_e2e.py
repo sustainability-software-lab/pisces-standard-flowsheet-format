@@ -176,6 +176,44 @@ class TestExtractedTagSourceTypeE2E(RealBiosteamTestCase):
         self.assertEqual(by_id["TAG-01"][0].status, "pass")
         self.assertTrue(is_valid)
 
+    def test_extracted_doc_with_partial_data_is_valid(self):
+        """Partial literature data beside an extracted-from-* tag: streams with
+        only some stream_properties fields, a mass-basis composition, a cost
+        correlation without CEPCI/power rate/basis units/installation factor, a
+        heat utility without temperature/pressure/composition, and TEA_year
+        'not_reported' -> the file validates end to end, MET-04 skips, and
+        TAG-01 passes."""
+        doc = valid_doc()
+        feed, prod = doc["streams"][0], doc["streams"][1]
+        feed["stream_properties"] = {"temperature": 300.0, "total_mass_flow": 46.07}
+        prod["stream_properties"] = {"phases": {"l": {"composition": [
+            {"component_name": "Ethanol", "mass_fraction": 1.0}]}}}
+        unit = doc["units"][0]
+        unit["purchase_costs"] = {"Mixer": 1.0e6}
+        unit["purchase_cost_correlations"] = {"Mixer": {
+            "correlation_type": "power_law", "basis": "Flow rate", "reference_size": 500.0,
+            "reference_cost": 2.855e7, "exponent": 0.6}}
+        doc["utilities"]["heat_utilities"] = [
+            {"id": "steam", "quantity_units_for_utility_results": "kJ/hr"}]
+        doc["metadata"]["TEA_year"] = "not_reported"
+        doc["metadata"]["prose_type"] = "journal_article"
+        doc["metadata"]["extraction_method"] = "manual"
+        doc["metadata"]["tags"] = ["extracted-from-prose"]
+        is_valid, by_id = validate_doc(doc)
+        self.assertEqual(by_id["SCHEMA"][0].status, "pass")
+        self.assertEqual(by_id["MET-04"][0].status, "skip")
+        self.assertEqual(by_id["TAG-01"][0].status, "pass")
+        self.assertTrue(is_valid, [(r.check_id, r.message) for rs in by_id.values() for r in rs
+                                   if r.status == "fail" and r.severity == "error"])
+
+    def test_partial_data_without_extracted_tag_is_invalid(self):
+        """The same partial streams in an untagged file -> the schema gate fails."""
+        doc = valid_doc()
+        doc["streams"][0]["stream_properties"] = {"temperature": 300.0}
+        is_valid, by_id = validate_doc(doc)
+        self.assertEqual(by_id["SCHEMA"][0].status, "fail")
+        self.assertFalse(is_valid)
+
     def test_earned_then_declarable(self):
         """With prose_type and extraction_method set, extracted-from-prose
         is earned, and declaring it yields a valid file with TAG-01 passing."""

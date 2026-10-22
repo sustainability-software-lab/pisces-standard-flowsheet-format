@@ -62,9 +62,13 @@
               }
             },
             "required": [
-              "component_name",
-              "mol_fraction"
-            ]
+              "component_name"
+            ],
+            "anyOf": [
+              { "required": ["mol_fraction"] },
+              { "required": ["mass_fraction"] }
+            ],
+            "description": "One component of this phase. mol_fraction is required unless metadata.tags contains an 'extracted-from-*' tag; there, mol_fraction or mass_fraction is enough (enforced by the root-level if/else)."
           }
         }
       },
@@ -108,8 +112,11 @@
           "default": "USD"
         },
         "TEA_year": {
-          "type": "number",
-          "description": "TEA year used to report cost results."
+          "anyOf": [
+            { "type": "number" },
+            { "enum": ["not_reported", "not_applicable"] }
+          ],
+          "description": "TEA year used to report cost results. In files whose metadata.tags contains an 'extracted-from-*' tag, 'not_reported' (the source gives no cost year) or 'not_applicable' (the source has no economics) may be given instead of a number (enforced by the root-level if/else). TEA_currency may carry the same two strings."
         },
         "source_doi": {
           "type": "string",
@@ -550,8 +557,7 @@
                 }
               },
               "required": [
-                "correlation_type", "basis", "basis_units", "reference_size",
-                "reference_CE_index", "installation_factor", "power_rate"
+                "correlation_type", "basis", "reference_size"
               ],
               "if": { "properties": { "correlation_type": { "const": "power_law" } } },
               "then": { "required": ["reference_cost", "exponent"] },
@@ -655,13 +661,7 @@
                 "minProperties": 1
               }
             },
-            "required": [
-              "total_mass_flow",
-              "total_molar_flow",
-              "temperature",
-              "pressure",
-              "phases"
-            ]
+            "required": []
           }
         },
         "required": [
@@ -798,9 +798,6 @@
                 },
                 "required": [
                   "id",
-                  "temperature",
-                  "pressure",
-                  "composition",
                   "quantity_units_for_utility_results"
                 ],
                 "additionalProperties": true
@@ -892,9 +889,6 @@
                 },
                 "required": [
                   "id",
-                  "temperature",
-                  "pressure",
-                  "composition",
                   "quantity_units_for_utility_results"
                 ],
                 "additionalProperties": true
@@ -920,13 +914,35 @@
   },
   "else": {
     "properties": {
+      "metadata": {
+        "properties": {
+          "TEA_year": { "type": "number" }
+        }
+      },
+      "units": {
+        "items": {
+          "properties": {
+            "purchase_cost_correlations": {
+              "additionalProperties": {
+                "required": ["basis_units", "reference_CE_index", "installation_factor", "power_rate"]
+              }
+            }
+          }
+        }
+      },
       "streams": {
         "items": {
           "properties": {
             "stream_properties": {
+              "required": ["total_mass_flow", "total_molar_flow", "temperature", "pressure", "phases"],
               "properties": {
                 "phases": {
-                  "additionalProperties": { "required": ["total_molar_flow"] }
+                  "additionalProperties": {
+                    "required": ["total_molar_flow"],
+                    "properties": {
+                      "composition": { "items": { "required": ["mol_fraction"] } }
+                    }
+                  }
                 }
               }
             }
@@ -935,6 +951,12 @@
       },
       "chemicals": {
         "items": { "required": ["included_in_thermo_equilibria"] }
+      },
+      "utilities": {
+        "properties": {
+          "heat_utilities": { "items": { "required": ["temperature", "pressure", "composition"] } },
+          "other_utilities": { "items": { "required": ["temperature", "pressure", "composition"] } }
+        }
       }
     }
   }

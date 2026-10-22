@@ -41,9 +41,12 @@ gate. The earning rule applies the same requirement: `evaluate_sff_tags`
 reports an `extracted-from-*` tag earned only when its fields are present, and
 otherwise lists each missing one in `blocking` (e.g.
 `metadata.prose_type`, `metadata.extraction_method`). In return, an
-`extracted-from-*` tag relaxes two requirements: each stream phase's
+`extracted-from-*` tag relaxes requirements a paper rarely meets: each stream phase's
 `total_molar_flow` and (from v0.2.3) each chemical's
-`included_in_thermo_equilibria` become optional. This way a tag reported as
+`included_in_thermo_equilibria` become optional, and (unreleased, proposed) so do the
+stream-level `stream_properties` fields, `mol_fraction` (given `mass_fraction`), a cost
+correlation's CEPCI / power rate / basis units / installation factor, heat and other
+utilities' conditions, and a numeric `TEA_year`. See the schema reference for the full list. This way a tag reported as
 earned can always be declared. The required fields live in the registry
 under each tag's `required_metadata`.
 The tag names, subsets, tolerated-skip policies, and required metadata fields live in one committed

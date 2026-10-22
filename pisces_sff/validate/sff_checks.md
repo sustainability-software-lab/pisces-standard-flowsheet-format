@@ -461,7 +461,8 @@ These are not checks; they define terms the checks rely on.
 - **Severity:** `error`.
 - **Skipped when:** never.
 - **Enforcement:** schema (required-addition — add `total_mass_flow` to
-  `stream_properties.required`; **gated**, breaking).
+  `stream_properties.required`; **gated**, breaking). Not required in files carrying an
+  `extracted-from-*` tag (root-level `else`; see the tag-conditional relaxation in section 8).
 
 ### STR-13 — zero-flow streams are fully empty
 - **Statement:** empty streams (and empty phases) are allowed, but the rule is evaluated
@@ -730,6 +731,17 @@ both required in every other file). This is a schema-shape loosening, not a chec
 either field (STR-09/STR-10 skip a phase that lacks its molar flow; no check reads the
 chemical flag). When the flag is absent, the schema's `registry_id` / `molar_mass`
 `if`/`then` rules, which key on it, do not apply.
+
+The same root-level `else` (unreleased, proposed) also keeps the following required only
+outside extracted files: the stream-level `stream_properties` fields (`total_mass_flow`,
+`total_molar_flow`, `temperature`, `pressure`, `phases` -- so STR-12 applies only there),
+a phase composition entry's `mol_fraction` (extracted files need `mol_fraction` or
+`mass_fraction`), a cost correlation's `basis_units`, `reference_CE_index`,
+`installation_factor` and `power_rate` (UNIT-09's `power_law` rule is unchanged), heat and
+other utilities' `temperature`, `pressure` and `composition`, and a numeric `TEA_year`
+(extracted files may give `"not_reported"` / `"not_applicable"`; MET-04 skips a
+non-numeric year). The validator reads every one of these fields only when present, so
+no check changes.
 
 The machine-readable home of this table — the tag names, classes, subsets,
 tolerated-skip policies, and required-metadata lists the validator executes — is the committed registry

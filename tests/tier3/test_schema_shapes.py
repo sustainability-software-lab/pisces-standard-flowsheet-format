@@ -102,10 +102,10 @@ class TestScalarsAreBareNumbers(unittest.TestCase):
         self.assertEqual(props["temperature"]["minimum"], 0)
 
     def test_stream_properties_required_is_preserved(self):
-        """The 0.0.7-era pressure/temperature/total_molar_flow remain a subset of stream_properties.required."""
+        """The 0.0.7-era pressure/temperature/total_molar_flow remain required in every file without an extracted-from-* tag (the root-level else); extracted files may omit them."""
         # The three 0.0.7-era members stay required; 0.0.9 additionally requires
         # `phases`, so assert the subset rather than exact equality.
-        sp = (self.schema["properties"]["streams"]["items"]
+        sp = (self.schema["else"]["properties"]["streams"]["items"]
               ["properties"]["stream_properties"])
         self.assertTrue(
             {"pressure", "temperature", "total_molar_flow"}.issubset(sp["required"])
